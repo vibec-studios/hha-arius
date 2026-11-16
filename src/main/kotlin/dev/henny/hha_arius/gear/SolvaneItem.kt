@@ -38,6 +38,7 @@ class SolvaneItem(settings: Settings) : Item(settings) {
     override fun use(world: World, user: PlayerEntity, hand: Hand): ActionResult {
         if (world is ServerWorld && user is ServerPlayerEntity) {
             if (!GearConfig.on("solvane_counter")) return ActionResult.PASS
+            if (!dev.henny.hha_arius.gear.art.Focus.isFree(user)) return ActionResult.FAIL
             SolvaneCounter.start(user, hand)
         }
         user.setCurrentHand(hand)
@@ -142,7 +143,7 @@ object SolvaneEdge {
         if (p.counted || p.tick != GearTasks.now || p.targetId != entity.id) return
         p.counted = true
         Resonance.markCombat(player)
-        if (!p.full) return
+        if (!p.full || !GearCombat.worthy(player, entity)) return
         when {
             p.solvane -> Resonance.gain(player, GearConfig.num("resonance_gain_solvane"))
             p.weapon -> Resonance.gain(player, GearConfig.num("resonance_gain_melee"))

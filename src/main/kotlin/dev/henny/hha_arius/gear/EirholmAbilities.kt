@@ -35,26 +35,42 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * Die drei Set-Fähigkeiten (Konzept 10.1). Jede hat ihren eigenen Cooldown auf einem eigenen Setteil, damit die
- * HHA-Leiste sie getrennt zeigt: Weiße Linie → Brustplatte, Frostschritt → Stiefel, Weißer Kern → Helm.
+ * Rüstungsfähigkeiten nach der Konvention der anderen HHA-Sets (Brustplatte → Ability 1, Beinschienen → Ability 2,
+ * volles Set → Ability 3 statt Ultra-Modus). Die Rüstung funktioniert ohne Waffen; Kosten in Frostresonanz.
+ * * Brustplatte: Weißer Kern (Schutz/Raum schaffen) + passiv Frostpanzer (Nahkampf-Angreifer kurz verlangsamt).
+ * * Beinschienen: Frostschritt (Bewegung, kurz unberührbar im Nahkampf).
+ * * Helm: passiv kein Gefrieren. Stiefel: passiv Pulverschnee trägt, kleine Stürze (bis 2,5 Herzen) abgefangen.
+ * * Volles Set: Weißes Loch ([dev.henny.hha_arius.gear.art.WhiteHole]), Resonanz-Ruhepunkt 50, +25 % Gewinn.
  */
 object EirholmAbilities {
-
-    /** Wer gerade lädt (Weiße Linie/Weißer Kern), kann nicht noch einmal auslösen. */
-    private val charging = HashSet<UUID>()
 
     /** Frostschritt: bis zu diesem Tick keine Nahkampftreffer. */
     private val guardUntil = HashMap<UUID, Long>()
 
+    /** Frostpanzer: Angreifer-ID → nächster möglicher Verlangsamungs-Tick. */
+    private val chillReady = HashMap<Int, Long>()
+
     fun register(context: HhaAddonContext) {
-        context.registerAbility(SimpleAbility(context.id("white_line"), AbilitySlot.ABILITY_1, Gear::hasFullSet, ::castWhiteLine))
-        context.registerAbility(SimpleAbility(context.id("frost_step"), AbilitySlot.ABILITY_2, Gear::hasFullSet, ::castFrostStep))
-        context.registerAbility(SimpleAbility(context.id("white_core"), AbilitySlot.ABILITY_4, Gear::hasFullSet, ::castWhiteCore))
+        context.registerAbility(SimpleAbility(context.id("white_core"), AbilitySlot.ABILITY_1, { Gear.hasPiece(it, EquipmentSlot.CHEST) }, ::castWhiteCore, EquipmentSlot.CHEST))
+        context.registerAbility(SimpleAbility(context.id("frost_step"), AbilitySlot.ABILITY_2, { Gear.hasPiece(it, EquipmentSlot.LEGS) }, ::castFrostStep, EquipmentSlot.LEGS))
+        context.registerAbility(SimpleAbility(context.id("white_hole"), AbilitySlot.ABILITY_3, Gear::hasFullSet, { dev.henny.hha_arius.gear.art.WhiteHole.cast(it) }, EquipmentSlot.HEAD))
+        // Die eingebaute Ultra-Ability ist mit isAvailable = { true } registriert und gewinnt den Dispatch; bei vollem
+        // Arius-Set wird ihr Cast abgefangen und das Weiße Loch gewirkt (wie HHA Void).
+        dev.henny.hha.api.event.HhaEvents.ABILITY_CAST.register { player, ability ->
+            if (ability.id == net.minecraft.util.Identifier.of("hha", "ultra") && Gear.hasFullSet(player)) {
+                dev.henny.hha_arius.gear.art.WhiteHole.cast(player)
+                false
+            } else {
+                true
+            }
+        }
     }
 
     fun init() {
-        ServerLivingEntityEvents.ALLOW_DAMAGE.register { entity, source, _ ->
+        ServerLivingEntityEvents.ALLOW_DAMAGE.register { entity, source, amount ->
             if (entity !is ServerPlayerEntity) return@register true
+            // Stiefel: kleine Stürze abfangen.
+            if (source.isIn(DamageTypeTags.IS_FALL) && Gear.hasPiece(entity, EquipmentSlot.FEET) && amount <= 5f) return@register false
             val until = guardUntil[entity.uuid] ?: return@register true
             if (GearTasks.now > until) {
                 guardUntil.remove(entity.uuid)
@@ -65,16 +81,26 @@ object EirholmAbilities {
                 !source.isIn(DamageTypeTags.IS_EXPLOSION) && !source.isIn(DamageTypeTags.BYPASSES_INVULNERABILITY)
             !melee
         }
-        ServerPlayConnectionEvents.DISCONNECT.register { handler, _ ->
-            charging.remove(handler.player.uuid)
-            guardUntil.remove(handler.player.uuid)
+        // Brustplatte, passiv „Frostpanzer“: Wer im Nahkampf trifft, wird kurz verlangsamt (je Angreifer höchstens alle 3 s).
+        ServerLivingEntityEvents.AFTER_DAMAGE.register { entity, source, _, taken, _ ->
+            if (entity !is ServerPlayerEntity || taken <= 0f || !Gear.hasPiece(entity, EquipmentSlot.CHEST)) return@register
+            val attacker = source.attacker as? LivingEntity ?: return@register
+            if (source.source !== attacker || attacker === entity) return@register
+            val now = GearTasks.now
+            if ((chillReady[attacker.id] ?: 0L) > now) return@register
+            chillReady[attacker.id] = now + 60
+            attacker.addStatusEffect(StatusEffectInstance(StatusEffects.SLOWNESS, 20, 0, false, true, true), entity)
+            val p = attacker.entityPos
+            entity.entityWorld.spawnParticles(ParticleTypes.SNOWFLAKE, p.x, p.y + attacker.height * 0.6, p.z, 6, 0.2, 0.3, 0.2, 0.02)
+            if (chillReady.size > 256) chillReady.entries.removeIf { it.value < now }
         }
+        ServerPlayConnectionEvents.DISCONNECT.register { handler, _ -> guardUntil.remove(handler.player.uuid) }
         FrostIce.init()
     }
 
     private fun ready(player: ServerPlayerEntity, slot: EquipmentSlot, toggle: String): Boolean {
         if (!GearConfig.on(toggle)) return false
-        if (player.uuid in charging) return false
+        if (!dev.henny.hha_arius.gear.art.Focus.isFree(player)) return false
         return !player.itemCooldownManager.isCoolingDown(player.getEquippedStack(slot))
     }
 
@@ -85,71 +111,15 @@ object EirholmAbilities {
         return true
     }
 
-    // ---------------------------------------------------------------- Weiße Linie (Ability 1)
-
-    private fun castWhiteLine(player: ServerPlayerEntity) {
-        if (!ready(player, EquipmentSlot.CHEST, "white_line")) return
-        val cost = GearConfig.float("white_line_cost")
-        if (needResonance(player, cost)) return
-        val world = player.entityWorld
-        val spent = Resonance.spendAll(player)
-        Cooldowns.set(player, player.getEquippedStack(EquipmentSlot.CHEST), GearConfig.key("white_line_cooldown"))
-
-        val charge = GearConfig.ticks("white_line_charge_ticks")
-        charging.add(player.uuid)
-        player.addStatusEffect(StatusEffectInstance(StatusEffects.SLOWNESS, charge + 2, 2, false, false, false))
-        val hand = player.eyePos.add(player.rotationVector.multiply(0.6)).add(0.0, -0.35, 0.0)
-        GearVfx.flare(world, Vfx.Style.HEAVEN, hand, 0.5f, charge)
-        GearSounds.play(world, player.entityPos, "white_line.charge", SoundEvents.ITEM_TRIDENT_RIPTIDE_1.value(), 0.8f, 1.4f)
-
-        GearTasks.later(charge) {
-            charging.remove(player.uuid)
-            if (GearCombat.stillThere(player, world)) releaseWhiteLine(player, world, spent)
-        }
-    }
-
-    private fun releaseWhiteLine(player: ServerPlayerEntity, world: ServerWorld, spent: Float) {
-        val start = player.eyePos.add(0.0, -0.25, 0.0)
-        val dir = player.rotationVector.normalize()
-        val length = GearConfig.num("white_line_length")
-        var end = start.add(dir.multiply(length))
-        // Die Linie endet an festen Blöcken: Sie schneidet keine Wände (und keine Eiswände in der Arena).
-        val hit = world.raycast(RaycastContext(start, end, RaycastContext.ShapeType.COLLIDER, RaycastContext.FluidHandling.NONE, player))
-        if (hit.type == HitResult.Type.BLOCK) end = hit.pos
-
-        val half = GearConfig.num("white_line_width") / 2.0
-        val samples = segmentSamples(start, end, 0.5)
-        val area = Box(start, end).expand(half + 1.0)
-        val damage = (GearConfig.num("white_line_damage") + GearConfig.num("white_line_damage_per_resonance") * spent).toFloat()
-        var anyHit = false
-
-        for (entity in world.getOtherEntities(player, area)) {
-            val box = entity.boundingBox.expand(half)
-            if (samples.none { box.contains(it) }) continue
-            when {
-                entity is ProjectileEntity && GearCombat.isHostileProjectile(player, entity) -> cutProjectile(world, entity)
-                GearCombat.canHit(player, entity) -> {
-                    (entity as LivingEntity).damage(world, world.damageSources.playerAttack(player), damage)
-                    anyHit = true
-                }
-            }
-        }
-        if (anyHit) Resonance.markCombat(player)
-
-        GearVfx.beam(world, Vfx.Style.HEAVEN, start, end, 0.55f, 10)
-        GearVfx.crescent(world, Vfx.Style.HEAVEN, player.entityPos.add(0.0, 1.1, 0.0), dir, 2.5f, 2.2f, 7)
-        GearSounds.play(world, start, "white_line.release", SoundEvents.ENTITY_PLAYER_ATTACK_SWEEP, 1f, 1.3f)
-    }
-
-    // ---------------------------------------------------------------- Frostschritt (Ability 2)
+    // ---------------------------------------------------------------- Frostschritt (Beinschienen, Ability 2)
 
     private fun castFrostStep(player: ServerPlayerEntity) {
-        if (!ready(player, EquipmentSlot.FEET, "frost_step")) return
+        if (!ready(player, EquipmentSlot.LEGS, "frost_step")) return
         val cost = GearConfig.float("frost_step_cost")
         if (needResonance(player, cost)) return
         if (!Resonance.spend(player, cost)) return
         val world = player.entityWorld
-        Cooldowns.set(player, player.getEquippedStack(EquipmentSlot.FEET), GearConfig.key("frost_step_cooldown"))
+        Cooldowns.set(player, player.getEquippedStack(EquipmentSlot.LEGS), GearConfig.key("frost_step_cooldown"))
 
         val dir = moveDirection(player)
         val distance = GearConfig.num("frost_step_distance")
@@ -202,24 +172,26 @@ object EirholmAbilities {
         return if (v.lengthSquared() < 1.0e-6) Vec3d(fx, 0.0, fz) else v.normalize()
     }
 
-    // ---------------------------------------------------------------- Weißer Kern (Ability 4)
+    // ---------------------------------------------------------------- Weißer Kern (Brustplatte, Ability 1)
 
     private fun castWhiteCore(player: ServerPlayerEntity) {
-        if (!ready(player, EquipmentSlot.HEAD, "white_core")) return
+        if (!ready(player, EquipmentSlot.CHEST, "white_core")) return
         val cost = GearConfig.float("white_core_cost")
         if (needResonance(player, cost)) return
         if (!Resonance.spend(player, cost)) return
         val world = player.entityWorld
-        Cooldowns.set(player, player.getEquippedStack(EquipmentSlot.HEAD), GearConfig.key("white_core_cooldown"))
+        Cooldowns.set(player, player.getEquippedStack(EquipmentSlot.CHEST), GearConfig.key("white_core_cooldown"))
 
         val charge = GearConfig.ticks("white_core_charge_ticks")
-        charging.add(player.uuid)
+        dev.henny.hha_arius.gear.art.Focus.begin(player, dev.henny.hha_arius.gear.art.Focus.Busy.ABILITY, GearTasks.now + charge)
         GearVfx.flare(world, Vfx.Style.HEAVEN, player.entityPos.add(0.0, 1.2, 0.0), 0.7f, charge)
         GearSounds.play(world, player.entityPos, "core.form", SoundEvents.BLOCK_BEACON_POWER_SELECT, 0.7f, 1.6f)
 
         GearTasks.later(charge) {
-            charging.remove(player.uuid)
-            if (GearCombat.stillThere(player, world)) releaseWhiteCore(player, world)
+            if (GearCombat.stillThere(player, world)) {
+                releaseWhiteCore(player, world)
+                dev.henny.hha_arius.gear.art.Focus.reverb(player)
+            }
         }
     }
 
@@ -299,7 +271,7 @@ object FrostIce {
         }
     }
 
-    private fun place(world: ServerWorld, pos: BlockPos) {
+    fun place(world: ServerWorld, pos: BlockPos) {
         val state = world.getBlockState(pos)
         if (!state.isOf(Blocks.WATER) || !state.fluidState.isOf(Fluids.WATER) || !state.fluidState.isStill) return
         if (!world.getBlockState(pos.up()).isAir) return

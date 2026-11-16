@@ -6,8 +6,11 @@ import net.minecraft.network.PacketByteBuf
 import net.minecraft.network.codec.PacketCodec
 import net.minecraft.network.packet.CustomPayload
 
-/** Server → Client: aktuelle Frostresonanz des Spielers (0..max) für den Balken über der HHA-Cooldown-Leiste. */
-data class ResonancePayload(val value: Int, val max: Int) : CustomPayload {
+/**
+ * Server → Client: Frostresonanz des Spielers (0..max) für den Balken über der HHA-Cooldown-Leiste, dazu Ruhepunkt,
+ * Kostenmarke der gerade bereiten Technik (-1 = keine) und ob der Spieler Träger ist (Balken sichtbar).
+ */
+data class ResonancePayload(val value: Int, val max: Int, val rest: Int, val mark: Int, val bearer: Boolean) : CustomPayload {
     override fun getId(): CustomPayload.Id<ResonancePayload> = ID
 
     companion object {
@@ -16,8 +19,11 @@ data class ResonancePayload(val value: Int, val max: Int) : CustomPayload {
             { p, buf ->
                 buf.writeVarInt(p.value)
                 buf.writeVarInt(p.max)
+                buf.writeVarInt(p.rest)
+                buf.writeVarInt(p.mark + 1)
+                buf.writeBoolean(p.bearer)
             },
-            { buf -> ResonancePayload(buf.readVarInt(), buf.readVarInt()) },
+            { buf -> ResonancePayload(buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt() - 1, buf.readBoolean()) },
         )
     }
 }

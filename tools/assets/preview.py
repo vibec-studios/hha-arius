@@ -2,7 +2,7 @@
 
 Aufruf (aus dem Projektordner):
     python tools/assets/preview.py <modell> <ausgabe.png> [--poses idle,swing] [--views 0,90,180,35] [--size 360]
-                                       [--silhouette | --glow]
+                                       [--silhouette | --glow] [--shade]
 
 <modell> ist ein Name aus boss_models.py --list. Posen kommen aus dem Modul des Modells: ein Dict
 `POSES = {'idle': {'knochen': (pitch, yaw, roll), ...}, ...}` in Radiant, wie ModelPart.pitch/yaw/roll. Fehlt ein
@@ -42,18 +42,42 @@ from preview_model import apply, mat_mul, plume_texels, rot_zyx  # noqa: E402
 BG_TOP, BG_BOTTOM = (30, 34, 46), (70, 76, 92)
 
 
+# Mit --shade: grobe Flächenhelligkeit wie Minecrafts Entity-Licht (oben hell, unten dunkel), sonst ungeschattet.
+FACE_SHADE = None
+_SHADE_ON = {'top': 1.0, 'bottom': 0.5, 'front': 0.82, 'back': 0.7, 'left': 0.62, 'right': 0.74}
+
+
+def _shade(name, color):
+    if FACE_SHADE is None:
+        return color
+    k = FACE_SHADE[name]
+    return tuple(int(c * k) for c in color[:3]) + tuple(color[3:])
+
+
 def texels_glow(cube):
     """Wie preview_model.texels, liefert aber zusätzlich, ob der Texel leuchtet."""
+    # res: Texel je Modelleinheit (Standard 1; HD-Modelle wie die Handschuhe malen 2 Texel je Einheit).
+    r = getattr(cube, 'res', 1)
     x0, y0, z0 = cube.x, cube.y, cube.z
     w, h, d = cube.w, cube.h, cube.d
+    W, H, D = (int(round(v * r)) for v in (w, h, d))
     faces = {
-        'front': (w, h, lambda i, j: (x0 + i + 0.5, y0 + j + 0.5, z0)),
-        'back': (w, h, lambda i, j: (x0 + w - i - 0.5, y0 + j + 0.5, z0 + d)),
-        'right': (d, h, lambda i, j: (x0, y0 + j + 0.5, z0 + d - i - 0.5)),
-        'left': (d, h, lambda i, j: (x0 + w, y0 + j + 0.5, z0 + i + 0.5)),
-        'top': (w, d, lambda i, j: (x0 + i + 0.5, y0, z0 + j + 0.5)),
-        'bottom': (w, d, lambda i, j: (x0 + i + 0.5, y0 + h, z0 + j + 0.5)),
+        'front': (W, H, lambda i, j: (x0 + (i + 0.5) / r, y0 + (j + 0.5) / r, z0)),
+        'back': (W, H, lambda i, j: (x0 + w - (i + 0.5) / r, y0 + (j + 0.5) / r, z0 + d)),
+        'right': (D, H, lambda i, j: (x0, y0 + (j + 0.5) / r, z0 + d - (i + 0.5) / r)),
+        'left': (D, H, lambda i, j: (x0 + w, y0 + (j + 0.5) / r, z0 + (i + 0.5) / r)),
+        'top': (W, D, lambda i, j: (x0 + (i + 0.5) / r, y0, z0 + (j + 0.5) / r)),
+        'bottom': (W, D, lambda i, j: (x0 + (i + 0.5) / r, y0 + h, z0 + (j + 0.5) / r)),
     }
+    # Dilation wie im Spiel: der Quader wächst um dil in jede Richtung, die Textur wird mitgestreckt.
+    dil = getattr(cube, 'dilate', 0.0) or 0.0
+
+    def grow(p):
+        if not dil:
+            return p
+        return tuple(o - dil + (v - o) * (s + 2 * dil) / s if s else v
+                     for v, o, s in zip(p, (x0, y0, z0), (w, h, d)))
+
     for name, (fw, fh, position) in faces.items():
         for j in range(fh):
             for i in range(fw):
@@ -62,9 +86,9 @@ def texels_glow(cube):
                     continue
                 if isinstance(res[0], tuple):
                     color, glow = res
-                    yield position(i, j), color, glow
+                    yield grow(position(i, j)), _shade(name, color), glow
                 else:
-                    yield position(i, j), res, None
+                    yield grow(position(i, j)), _shade(name, res), None
 
 
 def collect(part, pose, parent_rot, parent_pos, out):
@@ -212,6 +236,9 @@ def main(argv):
     views = [math.radians(float(v)) for v in opt('--views', '0,35,90,180').split(',')]
     size = int(opt('--size', '360'))
     mode = 'silhouette' if '--silhouette' in argv else 'glow' if '--glow' in argv else 'color'
+    if '--shade' in argv:
+        global FACE_SHADE
+        FACE_SHADE = _SHADE_ON
 
     sheets = []
     for p in wanted:

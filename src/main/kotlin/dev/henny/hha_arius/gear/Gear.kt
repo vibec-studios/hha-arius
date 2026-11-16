@@ -37,6 +37,7 @@ object Gear {
             leggings(GearItems.EIRHOLM_LEGGINGS)
             boots(GearItems.EIRHOLM_BOOTS)
             weapon(GearItems.SOLVANE)
+            weapon(GearItems.ARIUS_GAUNTLETS)
         }
 
         EirholmAbilities.register(context)
@@ -50,9 +51,12 @@ object Gear {
         EirholmAbilities.init()
         Wingscale.init()
         SealRitual.init()
+        dev.henny.hha_arius.gear.art.ArtServer.init()
     }
 
     fun hasFullSet(player: PlayerEntity): Boolean = registered && set.hasFullSet(player)
+
+    fun hasPiece(player: PlayerEntity, slot: net.minecraft.entity.EquipmentSlot): Boolean = registered && set.hasPiece(player, slot)
 }
 
 /**
@@ -60,14 +64,14 @@ object Gear {
  */
 object GearHooks {
 
-    /** Volles Eirholm-Set trägt über Pulverschnee (keine Config: Client und Server müssen gleich entscheiden). */
+    /** Stiefel: Pulverschnee trägt (keine Config: Client und Server müssen gleich entscheiden). */
     @JvmStatic
-    fun walksOnPowderSnow(entity: Entity): Boolean = entity is PlayerEntity && Gear.hasFullSet(entity)
+    fun walksOnPowderSnow(entity: Entity): Boolean = entity is PlayerEntity && Gear.hasPiece(entity, net.minecraft.entity.EquipmentSlot.FEET)
 
-    /** Volles Set: kein Gefrieren. */
+    /** Helm: kein Gefrieren. */
     @JvmStatic
     fun freezeImmune(entity: Entity): Boolean {
-        if (entity !is PlayerEntity || !Gear.hasFullSet(entity)) return false
+        if (entity !is PlayerEntity || !Gear.hasPiece(entity, net.minecraft.entity.EquipmentSlot.HEAD)) return false
         return entity !is ServerPlayerEntity || GearConfig.on("passive_freeze_immunity")
     }
 }
@@ -96,12 +100,14 @@ object GearRewards {
 
         if (firstWin) {
             add(GearItems.SOLVANE, 1)
+            add(GearItems.ARIUS_GAUNTLETS, 1)
             add(GearItems.HEARTFROST, GearConfig.ticks("reward_heartfrost_first"))
             add(GearItems.EIRHOLM_UPGRADE_TEMPLATE, GearConfig.ticks("reward_template_first"))
             add(GearItems.NIVARIS_SCALE, GearConfig.ticks("reward_scales_first"))
             add(GearItems.ECHO_OF_EIRHOLM, 1)
         } else {
             if (chance("reward_solvane_repeat_chance")) add(GearItems.SOLVANE, 1)
+            if (chance("reward_gauntlets_repeat_chance")) add(GearItems.ARIUS_GAUNTLETS, 1)
             add(GearItems.HEARTFROST, GearConfig.ticks("reward_heartfrost_repeat"))
             if (chance("reward_template_repeat_chance")) add(GearItems.EIRHOLM_UPGRADE_TEMPLATE, 1)
             add(GearItems.NIVARIS_SCALE, GearConfig.ticks("reward_scales_repeat"))

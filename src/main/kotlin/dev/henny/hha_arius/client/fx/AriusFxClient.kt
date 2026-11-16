@@ -29,6 +29,7 @@ object AriusFxClient {
         AriusClientConfig.load()
         ClientPlayNetworking.registerGlobalReceiver(HoldS2C.ID) { p, _ -> HoldClient.set(p.on, p.ticks) }
         ClientPlayNetworking.registerGlobalReceiver(SliceS2C.ID) { p, _ -> SliceRender.handle(p) }
+        ClientPlayNetworking.registerGlobalReceiver(dev.henny.hha_arius.gear.art.ArtCutS2C.ID) { p, _ -> CutHalves.handle(p) }
         ClientPlayNetworking.registerGlobalReceiver(LineS2C.ID) { p, _ -> Subtitles.handle(p) }
         ClientPlayNetworking.registerGlobalReceiver(MusicS2C.ID) { p, _ -> AriusMusic.handle(p.event, p.fade) }
         ClientPlayNetworking.registerGlobalReceiver(FxS2C.ID) { p, ctx ->
@@ -42,6 +43,7 @@ object AriusFxClient {
             if (!client.isPaused) {
                 effects.removeIf { !it.advance(world) }
                 SliceRender.tick()
+                CutHalves.tick()
                 Subtitles.tick()
                 ScreenFlash.tick()
             }
@@ -54,6 +56,7 @@ object AriusFxClient {
             val consumers = context.consumers()
             val matrices = MatrixStack()
             SliceRender.render(matrices, consumers, camera.cameraPos, tickDelta)
+            CutHalves.render(matrices, consumers, camera.cameraPos, tickDelta)
             if (effects.isEmpty()) return@register
             val draw = VfxDraw(consumers, camera, tickDelta)
             for (fx in effects) fx.render(draw, matrices, fx.age + tickDelta)
@@ -85,6 +88,7 @@ object AriusFxClient {
     fun reset() {
         effects.clear()
         SliceRender.clear()
+        CutHalves.clear()
         Subtitles.clear()
         AriusMusic.clear()
         HoldClient.reset()

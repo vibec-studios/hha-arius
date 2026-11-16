@@ -129,6 +129,34 @@ object GearCombat {
         }
     }
 
+    fun player(id: java.util.UUID): ServerPlayerEntity? = GearServer.current?.playerManager?.getPlayer(id)
+
+    /**
+     * Schwer: Bosse, Wächter, Puppen des Eirholm-Kampfs und große/zähe Wesen. Spielertechniken bewegen sie nie
+     * (kein Rückstoß, kein Sog) – sie werden nicht wie kleine Gegner herumgeworfen.
+     */
+    fun isHeavy(target: LivingEntity): Boolean =
+        target is dev.henny.hha.entity.boss.PuppetEntity || target is dev.henny.hha.entity.miniboss.GuardianEntity ||
+            target.height > 2.6f || target.maxHealth >= 150f ||
+            target.getAttributeValue(EntityAttributes.KNOCKBACK_RESISTANCE) >= 0.9
+
+    /**
+     * Lohnendes Ziel für Resonanz: Monster, Spieler (nicht kreativ/Zuschauer), Wesen, die gerade diesen Spieler angreifen,
+     * oder sehr zähe Wesen. Tiere, Rüstungsständer, Dorfbewohner und Verbündete bringen nichts.
+     */
+    fun worthy(player: ServerPlayerEntity, target: LivingEntity): Boolean {
+        if (target === player || !Targeting.shouldHarm(player, target)) return false
+        return when {
+            target is net.minecraft.entity.mob.Monster -> true
+            target is net.minecraft.entity.player.PlayerEntity -> !target.isCreative && !target.isSpectator
+            target is net.minecraft.entity.mob.MobEntity && target.target === player -> true
+            else -> target.maxHealth >= 100f
+        }
+    }
+
+    /** Geschoss zerschneiden/auflösen (mit kleinem Splitterhauch). */
+    fun discardProjectile(world: ServerWorld, projectile: ProjectileEntity) = EirholmAbilities.cutProjectile(world, projectile)
+
     fun actionbar(player: ServerPlayerEntity, key: String, vararg args: Any) {
         player.sendMessage(Text.translatable(key, *args), true)
     }

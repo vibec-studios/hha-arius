@@ -71,6 +71,11 @@ abstract class AriusFx(val life: Int) {
                 FxKind.CRYSTAL -> Crystal(pos, dir, p.a.toInt(), p.life)
                 FxKind.BLIZZARD -> Blizzard(pos, p.a.toDouble(), p.life)
                 FxKind.CLEAR_WAVE -> ClearWave(pos, p.a.toDouble(), p.life)
+                FxKind.BOLT -> ArtBolt(p.e1, pos, dir, p.a.toDouble(), p.b.toInt(), p.life).also { ArtBolts.register(it) }
+                FxKind.BOLT_END -> ArtBolts.end(p.e1, pos, p.b.toInt(), p.a.toDouble())
+                FxKind.FIELD -> FieldFx(pos, p.a.toDouble(), p.life)
+                FxKind.CUT_PLANE -> CutPlaneFx(pos, dir, p.a.toDouble(), p.b >= 0.5f, p.life)
+                FxKind.PULL -> e1?.let { PullFx(it, p.a.toDouble(), p.life) }
                 FxKind.FLASH -> {
                     if (AriusClientConfig.flash) ScreenFlash.start(p.a, p.life)
                     null
@@ -81,7 +86,7 @@ abstract class AriusFx(val life: Int) {
     }
 }
 
-private fun particlesAllowed(): Float = AriusClientConfig.fx.coerceIn(0f, 1f)
+internal fun particlesAllowed(): Float = AriusClientConfig.fx.coerceIn(0f, 1f)
 
 /** Der Wind kehrt sich um: Schnee und Staub strömen zum Punkt hin, die Umgebung wird still. */
 class ReverseWind(private val center: Vec3d, private val radius: Double, life: Int) : AriusFx(life) {

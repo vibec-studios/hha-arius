@@ -163,6 +163,21 @@ enum class FxKind {
 
     /** Weißer Bildblitz, Stärke a (abschaltbar über /ariusc flash). */
     FLASH,
+
+    /** Zauber-Geschoss: Start pos, Geschwindigkeit (dx,dy,dz je Tick), a = Radius, b = Schule, e1 = Geschoss-ID. */
+    BOLT,
+
+    /** Ende eines Geschosses e1 bei pos (Aufprall), a = Radius, b = Schule. */
+    BOLT_END,
+
+    /** Frostfeld am Boden: Mitte pos, a = Radius, life = Dauer. */
+    FIELD,
+
+    /** Klarer Schnitt: Ursprung pos, Richtung × Länge (dx,dy,dz), a = halbe Breite, b = 1 waagerecht. */
+    CUT_PLANE,
+
+    /** Windsog: Spirale zu e1 hin, a = Radius. */
+    PULL,
 }
 
 /**
