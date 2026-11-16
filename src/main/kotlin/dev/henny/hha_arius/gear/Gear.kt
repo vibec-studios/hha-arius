@@ -29,6 +29,7 @@ object Gear {
         GearConfig.register(context)
         GearItems.init()
         GearNet.init()
+        dev.henny.hha_arius.gear.art.ArtNet.init()
 
         set = context.armorSet("eirholm") {
             helmet(GearItems.EIRHOLM_HELMET)

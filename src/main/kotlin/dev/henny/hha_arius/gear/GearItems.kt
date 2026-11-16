@@ -54,11 +54,19 @@ object GearItems {
     /** Gewählter Abschnitt des Echos (1 Tempel, 2 Gletscher, 3 Herz, 4 Finale). */
     lateinit var ECHO_STAGE: ComponentType<Int> private set
 
+    /** Modus der Kampfhandschuhe (0 Nahkampf, 1 Magie), am Stapel, damit alle Spieler ihn sehen. */
+    lateinit var GAUNTLET_MODE: ComponentType<Int> private set
+
+    /** Abklinggruppen ohne eigenes Item (HUD über `use_cooldown`-Stapel): Klarer Schnitt, Weißes Loch. */
+    val CLEAR_CUT_GROUP: Identifier = HhaArius.id("clear_cut")
+    val WHITE_HOLE_GROUP: Identifier = HhaArius.id("white_hole")
+
     lateinit var EIRHOLM_HELMET: Item private set
     lateinit var EIRHOLM_CHESTPLATE: Item private set
     lateinit var EIRHOLM_LEGGINGS: Item private set
     lateinit var EIRHOLM_BOOTS: Item private set
     lateinit var SOLVANE: Item private set
+    lateinit var ARIUS_GAUNTLETS: Item private set
     lateinit var NIVARIS_WINGSCALE: Item private set
     lateinit var EIRHOLM_SEAL: Item private set
     lateinit var ECHO_OF_EIRHOLM: Item private set
@@ -78,6 +86,11 @@ object GearItems {
             ComponentType.builder<Int>().codec(Codec.intRange(1, 4)).packetCodec(PacketCodecs.VAR_INT).build(),
         )
 
+        GAUNTLET_MODE = Registry.register(
+            Registries.DATA_COMPONENT_TYPE, HhaArius.id("gauntlet_mode"),
+            ComponentType.builder<Int>().codec(Codec.intRange(0, 1)).packetCodec(PacketCodecs.VAR_INT).build(),
+        )
+
         EIRHOLM_HELMET = armor("eirholm_helmet", EquipmentType.HELMET)
         EIRHOLM_CHESTPLATE = armor("eirholm_chestplate", EquipmentType.CHESTPLATE)
         EIRHOLM_LEGGINGS = armor("eirholm_leggings", EquipmentType.LEGGINGS)
@@ -86,6 +99,13 @@ object GearItems {
         SOLVANE = HhaItemHelpers.register(HhaArius.id("solvane")) {
             SolvaneItem(
                 it.sword(TOOL_MATERIAL, 4.0f, -2.4f).fireproof().rarity(Rarity.EPIC)
+                    .component(DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE, false),
+            )
+        }
+        ARIUS_GAUNTLETS = HhaItemHelpers.register(HhaArius.id("arius_gauntlets")) {
+            dev.henny.hha_arius.gear.art.GauntletsItem(
+                it.maxCount(1).maxDamage(2031).fireproof().rarity(Rarity.EPIC).repairable(REPAIR_TAG).enchantable(15)
+                    .component(GAUNTLET_MODE, 0)
                     .component(DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE, false),
             )
         }
@@ -106,6 +126,7 @@ object GearItems {
         WHITE_BLADE_TRIM_TEMPLATE = HhaItemHelpers.register(HhaArius.id("white_blade_armor_trim_smithing_template")) {
             SmithingTemplateItem.of(it.rarity(Rarity.EPIC))
         }
+        dev.henny.hha_arius.gear.art.Constructs.registerBlocks()
         registerItemGroup()
     }
 
@@ -145,6 +166,7 @@ object GearItems {
                 .entries { _, entries ->
                     for (piece in armorPieces) entries.add(piece)
                     entries.add(SOLVANE)
+                    entries.add(ARIUS_GAUNTLETS)
                     entries.add(NIVARIS_WINGSCALE)
                     entries.add(EIRHOLM_SEAL)
                     entries.add(ECHO_OF_EIRHOLM)

@@ -26,6 +26,7 @@ GEN = os.path.join(HERE, 'gen')
 REGISTRY = {
     'arius': ('arius_model', 'arius'),
     'nivaris': ('nivaris_model', 'nivaris'),
+    'gauntlets': ('gauntlets_model', 'gauntlets'),
 }
 
 
