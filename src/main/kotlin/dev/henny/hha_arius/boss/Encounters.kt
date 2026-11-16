@@ -161,7 +161,10 @@ object Encounters {
             if (claim.kind == "seal") {
                 Ledgers.deposit(player, listOf(ItemStack(seal)))
             } else {
-                Ledgers.deposit(player, GearRewards.loot(player, claim.firstWin, claim.flawless))
+                // Erstbeute nur, wenn die Spielerdatei sie noch nicht kennt (ein zurückgerollter Weltstand ändert das nicht).
+                val first = !ledger.firstLootTaken
+                if (first) ledger.firstLootTaken = true
+                Ledgers.deposit(player, GearRewards.loot(player, first, claim.flawless))
                 Advancements.grant(player, "white_blade")
                 if (claim.flawless) Advancements.grant(player, "no_storm")
             }

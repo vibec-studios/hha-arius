@@ -24,6 +24,8 @@ class Ledger(
     var paid: MutableList<String> = ArrayList(),
     /** Eirholm-Fach: Gegenstände, die noch nicht ins Inventar passten (Item-ID → Anzahl je Eintrag). */
     var inbox: MutableList<Entry> = ArrayList(),
+    /** Erstbeute schon erhalten (in der Spielerdatei, also zusammen mit der Beute gespeichert). */
+    var firstLootTaken: Boolean = false,
 ) {
     class Entry(var id: String = "", var count: Int = 0)
 
@@ -89,8 +91,11 @@ object Ledgers {
             }
             while (entry.count > 0) {
                 val stack = ItemStack(item, minOf(entry.count, item.maxCount))
+                // Nur einfügen, wenn wirklich Platz ist: Im Kreativmodus verwirft insertStack sonst, was nicht passt.
+                val inv = player.inventory
+                if (inv.getOccupiedSlotWithRoomForStack(stack) < 0 && inv.emptySlot < 0) break
                 val before = stack.count
-                player.inventory.insertStack(stack)
+                inv.insertStack(stack)
                 val moved = before - stack.count
                 if (moved <= 0) break
                 entry.count -= moved
