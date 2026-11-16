@@ -1,7 +1,10 @@
-# Was im Spiel geprüft werden muss (Stand 1.0.0)
+# Was im Spiel geprüft werden muss (Stand 1.0.1)
 
-Gebaut und statisch geprüft (6 Review-Runden, Berichte in `docs/review/`). **Nichts davon wurde im laufenden Minecraft
-gesehen.** Diese Punkte bitte im Spiel testen:
+Gebaut und statisch geprüft (6 Review-Runden, Berichte in `docs/review/`). Seit 1.0.1 besteht zusätzlich ein echter
+Client-Starttest (`./gradlew runClientGameTest`): Haupt- und Client-Entrypoints laden, eine Einzelspielerwelt startet,
+Client-Welt und Spieler sind vorhanden. Geprüft mit Minecraft 1.21.11, Fabric Loader 0.19.3, Fabric API
+0.141.4+1.21.11, Fabric Language Kotlin 1.13.12+kotlin.2.4.0 und dem mitgelieferten HHA 0.8.0 unter Java 25.
+**Der Bosskampf und das vollständige Modpack sind damit noch nicht getestet.** Diese Punkte bitte im Spiel testen:
 
 ## Start und Arena
 - [ ] Siegel herstellen und in einem kalten Biom benutzen: Schneesturm, Aufbau-Fortschritt, Ankunft im Tempel
