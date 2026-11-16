@@ -21,6 +21,8 @@ object AriusSounds {
     val MUSIC_GLACIER = music("music.glacier")
     val MUSIC_HEART = music("music.heart")
     val MUSIC_FINALE = music("music.finale")
+    val MUSIC_ENTRANCE = music("music.entrance")
+    val MUSIC_TRANSFORM = music("music.transform")
 
     // Arius
     val ARIUS_SLASH = register("arius.slash")

@@ -277,18 +277,23 @@ class PullFx(private val e: Entity, private val radius: Double, life: Int) : Ari
 object CutHalves {
     private class Piece(val pos: BlockPos, val state: BlockState, val axis: Int) {
         var age = 0
+
+        /** Absturz (axis 3): Verzögerung, Taumel-Richtung. */
+        val delay = if (axis == 3) (Math.floorMod(pos.asLong() * 2654435761L, 9L)).toInt() else 0
+        val spin = if (axis == 3) ((Math.floorMod(pos.asLong(), 360L)).toFloat()) else 0f
     }
 
     private const val LIFE = 16
+    private const val FALL_LIFE = 46
     private val pieces = ArrayList<Piece>()
 
     fun handle(p: ArtCutS2C) {
         for (i in p.positions.indices) pieces.add(Piece(BlockPos.fromLong(p.positions[i]), Block.getStateFromRawId(p.states[i]), p.axis))
-        while (pieces.size > 256) pieces.removeAt(0)
+        while (pieces.size > 1400) pieces.removeAt(0)
     }
 
     fun tick() {
-        pieces.removeIf { ++it.age > LIFE }
+        pieces.removeIf { ++it.age > (if (it.axis == 3) FALL_LIFE else LIFE) }
     }
 
     fun clear() = pieces.clear()
@@ -297,6 +302,24 @@ object CutHalves {
         if (pieces.isEmpty()) return
         val brm = MinecraftClient.getInstance().blockRenderManager
         for (p in pieces) {
+            if (p.axis == 3) {
+                // Absturz: erst ein kurzes Zittern, dann fallen, taumeln, schrumpfen.
+                val ft = (p.age + tickDelta - p.delay).coerceAtLeast(0f)
+                val shake = if (ft < 4f) (Math.sin((p.age + tickDelta) * 3.0 + p.spin) * 0.06) else 0.0
+                val drop = if (ft < 4f) 0.0 else 0.035 * (ft - 4f) * (ft - 4f)
+                val shrink = (1f - ((ft - 30f) / 12f).coerceIn(0f, 1f))
+                if (shrink <= 0f) continue
+                matrices.push()
+                matrices.translate(p.pos.x + 0.5 - cam.x + shake, p.pos.y + 0.5 - cam.y - drop, p.pos.z + 0.5 - cam.z)
+                val rot = (ft - 4f).coerceAtLeast(0f) * 7f
+                matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(rot * kotlin.math.cos(p.spin.toDouble()).toFloat()))
+                matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(rot * kotlin.math.sin(p.spin.toDouble()).toFloat()))
+                matrices.scale(shrink, shrink, shrink)
+                matrices.translate(-0.5, -0.5, -0.5)
+                brm.renderBlockAsEntity(p.state, matrices, consumers, LIGHT, OverlayTexture.DEFAULT_UV)
+                matrices.pop()
+                continue
+            }
             val t = ((p.age + tickDelta) / LIFE).coerceIn(0f, 1f)
             val ease = 1f - (1f - t) * (1f - t)
             val shrink = if (t > 0.7f) 1f - (t - 0.7f) / 0.3f else 1f

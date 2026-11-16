@@ -125,7 +125,7 @@ data class ArtCutS2C(val positions: LongArray, val states: IntArray, val axis: I
             },
             { buf ->
                 val axis = buf.readVarInt()
-                val n = buf.readVarInt().coerceIn(0, 256)
+                val n = buf.readVarInt().coerceIn(0, 1024)
                 val pos = LongArray(n); val st = IntArray(n)
                 for (i in 0 until n) { pos[i] = buf.readLong(); st[i] = buf.readVarInt() }
                 ArtCutS2C(pos, st, axis)

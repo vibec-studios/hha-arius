@@ -327,7 +327,8 @@ class Scenes(private val f: EirholmFight) {
         val d = f.nivaris ?: return@script
         f.setPhase(P.COLLAPSE)
         f.calls.reset()
-        f.music(null, 40)
+        f.music("music.transform", 10)
+        f.atmos(dev.henny.hha_arius.net.AtmosMode.BLIZZARD, 30)
         val center = f.abs(Vec3d.of(ArenaLayout.PLATEAU)).add(0.5, 0.0, 0.5)
         // Sie steigt auf, Arius pfeift: Resonanz.
         d.play(NivarisPose.HOVER)
@@ -368,7 +369,21 @@ class Scenes(private val f: EirholmFight) {
         f.ambient("nivaris.crash", center, 5f)
         f.calls.roomShake(center, 7f, 90f)
         for (ring in 0..2) {
-            for (pos in ArenaBuilder.collapseRing(f.world, f.origin, ring)) {
+            val falling = ArenaBuilder.collapseRing(f.world, f.origin, ring)
+            // Sichtbarer Absturz: eine Auswahl der Blöcke stürzt taumelnd in die Tiefe (nur Darstellung).
+            val sample = falling.filter { !f.world.getBlockState(it).isAir }.shuffled(java.util.Random(ring.toLong())).take(420)
+            if (sample.isNotEmpty()) {
+                val payload = dev.henny.hha_arius.gear.art.ArtCutS2C(
+                    LongArray(sample.size) { sample[it].asLong() },
+                    IntArray(sample.size) { net.minecraft.block.Block.getRawIdFromState(f.world.getBlockState(sample[it])) }, 3,
+                )
+                for (p in f.audience()) dev.henny.hha_arius.net.AriusNet.send(p, payload)
+            }
+            run {
+                val chunkFrom = center.add(rnd.nextGaussian() * 6, 1.0, rnd.nextGaussian() * 6)
+                f.fx(FxKind.ICE_CHUNK, chunkFrom, chunkFrom.add(rnd.nextGaussian() * 4, -30.0, rnd.nextGaussian() * 4), a = 1.6f, life = 30)
+            }
+            for (pos in falling) {
                 if (rnd.nextInt(40) == 0) f.world.spawnParticles(BlockStateParticleEffect(ParticleTypes.BLOCK, f.world.getBlockState(pos)), pos.x + 0.5, pos.y + 0.5, pos.z + 0.5, 6, 0.5, 0.5, 0.5, 0.1)
                 f.edits.clear(pos)
             }
@@ -414,6 +429,7 @@ class Scenes(private val f: EirholmFight) {
         f.ambient("nivaris.land", vault, 3f, 1.4f)
         f.fx(FxKind.FRAGMENTS, vault, a = 1f, life = 34, e1 = a)
         f.ambient("transform.shatter", vault, 4f)
+        f.atmos(dev.henny.hha_arius.net.AtmosMode.WHITE, 20)
         val fresh = newcomers("scene.transform")
         if (fresh.isNotEmpty()) f.sceneText("transform", 70, fresh)
         markHeard("scene.transform")

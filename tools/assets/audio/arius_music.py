@@ -15,7 +15,7 @@ import os
 import sys
 
 from arius_kit import (
-    CH, HEAD, MOTIF, MOTIF_MAJOR, SOUNDS, WIDE, Score, brass, choir, encode, glass, harp, horn, hz, pizz, render,
+    CH, HEAD, transpose, MOTIF, MOTIF_MAJOR, SOUNDS, WIDE, Score, brass, choir, encode, glass, harp, horn, hz, pizz, render,
     soft_drum, strings, taiko, tom,
 )
 import numpy as np
@@ -249,7 +249,76 @@ def finale():
     return render(s, size=2.2, hall_seconds=10.0, wet_gain=1.25, target_rms=0.06, drive=1.1, air=0.5)
 
 
-THEMES = {'temple': temple, 'glacier': glacier, 'heart': heart, 'finale': finale}
+# --- Auftritt an der Nadel ---------------------------------------------------------------------------------------------
+
+def entrance():
+    """Nivaris' Auftritt (ca. 33 s): Sturm-Spannung, Enthuellung, Abflug. Kein Takt am Anfang, nur Atem und Herzschlag.
+    0-12 s: tiefer Liegeton, ganz leiser Herzschlag, Streicher-Tremolo steigt in Halbtoenen. 12-20 s: Taiko-Schlaege
+    werden dichter, Hoerner kuendigen den Kopf des Motivs an. 20 s (Schlag 22): Enthuellung - volles Blech spielt das
+    Motiv zwei Oktaven tief, Chor und weite Akkorde, Becken. Danach treibt der Schritt in den Gletscherkampf hinein."""
+    s = Score(66, 36)
+    # Grund: leere Quinte, sehr tief, und ein Herzschlag, der schneller wird.
+    s.add(0, strings(hz('E1'), 22 * s.beat, 0.2), 0.07, 0.5)
+    s.add(0, strings(hz('B1'), 22 * s.beat, 0.2), 0.05, 0.5)
+    beat = 0.0
+    gap = 2.0
+    while beat < 21.0:
+        s.add(beat, soft_drum(42.0), 0.28 + beat * 0.012, 0.25)
+        s.add(beat + 0.3, soft_drum(39.0), 0.14 + beat * 0.006, 0.25)
+        beat += gap
+        gap = max(0.75, gap * 0.9)
+    # Tremolo-Treppe: E - F - F# - G - G# ueber 20 Schlaege, jedes Mal etwas lauter.
+    for i, note in enumerate(['E3', 'F3', 'F#3', 'G3', 'G#3']):
+        s.add(2 + i * 4, strings(hz(note), 4.2 * s.beat, 1.1), 0.03 + i * 0.012, 0.45)
+        s.add(2 + i * 4, strings(hz(transpose(note, 1)), 4.2 * s.beat, 1.3), 0.02 + i * 0.01, 0.5)
+    # Ankuendigung: Kopf des Motivs leise im Horn, zweimal, dann Taiko-Wirbel.
+    s.melody(10, HEAD, horn, 0.08, octave=-1, send=0.55)
+    s.melody(16, HEAD, horn, 0.11, octave=-1, send=0.5)
+    s.drums(18, 1, [(0, low, 0.6), (1, low, 0.7), (2, mid, 0.5), (2.5, mid, 0.6), (3, low, 0.85), (3.5, mid, 0.7)], 0.9)
+    s.rise(22, 4, 0.4)
+    # Enthuellung
+    s.crash(22, 0.38)
+    s.add(22, low(), 1.1, 0.3)
+    s.chords(22, ['Em', 'C'], 4, strings, 0.09, table=WIDE, send=0.4)
+    s.chords(22, ['Em', 'C'], 4, chor_a, 0.07, send=0.55)
+    s.bass(22, ['Em', 'C', 'D'], 4, octave=1, gain=0.3)
+    s.melody(22, MOTIF[:4], brass, 0.36, octave=-2, send=0.35)
+    s.melody(22, MOTIF[:4], horn, 0.15, octave=-1, send=0.45)
+    # Abflug: Schritt treibt, Akkord oeffnet sich auf D, dann leise in die Schleife.
+    s.chords(30, ['D'], 6, strings, 0.06, table=WIDE, send=0.4)
+    s.drums(30, 1, [(0, low, 1.0), (1, small, 0.3), (2, low, 0.6), (2.5, mid, 0.4), (3, low, 0.8), (3.5, small, 0.35)], 0.9)
+    return render(s, size=1.6, hall_seconds=7.0, target_rms=0.11, drive=1.5, air=0.45)
+
+
+# --- Gletschersturz und Verwandlung ---------------------------------------------------------------------------------
+
+def transform():
+    """Einsturz und Verwandlung (ca. 30 s): Fallen ins Gewoelbe, dann das Motiv in E-Dur, hell und gross, Chor in hoher
+    Lage, Glas und Harfe wie Splitter. Endet offen auf der Quinte, damit das Herzgewoelbe anschliessen kann."""
+    s = Score(72, 36)
+    # Sturz: tiefe Taiko, Streicher stuerzen nach unten.
+    s.add(0, low(), 1.0, 0.3)
+    s.add(0.5, mid(), 0.6, 0.3)
+    for i, note in enumerate(['B4', 'G4', 'E4', 'B3', 'G3', 'E3']):
+        s.add(0.5 + i * 0.5, strings(hz(note), 0.6 * s.beat, 1.2), 0.06, 0.4)
+    s.add(4, strings(hz('E1'), 8 * s.beat, 0.2), 0.08, 0.5)
+    # Stille mit Glas-Splittern (Verwandlung beginnt)
+    for b, note in [(5, 'E6'), (6.5, 'B5'), (7.25, 'G#6'), (9, 'F#6'), (10.5, 'B6')]:
+        s.add(b, glass(hz(note)), 0.12, 0.7)
+    s.rise(14, 4, 0.35)
+    # Die weisse Form: Motiv in Dur, Chor hoch, weite Akkorde.
+    s.crash(14, 0.3)
+    s.chords(14, ['E', 'C#m', 'A', 'B'], 4, strings, 0.08, table=WIDE, send=0.45)
+    s.chords(14, ['E', 'C#m', 'A', 'B'], 4, chor_a, 0.06, send=0.6, octave=1)
+    s.bass(14, ['E', 'C#m', 'A', 'B'], 4, octave=1, gain=0.24)
+    s.melody(14, MOTIF_MAJOR, horn, 0.2, octave=0, send=0.45)
+    s.melody(14, MOTIF_MAJOR, glass, 0.1, octave=1, send=0.7, plucked=True)
+    s.arpeggio(22, ['A', 'B'], 4, step=0.5, gain=0.1, octave=1)
+    s.add(30, strings(hz('B2'), 6 * s.beat, 0.3), 0.06, 0.5)
+    return render(s, size=1.9, hall_seconds=8.5, wet_gain=1.15, target_rms=0.1, drive=1.3, air=0.55)
+
+
+THEMES = {'temple': temple, 'glacier': glacier, 'heart': heart, 'finale': finale, 'entrance': entrance, 'transform': transform}
 
 
 def main():

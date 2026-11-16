@@ -358,5 +358,21 @@
       "hha_arius:sfx/wingscale_flap_2",
       "hha_arius:sfx/wingscale_flap_3"
     ]
+  },
+  "music.entrance": {
+    "sounds": [
+      {
+        "name": "hha_arius:music/entrance",
+        "stream": true
+      }
+    ]
+  },
+  "music.transform": {
+    "sounds": [
+      {
+        "name": "hha_arius:music/transform",
+        "stream": true
+      }
+    ]
   }
 }
