@@ -164,7 +164,7 @@ object ArenaLayout {
      */
     fun coil(s: Double): Vec3d {
         val y = 144.0 + (170.0 - 144.0) * s
-        val r = spireRadius(y) + 2.5 + 2.2
+        val r = spireRadius(y) * 1.2 + 2.5 + 2.2
         val a = s * 1.5 * 2 * PI
         return Vec3d(SPIRE.x + 0.5 + sin(a) * r, y, SPIRE.z + 0.5 + cos(a) * r)
     }

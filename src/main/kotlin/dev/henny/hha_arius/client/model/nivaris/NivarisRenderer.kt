@@ -47,7 +47,6 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
     private val bodies = WeakHashMap<NivarisEntity, NivarisBody>()
 
     private val rot = Quaternionf()
-    private val rot2 = Quaternionf()
     private val m3 = Matrix3f()
 
     override fun createRenderState() = NivarisRenderState()
@@ -84,6 +83,7 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
         if (!state.bodyReady || state.invisible) return
         val overlay = getOverlay(state, 0f)
         model.openJaw(state.p[NivarisModel.JAW])
+        model.animateChildren(state)
         draw(queue, matrices, state, model.getLayer(texture), overlay, -1, ALL, true)
         val batch = queue.getBatchingQueue(1)
         // Augen: Grundglimmen, eyeGlow hebt; führt sie den Takt, leuchten sie heller und pulsieren ruhig.
@@ -127,7 +127,7 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
             // Etwas länger als der Abstand, damit an Biegungen keine Fugen aufgehen.
             matrices.scale(g, g, scale * st * 1.03f)
             q.submitModelPart(m.glied(i), matrices, layer, light(i), overlay, null, color, null)
-            if (which == ALL) attachments(q, matrices, s, i, layer, light(i), overlay, color, st)
+            if (which == ALL) attachments(q, matrices, s, i, layer, light(i), overlay, color, s.girth[i], st)
             matrices.pop()
         }
         if (which != ALL) return
@@ -143,43 +143,55 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
     }
 
     /** Läufe und Schwingen im Raum ihres Glieds (Ansatzstellen aus tools/assets/nivaris_model.py, ATTACH). */
-    private fun attachments(q: RenderCommandQueue, matrices: MatrixStack, s: NivarisRenderState, i: Int, layer: RenderLayer, light: Int, overlay: Int, color: Int, stretch: Float) {
+    private fun attachments(
+        q: RenderCommandQueue, matrices: MatrixStack, s: NivarisRenderState, i: Int, layer: RenderLayer, light: Int, overlay: Int, color: Int,
+        girth: Float, stretch: Float,
+    ) {
         val p = s.p
         val m = model
         when (i) {
             NivarisShape.WING_GLIED -> {
+                // Haltungen aus docs/NIVARIS_SERPENT.md (Grad, für wing_r; wing_l mit umgekehrtem yaw und roll):
+                // gespannt (0,0,0), Schlag oben (0,6,40) / unten (0,4,−34), angelegt (180,84,−45), eng (180,80,−70).
+                // Zwischen angelegt und gespannt per slerp, damit sich die Schwinge um den Knochen dreht.
                 val w = MathHelper.clamp(p[NivarisModel.WING], 0f, 1f)
-                val flap = p[NivarisModel.FLAP]
-                val flapRoll = (if (flap > 0f) 40f * flap else 34f * flap) * MathHelper.RADIANS_PER_DEGREE
-                val yaw = 84f * MathHelper.RADIANS_PER_DEGREE * (1f - w)
-                val roll = 14f * MathHelper.RADIANS_PER_DEGREE * (1f - w) + flapRoll * w
-                // wing_r: Winkel wie in WING_POSES, wing_l gespiegelt (yaw und roll mit umgekehrtem Vorzeichen).
-                limb(q, matrices, m.wingR, -6f, -6f, 4f, rot.rotationZYX(roll, yaw, 0f), stretch, layer, light, overlay, color)
-                limb(q, matrices, m.wingL, 6f, -6f, 4f, rot.rotationZYX(-roll, -yaw, 0f), stretch, layer, light, overlay, color)
+                val flap = MathHelper.clamp(p[NivarisModel.FLAP], -1.2f, 1.2f)
+                val tight = MathHelper.clamp(p[NivarisModel.TIGHT], 0f, 1f)
+                val deg = MathHelper.RADIANS_PER_DEGREE
+                val flapYaw = (if (flap > 0f) 6f * flap else -4f * flap) * deg
+                val flapRoll = (if (flap > 0f) 40f * flap else 34f * flap) * deg
+                val foldYaw = (84f - 4f * tight) * deg
+                val foldRoll = (-45f - 25f * tight) * deg
+                for (sgn in intArrayOf(1, -1)) {
+                    val fold = Quaternionf().rotationZYX(sgn * foldRoll, sgn * foldYaw, 180f * deg)
+                    val spread = Quaternionf().rotationZYX(sgn * flapRoll, sgn * flapYaw, 0f)
+                    val r = fold.slerp(spread, w)
+                    limb(q, matrices, if (sgn > 0) m.wingR else m.wingL, -6f * sgn, -6f, 4f, r, girth, stretch, layer, light, overlay, color)
+                }
             }
             NivarisShape.FORE_GLIED -> {
                 val fore = p[NivarisModel.FORE]
                 val swipe = p[NivarisModel.SWIPE]
-                limb(q, matrices, m.foreR, -7f, 3f, 8f, rot.rotationZYX(-0.6f * swipe, 0.3f * swipe, fore - 0.9f * swipe), stretch, layer, light, overlay, color)
-                limb(q, matrices, m.foreL, 7f, 3f, 8f, rot.rotationZYX(0f, 0f, fore), stretch, layer, light, overlay, color)
+                limb(q, matrices, m.foreR, -7f, 3f, 8f, Quaternionf().rotationZYX(-0.6f * swipe, 0.3f * swipe, fore - 0.9f * swipe), girth, stretch, layer, light, overlay, color)
+                limb(q, matrices, m.foreL, 7f, 3f, 8f, Quaternionf().rotationZYX(0f, 0f, fore), girth, stretch, layer, light, overlay, color)
             }
             NivarisShape.HIND_GLIED -> {
                 val hind = p[NivarisModel.HIND]
-                limb(q, matrices, m.hindR, -6f, 3f, 8f, rot.rotationZYX(0f, 0f, hind), stretch, layer, light, overlay, color)
-                limb(q, matrices, m.hindL, 6f, 3f, 8f, rot.rotationZYX(0f, 0f, hind), stretch, layer, light, overlay, color)
+                limb(q, matrices, m.hindR, -6f, 3f, 8f, Quaternionf().rotationZYX(0f, 0f, hind), girth, stretch, layer, light, overlay, color)
+                limb(q, matrices, m.hindL, 6f, 3f, 8f, Quaternionf().rotationZYX(0f, 0f, hind), girth, stretch, layer, light, overlay, color)
             }
         }
     }
 
     private fun limb(
-        q: RenderCommandQueue, matrices: MatrixStack, part: ModelPart, x: Float, y: Float, z: Float, r: Quaternionf, stretch: Float,
+        q: RenderCommandQueue, matrices: MatrixStack, part: ModelPart, x: Float, y: Float, z: Float, r: Quaternionf, girth: Float, stretch: Float,
         layer: RenderLayer, light: Int, overlay: Int, color: Int,
     ) {
         matrices.push()
+        // Ansatzpunkt im verjüngten Gliedraum, das Teil selbst unverjüngt und ohne die Längsdehnung des Glieds.
         matrices.translate(x / 16f, y / 16f, z / 16f)
-        // Die Längsdehnung des Glieds nicht auf Läufe und Schwingen übertragen.
-        matrices.scale(1f, 1f, 1f / (stretch * 1.03f))
-        matrices.multiply(rot2.set(r))
+        matrices.scale(1f / girth, 1f / girth, 1f / (stretch * 1.03f))
+        matrices.multiply(r)
         q.submitModelPart(part, matrices, layer, light, overlay, null, color, null)
         matrices.pop()
     }

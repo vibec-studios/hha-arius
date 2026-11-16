@@ -237,31 +237,16 @@ class Scenes(private val f: EirholmFight) {
             val h = if (dist < 1e-3) Vec3d.ZERO else d.normalize().multiply(dist / 9.25)
             Hold.switchToLaunch(p, Vec3d(h.x, 0.85, h.z), 40, landing, landing)
         }
-        // Nivaris erscheint: gleitet über das Plateau heran und landet vor den Landeplätzen.
-        val spot = f.abs(Vec3d(0.5, 0.0, -4.5))
-        f.spawnNivaris(spot.add(0.0, 18.0, 30.0), 180f)
-        val d = f.nivaris ?: return@script
-        d.flying = true
-        d.play(NivarisPose.GLIDE)
-        f.sound("nivaris.wing", d.entityPos, 4f, 0.7f)
         // Arius setzt sich auf die stehengebliebene Tempelhälfte.
         wait(6)
         val seat = f.abs(ArenaLayout.WATCH_SEAT)
         f.place(a, seat)
         a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
         a.play(AriusPose.SEATED)
-        for (i in 1..24) {
-            f.place(d, d.entityPos.lerp(spot.add(0.0, 1.0, 0.0), i / 24.0 * 0.35))
-            f.face(d, f.abs(Vec3d(0.5, 0.0, -20.5)))
-            yield(Unit)
-        }
-        f.place(d, spot)
-        d.flying = false
-        d.play(NivarisPose.LAND, 1)
-        f.ambient("nivaris.land", spot, 4f)
-        Vfx.shockwave(f.world, Vfx.Style.SOUL, spot, 7f, 18, 1.2f)
-        f.fx(FxKind.CLEAR_WAVE, spot, a = 10f, life = 18)
-        wait(12)
+        // Nivaris' Auftritt an der Nadel (Sturm, Enthüllung, Abflug, Landung vor den Landeplätzen), überspringbar.
+        yieldAll(entrance(f))
+        val d = f.nivaris ?: return@script
+        val spot = d.entityPos
         d.play(NivarisPose.ROAR)
         f.ambient("nivaris.roar", spot, 5f, 0.85f)
         f.say("dragon.name", 50)

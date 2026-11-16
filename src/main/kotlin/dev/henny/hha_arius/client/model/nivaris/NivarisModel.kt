@@ -106,6 +106,59 @@ class NivarisModel(root: ModelPart) : EntityModel<NivarisRenderState>(root) {
     val wingR = part("wing_r")
     val tailFan = part("tail_fan")
 
+    /** Bewegliches Kind mit seinen Grundwinkeln aus dem Modell. */
+    class Joint(val part: ModelPart) {
+        private val pitch0 = part.pitch
+        private val yaw0 = part.yaw
+        private val roll0 = part.roll
+        fun set(pitch: Float = 0f, yaw: Float = 0f, roll: Float = 0f) {
+            part.pitch = pitch0 + pitch
+            part.yaw = yaw0 + yaw
+            part.roll = roll0 + roll
+        }
+    }
+
+    /** Kette parent → name_1 → name_2 … (Barteln, Laufglieder); fehlende Glieder entfallen. */
+    private fun chain(parent: ModelPart, names: List<String>): List<Joint> {
+        val out = ArrayList<Joint>()
+        var cur = parent
+        for (n in names) {
+            if (!cur.hasChild(n)) break
+            cur = cur.getChild(n)
+            out.add(Joint(cur))
+        }
+        return out
+    }
+
+    private val whiskers = listOf("r", "l").map { s -> chain(head, listOf("whisker_$s", "whisker_${s}_1", "whisker_${s}_2", "whisker_${s}_3")) }
+    private val foreJoints = listOf(foreL to "l", foreR to "r").map { (p, s) -> chain(p, listOf("foreleg_${s}_lower", "foreleg_${s}_foot")) }
+    private val hindJoints = listOf(hindL to "l", hindR to "r").map { (p, s) -> chain(p, listOf("hindleg_${s}_lower", "hindleg_${s}_foot")) }
+
+    /**
+     * Kinder für diesen Frame: Läufe im Flug angelegt (Unterarm −20°, Fuß +50°, docs/NIVARIS_SERPENT.md), Barteln
+     * schwingen sanft und phasenversetzt nach. Alle Layer eines Frames zeichnen dieselben Werte.
+     */
+    fun animateChildren(state: NivarisRenderState) {
+        val p = state.p
+        val deg = MathHelper.RADIANS_PER_DEGREE
+        fun tuck(v: Float) = MathHelper.clamp(v / 1.1f, 0f, 1f)
+        for ((legs, k) in listOf(foreJoints to tuck(p[FORE]), hindJoints to tuck(p[HIND]))) {
+            for (leg in legs) {
+                leg.getOrNull(0)?.set(pitch = -20f * deg * k)
+                leg.getOrNull(1)?.set(pitch = 50f * deg * k)
+            }
+        }
+        val age = state.age
+        val speed = 1f + state.fly * 1.5f
+        for ((side, joints) in whiskers.withIndex()) {
+            val sgn = if (side == 0) 1f else -1f
+            for ((k, j) in joints.withIndex()) {
+                val ph = age * 0.06f * speed - k * 0.7f + side * 0.4f
+                j.set(pitch = sin(ph * 0.8f) * 6f * deg, yaw = sgn * sin(ph) * 8f * deg)
+            }
+        }
+    }
+
     /** Teil auf Glied [i] ([NivarisShape.gliedPart]). */
     fun glied(i: Int): ModelPart = when (NivarisShape.gliedPart(i)) {
         "neck" -> neck
