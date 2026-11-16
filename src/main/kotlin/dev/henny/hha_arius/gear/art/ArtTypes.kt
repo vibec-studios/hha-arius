@@ -166,6 +166,25 @@ object ArtTimings {
 
     /** Nach einem Itemwechsel sind Handschuh- und Solvane-Aktionen so lange gesperrt (Ziehen). */
     const val DRAW = 8
+
+    /** Klarer Schnitt: Länge und halbe Breite der Schnittebene bei Mindest- bzw. Volladung (Blöcke). Fest, damit die
+     *  Zielvorschau im Client exakt der Server-Geometrie entspricht. */
+    const val ART_LENGTH_MIN = 6.0
+    const val ART_LENGTH_MAX = 12.0
+    const val ART_HALF_MIN = 1.5
+    const val ART_HALF_MAX = 2.5
+
+    /** Ladung 0..1 aus gehaltenen Ticks. */
+    fun artCharge(heldTicks: Float): Float =
+        ((heldTicks - ART_CHARGE_MIN) / (ART_CHARGE_FULL - ART_CHARGE_MIN)).coerceIn(0f, 1f)
+
+    fun artLength(charge: Float): Double = ART_LENGTH_MIN + (ART_LENGTH_MAX - ART_LENGTH_MIN) * charge
+    fun artHalf(charge: Float): Double = ART_HALF_MIN + (ART_HALF_MAX - ART_HALF_MIN) * charge
+
+    /** Yang-Schild: deckt vorn ±[SHIELD_HALF_ANGLE] Grad ab, Scheibe in [SHIELD_DISTANCE] Blöcken vor der Brust. */
+    const val SHIELD_HALF_ANGLE = 60.0
+    const val SHIELD_DISTANCE = 1.1
+    const val SHIELD_RADIUS = 1.3
 }
 
 /**
