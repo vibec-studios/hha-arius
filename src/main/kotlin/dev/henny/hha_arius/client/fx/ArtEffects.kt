@@ -78,38 +78,60 @@ class ArtBolt(val boltId: Int, private val start: Vec3d, private val vel: Vec3d,
         val p = pos(t)
         val fwd = vel.normalize()
         val k = min(1f, t / 2f)
+        var side = fwd.crossProduct(UP)
+        if (side.lengthSquared() < 1e-4) side = X
+        side = side.normalize()
+        val up = side.crossProduct(fwd).normalize()
         when (school) {
             0 -> {
-                // Windklinge: flache Sichel quer zur Flugbahn.
-                var side = fwd.crossProduct(UP)
-                if (side.lengthSquared() < 1e-4) side = X
-                side = side.normalize()
-                d.arc(VfxLayers.GLOW_ADD, p.subtract(fwd.multiply(0.55)), fwd, side, 0.42, 0.7, -1.15, 1.15, withAlpha(ArtColors.WIND, 0f), withAlpha(0xFFFFFFFF.toInt(), 0.85f * k), segments = 16)
-                d.band(VfxLayers.GLOW_ADD, p.subtract(fwd.multiply(1.6)), p, side, 0.18, withAlpha(ArtColors.WIND, 0f), withAlpha(ArtColors.WIND, 0.4f * k))
+                // Windklinge: drei ineinanderliegende Sicheln aus fliessendem Rauschen, die leicht taumeln.
+                val wobble = sin(t * 0.9) * 0.25
+                val axisB = side.multiply(cos(wobble)).add(up.multiply(sin(wobble)))
+                for (i in 0..2) {
+                    val back = 0.5 + i * 0.35
+                    val r0 = 0.45 + i * 0.12
+                    d.arc(VfxLayers.FLOW_ADD, p.subtract(fwd.multiply(back)), fwd, axisB, r0, r0 + 0.28, -1.2 + i * 0.1, 1.2 - i * 0.1,
+                        withAlpha(ArtColors.WIND, 0f), withAlpha(0xFFFFFFFF.toInt(), (0.75f - i * 0.2f) * k), segments = 18, uTile = 2f, uOffset = t * 0.08f)
+                }
+                d.arc(VfxLayers.GLOW_ADD, p.subtract(fwd.multiply(0.5)), fwd, axisB, 0.66, 0.74, -1.1, 1.1, withAlpha(0xFFFFFFFF.toInt(), 0.9f * k), withAlpha(ArtColors.WIND, 0f), segments = 18)
+                d.band(VfxLayers.FLOW_ADD, p.subtract(fwd.multiply(2.2)), p, axisB, 0.35, withAlpha(ArtColors.WIND, 0f), withAlpha(ArtColors.WIND, 0.35f * k), uScale = 0.4f, uOffset = t * 0.1f)
             }
             1 -> {
+                // Eissplitter: langer Kristall entlang der Flugbahn, Reifspur dahinter.
                 val cam = d.cam
                 matrices.push()
                 matrices.translate(p.x - cam.x, p.y - cam.y, p.z - cam.z)
-                matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(t * 25f))
-                matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(t * 31f))
-                matrices.scale(0.22f, 0.42f, 0.22f)
+                val yaw = Math.toDegrees(Math.atan2(fwd.x, fwd.z)).toFloat()
+                val pitch = Math.toDegrees(Math.asin(-fwd.y.coerceIn(-1.0, 1.0))).toFloat()
+                matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(yaw))
+                matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(pitch))
+                matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(t * 30f + 45f))
+                matrices.scale(0.16f, 0.16f, 0.7f)
                 matrices.translate(-0.5, -0.5, -0.5)
                 MinecraftClient.getInstance().blockRenderManager.renderBlockAsEntity(Blocks.BLUE_ICE.defaultState, matrices, d.consumers, IceChunk.LIGHT, OverlayTexture.DEFAULT_UV)
                 matrices.pop()
-                d.billboard(VfxLayers.FLARE_ADD, p, 0.5, withAlpha(ArtColors.ICE, 0.7f * k))
+                d.billboard(VfxLayers.FLARE_ADD, p.add(fwd.multiply(0.3)), 0.55, withAlpha(ArtColors.ICE, 0.75f * k))
+                d.band(VfxLayers.GLOW_ADD, p.subtract(fwd.multiply(2.4)), p, d.camUp, 0.09, withAlpha(ArtColors.ICE, 0f), withAlpha(0xFFFFFFFF.toInt(), 0.6f * k))
             }
             else -> {
-                d.sphere(VfxLayers.GLOW_ADD, p, radius * 0.7, { withAlpha(0xFFFFFFFF.toInt(), k) })
-                d.billboard(VfxLayers.FLARE_ADD, p, radius * 3.2, withAlpha(ArtColors.YANG, 0.75f * k))
-                d.band(VfxLayers.GLOW_ADD, p.subtract(fwd.multiply(1.4)), p, d.camUp, radius * 0.5, withAlpha(ArtColors.YANG, 0f), withAlpha(ArtColors.YANG, 0.35f * k))
+                // Yang-Kugel: gleissender Kern, drehender Runenring, Strahlen, Lichtschweif.
+                val r = radius * 0.7
+                d.sphere(VfxLayers.GLOW_ADD, p, r, { withAlpha(0xFFFFFFFF.toInt(), k) })
+                d.disc(VfxLayers.RING_ADD, p, d.camRight, d.camUp, r * 2.6, withAlpha(ArtColors.YANG, 0.8f * k), t * 0.12)
+                d.billboard(VfxLayers.RAYS_ADD, p, r * 4.0, withAlpha(ArtColors.YANG, 0.45f * k), -t * 0.05)
+                d.billboard(VfxLayers.FLARE_ADD, p, r * 5.0, withAlpha(ArtColors.YANG, 0.6f * k))
+                d.band(VfxLayers.FLOW_ADD, p.subtract(fwd.multiply(2.6)), p, d.camUp, r * 0.8, withAlpha(ArtColors.YANG, 0f), withAlpha(ArtColors.YANG, 0.5f * k), uScale = 0.5f, uOffset = t * 0.12f)
             }
         }
     }
 }
 
-/** Kleiner Aufprall: Funken/Splitter je Schule. */
-class ArtImpact(private val at: Vec3d, private val school: Int, private val radius: Double) : AriusFx(8) {
+/** Aufprall je Schule: Windwirbel, splitterndes Eis (kleine Eisstuecke fliegen), aufbluehende Sonnenscheibe. */
+class ArtImpact(private val at: Vec3d, private val school: Int, private val radius: Double) : AriusFx(if (school == 1) 16 else 12) {
+    private val shards = if (school == 1) List(7) {
+        Vec3d(random().nextDouble() - 0.5, random().nextDouble() * 0.6 + 0.1, random().nextDouble() - 0.5).normalize().multiply(0.18 + random().nextDouble() * 0.12)
+    } else emptyList()
+
     override fun tick(world: ClientWorld) {
         if (age != 1) return
         val r = random()
@@ -118,14 +140,68 @@ class ArtImpact(private val at: Vec3d, private val school: Int, private val radi
             1 -> ParticleTypes.SNOWFLAKE
             else -> ParticleTypes.END_ROD
         }
-        repeat((10 * particlesAllowed()).toInt()) {
-            world.addParticleClient(particle, at.x, at.y, at.z, (r.nextDouble() - 0.5) * 0.3, r.nextDouble() * 0.2, (r.nextDouble() - 0.5) * 0.3)
+        repeat((12 * particlesAllowed()).toInt()) {
+            world.addParticleClient(particle, at.x, at.y, at.z, (r.nextDouble() - 0.5) * 0.35, r.nextDouble() * 0.2, (r.nextDouble() - 0.5) * 0.35)
         }
     }
 
     override fun render(d: VfxDraw, matrices: MatrixStack, t: Float) {
-        val k = (1f - t / life).coerceIn(0f, 1f)
-        d.billboard(VfxLayers.FLARE_ADD, at, radius * 2.5 * (1.0 + t * 0.15), withAlpha(ArtColors.of(school), 0.7f * k))
+        val s = (t / life).coerceIn(0f, 1f)
+        val k = 1f - s
+        when (school) {
+            0 -> d.ring(VfxLayers.FLOW_ADD, at, d.camRight, d.camUp, radius * (0.4 + 2.2 * s), radius * (0.9 + 2.6 * s), withAlpha(ArtColors.WIND, 0f), withAlpha(0xFFFFFFFF.toInt(), 0.5f * k), segments = 32, uTile = 3f, uOffset = t * 0.1f)
+            1 -> {
+                val cam = d.cam
+                for (v in shards) {
+                    val p = at.add(v.multiply(t.toDouble())).add(0.0, -0.012 * t * t, 0.0)
+                    matrices.push()
+                    matrices.translate(p.x - cam.x, p.y - cam.y, p.z - cam.z)
+                    matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(t * 40f + v.x.toFloat() * 300f))
+                    matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(t * 33f))
+                    val sc = 0.14f * (1f - s * 0.6f)
+                    matrices.scale(sc, sc, sc)
+                    matrices.translate(-0.5, -0.5, -0.5)
+                    MinecraftClient.getInstance().blockRenderManager.renderBlockAsEntity(Blocks.PACKED_ICE.defaultState, matrices, d.consumers, IceChunk.LIGHT, OverlayTexture.DEFAULT_UV)
+                    matrices.pop()
+                }
+                d.billboard(VfxLayers.FLARE_ADD, at, radius * 3.0 * (1.0 + s), withAlpha(ArtColors.ICE, 0.7f * k))
+            }
+            else -> {
+                d.disc(VfxLayers.RUNE_ADD, at, d.camRight, d.camUp, radius * (1.0 + 3.0 * s), withAlpha(ArtColors.YANG, 0.8f * k), t * 0.05)
+                d.billboard(VfxLayers.RAYS_ADD, at, radius * (2.0 + 5.0 * s), withAlpha(0xFFFFFFFF.toInt(), 0.6f * k))
+                d.billboard(VfxLayers.FLARE_ADD, at, radius * 4.0, withAlpha(ArtColors.YANG, 0.8f * k * k))
+            }
+        }
+    }
+}
+
+/** Sturmstoss: mehrere Boegen aus fliessendem Wind laufen kegelfoermig nach vorn auseinander. */
+class GaleFx(private val origin: Vec3d, private val reach: Vec3d, private val charge: Float, life: Int) : AriusFx(life) {
+    override fun tick(world: ClientWorld) {
+        if (age > 3) return
+        val r = random()
+        val fwd = reach.normalize()
+        repeat((10 * particlesAllowed()).toInt()) {
+            val v = fwd.add((r.nextDouble() - 0.5) * 0.8, (r.nextDouble() - 0.5) * 0.4, (r.nextDouble() - 0.5) * 0.8).normalize().multiply(0.6 + 0.6 * charge)
+            world.addParticleClient(ParticleTypes.CLOUD, origin.x, origin.y, origin.z, v.x, v.y, v.z)
+        }
+    }
+
+    override fun render(d: VfxDraw, matrices: MatrixStack, t: Float) {
+        val fwd = reach.normalize()
+        var side = fwd.crossProduct(UP)
+        if (side.lengthSquared() < 1e-4) side = X
+        side = side.normalize()
+        val len = reach.length()
+        for (i in 0..2) {
+            val s = ((t - i * 1.5f) / (life - 2f)).coerceIn(0f, 1f)
+            if (s <= 0f) continue
+            val dist = len * s
+            val r = 0.6 + dist * 0.85
+            val k = (1f - s) * (0.55f + 0.35f * charge)
+            d.arc(VfxLayers.FLOW_ADD, origin.add(fwd.multiply(dist * 0.35)), fwd, side, r * 0.7, r, -0.8, 0.8,
+                withAlpha(ArtColors.WIND, 0f), withAlpha(0xFFFFFFFF.toInt(), k), segments = 22, uTile = 3f, uOffset = t * 0.15f + i)
+        }
     }
 }
 

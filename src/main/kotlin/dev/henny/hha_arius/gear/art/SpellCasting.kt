@@ -519,7 +519,7 @@ object SpellCasting {
                 }
             }
         }
-        GearVfx.crescent(world, Vfx.Style.STORM, player.entityPos.add(0.0, 1.1, 0.0), look, range.toFloat(), 3.5f, 9)
+        ArtFx.send(world, FxKind.GALE, eye.add(look.multiply(0.6)).add(0.0, -0.3, 0.0), look.multiply(range), a = charge, life = 12)
         world.spawnParticles(ParticleTypes.GUST, eye.x + look.x * 2, eye.y + look.y * 2, eye.z + look.z * 2, 3, 0.6, 0.4, 0.6, 0.0)
         GearSounds.play(world, player.entityPos, "art.gale", SoundEvents.ENTITY_WIND_CHARGE_WIND_BURST.value(), 0.9f, 1.0f)
     }

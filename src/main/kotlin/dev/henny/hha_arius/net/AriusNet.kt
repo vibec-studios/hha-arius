@@ -216,6 +216,9 @@ enum class FxKind {
 
     /** Weißes Loch (Linsen-Shader): Mitte pos, a = Sog-Radius, b = Ticks bis zum Kollaps (b < 0: das nächste Loch bei pos kollabiert jetzt). */
     WHITE_HOLE,
+
+    /** Sturmstoss: Ursprung pos, Richtung x Reichweite (dx,dy,dz), a = Ladung 0..1. */
+    GALE,
 }
 
 /**

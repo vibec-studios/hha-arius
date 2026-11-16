@@ -76,6 +76,7 @@ abstract class AriusFx(val life: Int) {
                 FxKind.FIELD -> FieldFx(pos, p.a.toDouble(), p.life)
                 FxKind.CUT_PLANE -> CutPlaneFx(pos, dir, p.a.toDouble(), p.b >= 0.5f, p.life)
                 FxKind.PULL -> e1?.let { PullFx(it, p.a.toDouble(), p.life) }
+                FxKind.GALE -> GaleFx(pos, dir, p.a, p.life)
                 FxKind.WHITE_HOLE -> if (p.b >= 0f) WhiteHoleFx(pos, p.a.toDouble(), p.b.toInt(), p.life) else {
                     AriusFxClient.collapseWhiteHole(pos)
                     null
