@@ -10,7 +10,8 @@
   "client": [
     "gear.client.EquipmentRendererGlowMixin",
     "client.HoldKeyboardInputMixin",
-    "client.HoldActionsMixin"
+    "client.HoldActionsMixin",
+    "gear.client.MinecraftClientArtMixin"
   ],
   "injectors": {
     "defaultRequire": 1

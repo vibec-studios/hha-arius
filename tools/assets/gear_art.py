@@ -668,45 +668,471 @@ def icon_boots():
     ])
 
 
-def icon_solvane():
-    """Mittellanges Bastardschwert, diagonal (Knauf unten links, Spitze oben rechts).
-    p = x - y (Längsachse), q = x + y - 15 (Querachse). Lange, schlanke Klinge mit goldener Hohlkehle an der Wurzel,
-    symmetrische Parierstange mit Rautenstern, anderthalb Hand langer Griff mit Goldzwingen, Rautenknauf."""
-    t = Tex(16, 16)
-    for y in range(16):
-        for x in range(16):
-            p, q = x - y, x + y - 15
-            c = None
-            if abs(q) <= 1 and -5 <= p and p + 2 * abs(q) <= 14:                 # Klinge, läuft spitz zu
-                c = {-1: WHITE, 0: BLADE_L, 1: BLADE_S}[q]
-                if q == 0 and p <= -1:
-                    c = G4 if p <= -3 else G3                                 # goldene Hohlkehle an der Wurzel
-                elif q == 0 and p <= 3:
-                    c = hexc('#c9d6e6')                                       # Hohlkehle läuft hell aus
-            if p in (-6, -7) and abs(q) <= 5:                                  # Parierstange
-                c = G3 if p == -6 else G1
-                if abs(q) == 5:
-                    c = G2
-            if p == -6 and abs(q) == 6:
-                c = G3                                                         # spitze Enden
-            if (p, q) in ((-6, -1), (-5, 0), (-7, 0), (-6, 1), (-8, 1), (-8, -1)):
-                c = {(-7, 0): G4, (-6, -1): G4, (-5, 0): G3}.get((p, q), G2)   # Rautenstern
-            if -12 <= p <= -9 and abs(q) <= 1 and c is None:                  # langer Griff, schwarz gewickelt
-                c = GRIP_H if (q == 0 and p % 3 == 0) or (q == -1 and p % 3 == 1) else GRIP_D
-            if p == -13 and abs(q) <= 1:
-                c = G3 if q <= 0 else G2                                       # Zwinge
-            if (p, q) in ((-15, 0), (-14, -1), (-14, 1), (-16, -1), (-16, 1)):
-                c = {(-15, 0): G4, (-14, -1): G3, (-16, -1): G2}.get((p, q), G2)  # Rautenknauf
-            if c is not None:
-                t.set(x, y, c)
+# ---------------------------------------------------------------------------------------------------------------------
+# Solvane: mittellanges Bastardschwert als Elemente-Modell (Hand, Boden, Kopf); GUI/Rahmen/Regal zeigen das Icon.
+# ---------------------------------------------------------------------------------------------------------------------
+# Vorbild sind die Handmodelle der Schwester-Addons (Void: GenVoidModels.java): das Modell steht AUFRECHT (Längsachse
+# y, Mitte x = z = 8), die Textur wird mit 2 Texeln je Einheit aus der 3D-Lage jedes Texels gemalt (Fase, Korn,
+# Glanz), das 32x32-Icon wird aus demselben Modell gerendert (schräg auf die Diagonale gelegt, 8x8 Abtastpunkte je
+# Pixel, dominante Farbe, 1-px-Umriss) und die Display-Werte werden wie bei Void aus den Vanilla-Werten abgeleitet,
+# sodass die Hand am oberen Griffende direkt unter der Parierstange sitzt.
+#
+# Designblatt „Solvane – Final Design“: weiße Klinge mit Goldakzenten in der Hohlkehle, symmetrische Parierstange mit
+# Rautenstern und Rautenenden, langer dunkel umwickelter Anderthalbhand-Griff mit Goldzwingen, geometrischer
+# Rautenknauf. Maße: Knauf -7,6 … Spitze 21,5 (≈ 29 Einheiten), Griff 6, Parierstange 10,5 breit, Klinge 18,5.
+GRIP_Y = -0.5            # Griffpunkt (Mitte der Hand): obere Griffhälfte, direkt unter Zwinge und Parierstange
+BLADE_Y0 = 3.0           # Klingenwurzel (über der Parierstange)
+FULLER_GOLD = 9.0        # bis hier ist die Hohlkehle mit Gold ausgelegt
+FULLER_END = 15.5        # hier läuft die Hohlkehle aus
 
-    def oc(src, x, y):
-        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-            n = src.get(x + dx, y + dy)
-            if n[3] and n[:3] in (WHITE[:3], BLADE_L[:3], BLADE_S[:3]):
-                return hexc('#2b3346')
-        return hexc('#1a140c')
-    return outline(t, oc)
+# (y0, y1, halbe Breite des Klingenkörpers, Breite einer Schneide)
+BLADE_SECTIONS = [
+    (BLADE_Y0, 9.0, 0.75, 0.5),
+    (9.0, 16.0, 0.75, 0.5),
+    (16.0, 18.0, 0.5, 0.5),
+    (18.0, 19.5, 0.5, 0.25),
+    (19.5, 20.5, 0.25, 0.25),
+]
+
+
+def solvane_parts():
+    """(Name, from, to, Drehung um z in Grad oder 0). Rauten sind um 45° gedrehte Quader um ihre eigene Mitte."""
+    parts = []
+
+    def box(name, fr, to):
+        parts.append((name, fr, to, 0))
+
+    def diamond(name, cx, cy, size, thick):
+        h = size / 2.0
+        parts.append((name, (cx - h, cy - h, 8 - thick / 2), (cx + h, cy + h, 8 + thick / 2), 45))
+
+    diamond('pommel', 8, -6.15, 2.0, 1.8)                                  # Rautenknauf (Spitze unten bei -7,6)
+    box('collar', (7.0, -5.0, 7.0), (9.0, -4.5, 9.0))                       # Knaufzwinge
+    box('grip', (7.25, -4.5, 7.25), (8.75, 1.5, 8.75))                      # Griff, 6 lang (anderthalb Hände)
+    box('ferrule', (7.0, 1.5, 7.0), (9.0, 2.0, 9.0))                        # obere Zwinge
+    box('guard', (3.5, 2.0, 7.25), (12.5, 3.0, 8.75))                       # Parierstange
+    diamond('guard_end', 3.3, 2.5, 1.5, 1.7)                                 # Rautenenden
+    diamond('guard_end', 12.7, 2.5, 1.5, 1.7)
+    diamond('guard_star', 8, 2.5, 2.7, 2.1)                                  # Rautenstern in der Mitte
+    box('langet', (7.5, 3.5, 7.4), (8.5, 5.0, 8.6))                         # Stern läuft spitz auf die Klinge
+    box('langet', (7.75, 5.0, 7.45), (8.25, 6.0, 8.55))
+    for y0, y1, hb, e in BLADE_SECTIONS:
+        box('blade', (8 - hb, y0, 7.55), (8 + hb, y1, 8.45))
+        box('edge', (8 - hb - e, y0, 7.75), (8 - hb, y1, 8.25))
+        box('edge', (8 + hb, y0, 7.75), (8 + hb + e, y1, 8.25))
+    box('point', (7.75, 20.5, 7.75), (8.25, 21.5, 8.25))
+    return parts
+
+
+TEX3D = 64           # Texturgröße (wird bei Bedarf verdoppelt)
+PX = 2               # Texel je Modelleinheit
+
+# Paletten (dunkel -> hell)
+STEEL = [hexc('#5f6b80'), hexc('#8693a8'), hexc('#adb9cb'), hexc('#cfd8e5'), hexc('#e7edf5'), hexc('#f7f9fc'),
+         hexc('#ffffff')]
+AUR = [hexc('#3d2509'), hexc('#6b4615'), hexc('#9a722c'), hexc('#c69d4c'), hexc('#e6c67f'), hexc('#fbedc4')]
+WRAP = [hexc('#0f0e12'), hexc('#1a181e'), hexc('#28252c'), hexc('#3a3540'), hexc('#4e4855')]
+GROOVE = [hexc('#7f8ea6'), hexc('#a3b2c8'), hexc('#c3cfe0')]
+OUTLINE_ICON = hexc('#12131a')
+
+
+def _hash(a, b, c):
+    h = (a * 374761393 + b * 668265263 + c * 2147483647 + 0x9E3779B9) & 0xffffffff
+    h = ((h ^ (h >> 13)) * 1274126177) & 0xffffffff
+    h ^= h >> 16
+    return (h & 0xffffff) / float(0x1000000)
+
+
+def _q(v):
+    return int(math.floor(v * PX + 1e-6))
+
+
+# Flächen eines Elements: Ursprung (Texel 0,0 oben links), Richtung u, Richtung v, Normale (Minecraft-UV-Lage)
+def face_spec(fr, to, face):
+    x0, y0, z0 = fr
+    x1, y1, z1 = to
+    return {
+        'south': ((x0, y1, z1), (1, 0, 0), (0, -1, 0), (0, 0, 1)),
+        'north': ((x1, y1, z0), (-1, 0, 0), (0, -1, 0), (0, 0, -1)),
+        'east': ((x1, y1, z1), (0, 0, -1), (0, -1, 0), (1, 0, 0)),
+        'west': ((x0, y1, z0), (0, 0, 1), (0, -1, 0), (-1, 0, 0)),
+        'up': ((x0, y1, z0), (1, 0, 0), (0, 0, 1), (0, 1, 0)),
+        'down': ((x0, y0, z1), (1, 0, 0), (0, 0, -1), (0, -1, 0)),
+    }[face]
+
+
+def face_dims(fr, to, face):
+    w, h, d = (to[i] - fr[i] for i in range(3))
+    return {'north': (w, h), 'south': (w, h), 'east': (d, h), 'west': (d, h), 'up': (w, d), 'down': (w, d)}[face]
+
+
+def _bevel(i, j, pw, ph, face):
+    """Pixel-Fase wie bei Void: Oberkante hell, Unterkante dunkel, Rand der Deckflächen etwas heller."""
+    if face in ('up', 'down'):
+        return 0.5 if (pw > 2 and ph > 2 and (i in (0, pw - 1) or j in (0, ph - 1))) else 0.0
+    b = 0.0
+    if ph > 2 and j == 0:
+        b += 0.9
+    if ph > 2 and j == ph - 1:
+        b -= 0.8
+    return b
+
+
+def paint_solvane(name, face, p, i, j, pw, ph):
+    """Farbe eines Texels. p = 3D-Lage (Modellraum des Elements), i/j = Texel auf der Fläche, pw/ph = Flächengröße."""
+    x, y, z = p
+    n = _hash(_q(x), _q(y), _q(z) + len(face) * 31)
+    flat = face in ('north', 'south')
+    top = {'up': 0.9, 'down': -1.1}.get(face, 0.0)
+    if name in ('blade', 'edge', 'point'):
+        along = (y - BLADE_Y0) / (21.5 - BLADE_Y0)                          # 0 Wurzel … 1 Spitze
+        if name == 'edge' or name == 'point':
+            k = 4.9 + (n - 0.5) * 0.5 + along * 0.4 + top * 0.5
+            if flat:
+                outer = abs(x - 8) > 1.0 if name == 'edge' else True
+                k += 0.6 if outer else 0.0                                   # helle Schneidkante
+            return ramp(STEEL, k / 6.0)
+        if not flat:
+            return ramp(STEEL, (3.6 + top) / 6.0)
+        d = x - 8.0                                                          # Abstand zur Mittellinie
+        if abs(d) < 0.25 and y < FULLER_END:                                 # Hohlkehle
+            if y < FULLER_GOLD:
+                if y < BLADE_Y0 + 0.5:
+                    return AUR[3]
+                g = 3.4 + (0.9 if _q(y) % 3 == 0 else 0) + (n - 0.5) * 0.6   # Goldauslage mit feinen Lichtpunkten
+                return ramp(AUR, g / 5.0)
+            fade = (y - FULLER_GOLD) / (FULLER_END - FULLER_GOLD)
+            if y < FULLER_GOLD + 0.5:
+                return AUR[2]
+            return ramp(GROOVE, 0.25 + fade * 0.7 + (n - 0.5) * 0.15)
+        # Flachseite: Licht von links oben, sanfter Längsverlauf, ganz feines Korn
+        side = 0.55 if d < 0 else -0.65
+        if face == 'north':
+            side = -side
+        k = 4.0 + side + (n - 0.5) * 0.35 - along * 0.2
+        return ramp(STEEL, k / 6.0)
+    if name in ('guard', 'collar', 'ferrule', 'langet'):
+        k = 2.9 + (n - 0.5) * 0.9 + top + _bevel(i, j, pw, ph, face)
+        if name == 'guard' and flat and ph > 2 and j == ph // 2 and 2 < i < pw - 3:
+            k -= 1.0                                                          # gravierte Mittellinie
+        if name == 'guard' and flat:
+            k += 0.35 * math.exp(-((abs(x - 8) - 3.2) / 1.6) ** 2)            # Glanz auf den Armen
+        if name == 'langet' and flat:
+            k += 0.6 if i < pw / 2 else -0.2
+        return ramp(AUR, k / 5.0)
+    if name in ('guard_star', 'guard_end', 'pommel'):
+        # Facettierte Raute: vier Dreiecke zur Mitte (nach der 45°-Drehung zeigen sie zu den vier Kanten),
+        # heller Grat auf den Diagonalen, dunkle Fassung am Rand.
+        if not flat:
+            return ramp(AUR, (2.6 + top + (n - 0.5) * 0.6) / 5.0)
+        cx, cy = (pw - 1) / 2.0, (ph - 1) / 2.0
+        di, dj = i - cx, j - cy
+        if face == 'north':
+            di = -di
+        rim = i in (0, pw - 1) or j in (0, ph - 1)
+        if abs(abs(di) - abs(dj)) < 0.6 and not rim:
+            k = 4.6                                                           # Facettengrat
+        elif abs(dj) >= abs(di):
+            k = 4.0 if dj < 0 else 1.8                                       # oben-links hell, unten-rechts dunkel
+        else:
+            k = 3.2 if di < 0 else 2.3
+        if rim:
+            k -= 0.8
+        if name == 'guard_star' and abs(di) < 0.6 and abs(dj) < 0.6:
+            return hexc('#fff6dc')                                            # Lichtpunkt im Sternzentrum
+        return ramp(AUR, (k + (n - 0.5) * 0.4) / 5.0)
+    if name == 'grip':
+        if face in ('up', 'down'):
+            return WRAP[1]
+        # Schräg gewickelte Lederbänder: Band 2 Texel, Fuge 1 Texel, versetzt über die Seiten (wie eine Spirale).
+        around = {'south': x - 7.25, 'east': 1.5 + (8.75 - z), 'north': 3.0 + (8.75 - x), 'west': 4.5 + (z - 7.25)}[face]
+        s = int(math.floor((y + around * 0.5) * PX + 1e-6)) % 3
+        if s == 2:
+            return WRAP[0]                                                    # Fuge
+        k = (3.2 if s == 0 else 2.2) + (n - 0.5) * 0.6
+        k += {'south': 0.4, 'west': 0.2, 'east': -0.4, 'north': -0.5}[face]
+        return ramp(WRAP, k / 4.0)
+    return hexc('#ff00ff')
+
+
+def _pack_solvane(size):
+    tex = Tex(size, size)
+    elements = []
+    cx = cy = row_h = 0
+    for name, fr, to, rot in solvane_parts():
+        faces = {}
+        for face in ('north', 'east', 'south', 'west', 'up', 'down'):
+            fw, fh = face_dims(fr, to, face)
+            pw, ph = int(math.ceil(fw * PX - 1e-6)), int(math.ceil(fh * PX - 1e-6))
+            if cx + pw > size:
+                cx, cy, row_h = 0, cy + row_h, 0
+            if cy + ph > size:
+                return None
+            o, du, dv, _ = face_spec(fr, to, face)
+            for j in range(ph):
+                for i in range(pw):
+                    fu, fv = min((i + 0.5) / PX, fw - 1e-3), min((j + 0.5) / PX, fh - 1e-3)
+                    p = tuple(o[k] + du[k] * fu + dv[k] * fv for k in range(3))
+                    tex.set(cx + i, cy + j, paint_solvane(name, face, p, i, j, pw, ph))
+            s = 16.0 / size
+            faces[face] = {'uv': [round(cx * s, 4), round(cy * s, 4), round((cx + fw * PX) * s, 4), round((cy + fh * PX) * s, 4)],
+                           'texture': '#0'}
+            cx += pw
+            row_h = max(row_h, ph)
+        el = {'name': name, 'from': [round(v, 4) for v in fr], 'to': [round(v, 4) for v in to], 'faces': faces}
+        if rot:
+            el['rotation'] = {'angle': rot, 'axis': 'z',
+                              'origin': [round((fr[k] + to[k]) / 2, 4) for k in range(3)]}
+        elements.append(el)
+    return tex, elements
+
+
+# --- Display-Werte (Rechenweg aus GenVoidModels.java: held/pose/leftOf) ------------------------------------------
+def _rx(d):
+    a = math.radians(d)
+    return [[1, 0, 0], [0, math.cos(a), -math.sin(a)], [0, math.sin(a), math.cos(a)]]
+
+
+def _ry(d):
+    a = math.radians(d)
+    return [[math.cos(a), 0, math.sin(a)], [0, 1, 0], [-math.sin(a), 0, math.cos(a)]]
+
+
+def _rz(d):
+    a = math.radians(d)
+    return [[math.cos(a), -math.sin(a), 0], [math.sin(a), math.cos(a), 0], [0, 0, 1]]
+
+
+def _mm(a, b):
+    return [[sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
+
+
+def _mv(a, v):
+    return [sum(a[i][k] * v[k] for k in range(3)) for i in range(3)]
+
+
+def _r2(v):
+    r = round(v * 100) / 100.0
+    return 0 if r == 0 else r
+
+
+def _euler(m):
+    if abs(m[0][2]) > 0.999999:
+        a, b, c = 0.0, 90.0 if m[0][2] > 0 else -90.0, math.degrees(math.atan2(m[1][0], m[1][1]))
+    else:
+        b = math.degrees(math.asin(m[0][2]))
+        a = math.degrees(math.atan2(-m[1][2], m[2][2]))
+        c = math.degrees(math.atan2(-m[0][1], m[0][0]))
+    if abs(a) > 90:
+        a -= math.copysign(180, a)
+        b = 180 - b
+        c -= math.copysign(180, c)
+        if b > 180:
+            b -= 360
+    return [_r2(a), _r2(b), _r2(c)]
+
+
+def _rot_xyz(r):
+    return _mm(_rx(r[0]), _mm(_ry(r[1]), _rz(r[2])))
+
+
+def _held(z_v, t_v, s_v, vgrip, rot, n, grip):
+    """Griffpunkt grip landet dort, wo Vanilla (handheld, z-Rotation z_v, Verschiebung t_v, Größe s_v) vgrip hält."""
+    a = _mv(_mm(_ry(-90), _rz(z_v - 45)), [s_v * (vgrip[k] - 8) for k in range(3)])
+    b = _mv(_rot_xyz(rot), [n * (grip[k] - 8) for k in range(3)])
+    return list(rot) + [_r2(t_v[k] + a[k] - b[k]) for k in range(3)] + [n]
+
+
+def _pose(lean, pitch, roll, hand, n, grip):
+    """Ego-Sicht als Haltung: roll um die Längsachse, pitch Spitze nach vorn, lean Spitze zur Bildmitte."""
+    r = _mm(_rz(lean), _mm(_rx(-pitch), _ry(-90 + roll)))
+    b = _mv(r, [n * (grip[k] - 8) for k in range(3)])
+    return _euler(r) + [_r2(hand[k] - b[k]) for k in range(3)] + [n]
+
+
+def _left_of(d):
+    """Werte der linken Hand als exaktes Spiegelbild (das Modell ist in z symmetrisch)."""
+    r = _rot_xyz(d[:3])
+    m = [[(-1 if i == 0 else 1) * r[i][j] * (-1 if j == 2 else 1) for j in range(3)] for i in range(3)]
+    e = _euler(m)
+    return [e[0], _r2(-e[1]), _r2(-e[2])] + list(d[3:])
+
+
+def _entry(d):
+    return {'rotation': [_r2(v) for v in d[:3]], 'translation': [_r2(v) for v in d[3:6]], 'scale': [d[6]] * 3}
+
+
+SOLVANE_GRIP = (8, GRIP_Y, 8)
+# 3rd Person wie Void-Schwert (Vanilla-Griff [8, 1, 8], z-Rotation 55-45 = 10), Größe 0,95.
+SOLVANE_TP = _held(55, (0, 4, 0.5), 0.85, (8, 1, 8), (0, -90, 10), 0.95, SOLVANE_GRIP)
+# Ego-Sicht wie Void (Klinge zeigt vom Spieler weg nach vorn, steigt ~30° an, Flachseite zum Spieler gedreht); etwas
+# kleiner als Void (1,3), weil Parierstange und Klinge breiter sind.
+SOLVANE_FP = _pose(6, 58, 38, (4.2, -3.6, 0.5), 1.15, SOLVANE_GRIP)
+
+
+def build_solvane_3d():
+    """Liefert (Tex, Modell-JSON). Die Textur wächst, bis alle Flächen hineinpassen."""
+    size = TEX3D
+    packed = _pack_solvane(size)
+    while packed is None:
+        size *= 2
+        packed = _pack_solvane(size)
+    tex, elements = packed
+    model = {
+        'textures': {'0': 'hha_arius:item/solvane_3d', 'particle': 'hha_arius:item/solvane'},
+        'elements': elements,
+        'display': {
+            'thirdperson_righthand': _entry(SOLVANE_TP),
+            'thirdperson_lefthand': _entry(_left_of(SOLVANE_TP)),
+            'firstperson_righthand': _entry(SOLVANE_FP),
+            'firstperson_lefthand': _entry(_left_of(SOLVANE_FP)),
+            'ground': {'rotation': [0, 0, 0], 'translation': [0, 3, 0], 'scale': [0.42, 0.42, 0.42]},
+            'head': {'rotation': [0, 180, 0], 'translation': [0, 13, 7], 'scale': [1, 1, 1]},
+        },
+    }
+    return tex, model
+
+
+# --- Rasterer für Vorschau und Icon ------------------------------------------------------------------------------
+def _el_rot(el):
+    r = el.get('rotation')
+    if not r:
+        return None
+    return _rz(r['angle']), r['origin']
+
+
+def raster(model, tex, size, view, scale, center, light=(-0.45, 0.7, 0.55), ambient=0.58):
+    """Orthografischer Render. view: 3x3 (Modell -> Kamera, x rechts, y oben, z zur Kamera). Liefert pro Pixel
+    (Farbe, Name, y im Schwert-Rahmen) oder None."""
+    tsize = tex.w
+    ln = math.sqrt(sum(c * c for c in light))
+    light = [c / ln for c in light]
+    depth = [-1e9] * (size * size)
+    out = [None] * (size * size)
+    for el in model['elements']:
+        fr, to = el['from'], el['to']
+        rot = _el_rot(el)
+        for face, f in el['faces'].items():
+            u0, v0, u1, v1 = (c * tsize / 16.0 for c in f['uv'])
+            fw, fh = face_dims(fr, to, face)
+            o, du, dv, nrm = face_spec(fr, to, face)
+            if rot:
+                nrm = _mv(rot[0], nrm)
+            nv = _mv(view, nrm)
+            if nv[2] <= 0:
+                continue                                                      # Rückseite
+            shade = ambient + (1 - ambient) * max(0.0, sum(a * b for a, b in zip(nv, light)))
+            steps = max(2.0, scale * 1.7)
+            for jj in range(int(math.ceil(fh * steps))):
+                fv = (jj + 0.5) / steps
+                if fv > fh:
+                    continue
+                for ii in range(int(math.ceil(fw * steps))):
+                    fu = (ii + 0.5) / steps
+                    if fu > fw:
+                        continue
+                    c = tex.get(int(u0 + fu * (u1 - u0) / fw), int(v0 + fv * (v1 - v0) / fh))
+                    if not c[3]:
+                        continue
+                    p = [o[k] + du[k] * fu + dv[k] * fv for k in range(3)]
+                    sy = p[1]
+                    if rot:
+                        m, org = rot
+                        q = _mv(m, [p[k] - org[k] for k in range(3)])
+                        p = [q[k] + org[k] for k in range(3)]
+                    v = _mv(view, [p[k] - center[k] for k in range(3)])
+                    px, py = int(size / 2 + v[0] * scale), int(size / 2 - v[1] * scale)
+                    if 0 <= px < size and 0 <= py < size and v[2] > depth[py * size + px]:
+                        depth[py * size + px] = v[2]
+                        out[py * size + px] = (tuple(min(255, int(ch * shade)) for ch in c[:3]) + (255,), el['name'], sy)
+    return out
+
+
+def _view(yaw, pitch):
+    return _mm(_rx(pitch), _ry(yaw))
+
+
+def render_model(model, tex, size, yaw_deg, pitch_deg=0.0, scale=None, center=(8, 7, 8)):
+    scale = scale or size / 34.0
+    px = []
+    buf = raster(model, tex, size, _view(yaw_deg, pitch_deg), scale, center)
+    for k, c in enumerate(buf):
+        t = (k // size) / (size - 1)
+        px.append(c[0][:3] if c else (int(36 + 30 * t), int(40 + 32 * t), int(52 + 36 * t)))
+    return px
+
+
+ICON_TURN, ICON_TILT = 192, 12       # Icon: um die Längsachse gedreht, leicht von oben (wie Void)
+
+
+def _icon_frames(model, tex, n=32, ss=8):
+    """Rendert das Icon (n x n) und liefert (Tex, Klingen-Lage je Pixel für den Schimmer)."""
+    view = _mm(_rz(-45), _mm(_rx(ICON_TILT), _ry(ICON_TURN)))
+    big = n * ss
+    # Länge -7,6 … 21,5 auf die Diagonale mit 1 px Rand je Seite (Umriss)
+    scale = (n - 3) * math.sqrt(2) / 29.6 * ss
+    buf = raster(model, tex, big, view, scale, (8, 6.95, 8), ambient=0.82)
+    icon = Tex(n, n)
+    blade_y = {}
+    for y in range(n):
+        for x in range(n):
+            counts, ys, hits = {}, [], 0
+            for sy in range(ss):
+                for sx in range(ss):
+                    c = buf[(y * ss + sy) * big + x * ss + sx]
+                    if c is None:
+                        continue
+                    hits += 1
+                    key = tuple(v // 6 * 6 for v in c[0][:3])
+                    counts.setdefault(key, []).append(c[0])
+                    if c[1] in ('blade', 'edge', 'point'):
+                        ys.append(c[2])
+            if hits * 3 < ss * ss:
+                continue
+            best = max(counts.values(), key=len)
+            col = tuple(sum(cc[k] for cc in best) // len(best) for k in range(3)) + (255,)
+            icon.set(x, y, col)
+            if len(ys) * 2 >= hits:
+                blade_y[(x, y)] = sum(ys) / len(ys)
+    return icon, blade_y
+
+
+def icon_solvane(with_meta=False):
+    tex, model = build_solvane_3d()
+    icon, blade_y = _icon_frames(model, tex)
+    outline(icon, OUTLINE_ICON)
+    return (icon, blade_y) if with_meta else icon
+
+
+def solvane_shimmer(base, blade_y):
+    """Dezenter Schimmer fürs GUI-Icon: ein Glanzband wandert die Klinge hinauf, dann lange Ruhe (~4 s)."""
+    frames = [base]
+    for k in range(7):
+        f = base.copy()
+        y0 = BLADE_Y0 + k * 3.1
+        for (x, y), by in blade_y.items():
+            d = abs(by - y0)
+            c = base.get(x, y)
+            if d < 1.1:
+                f.set(x, y, mix(c, WHITE, 0.75))
+            elif d < 2.4:
+                f.set(x, y, mix(c, hexc('#e6f6ff'), 0.4))
+        frames.append(f)
+    n = base.w
+    strip = Tex(n, n * len(frames))
+    for i, f in enumerate(frames):
+        for y in range(n):
+            for x in range(n):
+                strip.set(x, i * n + y, f.get(x, y))
+    meta = {'animation': {'frametime': 2, 'frames': [{'index': 0, 'time': 70}] + list(range(1, len(frames)))}}
+    return strip, meta
+
+
+def preview_solvane(model, tex, icon):
+    panels = [(300, 300, render_model(model, tex, 300, yaw, 8, scale=300 / 32.0)) for yaw in (0, 35, 90, 180)]
+    panels.append(upscale(tex, 300 // tex.w))
+    panels.append(upscale(icon, 300 // icon.w))
+    sheet(panels, 3, os.path.join(PREVIEW, 'solvane_3d.png'))
 
 
 def icon_heartfrost():
@@ -922,286 +1348,11 @@ def preview_icons(icons):
     W, H = 36 * len(names) + 4, 58
     px = [(139, 139, 139)] * (W * H)
     for n, name in enumerate(names):
-        blend_onto(px, W, 4 + n * 36 + 8, 4, icons[name], 1)
-        blend_onto(px, W, 4 + n * 36, 22, icons[name], 2)
+        ic = icons[name]
+        small = ic if ic.w <= 16 else Tex(16, 16, [ic.get(x * ic.w // 16, y * ic.h // 16) for y in range(16) for x in range(16)])
+        blend_onto(px, W, 4 + n * 36 + 8, 4, small, 1)                    # GUI-Skalierung 1 (32er-Icons verkleinert)
+        blend_onto(px, W, 4 + n * 36, 22, ic, max(1, 32 // ic.w))         # GUI-Skalierung 2
     write_png(os.path.join(PREVIEW, 'icons_inventory.png'), W, H, px)
-
-
-def solvane_shimmer(base):
-    """Dezenter Schimmer fürs GUI-Icon: ein Glanzpunkt wandert die Klinge hinauf, dann lange Ruhe (~4 s)."""
-    frames = [base]
-    for k in range(6):
-        f = base.copy()
-        p0 = -1 + k * 2.6
-        for y in range(16):
-            for x in range(16):
-                p, q = x - y, x + y - 15
-                c = base.get(x, y)
-                if not c[3] or abs(q) > 1 or c[:3] not in (WHITE[:3], BLADE_L[:3], BLADE_S[:3]):
-                    continue
-                d = abs(p - p0)
-                if d < 1.5:
-                    f.set(x, y, WHITE if q < 1 else hexc('#e4f6ff'))
-                elif d < 3 and q == 1:
-                    f.set(x, y, hexc('#cfe0ee'))
-        frames.append(f)
-    strip = Tex(16, 16 * len(frames))
-    for n, f in enumerate(frames):
-        for y in range(16):
-            for x in range(16):
-                strip.set(x, n * 16 + y, f.get(x, y))
-    meta = {'animation': {'frametime': 2, 'frames': [{'index': 0, 'time': 70}] + list(range(1, len(frames)))}}
-    return strip, meta
-
-
-# ---------------------------------------------------------------------------------------------------------------------
-# Solvane als Elemente-Modell (Hand, Boden, Kopf). GUI/Rahmen/Regal zeigen das flache Icon.
-# ---------------------------------------------------------------------------------------------------------------------
-# Schwert-Rahmen: senkrecht entlang y, Mitte x = z = 8. Alle Elemente werden um -45° (z) um (8, 8, 8) gedreht und liegen
-# dann diagonal wie das Icon (Knauf unten links, Spitze oben rechts). Die beiden Rauten (Parierstange, Knauf) sind im
-# Schwert-Rahmen um 45° gedreht, also im Modell achsparallel: sie werden direkt an der gedrehten Stelle gesetzt.
-# Mittellanges Bastardschwert: Klinge 18,5, Griff 6 (anderthalb Hände), Gesamtlänge ≈ 29 Einheiten. Die Hand sitzt wie
-# bisher bei y ≈ 0,5 (oberer Teil des Griffs), darunter bleibt Platz für die zweite Hand.
-SOLVANE_PARTS = [
-    # name, from, to, gedreht?
-    ('blade', (6.75, 3.5, 7.6), (9.25, 14.5, 8.4), True),
-    ('blade_mid', (7.0, 14.5, 7.62), (9.0, 19.5, 8.38), True),
-    ('blade_tip', (7.4, 19.5, 7.66), (8.6, 21.0, 8.34), True),
-    ('blade_point', (7.75, 21.0, 7.72), (8.25, 22.0, 8.28), True),
-    ('langet', (7.2, 3.5, 7.45), (8.8, 5.0, 8.55), True),
-    ('guard', (3.0, 2.6, 7.3), (13.0, 3.5, 8.7), True),
-    ('guard_end', (1.8, 2.3, 7.2), (3.0, 3.8, 8.8), True),
-    ('guard_end', (13.0, 2.3, 7.2), (14.2, 3.8, 8.8), True),
-    ('guard_tip', (1.0, 2.7, 7.4), (1.8, 3.4, 8.6), True),
-    ('guard_tip', (14.2, 2.7, 7.4), (15.0, 3.4, 8.6), True),
-    ('ferrule', (6.9, 2.0, 6.9), (9.1, 2.6, 9.1), True),
-    ('grip', (7.1, -4.0, 7.1), (8.9, 2.0, 8.9), True),
-    ('ferrule', (6.9, -4.6, 6.9), (9.1, -4.0, 9.1), True),
-    ('guard_star', 'diamond', (8, 3.05), (2.4, 2.4, 2.0)),
-    ('pommel', 'diamond', (8, -5.9), (2.6, 2.6, 2.2)),
-]
-TEX3D = 64           # Texturgröße
-PX = 2               # Texel je Modelleinheit (feinere Hohlkehle und Wicklung)
-COS45 = math.sqrt(0.5)
-
-
-def sword_to_model(x, y):
-    dx, dy = x - 8.0, y - 8.0
-    return 8 + COS45 * (dx + dy), 8 + COS45 * (dy - dx)
-
-
-def solvane_elements():
-    out = []
-    for part in SOLVANE_PARTS:
-        name = part[0]
-        if part[1] == 'diamond':
-            (cx, cy), (w, h, d) = part[2], part[3]
-            mx, my = sword_to_model(cx, cy)
-            fr = (round(mx - w / 2, 4), round(my - h / 2, 4), 8 - d / 2)
-            to = (round(mx + w / 2, 4), round(my + h / 2, 4), 8 + d / 2)
-            out.append((name, fr, to, False))
-        else:
-            out.append((name, part[1], part[2], part[3]))
-    return out
-
-
-def face_dims(fr, to, face):
-    w, h, d = (to[i] - fr[i] for i in range(3))
-    return {'north': (w, h), 'south': (w, h), 'east': (d, h), 'west': (d, h), 'up': (w, d), 'down': (w, d)}[face]
-
-
-def paint_solvane(name, face, i, j, fw, fh):
-    """Farbe eines Texels; i nach rechts, j nach unten (bei Seitenflächen j = 0 oben). fw/fh in Texeln."""
-    side = face in ('east', 'west')
-    if name.startswith('blade'):
-        if face in ('up', 'down') or side:
-            return WHITE if (face != 'down') else hexc('#dfe8f2')             # Schneiden
-        mid = fw // 2
-        if i == 0 or i == fw - 1:
-            c = hexc('#f8fbff')                                               # helle Schneidkante
-        elif i < mid:
-            c = hexc('#e8eef5')
-        elif i > mid:
-            c = hexc('#c4cfdc')
-        else:
-            c = hexc('#cfdbea')                                               # Hohlkehle
-            if name == 'blade':
-                if j >= fh - 8:
-                    c = G4 if j >= fh - 3 else G3                             # goldene Wurzel der Hohlkehle
-                elif j >= fh - 11:
-                    c = G2
-        if fw <= 2:
-            c = hexc('#eef3f9') if i == 0 else hexc('#cdd8e5')
-        if name in ('blade_tip', 'blade_point') and j < 2:
-            c = mix(c, WHITE, 0.5)
-        return c
-    if name == 'langet':
-        if face in ('up', 'down'):
-            return G2
-        if i in (0, fw - 1) or j in (0, fh - 1):
-            return G2
-        return G4 if (i + j) % 3 == 0 else G3
-    if name in ('guard', 'guard_end', 'guard_tip'):
-        if face == 'up':
-            return G4
-        if face == 'down':
-            return G1
-        if side:
-            return G2 if j % 2 else G3
-        if name == 'guard_tip':
-            return G4 if j == 0 else G3
-        if name == 'guard_end':
-            return G4 if j == 1 else (G2 if j == fh - 1 else G3)
-        if j == 0:
-            return G4
-        if j == fh - 1:
-            return G1
-        return G2 if i % 4 == 0 else G3                                       # feine Gravur
-    if name in ('guard_star', 'pommel'):
-        if face == 'up':
-            return G4
-        if face == 'down':
-            return G1
-        h = (i + j) % 3
-        return [G4, G3, G2][h] if side else ([G4, G3, G3, G2][min(3, i // max(1, fw // 4))] if j < fh // 2 else G2)
-    if name == 'ferrule':
-        if face == 'up':
-            return G4
-        if face == 'down':
-            return G1
-        return G3 if j == 0 else G2
-    if name == 'grip':
-        if face in ('up', 'down'):
-            return GRIP_D
-        # Kreuzwicklung aus Lederbändern: helle Bandkante, dunkle Mitte
-        a = (i + j) % 6
-        b = (i - j) % 6
-        if a == 0:
-            return GRIP_H
-        if b == 0:
-            return hexc('#2a2b35')
-        return GRIP_D if (i + j) % 2 else hexc('#1b1b22')
-    return hexc('#ff00ff')
-
-
-def build_solvane_3d():
-    """Packt alle Flächen in eine TEX3D x TEX3D-Textur (PX Texel je Einheit) und liefert (Tex, Modell-JSON)."""
-    tex = Tex(TEX3D, TEX3D)
-    elements = []
-    cx = cy = row_h = 0
-    for name, fr, to, rotated in solvane_elements():
-        faces = {}
-        for face in ('north', 'east', 'south', 'west', 'up', 'down'):
-            fw, fh = face_dims(fr, to, face)
-            pw, ph = int(math.ceil(fw * PX - 1e-6)), int(math.ceil(fh * PX - 1e-6))
-            if cx + pw > TEX3D:
-                cx, cy, row_h = 0, cy + row_h, 0
-            assert cy + ph <= TEX3D, 'Solvane-Textur zu klein'
-            for j in range(ph):
-                for i in range(pw):
-                    tex.set(cx + i, cy + j, paint_solvane(name, face, i, j, pw, ph))
-            s = 16.0 / TEX3D
-            faces[face] = {'uv': [round(cx * s, 4), round(cy * s, 4), round((cx + fw * PX) * s, 4), round((cy + fh * PX) * s, 4)],
-                           'texture': '#0'}
-            cx += pw
-            row_h = max(row_h, ph)
-        el = {'name': name, 'from': list(fr), 'to': list(to), 'faces': faces}
-        if rotated:
-            el['rotation'] = {'angle': -45, 'axis': 'z', 'origin': [8, 8, 8]}
-        elements.append(el)
-    model = {
-        'textures': {'0': 'hha_arius:item/solvane_3d', 'particle': 'hha_arius:item/solvane'},
-        'elements': elements,
-        # Hand am oberen Griffende (y ≈ 0,5 im Schwert-Rahmen) wie zuvor; etwas kleiner, weil das Schwert länger ist.
-        'display': {
-            'thirdperson_righthand': {'rotation': [0, -90, 25], 'translation': [0, 5.08, 4.17], 'scale': [0.92, 0.92, 0.92]},
-            'thirdperson_lefthand': {'rotation': [0, 90, -25], 'translation': [0, 5.08, 4.17], 'scale': [0.92, 0.92, 0.92]},
-            'firstperson_righthand': {'rotation': [0, -90, 25], 'translation': [1.13, 3.2, 1.13], 'scale': [0.58, 0.58, 0.58]},
-            'firstperson_lefthand': {'rotation': [0, 90, -25], 'translation': [1.13, 3.2, 1.13], 'scale': [0.58, 0.58, 0.58]},
-            'ground': {'rotation': [0, 0, 0], 'translation': [0, 2, 0], 'scale': [0.38, 0.38, 0.38]},
-            'head': {'rotation': [0, 180, 0], 'translation': [0, 13, 7], 'scale': [0.8, 0.8, 0.8]},
-            'gui': {'rotation': [0, 0, 0], 'translation': [0, 0, 0], 'scale': [0.55, 0.55, 0.55]},
-            'fixed': {'rotation': [0, 180, 0], 'scale': [0.55, 0.55, 0.55]},
-        },
-    }
-    return tex, model
-
-
-def render_model(model, tex, size, yaw_deg, pitch_deg=0.0, scale=None, center=(8, 8, 8)):
-    """Vorschau eines Elemente-Modells (Modellraum: y oben). Kamera blickt von Süden (+z) nach Norden."""
-    ya, pa = math.radians(yaw_deg), math.radians(pitch_deg)
-    W = H = size
-    pix = []
-    for y in range(H):
-        t = y / (H - 1)
-        pix.extend([(int(36 + 30 * t), int(40 + 32 * t), int(52 + 36 * t))] * W)
-    depth = [1e9] * (W * H)
-    scale = scale or size / 34.0
-    light = (-0.4, 0.75, 0.55)
-    ln = math.sqrt(sum(c * c for c in light))
-    light = tuple(c / ln for c in light)
-
-    def rot_el(p, el):
-        r = el.get('rotation')
-        if not r:
-            return p
-        a = math.radians(r['angle'])
-        ox, oy, oz = r['origin']
-        x, y, z = p[0] - ox, p[1] - oy, p[2] - oz
-        if r['axis'] == 'z':
-            x, y = x * math.cos(a) - y * math.sin(a), x * math.sin(a) + y * math.cos(a)
-        return x + ox, y + oy, z + oz
-
-    def view(p):
-        x, y, z = p[0] - center[0], p[1] - center[1], p[2] - center[2]
-        x, z = x * math.cos(ya) + z * math.sin(ya), -x * math.sin(ya) + z * math.cos(ya)
-        y, z = y * math.cos(pa) - z * math.sin(pa), y * math.sin(pa) + z * math.cos(pa)
-        return x, y, z
-
-    for el in model['elements']:
-        fr, to = el['from'], el['to']
-        for face, f in el['faces'].items():
-            u0, v0, u1, v1 = (c * TEX3D / 16.0 for c in f['uv'])
-            fw, fh = face_dims(fr, to, face)
-            # (Ursprung oben links aus Sicht der Fläche, Richtung i, Richtung j, Normale)
-            x0, y0, z0 = fr
-            x1, y1, z1 = to
-            spec = {
-                'south': ((x0, y1, z1), (1, 0, 0), (0, -1, 0), (0, 0, 1)),
-                'north': ((x1, y1, z0), (-1, 0, 0), (0, -1, 0), (0, 0, -1)),
-                'east': ((x1, y1, z1), (0, 0, -1), (0, -1, 0), (1, 0, 0)),
-                'west': ((x0, y1, z0), (0, 0, 1), (0, -1, 0), (-1, 0, 0)),
-                'up': ((x0, y1, z0), (1, 0, 0), (0, 0, 1), (0, 1, 0)),
-                'down': ((x0, y0, z1), (1, 0, 0), (0, 0, -1), (0, -1, 0)),
-            }[face]
-            o, du, dv, n = spec
-            nn = rot_el((n[0] + 8, n[1] + 8, n[2] + 8), el)
-            nr = view((nn[0] - 8 + center[0], nn[1] - 8 + center[1], nn[2] - 8 + center[2]))
-            # nur zur Kamera gewandte Flächen (z der Normalen nach Ansicht > 0 → zeigt zur Kamera)
-            shade = 0.6 + 0.4 * max(0.0, sum(a * b for a, b in zip((nn[0] - 8, nn[1] - 8, nn[2] - 8), light)))
-            steps = max(2, int(scale * 1.6))
-            for j in range(int(math.ceil(fh * steps))):
-                for i in range(int(math.ceil(fw * steps))):
-                    fi, fj = (i + 0.5) / steps, (j + 0.5) / steps
-                    if fi > fw or fj > fh:
-                        continue
-                    c = tex.get(int(u0 + fi * (u1 - u0) / fw), int(v0 + fj * (v1 - v0) / fh))
-                    if not c[3]:
-                        continue
-                    p = (o[0] + du[0] * fi + dv[0] * fj, o[1] + du[1] * fi + dv[1] * fj, o[2] + du[2] * fi + dv[2] * fj)
-                    xr, yr, zr = view(rot_el(p, el))
-                    sx, sy = int(W / 2 + xr * scale), int(H / 2 - yr * scale)
-                    if 0 <= sx < W and 0 <= sy < H and -zr < depth[sy * W + sx]:
-                        depth[sy * W + sx] = -zr
-                        pix[sy * W + sx] = tuple(int(ch * shade) for ch in c[:3])
-    return pix
-
-
-def preview_solvane(model, tex, icon):
-    panels = [(300, 300, render_model(model, tex, 300, yaw, scale=300 / 40.0)) for yaw in (0, 40, 90, 160)]
-    panels.append(upscale(tex, 4))
-    panels.append(upscale(icon, 18))
-    sheet(panels, 3, os.path.join(PREVIEW, 'solvane_3d.png'))
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -1472,7 +1623,9 @@ def main(argv):
     hum, leg, glow_h, glow_l = build_armor()
     trims = build_trims()
     preview_armor(hum, leg, glow_h, glow_l, trims)
-    icons = {name: fn() for name, fn in ICONS.items()}
+    icons = {name: fn() for name, fn in ICONS.items() if name != 'solvane'}
+    solvane_icon, solvane_blade = icon_solvane(with_meta=True)
+    icons['solvane'] = solvane_icon
     preview_icons(icons)
     tex3d, model3d = build_solvane_3d()
     preview_solvane(model3d, tex3d, icons['solvane'])
@@ -1491,7 +1644,7 @@ def main(argv):
             (trims[1], 'textures/trims/entity/humanoid_leggings/white_blade.png')]
     for name, tex in icons.items():
         if name == 'solvane':
-            strip, meta = solvane_shimmer(tex)
+            strip, meta = solvane_shimmer(tex, solvane_blade)
             jobs.append((strip, 'textures/item/solvane.png'))
             write_json('textures/item/solvane.png.mcmeta', meta)
         else:

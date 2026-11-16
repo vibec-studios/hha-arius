@@ -29,25 +29,38 @@ object GearClient {
     private var target = 0
     private var max = 100
     private var shown = 0f
+    private var rest = 0
+    private var mark = -1
+    private var bearer = false
+
+    /** Stellvertreter-Stapel für die HHA-Leiste: Abklingzeit über die `use_cooldown`-Gruppe (kein eigenes Item). */
+    private val CLEAR_CUT_STACK: ItemStack by lazy { cooldownStack(GearItems.SOLVANE, GearItems.CLEAR_CUT_GROUP) }
+    private val WHITE_HOLE_STACK: ItemStack by lazy { cooldownStack(GearItems.EIRHOLM_HELMET, GearItems.WHITE_HOLE_GROUP) }
+
+    private fun cooldownStack(item: net.minecraft.item.Item, group: Identifier): ItemStack = ItemStack(item).also {
+        it.set(net.minecraft.component.DataComponentTypes.USE_COOLDOWN, net.minecraft.component.type.UseCooldownComponent(1f, java.util.Optional.of(group)))
+    }
 
     fun register(context: HhaClientAddonContext) {
         val full: (PlayerEntity) -> Boolean = { Gear.hasFullSet(it) }
 
-        context.registerHudCooldown(HhaArius.id("hud/white_line"), ICE) { p ->
-            if (full(p)) p.getEquippedStack(EquipmentSlot.CHEST) else null
+        context.registerHudCooldown(HhaArius.id("hud/white_core"), ICE) { p ->
+            if (Gear.hasPiece(p, EquipmentSlot.CHEST)) p.getEquippedStack(EquipmentSlot.CHEST) else null
         }
         context.registerHudCooldown(HhaArius.id("hud/frost_step"), ICE) { p ->
-            if (full(p)) p.getEquippedStack(EquipmentSlot.FEET) else null
+            if (Gear.hasPiece(p, EquipmentSlot.LEGS)) p.getEquippedStack(EquipmentSlot.LEGS) else null
         }
-        context.registerHudCooldown(HhaArius.id("hud/white_core"), ICE) { p ->
-            if (full(p)) p.getEquippedStack(EquipmentSlot.HEAD) else null
-        }
+        context.registerHudCooldown(HhaArius.id("hud/art/white_hole"), ICE) { p -> if (full(p)) WHITE_HOLE_STACK else null }
+        context.registerHudCooldown(HhaArius.id("hud/art/clear_cut"), ICE) { p -> if (p.mainHandStack.isOf(GearItems.SOLVANE)) CLEAR_CUT_STACK else null }
         context.registerHudCooldown(HhaArius.id("hud/counter"), ICE) { p -> held(p) { it.isOf(GearItems.SOLVANE) } }
         context.registerHudCooldown(HhaArius.id("hud/wingscale"), ICE) { p -> held(p) { it.isOf(GearItems.NIVARIS_WINGSCALE) } }
 
         ClientPlayNetworking.registerGlobalReceiver(ResonancePayload.ID) { payload, _ ->
             target = payload.value
             max = payload.max.coerceAtLeast(1)
+            rest = payload.rest
+            mark = payload.mark
+            bearer = payload.bearer
         }
         ClientPlayConnectionEvents.DISCONNECT.register { _, _ ->
             target = 0
@@ -66,7 +79,7 @@ object GearClient {
     /** Schmaler Balken direkt über der HHA-Cooldown-Leiste (gleiche Skalierung/Verschiebung wie HHAs HUD). */
     private fun renderResonance(client: MinecraftClient, context: DrawContext) {
         val player = client.player ?: return
-        if (client.options.hudHidden || !Gear.hasFullSet(player)) return
+        if (client.options.hudHidden || !bearer) return
         if (!HhaClientConfig.enabled("hud_enabled")) return
 
         val slots = countSlots(player)
@@ -96,10 +109,14 @@ object GearClient {
                 context.fill(left, top, left + fill, top + 3, 0xFF000000.toInt() or color)
                 context.fill(left, top, left + fill, top + 1, 0x60FFFFFF)
             }
-            // Kosten-Marken: Frostschritt, Weiße Linie, Weißer Kern.
-            for (cost in intArrayOf(20, 40, 60)) {
-                val x = left + (width * cost / max.toFloat()).toInt()
-                if (x in (left + 1) until (left + width)) context.fill(x, top, x + 1, top + 3, 0x90FFFFFF.toInt())
+            // Ruhepunkt (gedämpftes Gold) und Kosten der bereiten Technik (weiß).
+            if (rest > 0) {
+                val x = left + (width * rest / max.toFloat()).toInt()
+                if (x in (left + 1) until (left + width)) context.fill(x, top - 1, x + 1, top + 4, 0xA0C9A24A.toInt())
+            }
+            if (mark > 0) {
+                val x = left + (width * mark / max.toFloat()).toInt()
+                if (x in (left + 1) until (left + width)) context.fill(x, top - 1, x + 1, top + 4, if (shown >= mark) 0xE0FFFFFF.toInt() else 0x70FFFFFF)
             }
         } finally {
             matrices.popMatrix()

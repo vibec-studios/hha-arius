@@ -80,6 +80,8 @@ data class ArtAnimS2C(val entityId: Int, val anim: Int, val duration: Int, val p
  */
 data class ArtSelfS2C(
     val selected: Int, val previous: Int, val cooldowns: IntArray, val artCooldown: Int, val holeCooldown: Int, val gliding: Boolean,
+    /** Grundkosten je Technik (aktuelle Config), für die Anzeige im Rad. */
+    val costs: IntArray,
 ) : CustomPayload {
     override fun getId(): CustomPayload.Id<out CustomPayload> = ID
 
@@ -91,12 +93,16 @@ data class ArtSelfS2C(
                 buf.writeVarInt(v.cooldowns.size)
                 for (c in v.cooldowns) buf.writeVarInt(c)
                 buf.writeVarInt(v.artCooldown); buf.writeVarInt(v.holeCooldown); buf.writeBoolean(v.gliding)
+                buf.writeVarInt(v.costs.size)
+                for (c in v.costs) buf.writeVarInt(c)
             },
             { buf ->
                 val sel = buf.readVarInt(); val prev = buf.readVarInt()
                 val n = buf.readVarInt().coerceIn(0, 64)
                 val cds = IntArray(n) { buf.readVarInt() }
-                ArtSelfS2C(sel, prev, cds, buf.readVarInt(), buf.readVarInt(), buf.readBoolean())
+                val art = buf.readVarInt(); val hole = buf.readVarInt(); val glide = buf.readBoolean()
+                val m = buf.readVarInt().coerceIn(0, 64)
+                ArtSelfS2C(sel, prev, cds, art, hole, glide, IntArray(m) { buf.readVarInt() })
             },
         )
     }

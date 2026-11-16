@@ -391,6 +391,7 @@ object SpellCasting {
             ArtSelfS2C(
                 selected(player).ordinal, previous(player).ordinal, cds,
                 SolvaneArt.cooldownLeft(player), WhiteHole.cooldownLeft(player), s.active == Spell.YANG_GLIDE,
+                IntArray(Spell.entries.size) { cost(Spell.entries[it], 0f).toInt() },
             ),
         )
     }
