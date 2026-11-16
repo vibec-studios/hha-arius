@@ -11,6 +11,8 @@ import dev.henny.hha_arius.HhaArius as Arius
 import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents
 import net.fabricmc.fabric.api.event.player.UseBlockCallback
 import net.fabricmc.fabric.api.event.player.UseItemCallback
+import dev.henny.hha.api.event.HhaEvents
+import dev.henny.hha_arius.gear.GearRewards
 import net.minecraft.item.BlockItem
 import net.minecraft.item.BucketItem
 import net.minecraft.item.ItemStack
@@ -88,6 +90,9 @@ object Encounters {
             val item = player.getStackInHand(hand).item
             if (world.registryKey == WORLD && !player.isCreative && item is BucketItem) ActionResult.FAIL else ActionResult.PASS
         }
+        ServerLifecycleEvents.SERVER_STARTED.register { server -> AriusState.get(server).refundOrphanStakes() }
+        // Während eines Halte-Moments keine aktiven Fähigkeiten (HHA-Tasten schicken sonst trotz Eingabesperre Pakete).
+        HhaEvents.ABILITY_CAST.register { player, _ -> !Hold.isHeld(player) }
         ServerLifecycleEvents.SERVER_STOPPING.register { _ ->
             for (fight in fights.values.toList()) fight.finish(false)
             fights.clear()
@@ -125,16 +130,23 @@ object Encounters {
 
     fun requestTraining(player: ServerPlayerEntity, stage: Int): Boolean = start(player, stage.coerceIn(1, 4), ItemStack.EMPTY)
 
-    /** Eingesetzte Siegel, die beim letzten Mal nicht zurückgegeben werden konnten. */
-    private fun deliverPending(player: ServerPlayerEntity) {
-        if (player.entityWorld.registryKey == WORLD) return
+    /**
+     * Zahlt aus, was noch aussteht: zurückerstattete Siegel und gewonnene Beute. Nur außerhalb der Arena; jeder Anspruch
+     * wird vor der Auszahlung aus dem Speicher entfernt, also genau einmal ausgezahlt.
+     */
+    fun deliverPending(player: ServerPlayerEntity) {
+        if (player.entityWorld.registryKey == WORLD || player.isDisconnected) return
         val state = AriusState.get(player.entityWorld.server ?: return)
         val data = state.player(player.uuid)
-        if (data.pendingSeals <= 0) return
-        val seal = Registries.ITEM.get(HhaArius.id("eirholm_seal"))
-        repeat(data.pendingSeals) { player.giveOrDropStack(ItemStack(seal)) }
+        if (data.pendingSeals <= 0 && data.pendingRewards.isEmpty()) return
+        val seals = data.pendingSeals
+        val claims = data.pendingRewards.toList()
         data.pendingSeals = 0
+        data.pendingRewards.clear()
         state.save()
+        val seal = Registries.ITEM.get(HhaArius.id("eirholm_seal"))
+        repeat(seals) { player.giveOrDropStack(ItemStack(seal)) }
+        for (claim in claims) GearRewards.grant(player, claim.firstWin, claim.flawless)
     }
 
     private fun start(player: ServerPlayerEntity, training: Int, seal: ItemStack): Boolean {

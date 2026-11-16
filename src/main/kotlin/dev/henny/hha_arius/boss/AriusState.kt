@@ -34,22 +34,46 @@ class AriusState(var data: Data = Data()) : PersistentState() {
         var sendHome: Boolean = false,
         var againIndex: Int = 0,
         var rumorIndex: Int = 0,
-        /** Eingesetzte Siegel, die nicht zurückgegeben werden konnten (offline, volles Inventar). */
+        /** Eingesetzte Siegel, die nicht zurückgegeben werden konnten (offline, volles Inventar, Absturz). */
         var pendingSeals: Int = 0,
+        /** Gewonnene, noch nicht ausgezahlte Beute (je Sieg ein Eintrag). */
+        var pendingRewards: MutableList<Claim> = ArrayList(),
     )
+
+    /** Ein Beuteanspruch, beim Sieg festgelegt und genau einmal ausgezahlt. */
+    class Claim(var firstWin: Boolean = false, var flawless: Boolean = false)
+
+    /** Ein eingesetztes Siegel: wem es gehört. Bleibt bis Sieg (verbraucht) oder Rückgabe gespeichert. */
+    class Stake(var owner: String = "")
 
     class Data(
         var players: MutableMap<String, PlayerData> = HashMap(),
         var dirtySlots: MutableSet<Int> = HashSet(),
+        /** Laufende Einsätze je Begegnung (Kennung → Besitzer). Übrig nach einem Absturz = zurückerstatten. */
+        var stakes: MutableMap<String, Stake> = HashMap(),
     )
 
     fun player(id: UUID): PlayerData = data.players.getOrPut(id.toString()) { PlayerData() }.also {
         // Gson kann Felder als null hinterlassen, wenn die Datei von einer älteren Version stammt.
         @Suppress("SENSELESS_COMPARISON")
         if (it.heard == null) it.heard = HashSet()
+        @Suppress("SENSELESS_COMPARISON")
+        if (it.pendingRewards == null) it.pendingRewards = ArrayList()
     }
 
     fun save() = markDirty()
+
+    /** Nach einem Absturz übrig gebliebene Einsätze gehen an ihre Besitzer zurück (beim nächsten Einloggen). */
+    fun refundOrphanStakes() {
+        @Suppress("SENSELESS_COMPARISON")
+        if (data.stakes == null) data.stakes = HashMap()
+        if (data.stakes.isEmpty()) return
+        for (stake in data.stakes.values) {
+            runCatching { UUID.fromString(stake.owner) }.getOrNull()?.let { player(it).pendingSeals++ }
+        }
+        data.stakes.clear()
+        save()
+    }
 
     companion object {
         private val GSON = Gson()
@@ -73,11 +97,15 @@ class AriusState(var data: Data = Data()) : PersistentState() {
          * Rückweg für jemanden, der nicht über das Siegel in die Arena kam (Nachzügler, fremder Teleport): die Welt, aus
          * der er kam, an einer sicheren Stelle (Oberfläche am Weltursprung). Die genaue Herkunft ist nicht mehr bekannt.
          */
-        fun rememberFallbackHome(player: ServerPlayerEntity, from: ServerWorld) {
+        fun rememberFallbackHome(player: ServerPlayerEntity, @Suppress("UNUSED_PARAMETER") from: ServerWorld) {
             val server = player.entityWorld.server ?: return
             val state = get(server)
-            val top = from.getTopPosition(Heightmap.Type.MOTION_BLOCKING, BlockPos.ORIGIN).toBottomCenterPos()
-            state.player(player.uuid).home = Home(from.registryKey.value.toString(), top.x, top.y, top.z, player.yaw)
+            // Die Herkunft ist unbekannt (fremder Teleport): sicher ist nur der Welt-Spawn, nie z. B. das Netherdach.
+            val spawn = server.spawnPoint
+            val world = server.getWorld(spawn.dimension) ?: server.overworld
+            val near = spawn.pos.toBottomCenterPos()
+            val safe = Hold.safeSpot(world, near) ?: world.getTopPosition(Heightmap.Type.MOTION_BLOCKING, spawn.pos).toBottomCenterPos()
+            state.player(player.uuid).home = Home(world.registryKey.value.toString(), safe.x, safe.y, safe.z, spawn.yaw)
             state.save()
         }
 

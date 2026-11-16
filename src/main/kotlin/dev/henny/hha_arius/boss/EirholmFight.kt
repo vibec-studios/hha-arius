@@ -62,6 +62,9 @@ class EirholmFight(
     private var sealStake: net.minecraft.item.ItemStack = net.minecraft.item.ItemStack.EMPTY,
 ) {
     val origin: BlockPos = ArenaLayout.origin(slot)
+
+    /** Eindeutige Kennung dieser Begegnung (für den gespeicherten Einsatz). */
+    val encounterId: String = UUID.randomUUID().toString()
     val server: net.minecraft.server.MinecraftServer = world.server!!
     val summonerId: UUID = summoner.uuid
 
@@ -254,6 +257,11 @@ class EirholmFight(
     // --- Start ---------------------------------------------------------------------------------------------------------
 
     fun begin() {
+        if (!sealStake.isEmpty) {
+            val state = AriusState.get(server)
+            state.data.stakes[encounterId] = AriusState.Stake(summonerId.toString())
+            state.save()
+        }
         forceChunks(true)
         build = if (buildMode > 0) ArenaBuild(world, origin, buildMode == 2) else null
         for (p in invitedPlayers()) {
@@ -758,8 +766,12 @@ class EirholmFight(
         world.playSound(null, at.x, at.y, at.z, event, SoundCategory.HOSTILE, volume, pitch)
     }
 
+    /** Laufende Kampfmusik (für Wiedereinsteiger). */
+    private var currentMusic = ""
+
     fun music(id: String?, fade: Int = 20) {
-        val payload = MusicS2C(id?.let { HhaArius.id(it).toString() } ?: "", fade)
+        currentMusic = id?.let { HhaArius.id(it).toString() } ?: ""
+        val payload = MusicS2C(currentMusic, fade)
         for (p in audience()) AriusNet.send(p, payload)
     }
 
@@ -838,10 +850,12 @@ class EirholmFight(
         val watch = abs(if (phase >= Phase.VAULT) ArenaLayout.WATCH_VAULT else ArenaLayout.WATCH_UPPER)
         player.teleport(world, watch.x, watch.y, watch.z, emptySet(), player.yaw, player.pitch, false)
         player.sendMessage(Text.translatable("hha_arius.msg.latejoin").formatted(Formatting.AQUA), false)
+        if (currentMusic.isNotEmpty()) AriusNet.send(player, MusicS2C(currentMusic, 20))
     }
 
     fun onLeave(player: ServerPlayerEntity) {
         Hold.drop(player)
+        AriusNet.send(player, MusicS2C("", 20))
         ariusBar.removePlayer(player)
         dragonBar.removePlayer(player)
         if (players().isEmpty() && phase != Phase.BUILD && !ended) {
@@ -874,9 +888,18 @@ class EirholmFight(
             }
             return
         }
-        // Das Siegel ist verbraucht. Die Beute gibt es erst am Heimatort, damit nichts im Aufräumen der Arena verloren geht.
+        // Das Siegel ist verbraucht. Jeder Teilnehmer bekommt jetzt einen gespeicherten Beuteanspruch; ausgezahlt wird
+        // erst am Heimatort (oder beim nächsten Einloggen), damit nichts im Aufräumen der Arena verloren geht.
         sealStake = net.minecraft.item.ItemStack.EMPTY
         val flawless = !anyKo
+        val state = AriusState.get(server)
+        state.data.stakes.remove(encounterId)
+        for (id in fighters.keys) {
+            val data = state.player(id)
+            data.pendingRewards.add(AriusState.Claim(firstWin = data.wins == 0, flawless = flawless))
+            data.wins++
+        }
+        state.save()
         for (p in audience()) {
             Advancements.grant(p, "white_blade")
             if (flawless) Advancements.grant(p, "no_storm")
@@ -885,14 +908,10 @@ class EirholmFight(
             wait(400)
             val everyone = audience()
             finish(win = true)
-            val state = AriusState.get(server)
             for (p in everyone) {
                 AriusState.sendHome(p)
-                val data = state.player(p.uuid)
-                GearRewards.grant(p, data.wins == 0, flawless)
-                data.wins++
+                Encounters.deliverPending(p)
             }
-            state.save()
         })
     }
 
@@ -928,6 +947,7 @@ class EirholmFight(
                 if (owner == null || !owner.inventory.insertStack(sealStake.copy())) state.player(summonerId).pendingSeals++
                 sealStake = net.minecraft.item.ItemStack.EMPTY
             }
+            state.data.stakes.remove(encounterId)
             state.save()
         }
         Encounters.onFinished(this)
