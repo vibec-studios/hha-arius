@@ -64,5 +64,7 @@
   "hha_arius.spell.yang_bridge": "Light Bridge",
   "hha_arius.spell.yang_bridge.desc": "A bridge up to 16 blocks straight ahead, 15 s",
   "hha_arius.spell.yang_glide": "Light Glider",
-  "hha_arius.spell.yang_glide.desc": "Glide on a disc of light; sneak to step off"
+  "hha_arius.spell.yang_glide.desc": "Glide on a disc of light; sneak to step off",
+  "hha_arius.client.shake_on": "Camera jolt on heavy hits: on",
+  "hha_arius.client.shake_off": "Camera jolt on heavy hits: off"
 }

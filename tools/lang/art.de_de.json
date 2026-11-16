@@ -64,5 +64,7 @@
   "hha_arius.spell.yang_bridge": "Lichtbrücke",
   "hha_arius.spell.yang_bridge.desc": "Brücke bis 16 Blöcke geradeaus, 15 s",
   "hha_arius.spell.yang_glide": "Lichtgleiter",
-  "hha_arius.spell.yang_glide.desc": "Auf einer Lichtscheibe gleiten; Schleichen steigt ab"
+  "hha_arius.spell.yang_glide.desc": "Auf einer Lichtscheibe gleiten; Schleichen steigt ab",
+  "hha_arius.client.shake_on": "Kamerarucken bei schweren Treffern: an",
+  "hha_arius.client.shake_off": "Kamerarucken bei schweren Treffern: aus"
 }

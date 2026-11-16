@@ -28,6 +28,8 @@ object AriusFxClient {
     fun init() {
         AriusClientConfig.load()
         ArtPipelines.init()
+        Impacts.init()
+        CutLens.init()
         ClientPlayNetworking.registerGlobalReceiver(HoldS2C.ID) { p, _ -> HoldClient.set(p.on, p.ticks) }
         ClientPlayNetworking.registerGlobalReceiver(SliceS2C.ID) { p, _ -> SliceRender.handle(p) }
         ClientPlayNetworking.registerGlobalReceiver(dev.henny.hha_arius.gear.art.ArtCutS2C.ID) { p, _ -> CutHalves.handle(p) }
@@ -85,6 +87,12 @@ object AriusFxClient {
                         AriusClientConfig.save()
                         ctx.source.sendFeedback(Text.translatable(if (AriusClientConfig.flash) "hha_arius.client.flash_on" else "hha_arius.client.flash_off"))
                         1
+                    }))
+                    .then(ClientCommandManager.literal("shake").then(ClientCommandManager.argument("on", BoolArgumentType.bool()).executes { ctx ->
+                        AriusClientConfig.shake = BoolArgumentType.getBool(ctx, "on")
+                        AriusClientConfig.save()
+                        ctx.source.sendFeedback(Text.translatable(if (AriusClientConfig.shake) "hha_arius.client.shake_on" else "hha_arius.client.shake_off"))
+                        1
                     })),
             )
         }
@@ -103,5 +111,7 @@ object AriusFxClient {
         Subtitles.clear()
         AriusMusic.clear()
         HoldClient.reset()
+        Impacts.clear()
+        dev.henny.hha_arius.gear.client.art.SwordTrails.clear()
     }
 }

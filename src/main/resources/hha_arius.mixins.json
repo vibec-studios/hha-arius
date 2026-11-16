@@ -15,7 +15,9 @@
     "gear.client.ArtPlayerModelMixin",
     "gear.client.ArtPlayerRendererMixin",
     "gear.client.GauntletHeldItemRendererMixin",
-    "client.AtmosEnvironmentMixin"
+    "client.AtmosEnvironmentMixin",
+    "client.CameraKickMixin",
+    "client.AriusRendererHitStopMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -6,12 +6,14 @@ import net.fabricmc.loader.api.FabricLoader
 import java.nio.file.Files
 
 /**
- * Client-Einstellungen des Addons (`/ariusc`): [fx] skaliert eigene Partikel (0–1), [flash] schaltet Bildblitze ab.
- * Kamerarütteln und 3D-Effekte allgemein steuert HHA (`/hhac`, Menü K); das Addon nutzt dafür HHAs Effekte.
+ * Client-Einstellungen des Addons (`/ariusc`): [fx] skaliert eigene Partikel (0–1), [flash] schaltet Bildblitze ab,
+ * [shake] das dezente Kamerarucken bei schweren Treffern ([CameraKick]). Kamerarütteln und 3D-Effekte allgemein steuert
+ * HHA (`/hhac`, Menü K); ist dort das Kameraschütteln aus, ruckt auch das Addon nicht.
  */
 object AriusClientConfig {
     var fx = 1f
     var flash = true
+    var shake = true
 
     private val file get() = FabricLoader.getInstance().configDir.resolve("hha_arius_client.json")
 
@@ -21,6 +23,7 @@ object AriusClientConfig {
             val o = Gson().fromJson(Files.readString(file), JsonObject::class.java) ?: return
             fx = o.get("fx")?.asFloat?.coerceIn(0f, 1f) ?: fx
             flash = o.get("flash")?.asBoolean ?: flash
+            shake = o.get("shake")?.asBoolean ?: shake
         }
     }
 
@@ -29,6 +32,7 @@ object AriusClientConfig {
             val o = JsonObject()
             o.addProperty("fx", fx)
             o.addProperty("flash", flash)
+            o.addProperty("shake", shake)
             Files.writeString(file, Gson().toJson(o))
         }
     }

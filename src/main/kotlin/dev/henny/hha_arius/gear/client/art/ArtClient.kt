@@ -161,6 +161,11 @@ object ArtClient {
             artHeld = false
             return true
         }
+        if (main.isOf(GearItems.SOLVANE)) {
+            // Schwertspur nur bei vollen Treffern: Schlagkraft merken, bevor Vanilla sie zurücksetzt.
+            SwordTrails.lastAttackStrength = player.getAttackCooldownProgress(0.5f)
+            if (SwordTrails.lastAttackStrength >= 0.9f && client.crosshairTarget?.type == HitResult.Type.ENTITY) SwordTrails.confirmLocal(player.id)
+        }
         return false
     }
 
@@ -262,7 +267,9 @@ object ArtClient {
                 }
             }
             if (anim?.anim == Anim.CAST_CHARGE) {
-                val (min, max) = CHARGE[selected] ?: (10 to 30)
+                // Höchstladung kommt mit der Animation (param = Schule + 4 × Höchstladung); Mindestladung aus der Tabelle.
+                val (min, fallbackMax) = CHARGE[selected] ?: (10 to 30)
+                val max = dev.henny.hha_arius.gear.art.ArtParam.chargeMax(anim.param).takeIf { it > 0 } ?: fallbackMax
                 chargeBar(context, cx, cy + 20, anim.age(tickDelta), min.toFloat(), max.toFloat(), ArtColors.of(selected.school.ordinal))
             }
             if (anim?.anim == Anim.PLACE_AIM && client.world != null && Placement.target(client.world!!, player, selected) == null) {
@@ -270,6 +277,7 @@ object ArtClient {
                 context.drawText(client.textRenderer, msg, cx - client.textRenderer.getWidth(msg) / 2, cy + 18, 0xC0E07A6E.toInt(), true)
             }
         } else if (player.mainHandStack.isOf(GearItems.SOLVANE) && anim?.anim == Anim.ART_CHARGE) {
+            // Ladebalken des Klaren Schnitts (Vertrag: Ladung aus der gehaltenen Zeit; Mindest- und Volladung fest).
             chargeBar(context, cx, cy + 20, anim.age(tickDelta), ArtTimings.ART_CHARGE_MIN.toFloat(), ArtTimings.ART_CHARGE_FULL.toFloat(), 0xFFFFFFFF.toInt())
         }
     }

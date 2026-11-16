@@ -3,6 +3,7 @@ package dev.henny.hha_arius.gear.client.art
 import dev.henny.hha.client.vfx.VfxLayers
 import dev.henny.hha_arius.gear.GearItems
 import dev.henny.hha_arius.gear.art.Anim
+import dev.henny.hha_arius.gear.art.ArtParam
 import dev.henny.hha_arius.gear.art.ArtTimings
 import dev.henny.hha_arius.gear.art.GauntletsItem
 import dev.henny.hha_arius.gear.art.School
@@ -51,6 +52,15 @@ internal class FpPose {
     fun mix(a: FpPose, b: FpPose, t: Float): FpPose {
         if (t <= 0f) return set(a)
         if (t >= 1f) return set(b)
+        ArtPoseMath.lerpV(a.rH, b.rH, t, rH); ArtPoseMath.lerpV(a.rS, b.rS, t, rS); ArtPoseMath.nlerp(a.rN, b.rN, t, rN)
+        ArtPoseMath.lerpV(a.lH, b.lH, t, lH); ArtPoseMath.lerpV(a.lS, b.lS, t, lS); ArtPoseMath.nlerp(a.lN, b.lN, t, lN)
+        roll = lerp(a.roll, b.roll, t); dy = lerp(a.dy, b.dy, t)
+        return this
+    }
+
+    /** Wie [mix], ohne Begrenzung (t > 1 Überschwung, t < 0 Ausholen). */
+    fun mixFree(a: FpPose, b: FpPose, t: Float): FpPose {
+        if (t in 0f..1f) return mix(a, b, t)
         ArtPoseMath.lerpV(a.rH, b.rH, t, rH); ArtPoseMath.lerpV(a.rS, b.rS, t, rS); ArtPoseMath.nlerp(a.rN, b.rN, t, rN)
         ArtPoseMath.lerpV(a.lH, b.lH, t, lH); ArtPoseMath.lerpV(a.lS, b.lS, t, lS); ArtPoseMath.nlerp(a.lN, b.lN, t, lN)
         roll = lerp(a.roll, b.roll, t); dy = lerp(a.dy, b.dy, t)
@@ -194,9 +204,9 @@ internal object GauntletFirstPerson {
         val fx = ArtVisualGlow.fx()
         if (fx <= 0f) return
         val a = anim.age(td)
-        val school = School.entries.getOrElse(anim.param) { School.WIND }
+        val school = School.entries.getOrElse(ArtParam.school(anim.param)) { School.WIND }
         val strength = when (anim.anim) {
-            Anim.CAST_CHARGE -> 0.45f + 0.55f * clamp01(a / 30f)
+            Anim.CAST_CHARGE -> 0.45f + 0.55f * ArtParam.castCharge(anim.param, a)
             Anim.CAST_TAP -> if (canonRight) 1f - seg(a, 1f, ArtTimings.CAST_TAP.toFloat()) else 0f
             Anim.CAST_RELEASE -> 1f - seg(a, 2f, ArtTimings.CAST_RELEASE.toFloat())
             Anim.PLACE_AIM -> if (canonRight) 0.6f else 0f
@@ -260,10 +270,23 @@ internal object GauntletFirstPerson {
 
     private fun idle(p: FpPose, t: Float, magic: Boolean) = if (magic) magicIdle(p, t) else guard(p, t)
 
+    /** Beschleunigen bis zum Treffer (kurz ausholen), über das Ziel hinausschwingen, federnd zurück. */
     private fun strikeK(a: Float, w: Float, d: Float): Float = when {
-        a < w -> easeOutCubic(a / w)
-        a < w + 1f -> 1f
-        else -> 1f - smooth(seg(a, w + 1f, d))
+        a < w -> drive(a / w, 0.3f)
+        a < w + 2f -> 1f + 0.09f * bump(seg(a, w, w + 2f))
+        else -> seg(a, w + 2f, d).let { 1f - smooth(it) - 0.05f * bump(it) }
+    }
+
+    private fun drive(u: Float, back: Float): Float {
+        val x = clamp01(u)
+        return x * x - back * x * (1f - x) * (1f - x)
+    }
+
+    private fun bump(u: Float): Float = if (u <= 0f || u >= 1f) 0f else sin(PI.toFloat() * u)
+
+    /** Einsinken beim Treffer: die ganze Hand-Anordnung geht kurz mit dem Gewicht nach unten. */
+    private fun sink(p: FpPose, a: Float, w: Float, amount: Float) {
+        p.dy -= amount * bump(seg(a, w - 0.3f, w + 3f))
     }
 
     private val HOOK_C = Vector3f(-0.50f, -0.44f, -1.18f)
@@ -277,12 +300,14 @@ internal object GauntletFirstPerson {
             Anim.JAB -> {
                 guard(a1, t)
                 a2.set(a1).apply { lH.set(-0.06f, -0.14f, -1.38f); lS.set(-0.42f, -1.3f, -0.85f); lN.set(0f, -1f, 0f); rH.set(0.34f, -0.26f, -0.72f) }
-                p.mix(a1, a2, strikeK(a, w, d))
+                p.mixFree(a1, a2, strikeK(a, w, d))
+                sink(p, a, w, 0.012f)
             }
             Anim.CROSS -> {
                 guard(a1, t)
                 a2.set(a1).apply { rH.set(0.05f, -0.14f, -1.40f); rS.set(0.42f, -1.3f, -0.85f); rN.set(0f, -1f, 0f); lH.set(-0.26f, -0.22f, -0.74f) }
-                p.mix(a1, a2, strikeK(a, w, d))
+                p.mixFree(a1, a2, strikeK(a, w, d))
+                sink(p, a, w, 0.016f)
             }
             Anim.HOOK -> {
                 guard(a1, t)
@@ -291,10 +316,11 @@ internal object GauntletFirstPerson {
                 val load = 0.4f * w
                 when {
                     a < load -> p.mix(a1, a2, easeOut(a / load))
-                    a < w -> { val u = seg(a, load, w); p.mix(a2, a3, u); bezier(a2.lH, HOOK_C, a3.lH, u, p.lH) }
-                    a < w + 1f -> p.set(a3)
-                    else -> p.mix(a3, a1, smooth(seg(a, w + 1f, d)))
+                    a < w -> { val u = drive(seg(a, load, w), 0f); p.mix(a2, a3, u); bezier(a2.lH, HOOK_C, a3.lH, u, p.lH) }
+                    a < w + 2.5f -> p.mixFree(a2, a3, 1f + 0.12f * bump(seg(a, w, w + 2.5f)))
+                    else -> seg(a, w + 2.5f, d).let { p.mixFree(a3, a1, smooth(it) + 0.05f * bump(it)) }
                 }
+                sink(p, a, w, 0.022f)
             }
             Anim.SIDE_KICK -> {
                 // Tritt: Arme fangen das Gleichgewicht ab, die Hand-Anordnung neigt sich leicht.
@@ -304,21 +330,23 @@ internal object GauntletFirstPerson {
                 val ch = 0.55f * w
                 when {
                     a < ch -> p.mix(a1, a2, easeOut(a / ch))
-                    a < w -> p.mix(a2, a3, easeOutCubic(seg(a, ch, w)))
+                    a < w -> p.mix(a2, a3, drive(seg(a, ch, w), 0f))
                     a < w + 1.5f -> p.set(a3)
-                    else -> p.mix(a3, a1, smooth(seg(a, w + 1.5f, d)))
+                    else -> seg(a, w + 1.5f, d).let { v -> p.mix(a3, a1, smooth(v)); p.dy -= 0.03f * bump(seg(v, 0.3f, 0.8f)) }
                 }
+                sink(p, a, w, 0.015f)
             }
             Anim.SPIN_KICK -> {
                 guard(a1, t)
                 a2.set(a1).apply { rH.set(0.25f, -0.40f, -0.62f); lH.set(-0.20f, -0.38f, -0.64f); roll = -0.04f; dy = -0.02f }
                 a3.set(a1).apply { rH.set(0.85f, -0.55f, -0.55f); rN.set(0f, -1f, 0f); lH.set(-0.60f, -0.30f, -0.75f); lN.set(0f, -1f, 0f); roll = 0.06f }
                 when {
-                    a < 0.6f * w -> p.mix(a1, a2, easeOut(seg(a, 0f, 0.6f * w)))
-                    a < w -> p.mix(a2, a3, easeOutCubic(seg(a, 0.6f * w, w)))
+                    a < 0.6f * w -> { p.mix(a1, a2, easeOut(seg(a, 0f, 0.6f * w))); p.dy -= 0.03f * bump(seg(a, 0f, 0.5f * w)) }
+                    a < w -> p.mix(a2, a3, drive(seg(a, 0.6f * w, w), 0f))
                     a < w + 2f -> p.set(a3)
-                    else -> p.mix(a3, a1, smooth(seg(a, w + 2f, d)))
+                    else -> seg(a, w + 2f, d).let { v -> p.mix(a3, a1, smooth(v)); p.dy -= 0.035f * bump(seg(v, 0.15f, 0.7f)) }
                 }
+                sink(p, a, w, 0.02f)
             }
             Anim.PARRY -> {
                 guard(a1, t); parry(a2)
@@ -343,7 +371,7 @@ internal object GauntletFirstPerson {
             }
             Anim.CAST_TAP -> {
                 magicIdle(a1, t)
-                val school = School.entries.getOrElse(s.param) { School.WIND }
+                val school = School.entries.getOrElse(ArtParam.school(s.param)) { School.WIND }
                 if (school == School.WIND) {
                     a2.set(a1).apply { rH.set(0.60f, -0.30f, -0.70f); rN.set(-1f, 0f, 0f) }
                     a3.set(a2).apply { rH.set(-0.25f, -0.22f, -1.05f) }
@@ -368,7 +396,7 @@ internal object GauntletFirstPerson {
             }
             Anim.CAST_CHARGE -> {
                 magicIdle(a1, t)
-                val school = School.entries.getOrElse(s.param) { School.WIND }
+                val school = School.entries.getOrElse(ArtParam.school(s.param)) { School.WIND }
                 // ≥ 0,22: sonst kreuzen sich die Fingerspitzen der zusammenlaufenden Arme.
                 val sep = 0.26f - 0.03f * clamp01(a / 40f)
                 var ox = 0f; var oy = 0f
@@ -435,11 +463,36 @@ internal object GauntletFirstPerson {
 
     // --- Solvane -------------------------------------------------------------------------------------------------------
 
-    /** Griffmitte und Klingenrichtung im Hand-Rahmen nach applyEquipOffset (aus display.firstperson_righthand). */
+    /**
+     * Entwurfsrahmen der Haltungen (Klinge senkrecht in der Hand, wie das frühere diagonale Modell sie zeigte): Griffmitte,
+     * Klingenrichtung und Flachseite im Hand-Rahmen nach applyEquipOffset. Die Schlüssel [CH_V] … [RH] sind darin gebaut.
+     */
     private val FP_GRIP = Vector3f(1.13f / 16f, -1.14f / 16f, -0.45f / 16f)
     private val FP_BLADE = Vector3f(0f, 0.940f, 0.341f)
-    private const val FP_BLADE_FROM = 2.2f / 16f
-    private const val FP_BLADE_TO = 11.0f / 16f
+    private val FP_FLAT = Vector3f(-1f, 0f, 0f)
+
+    /**
+     * Das aufrechte Modell (display.firstperson_righthand von solvane_3d.json): Griffmitte, Klinge (schräg nach vorn
+     * oben), Flachseite (Modell-z), Klingenansatz/-spitze und Knauf in Blöcken ab der Griffmitte.
+     */
+    private val ITEM_GRIP = Vector3f(4.265f / 16f, -4.207f / 16f, 1.475f / 16f)
+    private val ITEM_BLADE = Vector3f(-0.055f, 0.527f, -0.848f).normalize()
+    private val ITEM_FLAT = Vector3f(-0.838f, 0.437f, 0.326f)
+    private const val ITEM_BLADE_FROM = 5.17f / 16f
+    private const val ITEM_BLADE_TO = 26.45f / 16f
+    private const val ITEM_POMMEL = -0.21f
+
+    /** Drehung, die das aufrechte Modell in den Entwurfsrahmen legt (Klinge → Klinge, Flachseite → Flachseite). */
+    private val CORRECT: Quaternionf = run {
+        fun frame(blade: Vector3f, flat: Vector3f): org.joml.Matrix3f {
+            val b = Vector3f(blade).normalize()
+            val f = Vector3f(flat).fma(-flat.dot(b), b).normalize()
+            val n = Vector3f(b).cross(f)
+            return org.joml.Matrix3f().setColumn(0, b).setColumn(1, f).setColumn(2, n)
+        }
+        val m = frame(FP_BLADE, FP_FLAT).mul(frame(ITEM_BLADE, ITEM_FLAT).transpose())
+        Quaternionf().setFromNormalized(m)
+    }
 
     private class Sw(var tx: Float = 0f, var ty: Float = 0f, var tz: Float = 0f, var rx: Float = 0f, var ry: Float = 0f, var rz: Float = 0f) {
         fun set(o: Sw) = apply { tx = o.tx; ty = o.ty; tz = o.tz; rx = o.rx; ry = o.ry; rz = o.rz }
@@ -452,8 +505,12 @@ internal object GauntletFirstPerson {
     private val sw = Sw()
     private val CH_V = Sw(0.06f, -0.06f, 0.08f, 35f, 0f, -15f)
     private val CH_H = Sw(0.04f, -0.14f, 0.04f, 0f, 0f, -80f)
-    private val RV = arrayOf(CH_V, Sw(-0.08f, 0.02f, -0.05f, -40f, 0f, -5f), Sw(-0.22f, -0.08f, -0.18f, -110f, 0f, 0f), Sw(-0.25f, -0.14f, -0.15f, -135f, 0f, 0f))
-    private val RH = arrayOf(CH_H, Sw(-0.10f, -0.12f, -0.10f, 0f, 40f, -80f), Sw(-0.25f, -0.12f, -0.12f, 0f, 90f, -80f), Sw(-0.45f, -0.14f, 0f, 0f, 190f, -80f))
+
+    /** Senkrecht: Haltung, Ausholen (Klinge weiter zurück, Hände heben sich), Treffer, Durchzug (tief). */
+    private val RV = arrayOf(CH_V, Sw(0.02f, 0.06f, 0.12f, 58f, 0f, -12f), Sw(-0.22f, -0.08f, -0.18f, -110f, 0f, 0f), Sw(-0.26f, -0.17f, -0.14f, -140f, 0f, 2f))
+
+    /** Waagerecht: Haltung, Ausholen (weiter nach rechts hinten), Treffer, Durchzug nach links. */
+    private val RH = arrayOf(CH_H, Sw(0.06f, -0.12f, 0.06f, 0f, -22f, -80f), Sw(-0.25f, -0.12f, -0.12f, 0f, 90f, -80f), Sw(-0.48f, -0.15f, 0f, 0f, 198f, -80f))
     private val REST = Sw()
 
     private fun renderSolvane(
@@ -461,64 +518,114 @@ internal object GauntletFirstPerson {
         equip: Float, matrices: MatrixStack, queue: OrderedRenderCommandQueue, light: Int,
     ) {
         val a = anim.age(td)
-        val horizontal = anim.param == 1
-        var leftW = 1f
+        val horizontal = ArtParam.horizontal(anim.param)
+        var leftW: Float
+        // Anteil des Entwurfsrahmens: 0 = Vanilla-Haltung des aufrechten Modells, 1 = Haltungen des Klaren Schnitts.
+        val frameW: Float
+        var sink = 0f
         if (anim.anim == Anim.ART_CHARGE) {
+            val charge = ArtTimings.artCharge(a)
             sw.mix(REST, if (horizontal) CH_H else CH_V, easeOut(a / 5f))
+            // Spannung: mit der Ladung sinkt die Haltung, bei voller Ladung zittert sie kaum merklich.
+            sink = 0.03f * smooth(charge) + if (charge >= 0.999f) 0.003f * sin((ArtAnims.ticks + td) * 1.9f) else 0f
             leftW = easeOut(a / 4f)
+            frameW = easeOut(a / 4f)
         } else {
             val k = if (horizontal) RH else RV
             val hit = ArtTimings.ART_HIT.toFloat()
+            val charge = ArtParam.charge(anim.param)
+            val raise = 1.1f
+            val linger = 9f + 3f * charge
             when {
-                a < hit * 0.5f -> sw.mix(k[0], k[1], easeIn(a / (hit * 0.5f)))
-                a < hit -> sw.mix(k[1], k[2], seg(a, hit * 0.5f, hit))
-                a < hit + 3f -> sw.mix(k[2], k[3], easeOut(seg(a, hit, hit + 3f)))
-                a < 8f -> sw.set(k[3])
-                else -> sw.mix(k[3], REST, smooth(seg(a, 8f, 16f)))
+                a < raise -> sw.mix(k[0], k[1], easeOut(a / raise))
+                a < hit -> sw.mix(k[1], k[2], seg(a, raise, hit).let { it * it })
+                a < hit + 2.5f -> {
+                    val v = seg(a, hit, hit + 2.5f)
+                    // Durchziehen mit Überschwung über die Endhaltung hinaus
+                    sw.mix(k[2], k[3], easeOut(v) + 0.12f * sin(PI.toFloat() * v))
+                }
+                a < linger -> sw.set(k[3])
+                else -> sw.mix(k[3], REST, smooth(seg(a, linger, 18f)))
             }
-            leftW = 1f - smooth(seg(a, 7f, 11f))
+            sink = 0.05f * (seg(a, hit - 0.5f, hit + 2.5f) - seg(a, linger, 18f))
+            leftW = 1f - smooth(seg(a, hit + 0.5f, hit + 4f))
+            frameW = 1f - smooth(seg(a, linger, 17f))
         }
         val leftHanded = player.mainArm == Arm.LEFT
         val f = if (leftHanded) -1f else 1f
         val grip = Vector3f(FP_GRIP.x * f, FP_GRIP.y, FP_GRIP.z)
+        val itemGrip = Vector3f(ITEM_GRIP.x * f, ITEM_GRIP.y, ITEM_GRIP.z)
 
         val base = Matrix4fCopy.of(matrices)
         matrices.push()
-        matrices.translate(f * 0.56f, -0.52f - equip * 0.6f, -0.72f)
+        matrices.translate(f * 0.56f, -0.52f - equip * 0.6f - sink, -0.72f)
         matrices.translate(f * sw.tx, sw.ty, sw.tz)
         matrices.translate(grip.x, grip.y, grip.z)
         matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(f * sw.ry))
         matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(sw.rx))
         matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(f * sw.rz))
         matrices.translate(-grip.x, -grip.y, -grip.z)
+        // Aufrechtes Modell in den Entwurfsrahmen: Griff auf den Entwurfsgriff, Klinge in die Entwurfsrichtung.
+        val corr = Quaternionf().slerp(mirrored(CORRECT, leftHanded), frameW)
+        val to = Vector3f(itemGrip).lerp(grip, frameW)
+        matrices.translate(to.x, to.y, to.z)
+        matrices.multiply(corr)
+        matrices.translate(-itemGrip.x, -itemGrip.y, -itemGrip.z)
         val m = Matrix4fCopy.of(matrices)
         renderer.renderItem(player, item, if (leftHanded) ItemDisplayContext.FIRST_PERSON_LEFT_HAND else ItemDisplayContext.FIRST_PERSON_RIGHT_HAND, matrices, queue, light)
         matrices.pop()
 
-        val blade = Vector3f(FP_BLADE.x * f, FP_BLADE.y, FP_BLADE.z)
+        val blade = Vector3f(ITEM_BLADE.x * f, ITEM_BLADE.y, ITEM_BLADE.z)
         // Zweite Hand am Griff (unterhalb der ersten), damit die Haltung beidhändig wirkt.
         if (leftW > 0.01f) {
             // Im Grundrahmen von [matrices] (arm() wendet ihn selbst an): local = base⁻¹ · m.
             val local = org.joml.Matrix4f(base).invert().mul(m)
-            val pommel = local.transformPosition(Vector3f(grip).fma(-0.17f, blade), Vector3f())
+            val pommel = local.transformPosition(Vector3f(itemGrip).fma(ITEM_POMMEL, blade), Vector3f())
             pommel.y -= (1f - leftW) * 0.5f
             val s = Vector3f(-0.55f * f, -1.0f, -0.35f)
             val n = Vector3f(f, 0f, 0f)
             arm(player, matrices, queue, light, leftHanded, pommel, s, n, player.skin.model() == PlayerSkinType.SLIM, false, false, 0f)
         }
 
+        val p0 = m.transformPosition(Vector3f(itemGrip).fma(ITEM_BLADE_FROM, blade), Vector3f())
+        val p1 = m.transformPosition(Vector3f(itemGrip).fma(ITEM_BLADE_TO, blade), Vector3f())
+        // Schwertspur des Schnitts (Blickraum): vom Ausholen bis zum Ende des Durchzugs.
+        if (anim.anim == Anim.ART_RELEASE) {
+            SwordTrails.recordView(p0, p1, td, SwordTrails.Style.ART, forced = a < ArtTimings.ART_HIT + 3f)
+            SwordTrails.renderView(queue, td)
+        }
         // Energie entlang der Schneide.
         val fx = ArtVisualGlow.fx()
         if (fx > 0f) {
             val strength = if (anim.anim == Anim.ART_CHARGE) ArtTimings.artCharge(a) else (1f - seg(a, 2f, 9f)) * 0.9f
             if (anim.anim == Anim.ART_CHARGE || strength > 0.01f) {
                 val b = ArtVisualGlow.Builder(ArtVisualGlow.VIEW_RIGHT, ArtVisualGlow.VIEW_UP)
-                val p0 = m.transformPosition(Vector3f(grip).fma(FP_BLADE_FROM, blade), Vector3f())
-                val p1 = m.transformPosition(Vector3f(grip).fma(FP_BLADE_TO, blade), Vector3f())
                 ArtVisualGlow.bladeEnergy(b, p0, p1, strength, ArtAnims.ticks + td, if (anim.anim == Anim.ART_CHARGE) a else 99f, 0.6f, fx)
                 b.submit(queue, VfxLayers.GLOW_ADD)
             }
         }
+    }
+
+    private fun mirrored(q: Quaternionf, left: Boolean): Quaternionf = if (!left) Quaternionf(q) else Quaternionf(q.x, -q.y, -q.z, q.w)
+
+    /**
+     * Normale Schläge mit Solvane in der ersten Person (Vanilla zeichnet): Ansatz und Spitze der Klinge in den Blickraum
+     * der Hand mitschreiben und die Spur zeichnen (sichtbar nur bei vollen Treffern, siehe [SwordTrails]). Aufruf aus
+     * dem Mixin direkt vor `renderItem`, [matrices] steht dann im Hand-Rahmen nach Ausrüsten und Schwung.
+     */
+    @JvmStatic
+    fun vanillaSolvane(player: AbstractClientPlayerEntity, hand: Hand, item: ItemStack, matrices: MatrixStack, queue: OrderedRenderCommandQueue, td: Float) {
+        if (hand != Hand.MAIN_HAND || !item.isOf(GearItems.SOLVANE)) return
+        val anim = ArtAnims.get(player.id)
+        if (anim != null && (anim.anim == Anim.ART_CHARGE || anim.anim == Anim.ART_RELEASE)) return
+        val f = if (player.mainArm == Arm.LEFT) -1f else 1f
+        val m = matrices.peek().positionMatrix
+        val g = Vector3f(ITEM_GRIP.x * f, ITEM_GRIP.y, ITEM_GRIP.z)
+        val b = Vector3f(ITEM_BLADE.x * f, ITEM_BLADE.y, ITEM_BLADE.z)
+        val p0 = m.transformPosition(Vector3f(g).fma(ITEM_BLADE_FROM, b), Vector3f())
+        val p1 = m.transformPosition(Vector3f(g).fma(ITEM_BLADE_TO, b), Vector3f())
+        SwordTrails.recordView(p0, p1, td, SwordTrails.Style.SOLVANE)
+        SwordTrails.renderView(queue, td)
     }
 }
 

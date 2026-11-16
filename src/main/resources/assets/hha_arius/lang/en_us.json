@@ -36,6 +36,8 @@
   "hha_arius.client.flash_off": "Arius fight screen flashes: off",
   "hha_arius.client.flash_on": "Arius fight screen flashes: on",
   "hha_arius.client.fx": "Arius fight particles: %s %%",
+  "hha_arius.client.shake_off": "Camera jolt on heavy hits: off",
+  "hha_arius.client.shake_on": "Camera jolt on heavy hits: on",
   "hha_arius.echo.stage.1": "Temple",
   "hha_arius.echo.stage.2": "Glacier",
   "hha_arius.echo.stage.3": "Heart",

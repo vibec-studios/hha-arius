@@ -43,5 +43,6 @@ internal class GauntletFeature(ctx: FeatureRendererContext<PlayerEntityRenderSta
             }
         }
         if (anim != null) ArtVisuals.handFx(matrices, queue, state, model, anim, td, slim)
+        if (stack.isOf(dev.henny.hha_arius.gear.GearItems.SOLVANE)) ArtVisuals.solvaneTrail(matrices, queue, state, model, anim, td, slim)
     }
 }

@@ -31,6 +31,13 @@ Every attack is announced on the ground through HHA's telegraph system. **Gold a
 movement, shield and bow are enough to win. Dying in the sanctum knocks you out instead: you keep everything and rejoin
 in the next part.
 
+## Visuals
+Monumental polar landscape around the sanctuary (a 225-block ice spire, a deep canyon, glacier ranges), weather and light
+moods per section, Nivaris as a 96-block serpent dragon with an entrance coiled around the spire, a white hole rendered
+as a gravitational-lens shader, upgraded wind/ice/yang magic, hit-stop, sword trails, camera work for all cutscenes and
+two new soundtracks. Effects scale with `/ariusc fx`; flashes and camera shake can be turned off (`/ariusc flash`,
+`/ariusc shake`). A view distance of at least 10 chunks is recommended. Details: `docs/VISUELL.md` (German).
+
 ## Rewards
 
 | | First win | Later wins |

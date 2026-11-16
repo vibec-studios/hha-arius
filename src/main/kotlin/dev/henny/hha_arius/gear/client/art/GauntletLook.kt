@@ -56,7 +56,7 @@ internal object GauntletLook {
                 val f = MathHelper.clamp((u - 0.35f) / 0.3f, 0f, 1f)
                 return (if (toMagic) f else 1f - f) * base * scale()
             }
-            Anim.CAST_CHARGE -> 0.75f + 0.25f * (a / 30f).coerceIn(0f, 1f)
+            Anim.CAST_CHARGE -> 0.75f + 0.25f * dev.henny.hha_arius.gear.art.ArtParam.castCharge(anim.param, a)
             Anim.SHIELD, Anim.PLACE_AIM, Anim.WHITE_HOLE, Anim.GLIDE -> 0.85f
             Anim.CAST_TAP -> 0.55f + 0.45f * (1f - (a / ArtTimings.CAST_TAP).coerceIn(0f, 1f))
             Anim.CAST_RELEASE -> 0.55f + 0.45f * (1f - (a / ArtTimings.CAST_RELEASE).coerceIn(0f, 1f))

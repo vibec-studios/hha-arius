@@ -33,4 +33,20 @@ public abstract class GauntletHeldItemRendererMixin {
             ci.cancel();
         }
     }
+
+    /** Normale Schläge mit Solvane: Klinge für die Schwertspur der ersten Person mitschreiben (direkt vor renderItem). */
+    @Inject(
+        method = "renderFirstPersonItem(Lnet/minecraft/client/network/AbstractClientPlayerEntity;FFLnet/minecraft/util/Hand;FLnet/minecraft/item/ItemStack;FLnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/command/OrderedRenderCommandQueue;I)V",
+        at = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/client/render/item/HeldItemRenderer;renderItem(Lnet/minecraft/entity/LivingEntity;Lnet/minecraft/item/ItemStack;Lnet/minecraft/item/ItemDisplayContext;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/command/OrderedRenderCommandQueue;I)V"
+        ),
+        require = 0
+    )
+    private void hhaArius$solvaneTrail(
+        AbstractClientPlayerEntity player, float tickProgress, float pitch, Hand hand, float swingProgress, ItemStack item,
+        float equipProgress, MatrixStack matrices, OrderedRenderCommandQueue queue, int light, CallbackInfo ci
+    ) {
+        GauntletFirstPerson.vanillaSolvane(player, hand, item, matrices, queue, tickProgress);
+    }
 }

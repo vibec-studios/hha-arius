@@ -6,6 +6,7 @@ import dev.henny.hha.client.vfx.basisOf
 import dev.henny.hha.client.vfx.withAlpha
 import dev.henny.hha_arius.client.fx.AriusClientConfig
 import dev.henny.hha_arius.gear.art.Anim
+import dev.henny.hha_arius.gear.art.ArtParam
 import dev.henny.hha_arius.gear.art.ArtTimings
 import dev.henny.hha_arius.gear.art.CutPlane
 import dev.henny.hha_arius.gear.art.School
@@ -82,6 +83,15 @@ internal object ArtVisualGlow {
             put(a.x + side.x, a.y + side.y, a.z + side.z, 0.5f, 1f, ca)
             put(b.x + side.x, b.y + side.y, b.z + side.z, 0.5f, 1f, cb)
             put(b.x - side.x, b.y - side.y, b.z - side.z, 0.5f, 0f, cb)
+        }
+
+        /** Viereck a0–a1–b1–b0 (Streifen quer von v0 nach v1, u fest 0,5), Farbe [ca] an a, [cb] an b. */
+        fun strip(a0: Vector3f, a1: Vector3f, b0: Vector3f, b1: Vector3f, v0: Float, v1: Float, ca: Int, cb: Int) {
+            if (((ca ushr 24) or (cb ushr 24)) == 0) return
+            put(a0.x, a0.y, a0.z, 0.5f, v0, ca)
+            put(a1.x, a1.y, a1.z, 0.5f, v1, ca)
+            put(b1.x, b1.y, b1.z, 0.5f, v1, cb)
+            put(b0.x, b0.y, b0.z, 0.5f, v0, cb)
         }
 
         fun submit(queue: OrderedRenderCommandQueue, layer: RenderLayer) {
@@ -178,7 +188,7 @@ internal object ArtVisuals {
         val m = Matrix4f(matrices.peek().positionMatrix)
         matrices.pop()
 
-        val school = School.entries.getOrElse(anim.param) { School.WIND }
+        val school = School.entries.getOrElse(ArtParam.school(anim.param)) { School.WIND }
         val pR = Vector3f(); val pL = Vector3f()
         fun palms() {
             point(m, model.rightArm, GauntletParts.palmPoint(true, slim, Vector3f()), 0f, pR)
@@ -193,10 +203,10 @@ internal object ArtVisuals {
         when (anim.anim) {
             Anim.CAST_CHARGE -> {
                 palms()
-                val s = 0.4f + 0.6f * clamp01(a / 30f)
+                val s = 0.4f + 0.6f * ArtParam.castCharge(anim.param, a)
                 palmGlow(pR, s * 0.7f, color, core); palmGlow(pL, s * 0.7f, color, core)
                 val mid = Vector3f(pR).add(pL).mul(0.5f)
-                val orb = 0.05f + 0.09f * clamp01(a / 30f)
+                val orb = 0.05f + 0.09f * ArtParam.castCharge(anim.param, a)
                 val pulse = 1f + 0.05f * sin(time * 0.25f)
                 b.billboard(mid, orb * pulse, ArtVisualGlow.alpha(core, 0.9f * fx))
                 b.billboard(mid, orb * 3.2f, ArtVisualGlow.alpha(color, 0.35f * fx))
@@ -254,7 +264,9 @@ internal object ArtVisuals {
 
     // --- Welt ---------------------------------------------------------------------------------------------------------
 
-    private class Shot(val start: Long, val plane: CutPlane)
+    private class Shot(val start: Long, val plane: CutPlane, val charge: Float = 0.5f) {
+        var struck = false
+    }
 
     private val chargeAge = HashMap<Int, Float>()
     private val shots = HashMap<Int, Shot>()
@@ -285,11 +297,18 @@ internal object ArtVisuals {
                 Anim.ART_RELEASE -> {
                     var shot = shots[p.id]
                     if (shot == null || shot.start != s.start) {
-                        val c = chargeAge[p.id]?.let { ArtTimings.artCharge(it) } ?: 0.5f
-                        shot = Shot(s.start, plane(p, td, ArtTimings.artLength(c), ArtTimings.artHalf(c), s.param == 1))
+                        // Ladung kommt mit dem Schnitt (param); auch wer die Haltung nicht gesehen hat, sieht die richtige Länge.
+                        val c = ArtParam.charge(s.param)
+                        shot = Shot(s.start, plane(p, td, ArtTimings.artLength(c), ArtTimings.artHalf(c), ArtParam.horizontal(s.param)), c)
                         shots[p.id] = shot
                     }
-                    if (fx > 0f) cut(d, shot.plane, a, fx)
+                    if (!shot.struck && s.rawAge(td) >= ArtTimings.ART_HIT - 0.3f) {
+                        shot.struck = true
+                        // Im Treffermoment: Brechung entlang der Schnittebene (Bildpass) und, beim eigenen Schnitt, ein Rucken.
+                        dev.henny.hha_arius.client.fx.CutLens.trigger(shot.plane, 0.55f + 0.45f * shot.charge)
+                        if (p === self) dev.henny.hha_arius.client.fx.CameraKick.kick(0.55f + 0.5f * shot.charge)
+                    }
+                    if (fx > 0f) cut(d, shot.plane, a, fx, shot.charge)
                 }
                 else -> {}
             }
@@ -360,24 +379,84 @@ internal object ArtVisuals {
     }
 
     /**
-     * Der Schnitt: heller Bogen dicht vor dem Spieler (läuft bis zum Treffer bei [ArtTimings.ART_HIT] durch), danach
-     * kurz die begrenzte Schnittebene (in der Mitte am hellsten) und eine feine Naht entlang der Länge.
+     * Der Klare Schnitt, gewaltig: Bis zum Treffer ([ArtTimings.ART_HIT]) läuft ein breiter Lichtbogen durch die
+     * Schnittebene dicht vor dem Spieler, mit zwei nachziehenden Schleiern. Im Treffer schießt eine Lichtklinge über die
+     * ganze Länge (Kern schnell breit, dann haarfein), darunter die begrenzte Ebene als weiches Band, am Ende ein Aufglühen;
+     * feine Nachlinien zittern zu beiden Seiten der Ebene aus. Größe und Helligkeit wachsen mit der Ladung [charge].
+     * Die Brechung des Bildes entlang der Ebene macht [dev.henny.hha_arius.client.fx.CutLens].
      */
-    private fun cut(d: VfxDraw, pl: CutPlane, a: Float, fx: Float) {
+    private fun cut(d: VfxDraw, pl: CutPlane, a: Float, fx: Float, charge: Float) {
         val hit = ArtTimings.ART_HIT.toFloat()
-        val sweep = easeOut(a / hit)
-        val fade = 1f - seg(a, hit + 1f, hit + 9f)
+        val power = 0.7f + 0.3f * charge
+        val fade = 1f - seg(a, hit + 1f, hit + 11f)
         if (fade <= 0f) return
-        val top = Math.toRadians(70.0)
-        val from = top - 2 * top * sweep
-        val arcK = fade * fx
-        d.arc(VfxLayers.GLOW_ADD, pl.origin, pl.forward, pl.span, 1.4, 2.3, from, top,
-            withAlpha(WHITE, 0.75f * arcK), withAlpha(ICE, 0.75f * arcK), segments = 32, uTile = 0f, uOffset = 0.5f)
-        if (a >= hit - 0.5f) {
-            val k = (1f - seg(a, hit + 1f, hit + 7f)) * fx
-            val end = pl.origin.add(pl.forward.multiply(pl.length))
-            d.band(VfxLayers.GLOW_ADD, pl.origin, end, pl.span, pl.half, withAlpha(ICE, 0.22f * k), withAlpha(ICE, 0.08f * k))
-            d.ribbon(VfxLayers.GLOW_ADD, listOf(pl.origin, end), { 0.03 }, { withAlpha(WHITE, k * (1f - it * 0.5f)) }, uScale = 0f, uOffset = 0.5f)
+        val top = Math.toRadians(75.0)
+        val r0 = 1.2
+        val r1 = 2.4 + 0.6 * charge
+        // Bogen und zwei Schleier (leicht verzögert, schwächer)
+        for (ghost in 0..2) {
+            val lag = ghost * 0.6f
+            val sweep = easeOut((a - lag) / hit)
+            if (sweep <= 0f) continue
+            val from = top - 2 * top * sweep
+            val tail = (from + 0.9 * (1.0 + ghost)).coerceAtMost(top)
+            val k = fade * fx * power * (if (ghost == 0) 0.8f else 0.35f / ghost)
+            d.arc(VfxLayers.GLOW_ADD, pl.origin, pl.forward, pl.span, r0 - ghost * 0.1, r1 + ghost * 0.15, from, tail,
+                withAlpha(WHITE, k), withAlpha(ICE, k), segments = 28, uTile = 0f, uOffset = 0.5f)
         }
+        if (a < hit - 0.5f) return
+        val t = a - hit
+        val end = pl.origin.add(pl.forward.multiply(pl.length))
+        val k = (1f - seg(t, 1f, 8f)) * fx * power
+        // Ebene als weiches Band (in der Mitte am hellsten)
+        d.band(VfxLayers.GLOW_ADD, pl.origin, end, pl.span, pl.half * (0.9 + 0.2 * easeOut(t / 3f)), withAlpha(ICE, 0.24f * k), withAlpha(ICE, 0.1f * k))
+        // Lichtklinge: Kern schießt nach vorn (ein Tick), wird breit und dann haarfein
+        val reach = easeOut((t + 0.5f) / 1.5f).toDouble()
+        val tipAt = pl.origin.add(pl.forward.multiply(pl.length * reach))
+        val core = 0.03 + 0.11 * (1.0 - seg(t, 0f, 5f)) * power
+        d.ribbon(VfxLayers.GLOW_ADD, listOf(pl.origin, pl.origin.lerp(tipAt, 0.5), tipAt), { core * (0.6 + 0.4 * it) },
+            { withAlpha(WHITE, k * (1f - it * 0.35f)) }, uScale = 0f, uOffset = 0.5f)
+        d.ribbon(VfxLayers.GLOW_ADD, listOf(pl.origin, tipAt), { core * 3.2 }, { withAlpha(ICE, 0.35f * k) }, uScale = 0f, uOffset = 0.5f)
+        // Aufglühen am Ende der Ebene
+        if (t < 6f) d.billboard(VfxLayers.GLOW_ADD, end, (0.6 + 0.8 * charge) * easeOut(t / 2f), withAlpha(ICE, 0.45f * fx * power * (1f - t / 6f)))
+        // Nachlinien zu beiden Seiten der Ebene, die auseinanderzittern
+        if (t < 8f) {
+            val spread = 0.04 + 0.12 * easeOut(t / 8f)
+            val kk = 0.4f * fx * power * (1f - t / 8f)
+            for (side in intArrayOf(-1, 1)) {
+                val off = pl.normal.multiply(side * spread)
+                val wob = pl.span.multiply(0.05 * sin(t * 2.3 + side))
+                d.ribbon(VfxLayers.GLOW_ADD, listOf(pl.origin.add(off), end.add(off).add(wob)), { 0.012 }, { withAlpha(WHITE, kk * (1f - it * 0.5f)) },
+                    uScale = 0f, uOffset = 0.5f)
+            }
+        }
+    }
+
+    /**
+     * Schwertspur von Solvane in der dritten Person (jeder Spieler): Klingenansatz und -spitze aus dem Arm des Modells
+     * (wie HeldItemFeatureRenderer) jedes Bild mitschreiben. Normale Schläge zeigen die Spur nur bei vollen Treffern, der
+     * Klare Schnitt immer (vom Ausholen bis zum Ende des Durchzugs).
+     */
+    fun solvaneTrail(
+        matrices: MatrixStack, queue: OrderedRenderCommandQueue, state: PlayerEntityRenderState, model: PlayerEntityModel,
+        anim: ArtAnims.State?, td: Float, slim: Boolean,
+    ) {
+        val mainRight = state.mainArm != Arm.LEFT
+        val mainArm = if (mainRight) model.rightArm else model.leftArm
+        if (!mainArm.visible) return
+        matrices.push()
+        model.rootPart.applyTransform(matrices)
+        val m = Matrix4f(matrices.peek().positionMatrix)
+        matrices.pop()
+        val shift = if (slim) (if (mainRight) 0.5f else -0.5f) else 0f
+        val grip = Vector3f(ArtPose.GRIP).also { if (!mainRight) it.x = -it.x }
+        val p0 = point(m, mainArm, Vector3f(grip).fma(ArtPose.BLADE_FROM, ArtPose.BLADE), shift, Vector3f())
+        val p1 = point(m, mainArm, Vector3f(grip).fma(ArtPose.BLADE_TO, ArtPose.BLADE), shift, Vector3f())
+        val cam = MinecraftClient.getInstance().gameRenderer.camera.cameraPos
+        val art = anim?.anim == Anim.ART_RELEASE
+        val style = if (art) SwordTrails.Style.ART else SwordTrails.Style.SOLVANE
+        val forced = art && anim!!.age(td) < ArtTimings.ART_HIT + 3f
+        SwordTrails.recordWorld(state.id, Vec3d(p0.x + cam.x, p0.y + cam.y, p0.z + cam.z), Vec3d(p1.x + cam.x, p1.y + cam.y, p1.z + cam.z), td, style, forced)
+        SwordTrails.renderWorld(queue, state.id, td)
     }
 }

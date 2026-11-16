@@ -1,0 +1,20 @@
+# Visuelles Upgrade (Stand 1.1.0)
+
+Referenz für Atmosphäre, Wucht und Cinematics war *Black Myth: Wukong*. Alles läuft direkt in Minecraft; die Welt ist aus Vanilla-Blöcken gebaut, Custom-Rendering und eigene Shader kommen dort zum Einsatz, wo sie die Darstellung verbessern.
+
+| Bereich | Was | Wo |
+|---|---|---|
+| **Landschaft** | Die **Nadel**: ein 225 Blöcke hoher, steiler, kannelierter Eisberg im Süden. Davor eine Schlucht bis 70 Blöcke tief. Zwei Gletscherzüge in Ost und West mit Seracs rahmen die Sichtachse vom Plateau. Im Norden Klippen hinter dem Tempel. Nur eine Haut aus Blöcken (~0,25 Mio.), je Instanz einmal im Hintergrund gebaut. | `arena/FarPlan.kt`, Vorschau `tools/assets/far_preview.py` |
+| **Wetter und Licht** | Eine Stimmung je Abschnitt, weich überblendet: klarer Tempel, Schneetreiben auf dem Gletscher, Whiteout vor dem Auftritt, aufreißende Wolken bei der Enthüllung, blaues Gewölbe, weißes Licht bei Verwandlung und Ende. Dazu Schneetreiben im Wind mit Böen, treibende Schneeschleier und Glitzern auf Eisflächen. | `client/fx/Atmos.kt`, `AtmosS2C`, Mixin auf die Umgebungswerte |
+| **Nivaris** | Ein 96 Blöcke langer **Schlangendrache** aus 40 Gliedern. Der Körper fließt entlang der Flugbahn mit Welle, Rollen und Schräglage. Am Boden liegt er in Bögen. Schwingen werden angelegt oder gespannt (Quaternion-Überblendung). | `client/model/nivaris/*`, `tools/assets/nivaris_model.py`, `docs/NIVARIS_SERPENT.md` |
+| **Auftritt** | Schneesturm, einzelne Körperwindungen im Sturm, dann reißen die Wolken auf. Totale: Nivaris windet sich 1½-mal um das obere Drittel der Nadel, den Kopf über dem Gipfel. Dann löst sie sich fließend vom Fels, gleitet über die Schlucht und landet auf dem Plateau. Etwa 34 s, eigene Musik, überspringbar. | `boss/Entrance.kt` |
+| **Weißes Loch** | Vollbild-Linse (Shader), entwickelt aus dem schwarzen Loch von HHA Void, aber umgekehrt: Licht wird vom Kern **weggebogen** und die Welt wölbt sich nach außen. Der Kern gleißt weiß, eine Scheibe aus Eis und goldenem Licht strömt spiralförmig nach außen, Schnee wird eingesogen. Beim Kollaps folgt eine Brechungs-Schockwelle. Boss und Setfähigkeit nutzen denselben Effekt. | `client/fx/WhiteHoleFx.kt`, `shaders/core/white_lens.*` |
+| **Magie** | **Wind:** Windklinge aus fließenden Sicheln, Sturmstoß als Kegel aus Windbögen. **Eis:** ausgerichtete Eiskristalle, die beim Aufprall in Splitter zerbrechen. **Yang:** Kugel mit Runenring, Strahlen und Lichtschweif, die beim Aufprall zur Sonnenscheibe aufblüht. Handenergie, Yang-Schild und Lichtscheibe des Gleiters. | `client/fx/ArtEffects.kt`, `gear/client/art/ArtVisuals.kt` |
+| **Kampfwucht** | Hit-Stop nur in der Darstellung. Aufprall-Funken, Splitter und Schockring. Dezentes Kamerarucken, abschaltbar mit `/ariusc shake`. Schwertspuren für Solvane, den Klaren Schnitt (mit Bildbrechung, Shader `cut_lens`) und Arius' Klinge. Spieler-Moveset mit Beschleunigung bis zum Treffer und Nachschwingen. | `client/fx/Impact.kt`, `CutLens.kt`, `AriusBladeTrail.kt`, `gear/client/art/SwordTrails.kt` |
+| **Arius** | Antizipation, Kraftkette Hüfte → Brust → Schulter → Arm → Klinge, Treffer-Stoß, Überschwung, Fuß-IK. Mantel, Haar und Scheide hängen an gedämpften Federn. Treffer-Zeitpunkte sind unverändert. | `client/model/arius/AriusModel.kt`, `tools/assets/arius_model.py` |
+| **Cutscenes** | Kamerafahrten für: Intro (erster Besuch), den Schnitt (Totale, während die Tempelhälfte abgleitet), den Tritt durchs Tor, den Gletschersturz und die Verwandlung, das Ende. Ein sichtbarer Absturz von Hunderten Blöcken beim Einsturz. | `boss/Scenes.kt`, `boss/Entrance.kt` |
+| **Musik** | Zwei neue Stücke auf dem Arius-Leitmotiv: **Auftritt** (Sturm, Herzschlag, Enthüllung im tiefen Blech) und **Verwandlung** (Sturz, Glassplitter, das Motiv in Dur). | `tools/assets/audio/arius_music.py` |
+
+Effekte skalieren mit `/ariusc fx <0-100>`. Blitze lassen sich mit `/ariusc flash` abschalten, Kamerarucken mit `/ariusc shake`.
+
+**Sichtweite:** Die Nadel steht etwa 130–150 Blöcke vom Plateau entfernt. Empfohlen sind mindestens 10 Chunks Sichtweite.

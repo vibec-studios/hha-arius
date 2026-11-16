@@ -3,6 +3,7 @@ package dev.henny.hha_arius.boss
 import dev.henny.hha.api.set.HhaSets
 import dev.henny.hha.logic.Fx
 import dev.henny.hha.logic.Vfx
+import dev.henny.hha.logic.boss.Cine
 import dev.henny.hha.logic.boss.Telegraph
 import dev.henny.hha_arius.arena.ArenaBuilder
 import dev.henny.hha_arius.arena.ArenaLayout
@@ -50,10 +51,21 @@ class Scenes(private val f: EirholmFight) {
 
     // --- Intro -------------------------------------------------------------------------------------------------------------
 
+    private fun rel(x: Double, y: Double, z: Double): Vec3d = f.abs(Vec3d(x, y, z))
+
+    /** Nur wenn die Szene nicht gerade übersprungen (vorgespult) wird: Klänge, Texte und kurze Effekte. */
+    private inline fun shown(block: () -> Unit) {
+        if (!Cine.muted) block()
+    }
+
+    /** Szenenklang (still beim Vorspulen). */
+    private fun cue(id: String, at: Vec3d, volume: Float = 3f, pitch: Float = 1f) = shown { f.ambient(id, at, volume, pitch) }
+
     fun intro(): Script = script {
         val a = f.arius ?: return@script
         f.ariusVulnerable = false
-        f.music("music.temple", 40)
+        val firstVisit = f.training == 0 && f.audience().any { !state().player(it.uuid).seenIntro }
+        if (firstVisit) yieldAll(establish(a)) else f.music("music.temple", 40)
         waitUntil(160) { f.players().any { it.squaredDistanceTo(a) < 16.0 * 16.0 } }
         if (f.training == 1) {
             f.say("echo", 60)
@@ -81,6 +93,39 @@ class Scenes(private val f: EirholmFight) {
             }
         }
         yieldAll(temple())
+    }
+
+    /**
+     * Etablierungsfahrt beim ersten Besuch (≈ 14 s, überspringbar, keine Gefahr: der Kampf hat noch nicht begonnen).
+     * 1. Hoch im Norden hinter der Tempelkuppel: Die Kamera gleitet nach Süden, unten die Kuppel, dahinter das Plateau und
+     *    in der Ferne die Nadel (oberes Bilddrittel). Nur Wind.
+     * 2. Stille: über den Köpfen der Ankommenden durch das Tor in die Halle, langsame Annäherung an den Sitzenden.
+     * 3. Detail: sein Gesicht, die Augen glimmen auf, das Tempelthema setzt ein. Rückweg zur Spielerkamera.
+     */
+    private fun establish(a: AriusEntity): Script {
+        val scene = CineScene(f) { f.music("music.temple", 20) }
+        return scene.play(script {
+            val temple = f.abs(Vec3d.of(ArenaLayout.TEMPLE))
+            scene.once { Cine.fade(it, 0x000000, 1.0, 0.0, 30) }
+            // 1) Über das Heiligtum. Blickmitte knapp unter dem Horizont: Kuppel unten, Spitze der Nadel oben im Bild.
+            scene.line(rel(-16.0, 64.0, -112.0), rel(-8.0, 56.0, -96.0), rel(0.0, 40.0, -20.0), rel(0.0, 54.0, 0.0), 120, 66.0, 62.0)
+            shown { f.ambient("seal.blizzard", f.abs(ArenaLayout.ARRIVAL), 1.2f, 0.55f) }
+            wait(120)
+            // 2) Stille: über den Köpfen durch das Tor, langsam auf ihn zu.
+            scene.line(rel(2.5, 3.1, -33.5), rel(1.6, 2.7, -50.0), temple, temple, 90, 52.0, 42.0, lookAt = a, lookOffset = 1.45)
+            wait(90)
+            // 3) Detail: das Gesicht, die Augen glimmen auf.
+            val face = a.entityPos.add(0.0, 1.55, 0.0)
+            val front = f.facing(a)
+            scene.line(face.add(front.multiply(2.4)).add(0.6, -0.25, 0.0), face.add(front.multiply(1.7)).add(0.4, -0.15, 0.0), face, face.add(0.0, 0.05, 0.0), 62, 46.0, 38.0)
+            wait(20)
+            a.eyeGlow = 70
+            f.music("music.temple", 40)
+            shown { f.ambient("resonance.chime", face, 1.5f, 0.6f) }
+            wait(26)
+            scene.home(16)
+            wait(16)
+        })
     }
 
     // --- I: Tempel ----------------------------------------------------------------------------------------------------------
@@ -118,28 +163,47 @@ class Scenes(private val f: EirholmFight) {
 
     // --- Der Schnitt -------------------------------------------------------------------------------------------------------
 
+    /**
+     * Der Schnitt mit Kamera in zwei Teilen, beide außerhalb jeder Gefahr:
+     * * Spannungsaufbau (42 Ticks, vor der Ansage): Sprung auf die Altarstufe in der Halbtotalen, dann Stille und die
+     *   Klinge im Detail, während der Wind sich umkehrt; Rückweg zur Spielerkamera **bevor** die Ansage beginnt. Die
+     *   Ansage behält ihre vollen 60 Ticks, die Spieler haben die Steuerung.
+     * * Nach dem Treffer (Schaden ist schon verrechnet): Stille auf Arius, dann die weite Totale, in der die Osthälfte des
+     *   Tempels abgleitet, und ohne Schnitt weiter in den Tritt durchs Tor ([kick]), bis Nivaris' Auftritt übernimmt.
+     */
     fun theCut(): Script = script {
         val a = f.arius ?: return@script
         f.setPhase(P.CUT)
         f.ariusVulnerable = false
         f.music(null, 30)
-        // Sprung auf die Altarstufe.
         val stand = f.abs(ArenaLayout.CUT_STAND)
-        val start = a.entityPos
-        f.ambient("arius.wind_step", start, 2f, 0.7f)
-        for (i in 1..12) {
-            val k = i / 12.0
-            f.place(a, start.lerp(stand, k).add(0.0, sin(k * PI) * 2.0, 0.0))
-            yield(Unit)
+        val pre = CineScene(f) {
+            f.place(a, stand)
+            a.play(AriusPose.CUT_CHARGE)
         }
-        a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
-        a.play(AriusPose.CUT_CHARGE)
-        f.fx(FxKind.REVERSE_WIND, stand.add(0.0, 2.0, 0.0), a = 30f, life = AriusTimings.CUT_WIND + 50)
-        f.ambient("cut.reverse_wind", stand, 4f)
-        wait(20)
-        f.fx(FxKind.EDGE, stand, life = 70, e1 = a)
-        f.ambient("cut.charge", stand, 3f)
-        wait(AriusTimings.CUT_LINE_AT - 20)
+        yieldAll(pre.play(script {
+            // Sprung auf die Altarstufe: Halbtotale von der Westseite der Halle, der Blick folgt ihm.
+            val start = a.entityPos
+            pre.line(rel(-9.0, 1.4, -50.0), rel(-8.0, 2.2, -54.5), stand, stand, 14, 62.0, 56.0, lookAt = a, lookOffset = 1.3)
+            cue("arius.wind_step", start, 2f, 0.7f)
+            for (i in 1..12) {
+                val k = i / 12.0
+                f.place(a, start.lerp(stand, k).add(0.0, sin(k * PI) * 2.0, 0.0))
+                yield(Unit)
+            }
+            a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
+            a.play(AriusPose.CUT_CHARGE)
+            f.fx(FxKind.REVERSE_WIND, stand.add(0.0, 2.0, 0.0), a = 30f, life = AriusTimings.CUT_WIND + 50)
+            cue("cut.reverse_wind", stand, 4f)
+            // Stille, Detail: Hände und Klinge, an denen sich der Wind sammelt; ganz langsam näher.
+            pre.line(stand.add(-2.2, 0.75, 2.6), stand.add(-1.6, 0.85, 2.0), stand, stand, 30, 44.0, 36.0, lookAt = a, lookOffset = 1.15)
+            wait(20)
+            f.fx(FxKind.EDGE, stand, life = 70, e1 = a)
+            cue("cut.charge", stand, 3f)
+            // Rückweg zur Spielerkamera, fertig bevor die Ansage beginnt.
+            pre.home(10)
+            wait(AriusTimings.CUT_LINE_AT - 20)
+        }))
         f.cutSurvivors.clear()
         f.cutSurvivors.addAll(f.players().map { it.uuid })
         val group = f.calls.boss(pace = Telegraph.Pace.ROOM)
@@ -151,22 +215,32 @@ class Scenes(private val f: EirholmFight) {
             f.cutSurvivors.remove(p.uuid)
             f.hurt(p, 30f, Damage.Kind.NULL_CUT)
         }
-        Vfx.crescent(f.world, Vfx.Style.HEAVEN, stand.add(0.0, 1.5, 0.0), Vec3d(0.0, 0.0, 1.0), 110f, 5f, 12)
-        f.fx(FxKind.SEAM, f.abs(ArenaLayout.CUT_FROM).add(0.0, 0.2, 0.0), f.abs(ArenaLayout.CUT_TO).add(0.0, 0.2, 0.0), a = 14f, life = AriusTimings.CUT_SILENCE + 16)
-        wait(AriusTimings.CUT_SILENCE)
-        split()
-        f.task(script {
-            wait(AriusTimings.CUT_SLIDE)
-            for ((pos, state) in ArenaBuilder.cutRubble(f.world, f.origin)) {
-                if (f.world.getBlockState(pos).isAir) f.edits.set(pos, state)
-            }
-            f.ambient("ridge.break", f.abs(Vec3d.of(ArenaLayout.TEMPLE)).add(18.0, 2.0, 0.0), 4f, 0.5f)
-        })
-        wait(40)
-        f.sceneText("cut_after")
-        for (id in f.cutSurvivors) f.server.playerManager.getPlayer(id)?.let { Advancements.grant(it, "under_the_line") }
-        wait(AriusTimings.CUT_SLIDE - 30)
-        yieldAll(gateKick())
+        val post = CineScene(f) {}
+        yieldAll(post.play(script {
+            // Stille nach dem Schnitt: nah an ihm, die Klinge ausgestreckt, die Naht leuchtet über den Boden.
+            val face = stand.add(0.0, 1.5, 0.0)
+            post.line(stand.add(2.6, 1.0, 3.2), stand.add(2.9, 1.3, 3.9), face, face.add(0.0, -0.3, 2.0), AriusTimings.CUT_SILENCE + 2, 48.0, 50.0)
+            shown { Vfx.crescent(f.world, Vfx.Style.HEAVEN, stand.add(0.0, 1.5, 0.0), Vec3d(0.0, 0.0, 1.0), 110f, 5f, 12) }
+            f.fx(FxKind.SEAM, f.abs(ArenaLayout.CUT_FROM).add(0.0, 0.2, 0.0), f.abs(ArenaLayout.CUT_TO).add(0.0, 0.2, 0.0), a = 14f, life = AriusTimings.CUT_SILENCE + 16)
+            wait(AriusTimings.CUT_SILENCE)
+            // Weite Totale: hoch im Südwesten über dem Plateau, die Osthälfte gleitet ab, die Kamera schwenkt langsam mit.
+            val temple = f.abs(Vec3d.of(ArenaLayout.TEMPLE))
+            post.line(rel(-44.0, 30.0, -12.0), rel(-50.0, 34.0, -20.0), temple.add(2.0, 8.0, 0.0), temple.add(12.0, 6.0, 0.0), AriusTimings.CUT_SLIDE + 20, 60.0, 66.0)
+            split()
+            f.task(script {
+                wait(AriusTimings.CUT_SLIDE)
+                for ((pos, state) in ArenaBuilder.cutRubble(f.world, f.origin)) {
+                    if (f.world.getBlockState(pos).isAir) f.edits.set(pos, state)
+                }
+                cue("ridge.break", f.abs(Vec3d.of(ArenaLayout.TEMPLE)).add(18.0, 2.0, 0.0), 4f, 0.5f)
+            })
+            wait(40)
+            shown { f.sceneText("cut_after") }
+            for (id in f.cutSurvivors) f.server.playerManager.getPlayer(id)?.let { Advancements.grant(it, "under_the_line") }
+            wait(AriusTimings.CUT_SLIDE - 30)
+            yieldAll(kick(post))
+        }))
+        yieldAll(arrival())
     }
 
     /** Der Tempel trennt sich: Momentaufnahme an alle, echte Blöcke weg, Kluft im Süden. */
@@ -202,13 +276,21 @@ class Scenes(private val f: EirholmFight) {
         for (p in f.players()) if (p.x > cutX) Fx.launchPlayer(p, Vec3d(-0.8, 0.3, 0.0))
     }
 
-    /** Übergang I → II: Tritt durchs Tor, Nivaris erscheint über den Landeplätzen. */
-    fun gateKick(): Script = script {
+    /**
+     * Übergang I → II, Teil 1: der Tritt durchs Tor (läuft in der Kamera-Szene von [theCut], keine Gefahr: die Spieler
+     * werden gehalten und geworfen, kein Schaden). Seitliche Nahaufnahme, wie er heranstürmt und ausholt; im Tritt springt
+     * die Kamera vor das Tor, die Spieler fliegen über sie hinweg, dann schwenkt sie weit über die Landeplätze.
+     */
+    private fun kick(scene: CineScene): Script = script {
         val a = f.arius ?: return@script
         val players = f.players()
         val kickTarget = f.target()
+        val windup = AriusTimings.ARIUS_WINDUP[AriusPose.GATE_KICK]
         if (kickTarget != null) {
             val front = kickTarget.entityPos.add(0.0, 0.0, -1.8)
+            val mid = front.lerp(kickTarget.entityPos, 0.5)
+            // Seitlich, auf Hüfthöhe: das Heranstürmen und das Ausholen, enger werdend.
+            scene.line(mid.add(5.2, 1.3, -1.5), mid.add(3.6, 1.0, -0.4), mid.add(0.0, 1.1, 0.0), mid.add(0.0, 0.9, 0.0), 10 + windup, 58.0, 48.0)
             val from = a.entityPos
             for (i in 1..10) {
                 f.place(a, from.lerp(Vec3d(front.x, f.floorY, front.z), i / 10.0).add(0.0, sin(i / 10.0 * PI) * 1.2, 0.0))
@@ -217,14 +299,16 @@ class Scenes(private val f: EirholmFight) {
             f.face(a, kickTarget.entityPos)
         }
         for (p in players) Hold.freeze(p, 20)
-        a.play(AriusPose.GATE_KICK, AriusTimings.ARIUS_WINDUP[AriusPose.GATE_KICK])
-        f.ambient("arius.parry", a.entityPos, 2.5f, 0.9f)
-        wait(AriusTimings.ARIUS_WINDUP[AriusPose.GATE_KICK])
-        f.ambient("arius.kick", a.entityPos, 3.5f, 0.85f)
-        f.ambient("hold.impact", a.entityPos, 2.5f)
+        a.play(AriusPose.GATE_KICK, windup)
+        cue("arius.parry", a.entityPos, 2.5f, 0.9f)
+        wait(windup)
+        cue("arius.kick", a.entityPos, 3.5f, 0.85f)
+        cue("hold.impact", a.entityPos, 2.5f)
         val gate = f.abs(Vec3d.of(ArenaLayout.GATE))
-        Vfx.shockwave(f.world, Vfx.Style.HEAVEN, gate.add(0.5, 0.0, 0.5), 6f, 16, 3f)
-        for (i in 0 until 40) {
+        // Vor dem Tor, tief: die Spieler brechen heraus und fliegen über die Kamera hinweg.
+        scene.line(gate.add(4.0, 0.9, 7.0), gate.add(3.0, 1.3, 9.5), gate.add(0.5, 3.5, 0.5), gate.add(0.5, 6.0, 4.0), 12, 74.0, 78.0)
+        shown { Vfx.shockwave(f.world, Vfx.Style.HEAVEN, gate.add(0.5, 0.0, 0.5), 6f, 16, 3f) }
+        if (!Cine.muted) for (i in 0 until 40) {
             val x = gate.x + rnd.nextInt(7) - 3
             val y = gate.y + rnd.nextInt(9)
             f.world.spawnParticles(ParticleTypes.SNOWFLAKE, x + 0.5, y + 0.5, gate.z + 0.5, 3, 0.4, 0.4, 0.4, 0.15)
@@ -243,7 +327,17 @@ class Scenes(private val f: EirholmFight) {
         f.place(a, seat)
         a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
         a.play(AriusPose.SEATED)
-        // Nivaris' Auftritt an der Nadel (Sturm, Enthüllung, Abflug, Landung vor den Landeplätzen), überspringbar.
+        // Weiter Schwenk über die Landeplätze, bis alle gelandet sind; danach übernimmt der Auftritt.
+        val landing = f.abs(ArenaLayout.LANDING[0])
+        scene.line(gate.add(7.0, 3.0, 11.0), rel(-12.0, 9.0, -6.0), gate.add(0.5, 4.0, 3.0), landing.add(0.0, 1.0, 0.0), 34, 72.0, 64.0)
+        wait(34)
+    }
+
+    /**
+     * Übergang I → II, Teil 2: Nivaris' Auftritt an der Nadel (Sturm, Enthüllung, Abflug, Landung vor den Landeplätzen,
+     * eigene Szene, überspringbar), dann ihr Name und Arius' Zeilen.
+     */
+    private fun arrival(): Script = script {
         yieldAll(entrance(f))
         val d = f.nivaris ?: return@script
         val spot = d.entityPos
@@ -307,7 +401,28 @@ class Scenes(private val f: EirholmFight) {
 
     // --- Übergang II → III: Der Gletscher bricht, Verwandlung ----------------------------------------------------------
 
+    /**
+     * Gletschersturz und Verwandlung als eine Szene mit Kamera (überspringbar; keine Ansage, kein Schaden: die Risse sind
+     * nur Information, die Spieler fallen mit Sanftem Fall). Ablauf der Kamera:
+     * 1. Spannung: nah an Arius, der pfeift; hinter ihm steigt Nivaris auf, die Augen glühen beim Faden.
+     * 2. Stille von oben: die Risse laufen über das Plateau.
+     * 3. Der Sturzflug von unten, das Sichtfeld weitet sich.
+     * 4. Weite Totale von außen, während die Ringe in die Tiefe brechen.
+     * 5. Im Gewölbe, Blick nach oben durch das Loch: Trümmer und Fallende.
+     * 6. Verwandlung: Detail, dann ein Seitenschwenk, der Nivaris hinter ihm zeigt; Rückweg zur Spielerkamera.
+     */
     fun collapse(): Script = script {
+        f.arius ?: return@script
+        f.nivaris ?: return@script
+        val scene = CineScene(f) {}
+        yieldAll(scene.play(script {
+            yieldAll(collapseBody(scene))
+            yieldAll(transformBody(scene))
+        }))
+        yieldAll(vaultFight())
+    }
+
+    private fun collapseBody(scene: CineScene): Script = script {
         val a = f.arius ?: return@script
         val d = f.nivaris ?: return@script
         f.setPhase(P.COLLAPSE)
@@ -322,54 +437,66 @@ class Scenes(private val f: EirholmFight) {
         val from = d.entityPos
         a.sheathed = false
         a.play(AriusPose.WHISTLE)
-        f.say("fall.together", 50)
+        shown { f.say("fall.together", 50) }
+        // 1) Nah an ihm, leicht von unten; der Blick hebt sich mit ihr.
+        val face = a.entityPos.add(0.0, 1.6, 0.0)
+        val toward = flatDir(a.entityPos, center).let { if (it.lengthSquared() < 0.5) f.facing(a) else it }
+        val side = Vec3d(-toward.z, 0.0, toward.x)
+        scene.line(face.add(toward.multiply(2.6)).add(side.multiply(0.9)).add(0.0, -0.5, 0.0), face.add(toward.multiply(2.0)).add(side.multiply(0.7)).add(0.0, -0.4, 0.0),
+            face, face.add(toward.multiply(-6.0)).add(0.0, 5.0, 0.0), 40, 50.0, 56.0)
         for (i in 1..40) {
             f.place(d, from.lerp(high, i / 40.0))
             f.face(d, center)
             if (i == 20) {
                 f.fx(FxKind.THREAD, a.entityPos, life = 40, e1 = a, e2 = d)
-                f.ambient("resonance.chime", a.entityPos, 3f)
+                cue("resonance.chime", a.entityPos, 3f)
                 a.eyeGlow = 100
                 d.eyeGlow = 100
             }
             yield(Unit)
         }
-        // Risse laufen über das Plateau (nur Information, kein Schaden).
+        // 2) Stille von oben: die Risse laufen über das Plateau (nur Information, kein Schaden).
+        scene.line(center.add(-4.0, 15.0, 10.0), center.add(-3.0, 12.5, 8.0), center, center.add(0.0, 0.0, -1.0), 24 + 10, 62.0, 66.0)
         for ((i, r) in ArenaLayout.COLLAPSE_RINGS.withIndex()) {
-            Vfx.rune(f.world, Vfx.Style.STORM, center.add(0.0, 0.05, 0.0), r.toFloat(), 60 - i * 10)
-            f.ambient("glacier.crack", center.add(r, 0.0, 0.0), 4f, 0.8f + i * 0.1f)
+            shown { Vfx.rune(f.world, Vfx.Style.STORM, center.add(0.0, 0.05, 0.0), r.toFloat(), 60 - i * 10) }
+            cue("glacier.crack", center.add(r, 0.0, 0.0), 4f, 0.8f + i * 0.1f)
             wait(8)
         }
         for (p in f.players()) {
             p.addStatusEffect(StatusEffectInstance(StatusEffects.SLOW_FALLING, 200, 0, false, false, true))
         }
+        // 3) Der Sturzflug von unten, das Sichtfeld weitet sich.
+        scene.line(center.add(11.0, 1.2, 9.0), center.add(12.5, 1.0, 10.5), center.add(0.0, 14.0, 0.0), center, 24, 58.0, 76.0, lookAt = d, lookOffset = 1.5)
         d.play(NivarisPose.CRASH_DIVE, 24)
         val dive = d.entityPos
         for (i in 1..24) {
             f.place(d, dive.lerp(center, i / 24.0))
             yield(Unit)
         }
-        f.sceneText("collapse", 60)
-        f.ambient("glacier.collapse", center, 6f)
-        f.ambient("nivaris.crash", center, 5f)
+        // 4) Weite Totale von außen: der Sturm reißt im Aufprall auf, die Ringe brechen in die Tiefe.
+        f.atmos(dev.henny.hha_arius.net.AtmosMode.SNOW, 12)
+        scene.line(center.add(-24.0, 12.0, 20.0), center.add(-28.0, 16.0, 24.0), center.add(0.0, -2.0, 0.0), center.add(0.0, -8.0, 0.0), 40, 62.0, 68.0)
+        shown { f.sceneText("collapse", 60) }
+        cue("glacier.collapse", center, 6f)
+        cue("nivaris.crash", center, 5f)
         f.calls.roomShake(center, 7f, 90f)
         for (ring in 0..2) {
             val falling = ArenaBuilder.collapseRing(f.world, f.origin, ring)
             // Sichtbarer Absturz: eine Auswahl der Blöcke stürzt taumelnd in die Tiefe (nur Darstellung).
             val sample = falling.filter { !f.world.getBlockState(it).isAir }.shuffled(java.util.Random(ring.toLong())).take(420)
-            if (sample.isNotEmpty()) {
+            if (sample.isNotEmpty() && !Cine.muted) {
                 val payload = dev.henny.hha_arius.gear.art.ArtCutS2C(
                     LongArray(sample.size) { sample[it].asLong() },
                     IntArray(sample.size) { net.minecraft.block.Block.getRawIdFromState(f.world.getBlockState(sample[it])) }, 3,
                 )
                 for (p in f.audience()) dev.henny.hha_arius.net.AriusNet.send(p, payload)
             }
-            run {
+            shown {
                 val chunkFrom = center.add(rnd.nextGaussian() * 6, 1.0, rnd.nextGaussian() * 6)
                 f.fx(FxKind.ICE_CHUNK, chunkFrom, chunkFrom.add(rnd.nextGaussian() * 4, -30.0, rnd.nextGaussian() * 4), a = 1.6f, life = 30)
             }
             for (pos in falling) {
-                if (rnd.nextInt(40) == 0) f.world.spawnParticles(BlockStateParticleEffect(ParticleTypes.BLOCK, f.world.getBlockState(pos)), pos.x + 0.5, pos.y + 0.5, pos.z + 0.5, 6, 0.5, 0.5, 0.5, 0.1)
+                if (!Cine.muted && rnd.nextInt(40) == 0) f.world.spawnParticles(BlockStateParticleEffect(ParticleTypes.BLOCK, f.world.getBlockState(pos)), pos.x + 0.5, pos.y + 0.5, pos.z + 0.5, 6, 0.5, 0.5, 0.5, 0.1)
                 f.edits.clear(pos)
             }
             wait(10)
@@ -380,6 +507,8 @@ class Scenes(private val f: EirholmFight) {
         d.flying = false
         d.play(NivarisPose.EXHAUSTED)
         f.place(a, vault.add(0.0, 9.0, 0.0))
+        // 5) Im Gewölbe, Blick nach oben durch das Loch in der Decke: Trümmer und Fallende.
+        scene.line(vault.add(9.0, 2.0, 12.0), vault.add(7.0, 3.0, 10.0), vault.add(0.0, 18.0, 0.0), vault.add(0.0, 10.0, 0.0), 120, 72.0, 64.0)
         // Wer noch oben steht, wird an die Kante geführt und fällt ebenfalls.
         wait(60)
         for ((i, p) in f.players().withIndex()) {
@@ -397,33 +526,45 @@ class Scenes(private val f: EirholmFight) {
             }
             p.onLanding()
         }
-        yieldAll(transform())
     }
 
-    /** Die Verwandlung zur weißen Form, dann die Resonanz mit Nivaris (Konzept 5.4). */
+    /** Die Verwandlung zur weißen Form, dann die Resonanz mit Nivaris (Konzept 5.4). Ohne Szene: [transform]. */
     fun transform(): Script = script {
+        yieldAll(transformBody(null))
+        yieldAll(vaultFight())
+    }
+
+    private fun transformBody(scene: CineScene?): Script = script {
         val a = f.arius ?: return@script
         val d = f.nivaris ?: return@script
         val vault = f.abs(Vec3d.of(ArenaLayout.VAULT)).add(0.5, 0.0, 0.5)
         val top = a.entityPos
+        // 6a) Detail: er schlägt im Gewölbe auf, die Rüstung zerspringt. Tief, nah, langsam heran.
+        val front = f.facing(a)
+        val chest = vault.add(0.0, 1.1, 0.0)
+        scene?.line(f.clampToArena(chest.add(front.multiply(3.4)).add(-0.8, -0.4, 0.0), 2.0), f.clampToArena(chest.add(front.multiply(2.5)).add(-0.6, -0.3, 0.0), 2.0),
+            chest, chest.add(0.0, 0.3, 0.0), 40, 50.0, 40.0)
         a.play(AriusPose.TRANSFORM, AriusTimings.ARIUS_WINDUP[AriusPose.TRANSFORM])
         for (i in 1..10) {
             f.place(a, top.lerp(vault, (i / 10.0) * (i / 10.0)))
             yield(Unit)
         }
-        f.ambient("nivaris.land", vault, 3f, 1.4f)
-        f.fx(FxKind.FRAGMENTS, vault, a = 1f, life = 34, e1 = a)
-        f.ambient("transform.shatter", vault, 4f)
+        cue("nivaris.land", vault, 3f, 1.4f)
+        shown { f.fx(FxKind.FRAGMENTS, vault, a = 1f, life = 34, e1 = a) }
+        cue("transform.shatter", vault, 4f)
         f.atmos(dev.henny.hha_arius.net.AtmosMode.WHITE, 20)
         val fresh = newcomers("scene.transform")
-        if (fresh.isNotEmpty()) f.sceneText("transform", 70, fresh)
+        if (fresh.isNotEmpty()) shown { f.sceneText("transform", 70, fresh) }
         markHeard("scene.transform")
         wait(30)
         a.form = AriusForm.WHITE
         a.eyeGlow = 100
-        f.ambient("transform.pulse", vault, 5f)
-        f.fx(FxKind.CLEAR_WAVE, vault, a = 12f, life = 22)
-        Vfx.shockwave(f.world, Vfx.Style.HEAVEN, vault, 12f, 20, 1.5f)
+        // 6b) Seitenschwenk: die Kamera weicht zurück und dreht um ihn, Nivaris richtet sich hinter ihm auf.
+        val baseAng = Math.toDegrees(kotlin.math.atan2(front.z, front.x))
+        scene?.orbit(vault, 3.2, 1.0, baseAng + 18.0, baseAng + 62.0, 40, 52.0, 66.0, lookAt = a, lookOffset = 1.3, radiusTo = 9.5, heightTo = 3.2)
+        cue("transform.pulse", vault, 5f)
+        shown { f.fx(FxKind.CLEAR_WAVE, vault, a = 12f, life = 22) }
+        shown { Vfx.shockwave(f.world, Vfx.Style.HEAVEN, vault, 12f, 20, 1.5f) }
         for (pos in ArenaBuilder.snowAround(f.world, BlockPos.ofFloored(vault), 12)) f.edits.clear(pos)
         for (p in f.players()) if (p.squaredDistanceTo(vault) < 144.0) Fx.launchPlayer(p, Vec3d(p.x - vault.x, 0.0, p.z - vault.z).normalize().multiply(0.5).add(0.0, 0.25, 0.0))
         // Resonanz: Nivaris richtet sich hinter ihm auf.
@@ -431,13 +572,15 @@ class Scenes(private val f: EirholmFight) {
         d.resonance = true
         d.eyeGlow = 100
         f.face(d, vault)
-        f.fx(FxKind.THREAD, vault, life = 40, e1 = a, e2 = d)
-        f.ambient("resonance.chime", vault, 4f, 0.9f)
+        shown { f.fx(FxKind.THREAD, vault, life = 40, e1 = a, e2 = d) }
+        cue("resonance.chime", vault, 4f, 0.9f)
         wait(30)
         a.play(AriusPose.IDLE)
         d.play(NivarisPose.IDLE)
-        wait(40)
-        yieldAll(vaultFight())
+        // Rückweg zur Spielerkamera, bevor das Herzgewölbe beginnt.
+        wait(22)
+        scene?.home(18)
+        wait(18)
     }
 
     // --- III: Herzgewölbe ---------------------------------------------------------------------------------------------------
@@ -976,19 +1119,46 @@ class Scenes(private val f: EirholmFight) {
         player.sendMessage(net.minecraft.text.Text.translatable("hha_arius.hint.exchange_won", f.exchangesWon).formatted(net.minecraft.util.Formatting.GOLD), true)
     }
 
+    /**
+     * Das Ende mit Kamera (überspringbar, kein Kampf mehr): Detail, wie er niederkniet; langsamer Halbkreis um ihn, während
+     * er von der Waffe spricht; die weite Einstellung des Gewölbes mit Nivaris im Hintergrund, als er aufsteht; Rückweg
+     * zur Spielerkamera. Die persönlichen Zeilen danach laufen ohne Kamera.
+     */
     private fun ending(): Script = script {
         val a = f.arius ?: return@script
         f.music("music.finale", 0)
-        a.play(AriusPose.KNEEL)
-        a.sheathed = false
-        wait(30)
-        f.say("end.weapon", 90)
-        wait(95)
-        a.play(AriusPose.IDLE)
-        a.sheathed = true
-        f.say("end.take", 80)
-        f.victory()
-        wait(85)
+        val scene = CineScene(f) {
+            a.play(AriusPose.IDLE)
+            a.sheathed = true
+        }
+        yieldAll(scene.play(script {
+            val base = a.entityPos
+            val front = f.facing(a)
+            val chest = base.add(0.0, 0.9, 0.0)
+            // Detail: tief und nah, er sinkt aufs Knie.
+            scene.line(chest.add(front.multiply(2.6)).add(-0.9, -0.3, 0.0), chest.add(front.multiply(2.0)).add(-0.7, -0.2, 0.0), chest, chest.add(0.0, -0.2, 0.0), 32, 48.0, 42.0)
+            a.play(AriusPose.KNEEL)
+            a.sheathed = false
+            wait(30)
+            // Halbkreis um ihn, während er spricht.
+            val ang = Math.toDegrees(kotlin.math.atan2(front.z, front.x))
+            scene.orbit(base, 3.4, 1.1, ang - 25.0, ang + 35.0, 96, 50.0, 46.0, lookAt = a, lookOffset = 1.0, radiusTo = 3.0, heightTo = 1.3)
+            shown { f.say("end.weapon", 90) }
+            wait(95)
+            // Weite Einstellung: das Gewölbe, er steht auf, Nivaris liegt im Hintergrund.
+            val rest = f.abs(ArenaLayout.VAULT_REST)
+            val focus = base.lerp(rest, 0.35).add(0.0, 1.5, 0.0)
+            val away = flatDir(rest, base).let { if (it.lengthSquared() < 0.5) front else it }
+            scene.line(f.clampToArena(base.add(away.multiply(9.0)).add(3.0, 3.0, 0.0), 2.0), f.clampToArena(base.add(away.multiply(12.0)).add(4.0, 6.5, 0.0), 2.0),
+                focus, focus.add(0.0, 0.5, 0.0), 85, 60.0, 64.0)
+            a.play(AriusPose.IDLE)
+            a.sheathed = true
+            shown { f.say("end.take", 80) }
+            f.victory()
+            wait(67)
+            scene.home(18)
+            wait(18)
+        }))
         val s = state()
         val partner = f.target()
         if (partner != null) {

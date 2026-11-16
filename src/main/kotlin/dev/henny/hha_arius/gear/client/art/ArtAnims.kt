@@ -12,9 +12,15 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking
  */
 object ArtAnims {
 
-    class State(val anim: Anim, val start: Long, val duration: Int, val param: Int) {
-        /** Alter in Ticks inkl. Teil-Tick. */
-        fun age(tickDelta: Float): Float = (ticks - start) + tickDelta
+    class State(val entityId: Int, val anim: Anim, val start: Long, val duration: Int, val param: Int) {
+        /**
+         * Alter in Ticks inkl. Teil-Tick, für die Darstellung: ohne die Trefferpause ([dev.henny.hha_arius.client.fx.HitStop],
+         * nur Darstellung, holt danach auf). Zeitpunkte für Logik: [rawAge].
+         */
+        fun age(tickDelta: Float): Float = rawAge(tickDelta) - dev.henny.hha_arius.client.fx.HitStop.offset(entityId, ticks + tickDelta)
+
+        /** Alter ohne Trefferpause. */
+        fun rawAge(tickDelta: Float): Float = (ticks - start) + tickDelta
 
         /** Fortschritt 0..1 (Schleifen: immer 0). */
         fun progress(tickDelta: Float): Float = if (duration <= 0) 0f else (age(tickDelta) / duration).coerceIn(0f, 1f)
@@ -37,7 +43,7 @@ object ArtAnims {
     }
 
     fun set(entityId: Int, anim: Anim, duration: Int, param: Int) {
-        if (anim == Anim.NONE) states.remove(entityId) else states[entityId] = State(anim, ticks, duration, param)
+        if (anim == Anim.NONE) states.remove(entityId) else states[entityId] = State(entityId, anim, ticks, duration, param)
     }
 
     /** Aktuelle Animation oder null. Abgelaufene Einmal-Animationen gelten als vorbei. */

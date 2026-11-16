@@ -55,7 +55,30 @@ gesehen.** Diese Punkte bitte im Spiel testen:
 - [ ] Kombination aller Teile: Fokus (nur eine Sache gleichzeitig), Nachhall nach großen Techniken
 - [ ] Mehrspieler: Animationen, Modus, Schild, Gleiter, Schnitt sind für andere sichtbar
 
+## Kamera, Spannung und Wucht (Paket V3)
+- [ ] Erster Besuch: Etablierungsfahrt (Kuppel unten, Nadel oben im Bild, Stille, Gesicht von Arius), Rückweg in die eigene Kamera ohne Sprung; Überspringen per Taste halten (Mehrspieler: alle stimmen ab)
+- [ ] Der Schnitt: Sprung + Detail **vor** der Ansage, Steuerung kommt zurück, bevor die Linie erscheint (volle Ansagezeit); danach Stille, weite Totale beim Abgleiten, Tritt durchs Tor (Seitenaufnahme, Flug über die Kamera), dann Nivaris' Auftritt
+- [ ] Auftritt: weite Totale füllt das obere Drittel der Nadel; Nadel ist von den Landeplätzen aus ab ~10 Chunks Sichtweite sichtbar
+- [ ] Gletschersturz/Verwandlung: Kamera durch Sturm, Totale beim Einbruch, Blick aus dem Gewölbe nach oben, Seitenschwenk bei der Verwandlung; danach normale Steuerung vor dem ersten Angriff
+- [ ] Ende: Knien, Halbkreis, Totale mit Nivaris, Rückweg
+- [ ] Nachzügler während einer Szene bekommen die laufende Einstellung (und eigenen Rückweg)
+- [ ] Trefferpause (Haken, Seiten-/Drehtritt, Klarer Schnitt, Arius' Schläge auf Spieler): kurz, nur im Bild; Funken/Eissplitter, Schockring bei Tritten
+- [ ] Kamerarucken dezent; `/ariusc shake false` schaltet es ab (ebenso HHAs Kameraschütteln)
+- [ ] Schwertspuren: Solvane nur bei vollen Treffern (erste und dritte Person), Klarer Schnitt immer (breiter Streifen + kurze Bildbrechung entlang der Naht), Arius' Klinge eisblau (dunkle/ernste Form) bzw. weiß (weiße Form), keine Spur beim Gehen
+- [ ] Solvane aufrecht: Haltungen des Klaren Schnitts (Hasso bzw. Hüfte), linke Hand am Griff, Klinge zeigt in Schnittrichtung; Energie an der Schneide sitzt auf der Klinge (erste und dritte Person, Linkshänder)
+- [ ] Moveset: Ausholen, Gewicht, Nachschwingen, Landen nach Tritten; Zauber-Ladebalken richtet sich nach der Höchstladung der Technik
+
+## Landschaft, Wetter und Nivaris (visuelles Upgrade)
+- [ ] Fernlandschaft baut sich im Hintergrund auf (Nadel, Schlucht, Gletscherzüge), keine Ruckler im Tempelkampf; Sichtweite ≥ 10 Chunks
+- [ ] Wetterstimmungen: Tempel klar, Gletscher Schneetreiben, Whiteout vor dem Auftritt, Enthüllung mit blauem Himmel, Gewölbe blau, Verwandlung weiß; Schneeschleier und Eisglitzern
+- [ ] Auftritt: Windungen im Sturm, Totale an der Nadel (Kopf über dem Gipfel), Lösen vom Fels, Gleitflug, Landung; überspringbar; Nachzügler
+- [ ] Nivaris als Schlange im Kampf: Körper folgt fließend, am Boden in Bögen, im Herzgewölbe ohne Wände zu durchdringen; Kopf-Trefferbox sitzt
+- [ ] Weißes Loch (Boss und Set): Linse, weißer Kern, Ausfluss-Scheibe, Kollaps mit Schockwelle; Leistung ok
+- [ ] Musik „Auftritt“ und „Verwandlung“
+- [ ] Arius' neue Animationen (Ausholen, Treffer-Stoß, Nachschwingen, Mantel und Haar)
+
 ## Bekannte Grenzen
 - Keine Voicelines (nur Untertitel), bewusst.
 - Ein zurückgegebenes Siegel verliert individuelle Daten (z. B. Ambossname).
 - Balancing-Werte sind Startwerte (alle über `/hha set hha_arius.*`).
+- Nadel versetzt (z 150 → 128): Instanzen, deren Fernlandschaft schon gebaut ist, behalten die alte Nadel, bis die Fernlandschaft neu gebaut wird (FarPlan-Version).

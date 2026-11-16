@@ -88,7 +88,7 @@ object SolvaneArt {
         charging[player.uuid] = State(GearTasks.now)
         Focus.begin(player, Focus.Busy.ART, 0) { stop(player, cancelled = true) }
         applySlow(player, -0.6)
-        ArtNet.anim(player, Anim.ART_CHARGE, -1, if (player.isSneaking) 1 else 0)
+        ArtNet.anim(player, Anim.ART_CHARGE, -1, ArtParam.art(player.isSneaking, 0f))
         GearSounds.play(player.entityWorld, player.entityPos, "clear_cut.charge", SoundEvents.ITEM_TRIDENT_RIPTIDE_1.value(), 0.7f, 1.5f)
     }
 
@@ -125,7 +125,7 @@ object SolvaneArt {
         cooldownUntil[player.uuid] = GearTasks.now + GearConfig.ticks("clear_cut_cooldown")
         SpellCasting.markDirty(player)
         player.itemCooldownManager.set(GearItems.CLEAR_CUT_GROUP, GearConfig.ticks("clear_cut_cooldown"))
-        ArtNet.anim(player, Anim.ART_RELEASE, ArtTimings.ART_RELEASE, if (horizontal) 1 else 0)
+        ArtNet.anim(player, Anim.ART_RELEASE, ArtTimings.ART_RELEASE, ArtParam.art(horizontal, charge))
         // Ebene im Moment des Loslassens festhalten; der Treffer kommt mit dem Schwung (ART_HIT).
         val plane = CutPlane.of(player, ArtTimings.artLength(charge), ArtTimings.artHalf(charge), horizontal)
         val world = player.entityWorld

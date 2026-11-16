@@ -102,7 +102,11 @@ enum class Move(
 /**
  * Animationen, die der Server an alle sendet ([ArtAnimS2C]). Für Schläge/Tritte ist `param` die tatsächliche
  * Ausholzeit (Treffer bei t = param), sonst je Eintrag beschrieben. Schleifen (`loop`) laufen bis zur nächsten Anim
- * oder [NONE].
+ * oder [NONE]. Zusammengesetzte `param` (V3):
+ * * [ART_CHARGE], [ART_RELEASE]: `(waagerecht ? 1 : 0) + 2 * round(Ladung * 100)`, Ladung 0..1 (Haltung: 0);
+ * * [CAST_CHARGE]: `Schule + 4 * maximale Ladeticks` (Spell-Config `charge_max`);
+ * * übrige Zauber-Anims: `param` = Schule (0..2).
+ * Lesen über [ArtParam].
  */
 enum class Anim(val loop: Boolean = false) {
     NONE,
@@ -120,7 +124,7 @@ enum class Anim(val loop: Boolean = false) {
     /** Kurzes Wirken mit einer Hand (6 Ticks). param = Schule. */
     CAST_TAP,
 
-    /** Aufladen mit beiden Händen (Schleife). param = Schule. Ladung = Alter / Spell-Höchstladung. */
+    /** Aufladen mit beiden Händen (Schleife). param = Schule + 4 × Höchstladung (Ticks). Ladung = Alter / Höchstladung. */
     CAST_CHARGE(true),
 
     /** Freigabe nach dem Aufladen (8 Ticks, Stoß mit beiden Händen). param = Schule. */
@@ -135,10 +139,10 @@ enum class Anim(val loop: Boolean = false) {
     /** Lichtgleiter (Schleife): Stand auf einer Lichtscheibe, Arme zum Gleichgewicht. */
     GLIDE(true),
 
-    /** Solvane: Haltung des Klaren Schnitts (Schleife), Energie sammelt sich an der Schneide. param = 1 waagerecht. */
+    /** Solvane: Haltung des Klaren Schnitts (Schleife), Energie sammelt sich an der Schneide. param = 1 waagerecht (+ 2 × 0). */
     ART_CHARGE(true),
 
-    /** Solvane: der Schnitt (20 Ticks, Treffer bei Tick 3, dann Erholung). param = 1 waagerecht. */
+    /** Solvane: der Schnitt (20 Ticks, Treffer bei Tick 3, dann Erholung). param = (1 waagerecht) + 2 × Ladung in %. */
     ART_RELEASE,
 
     /** Weißes Loch (Setfähigkeit): Hände führen zusammen (Wirken 20 Ticks), dann 10 Ticks Halten. */
@@ -147,6 +151,20 @@ enum class Anim(val loop: Boolean = false) {
     companion object {
         fun of(raw: Int): Anim = entries.getOrElse(raw) { NONE }
     }
+}
+
+/** Packen und Lesen der zusammengesetzten Anim-Parameter (siehe [Anim]). */
+object ArtParam {
+    fun art(horizontal: Boolean, charge: Float): Int = (if (horizontal) 1 else 0) + 2 * Math.round(charge.coerceIn(0f, 1f) * 100f)
+    fun cast(school: Int, chargeMax: Int): Int = school + 4 * chargeMax.coerceAtLeast(0)
+
+    fun horizontal(param: Int): Boolean = (param and 1) == 1
+    fun charge(param: Int): Float = ((param shr 1) / 100f).coerceIn(0f, 1f)
+    fun school(param: Int): Int = param and 3
+    fun chargeMax(param: Int): Int = param shr 2
+
+    /** Ladestand 0..1 einer laufenden CAST_CHARGE-Animation (ohne Höchstladung im param: 30 Ticks). */
+    fun castCharge(param: Int, age: Float): Float = (age / (chargeMax(param).takeIf { it > 0 } ?: 30)).coerceIn(0f, 1f)
 }
 
 /** Zeiten, die Client-Darstellung und Server teilen. */

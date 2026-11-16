@@ -201,7 +201,8 @@ object SpellCasting {
         s.active = spell
         s.start = GearTasks.now
         Focus.begin(player, busy, 0) { stopActive(player, cancelled = true) }
-        ArtNet.anim(player, anim, -1, spell.school.ordinal)
+        ArtNet.anim(player, anim, -1,
+            if (anim == Anim.CAST_CHARGE) ArtParam.cast(spell.school.ordinal, num(spell, "charge_max").toInt().coerceAtLeast(1)) else spell.school.ordinal)
     }
 
     fun release(player: ServerPlayerEntity) {

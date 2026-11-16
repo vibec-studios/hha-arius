@@ -135,9 +135,11 @@ object ArenaLayout {
     /**
      * Die Nadel: riesiger, steil aufragender, spitzer Eisberg im Süden hinter der Schlucht. Fußpunkt (Mitte) auf
      * Schluchtgrund-Höhe, Spitze [SPIRE_TOP] Blöcke über der Lauffläche (absolut ≈ 345, Dimension bis 383).
-     * Blickachse: vom Plateau (z ≈ −20) genau nach Süden über die Kluft im Südwall.
+     * Blickachse: vom Plateau (z ≈ −20) genau nach Süden über die Kluft im Südwall. Abstand zu den Landeplätzen ≈ 150
+     * Blöcke: die Spitze ist ab etwa 10 Chunks Sichtweite zu sehen. Kameras und Flugbahn des Auftritts hängen an
+     * diesem Punkt ([dev.henny.hha_arius.boss.EntrancePath.near]).
      */
-    val SPIRE = BlockPos(0, -40, 150)
+    val SPIRE = BlockPos(0, -40, 128)
     const val SPIRE_TOP = 185
     const val SPIRE_BASE_R = 38.0
 
@@ -148,8 +150,8 @@ object ArenaLayout {
     }
 
     /** Schlucht zwischen Plateau und Nadel: von z [CANYON_Z_FROM] bis [CANYON_Z_TO], Grund bei y [CANYON_FLOOR]. */
-    const val CANYON_Z_FROM = 62
-    const val CANYON_Z_TO = 112
+    const val CANYON_Z_FROM = 56
+    const val CANYON_Z_TO = 92
     const val CANYON_FLOOR = -70
 
     /** Länge des Drachenkörpers (Kopf bis Schwanzspitze) in Blöcken und Zahl der Glieder (Vertrag Modell/Renderer). */

@@ -18,10 +18,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, '..', '..'))
 
 # --- ArenaLayout (gleiche Werte) --------------------------------------------------------------------------------------
-SPIRE = (0, -40, 150)
+SPIRE = (0, -40, 128)
 SPIRE_TOP = 185
 SPIRE_BASE_R = 38.0
-CANYON_Z_FROM, CANYON_Z_TO, CANYON_FLOOR = 62, 112, -70
+CANYON_Z_FROM, CANYON_Z_TO, CANYON_FLOOR = 56, 92, -70
 FAR_X, FAR_Z_MAX, FAR_Y_MIN = 140, 200, -80
 FAR_Z_MIN = -130
 CORE_X, CORE_Z_MIN, CORE_Z_MAX = 52, -80, 52

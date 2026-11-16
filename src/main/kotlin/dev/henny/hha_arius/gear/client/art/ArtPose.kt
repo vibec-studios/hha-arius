@@ -2,6 +2,7 @@ package dev.henny.hha_arius.gear.client.art
 
 import dev.henny.hha_arius.gear.GearItems
 import dev.henny.hha_arius.gear.art.Anim
+import dev.henny.hha_arius.gear.art.ArtParam
 import dev.henny.hha_arius.gear.art.ArtTimings
 import dev.henny.hha_arius.gear.art.GauntletMode
 import dev.henny.hha_arius.gear.art.GauntletsItem
@@ -102,6 +103,35 @@ internal class Pose {
         return this
     }
 
+    /**
+     * Wie [mix], aber ohne Begrenzung von [t]: t > 1 schwingt über [b] hinaus, t < 0 holt gegen die Richtung aus
+     * (Überschwung und Ausholen). Richtungen werden normiert.
+     */
+    fun mixFree(a: Pose, b: Pose, t: Float): Pose {
+        if (t in 0f..1f) return mix(a, b, t)
+        turn = lerp(a.turn, b.turn, t); tYaw = lerp(a.tYaw, b.tYaw, t); tPitch = lerp(a.tPitch, b.tPitch, t)
+        tRoll = lerp(a.tRoll, b.tRoll, t); drop = lerp(a.drop, b.drop, t)
+        ArtPoseMath.lerpV(a.rHand, b.rHand, t, rHand); ArtPoseMath.nlerp(a.rPalm, b.rPalm, t, rPalm)
+        ArtPoseMath.lerpV(a.lHand, b.lHand, t, lHand); ArtPoseMath.nlerp(a.lPalm, b.lPalm, t, lPalm)
+        sword = lerp(a.sword, b.sword, t).coerceIn(0f, 1f); ArtPoseMath.nlerp(a.blade, b.blade, t, blade); grip = lerp(a.grip, b.grip, t).coerceIn(0f, 1f)
+        rLegP = lerp(a.rLegP, b.rLegP, t); rLegY = lerp(a.rLegY, b.rLegY, t); rLegR = lerp(a.rLegR, b.rLegR, t)
+        lLegP = lerp(a.lLegP, b.lLegP, t); lLegY = lerp(a.lLegY, b.lLegY, t); lLegR = lerp(a.lLegR, b.lLegR, t)
+        legW = lerp(a.legW, b.legW, t).coerceIn(0f, 1f); headP = lerp(a.headP, b.headP, t); headY = lerp(a.headY, b.headY, t)
+        return this
+    }
+
+    /**
+     * Körper (Hüfte, Rumpf, Beine) mit eigenem Fortschritt [t] zwischen [a] und [b] (Arme bleiben): Die Hüfte führt,
+     * die Hand folgt (Kette Hüfte → Rumpf → Schulter → Arm).
+     */
+    fun bodyFrom(a: Pose, b: Pose, t: Float): Pose {
+        turn = lerp(a.turn, b.turn, t); tYaw = lerp(a.tYaw, b.tYaw, t); tPitch = lerp(a.tPitch, b.tPitch, t)
+        tRoll = lerp(a.tRoll, b.tRoll, t); drop = lerp(a.drop, b.drop, t)
+        rLegP = lerp(a.rLegP, b.rLegP, t); rLegY = lerp(a.rLegY, b.rLegY, t); rLegR = lerp(a.rLegR, b.rLegR, t)
+        lLegP = lerp(a.lLegP, b.lLegP, t); lLegY = lerp(a.lLegY, b.lLegY, t); lLegR = lerp(a.lLegR, b.lLegR, t)
+        return this
+    }
+
     fun rLeg(p: Float, y: Float, r: Float) { rLegP = p; rLegY = y; rLegR = r }
     fun lLeg(p: Float, y: Float, r: Float) { lLegP = p; lLegY = y; lLegR = r }
 }
@@ -167,13 +197,16 @@ internal class Solved {
  */
 internal object ArtPose {
 
-    /** Solvane im Armraum der Hand (rechter Arm, px): Mitte des Griffs, Klingenrichtung, Klingenansatz/-spitze.
-     *  Abgeleitet aus HeldItemFeatureRenderer + display.thirdperson_righthand von solvane_3d.json. */
-    val GRIP = Vector3f(-1f, 8.26f, -0.39f)
-    val BLADE = Vector3f(0f, -0.341f, -0.940f)
-    const val BLADE_FROM = 3.4f
-    const val BLADE_TO = 17.6f
-    private val POMMEL = Vector3f(GRIP).fma(-3.4f, BLADE)
+    /**
+     * Solvane im Armraum der Hand (rechter Arm, px): Mitte des Griffs, Klingenrichtung, Klingenansatz/-spitze, Flachseite.
+     * Abgeleitet aus HeldItemFeatureRenderer + display.thirdperson_righthand des **aufrechten** solvane_3d.json (Klinge
+     * steht 80° zum Unterarm, leicht zur Hand geneigt; vorher diagonal 110°). Griff im Modell y −4,5..1,5, Knauf −6,15.
+     */
+    val GRIP = Vector3f(-1f, 8.30f, 0.80f)
+    val BLADE = Vector3f(0f, 0.174f, -0.985f)
+    const val BLADE_FROM = 4.27f
+    const val BLADE_TO = 21.85f
+    private val POMMEL = Vector3f(GRIP).fma(-3.6f, BLADE)
 
     class Ctx {
         var gauntlets = false
@@ -414,6 +447,7 @@ internal object ArtPose {
 
         // Rechter Arm: Handfläche oder Klinge.
         tmp.set(p.rHand).sub(shR)
+        if (p.sword > 0.001f) wrist(tmp, p.blade, clamp01(p.sword))
         ArtPoseMath.armFrame(tmp, p.rPalm, true, qa)
         if (p.sword > 0.001f) {
             ArtPoseMath.bladeFrame(tmp, p.blade, qb)
@@ -448,6 +482,28 @@ internal object ArtPose {
         out.headY = p.headY
         out.turn = p.turn
         out.legW = p.legW
+    }
+
+    private val wT = Vector3f()
+    private val wP = Vector3f()
+
+    /**
+     * Starres Handgelenk: Solvane steht fest 80° zum Unterarm ([BLADE]). Damit die Klinge genau in die gewünschte Richtung
+     * [blade] zeigt, weicht die Hand auf der Kugel um die Schulter aus: [dir] (Schulter → Hand) wird in der Ebene aus
+     * dir und blade auf den nötigen Winkel gedreht (Anteil [w]). Länge bleibt.
+     */
+    private fun wrist(dir: Vector3f, blade: Vector3f, w: Float) {
+        val len = dir.length()
+        if (len < 1e-3f) return
+        wT.set(blade).normalize()
+        val cosNow = dir.dot(wT) / len
+        wP.set(dir).fma(-dir.dot(wT), wT)
+        if (wP.lengthSquared() < 1e-6f) return
+        wP.normalize()
+        val want = Math.acos(BLADE.y.toDouble()).toFloat()
+        val now = Math.acos(cosNow.coerceIn(-1f, 1f).toDouble()).toFloat()
+        val ang = lerp(now, want, w)
+        dir.set(wT).mul(cos(ang)).fma(sin(ang), wP).mul(len)
     }
 
     /** Hüfte so weit absenken, dass schräg stehende Standbeine (nicht das tretende) den Boden behalten. */
@@ -556,9 +612,9 @@ internal object ArtPose {
                 keyA.set(p)
                 p.mix(keyA, keyC, sin(u * PI.toFloat()))
             }
-            Anim.CAST_TAP -> castTap(p, c, t, a, School.entries.getOrElse(s.param) { School.WIND })
+            Anim.CAST_TAP -> castTap(p, c, t, a, School.entries.getOrElse(ArtParam.school(s.param)) { School.WIND })
             Anim.CAST_CHARGE -> {
-                magicIdle(keyA, c, t); castCharge(keyB, c, t, a, School.entries.getOrElse(s.param) { School.WIND })
+                magicIdle(keyA, c, t); castCharge(keyB, c, t, a, School.entries.getOrElse(ArtParam.school(s.param)) { School.WIND })
                 p.mix(keyA, keyB, easeOut(a / 5f))
             }
             Anim.CAST_RELEASE -> {
@@ -604,120 +660,191 @@ internal object ArtPose {
                 }
                 p.mix(keyA, keyB, easeOut(a / 5f))
             }
-            Anim.ART_CHARGE -> artCharge(p, c, t, s.param == 1)
-            Anim.ART_RELEASE -> artRelease(p, c, t, a, s.param == 1)
+            Anim.ART_CHARGE -> artCharge(p, c, t, ArtParam.horizontal(s.param), ArtTimings.artCharge(a))
+            Anim.ART_RELEASE -> artRelease(p, c, t, a, ArtParam.horizontal(s.param), ArtParam.charge(s.param))
             Anim.WHITE_HOLE -> whiteHole(p, c, t, a)
             Anim.NONE -> idle(p, c, t)
         }
     }
 
-    /** Gerader Schlag: Ausholen bis t = windup (Treffer), kurz halten, zurück in die Deckung. */
+    /**
+     * Ausholen und Beschleunigen bis zum Treffer: kurz gegen die Schlagrichtung (bis −[back]), dann immer schneller, am
+     * Treffer (u = 1) mit voller Geschwindigkeit genau auf 1. Wucht statt Abbremsen vor dem Ziel.
+     */
+    private fun drive(u: Float, back: Float = 0.35f): Float {
+        val x = clamp01(u)
+        return x * x - back * x * (1f - x) * (1f - x)
+    }
+
+    /** Kleiner Ausschlag 0 → 1 → 0 über [u] (für Überschwung, Einsinken, Federn). */
+    private fun bump(u: Float): Float = if (u <= 0f || u >= 1f) 0f else sin(PI.toFloat() * u)
+
+    /**
+     * Gerader Schlag: Hüfte und Rumpf führen (erreichen die Schlaghaltung vor der Faust), die Faust holt minimal aus und
+     * beschleunigt bis t = windup (Treffer). Danach schwingt sie etwas über das Ziel hinaus, das Gewicht sinkt kurz ein,
+     * und sie federt zurück in die Deckung (mit leichtem Rückprall).
+     */
     private inline fun strike(p: Pose, c: Ctx, t: Float, a: Float, s: ArtAnims.State, move: Move, ext: (Pose) -> Unit) {
         val w = s.param.coerceAtLeast(1).toFloat()
         val d = if (s.duration > 0) s.duration.toFloat() else (w + move.recover)
         guard(keyA, c, t)
         keyB.set(keyA)
         ext(keyB)
-        val k = when {
-            a < w -> easeOutCubic(a / w)
-            a < w + 1f -> 1f
-            else -> 1f - smooth(seg(a, w + 1f, d))
+        val follow = 2.5f
+        when {
+            a < w -> {
+                val u = a / w
+                p.mixFree(keyA, keyB, drive(u, 0.3f))
+                p.bodyFrom(keyA, keyB, smooth(u * 1.3f))
+            }
+            a < w + follow -> {
+                val v = seg(a, w, w + follow)
+                p.mixFree(keyA, keyB, 1f + 0.1f * bump(v))
+                p.bodyFrom(keyA, keyB, 1f + 0.22f * bump(v))
+                p.drop += 0.45f * bump(v)
+            }
+            else -> {
+                val v = seg(a, w + follow, d)
+                p.mixFree(keyA, keyB, 1f - smooth(v) - 0.06f * bump(v))
+            }
         }
-        p.mix(keyA, keyB, k)
     }
 
-    /** Körperhaken links: Gewicht laden, Faust im Bogen von außen zur Mitte auf Körperhöhe, Hüfte dreht ein. */
+    /**
+     * Körperhaken links: Gewicht aufs vordere Bein laden (Hüfte dreht zurück, Ellbogen öffnet), dann peitscht die Hüfte
+     * vor, Schulter und Faust folgen im Bogen bis zum Treffer; die Hüfte dreht über die Mitte nach, die Faust zieht durch
+     * und kehrt federnd in die Deckung zurück.
+     */
     private fun hook(p: Pose, c: Ctx, t: Float, a: Float, s: ArtAnims.State) {
         val w = s.param.coerceAtLeast(1).toFloat()
         val d = if (s.duration > 0) s.duration.toFloat() else (w + Move.HOOK.recover)
         guard(keyA, c, t)
-        keyB.set(keyA).apply {
-            tYaw = 0.05f; tPitch = 0.14f; tRoll = 0.12f; drop = 1.0f
-            lHand.set(7.5f, 4.5f, -5f); lPalm.set(0f, 1f, 0f)
-            rHand.set(-1.8f, -1.2f, -6.3f); legW = 1f - 0.5f * c.walk
+        keyB.set(keyA).apply {   // geladen
+            tYaw = -0.12f; tPitch = 0.16f; tRoll = 0.16f; drop = 1.3f
+            lHand.set(8.0f, 4.2f, -4.5f); lPalm.set(0f, 1f, 0f)
+            rHand.set(-1.8f, -1.2f, -6.3f); lLeg(-0.36f, -0.1f, -0.06f); rLeg(0.26f, 0.2f, 0.06f); legW = 1f - 0.5f * c.walk
         }
-        keyC.set(keyA).apply {
-            tYaw = 0.75f; tPitch = 0.16f; tRoll = -0.05f; drop = 0.8f
+        keyC.set(keyA).apply {   // Treffer
+            tYaw = 0.8f; tPitch = 0.17f; tRoll = -0.06f; drop = 0.9f
             lHand.set(-0.8f, 5.0f, -11.5f); lPalm.set(0f, 1f, 0.2f)
-            rHand.set(-1.8f, -1.2f, -6.3f)
-            lLeg(-0.2f, -0.35f, -0.06f); rLeg(0.2f, 0.3f, 0.08f); legW = 1f - 0.5f * c.walk; headP = 0.12f
+            rHand.set(-1.8f, -1.4f, -6.0f)
+            lLeg(-0.2f, -0.38f, -0.06f); rLeg(0.2f, 0.34f, 0.08f); legW = 1f - 0.5f * c.walk; headP = 0.12f
         }
-        val load = 0.4f * w
+        val load = 0.42f * w
         when {
             a < load -> p.mix(keyA, keyB, easeOut(a / load))
             a < w -> {
-                val u = easeIn(seg(a, load, w)) * 0.6f + seg(a, load, w) * 0.4f
-                p.mix(keyB, keyC, u)
-                bezier(keyB.lHand, HOOK_CTRL, keyC.lHand, u, p.lHand)
+                val u = seg(a, load, w)
+                p.mix(keyB, keyC, drive(u, 0f))
+                bezier(keyB.lHand, HOOK_CTRL, keyC.lHand, drive(u, 0f), p.lHand)
+                p.bodyFrom(keyB, keyC, smooth(u * 1.35f))
             }
-            a < w + 1f -> p.set(keyC)
-            else -> p.mix(keyC, keyA, smooth(seg(a, w + 1f, d)))
+            a < w + 3f -> {
+                val v = seg(a, w, w + 3f)
+                p.mixFree(keyC, keyB, -0.12f * bump(v))
+                p.bodyFrom(keyA, keyC, 1f + 0.18f * bump(v))
+                p.drop += 0.5f * bump(v)
+            }
+            else -> {
+                val v = seg(a, w + 3f, d)
+                p.mixFree(keyC, keyA, smooth(v) + 0.06f * bump(v))
+            }
         }
     }
 
     private val HOOK_CTRL = Vector3f(5.5f, 4.8f, -12f)
 
-    /** Seitentritt rechts: Knie hoch (Kammer), Körper dreht die rechte Seite nach vorn, Bein gestreckt, zurück. */
+    /**
+     * Seitentritt rechts: Gewicht aufs Standbein (leicht einsinken), Knie hoch in die Kammer, der Rumpf lehnt sich als
+     * Gegengewicht zurück; das Bein schießt beschleunigend aus (Treffer bei t = windup), hält kurz, kehrt in die Kammer
+     * zurück und setzt mit spürbarem Gewicht auf (Einsinken), dann zurück in die Deckung.
+     */
     private fun sideKick(p: Pose, c: Ctx, t: Float, a: Float, s: ArtAnims.State) {
         val w = s.param.coerceAtLeast(2).toFloat()
         val d = if (s.duration > 0) s.duration.toFloat() else (w + Move.SIDE_KICK.recover)
         guard(keyA, c, t)
         keyB.set(keyA).apply {   // Kammer
-            turn = 0.7f; headY = 0.7f; tYaw = 0.2f; tRoll = 0.2f; tPitch = 0.02f
-            rLeg(-1.25f, 0f, 0.35f); lLeg(0.05f, -0.1f, -0.1f); legW = 1f
+            turn = 0.75f; headY = 0.7f; tYaw = 0.22f; tRoll = 0.24f; tPitch = 0.02f; drop = 1.1f
+            rLeg(-1.3f, 0f, 0.38f); lLeg(0.08f, -0.1f, -0.12f); legW = 1f
             rHand.set(-3.0f, 0f, -6.5f); lHand.set(2.0f, -2f, -8f)
         }
         keyC.set(keyA).apply {   // gestreckt
-            turn = 1.2f; headY = 1.05f; tYaw = 0.1f; tRoll = 0.5f; tPitch = 0f
-            rLeg(-0.3f, 0f, 1.55f); lLeg(0.05f, -0.15f, -0.18f); legW = 1f
+            turn = 1.2f; headY = 1.05f; tYaw = 0.1f; tRoll = 0.56f; tPitch = 0f; drop = 0.4f
+            rLeg(-0.3f, 0f, 1.58f); lLeg(0.05f, -0.15f, -0.2f); legW = 1f
             rHand.set(-11f, 7f, -2f); rPalm.set(0f, 1f, 0f)
             lHand.set(2.5f, -1.0f, -6.0f); lPalm.set(-1f, 0.3f, 0f)
         }
         val ch = 0.55f * w
         when {
             a < ch -> p.mix(keyA, keyB, easeOut(a / ch))
-            a < w -> p.mix(keyB, keyC, easeOutCubic(seg(a, ch, w)))
-            a < w + 1.5f -> p.set(keyC)
+            a < w -> {
+                val u = seg(a, ch, w)
+                p.mix(keyB, keyC, drive(u, 0.12f).coerceAtLeast(0f))
+                p.bodyFrom(keyB, keyC, smooth(u * 1.25f))
+            }
+            a < w + 1.5f -> { p.set(keyC); p.tRoll += 0.05f * bump(seg(a, w, w + 1.5f)) }
             a < w + 4.5f -> p.mix(keyC, keyB, smooth(seg(a, w + 1.5f, w + 4.5f)))
-            else -> p.mix(keyB, keyA, smooth(seg(a, w + 4.5f, d)))
+            else -> {
+                val v = seg(a, w + 4.5f, d)
+                p.mix(keyB, keyA, smooth(v))
+                // Aufsetzen: der Fuß landet, das Gewicht sinkt kurz ein.
+                p.drop += 1.0f * bump(seg(v, 0.15f, 0.7f))
+            }
         }
     }
 
     /**
-     * Drehtritt: einmal um die eigene Achse (im Uhrzeigersinn, von oben). Das rechte Bein ist zur Seite gestreckt und
-     * zeigt genau beim Treffer (t = windup, Drehung ≈ 285°) nach vorn; danach dreht die Figur weich auf 360° aus.
+     * Drehtritt: Sammeln (einsinken, kurz gegen die Drehrichtung ausholen), dann eine Umdrehung im Uhrzeigersinn um das
+     * Standbein, immer schneller. Das rechte Bein ist angezogen und streckt sich zum Treffer (t = windup, Drehung ≈ 285°)
+     * nach vorn; die Arme schwingen als Gegengewicht mit. Danach zieht das Bein ein, die Drehung läuft weich auf 360° aus,
+     * der Fuß setzt mit Gewicht auf.
      */
     private fun spinKick(p: Pose, c: Ctx, t: Float, a: Float, s: ArtAnims.State) {
         val w = s.param.coerceAtLeast(2).toFloat()
         val d = if (s.duration > 0) s.duration.toFloat() else (w + Move.SPIN_KICK.recover)
         val hitDeg = 285f
+        val gather = 0.22f * w
         val deg = when {
-            a < w -> hitDeg * Math.pow(seg(a, 0f, w).toDouble(), 1.6).toFloat()
+            a < gather -> -16f * sin(PI.toFloat() * 0.5f * (a / gather))
+            a < w -> {
+                val u = seg(a, gather, w)
+                -16f * (1f - u) * (1f - u) + hitDeg * Math.pow(u.toDouble(), 1.7).toFloat()
+            }
             a < w + 6f -> hitDeg + (360f - hitDeg) * easeOut(seg(a, w, w + 6f))
             else -> 0f
         }
         guard(keyA, c, t)
-        keyB.set(keyA).apply {   // Drehen, Bein angezogen
-            tPitch = 0.05f; tRoll = 0.15f
-            rLeg(-0.6f, 0f, 0.3f); lLeg(0.02f, 0f, -0.1f); legW = 1f
-            rHand.set(-6f, 4f, -5f); lHand.set(3f, -1f, -6f)
+        keyD.set(keyA).apply {   // Sammeln: tief, Rumpf leicht eingedreht
+            drop = 1.6f; tYaw = 0.4f; tPitch = 0.12f
+            rLeg(0.3f, 0.2f, 0.12f); lLeg(-0.36f, -0.1f, -0.1f); legW = 1f
+            rHand.set(-2.6f, 0.2f, -6.0f); lHand.set(2.4f, -0.8f, -7.6f)
         }
-        keyC.set(keyA).apply {   // gestreckt
-            tPitch = 0.05f; tRoll = 0.45f
-            rLeg(-0.25f, 0f, 1.5f); lLeg(0.05f, 0f, -0.15f); legW = 1f
+        keyB.set(keyA).apply {   // Drehen, Bein angezogen, Arme eng
+            tPitch = 0.05f; tRoll = 0.15f; drop = 0.6f
+            rLeg(-0.7f, 0f, 0.32f); lLeg(0.02f, 0f, -0.1f); legW = 1f
+            rHand.set(-5.5f, 3f, -5f); lHand.set(3f, -1.5f, -6f)
+        }
+        keyC.set(keyA).apply {   // gestreckt, Arme öffnen als Gegengewicht
+            tPitch = 0.04f; tRoll = 0.48f; drop = 0.3f
+            rLeg(-0.25f, 0f, 1.52f); lLeg(0.05f, 0f, -0.16f); legW = 1f
             rHand.set(-11f, 6f, -1f); rPalm.set(0f, 1f, 0f)
-            lHand.set(3f, -1f, -6f)
+            lHand.set(6.5f, 2.5f, -3.5f); lPalm.set(-1f, 0.4f, 0f)
         }
         when {
-            a < 0.45f * w -> p.mix(keyA, keyB, easeOut(seg(a, 0f, 0.45f * w)))
-            a < w -> p.mix(keyB, keyC, easeOut(seg(a, 0.45f * w, w)))
+            a < gather -> p.mix(keyA, keyD, easeOut(a / gather))
+            a < 0.55f * w -> p.mix(keyD, keyB, smooth(seg(a, gather, 0.55f * w)))
+            a < w -> p.mix(keyB, keyC, drive(seg(a, 0.55f * w, w), 0f))
             a < w + 1.5f -> p.set(keyC)
             a < w + 6f -> p.mix(keyC, keyB, smooth(seg(a, w + 1.5f, w + 6f)))
-            else -> p.mix(keyB, keyA, smooth(seg(a, w + 6f, d)))
+            else -> {
+                val v = seg(a, w + 6f, d)
+                p.mix(keyB, keyA, smooth(v))
+                p.drop += 1.1f * bump(seg(v, 0.05f, 0.6f))
+            }
         }
         // Umdrehung im Uhrzeigersinn = negative Drehung im Entity-Raum; 360° ≙ 0 (kein Sprung).
         p.turn = if (deg >= 359.9f) 0f else -Math.toRadians(deg.toDouble()).toFloat()
-        p.headY = 0.4f * sin(PI.toFloat() * seg(a, 0f, w))
+        p.headY = 0.4f * sin(PI.toFloat() * seg(a, gather, w))
     }
 
     /** Handflächen-Parade: beide offenen Hände hoch vor dem Gesicht, Handflächen nach vorn, Gewicht hinten. */
@@ -790,56 +917,97 @@ internal object ArtPose {
         else { p.rPalm.set(1f, 0f, 0f); p.lPalm.set(-1f, 0f, 0f) }
     }
 
-    /** Solvane-Haltung: beidhändig, Klinge zurückgezogen (senkrecht: über die Schulter, waagerecht: an der Hüfte). */
-    private fun artCharge(p: Pose, c: Ctx, t: Float, horizontal: Boolean) {
+    /**
+     * Solvane-Haltung des Klaren Schnitts, beidhändig (Solvane steht aufrecht 80° zum Unterarm):
+     * senkrecht = Hasso (Hände neben der rechten Wange, Klinge steil nach oben-hinten), waagerecht = an der Hüfte, Klinge
+     * zurück. Mit der Ladung [charge] sinkt das Gewicht tiefer, der Rumpf dreht weiter ein, bei voller Ladung zittert die
+     * Spannung ganz leicht in den Händen.
+     */
+    private fun artCharge(p: Pose, c: Ctx, t: Float, horizontal: Boolean, charge: Float) {
         p.reset()
         val b = breathe(t, 0.08f)
+        val k = smooth(charge)
+        val tremor = if (charge >= 0.999f) 0.12f * sin(t * 1.9f) + 0.06f * sin(t * 3.3f) else 0f
         p.sword = 1f; p.grip = 1f; p.legW = 1f
         if (!horizontal) {
-            p.tYaw = 0.3f; p.tPitch = -0.06f + 0.01f * b; p.drop = 1.0f
-            p.rHand.set(-1.5f, -9f + 0.2f * b, -6f); p.blade.set(0f, -0.25f, 1f)
-            p.lLeg(-0.36f, -0.05f, -0.06f); p.rLeg(0.34f, 0.25f, 0.08f)
+            p.tYaw = 0.35f + 0.15f * k; p.tPitch = -0.04f + 0.01f * b + 0.04f * k; p.drop = 1.2f + 1.0f * k
+            p.rHand.set(-6.2f, -3f + 0.2f * b + tremor, -5.2f); p.blade.set(-0.1f, -0.85f, 0.5f + 0.1f * k)
+            p.lLeg(-0.38f - 0.08f * k, -0.05f, -0.06f); p.rLeg(0.36f + 0.06f * k, 0.25f, 0.08f)
         } else {
-            p.tYaw = 0.45f; p.tPitch = 0.05f + 0.01f * b; p.drop = 1.6f
-            p.rHand.set(-6.5f, 12.5f + 0.2f * b, -1f); p.blade.set(-0.5f, 0f, 1f)
-            p.lLeg(-0.36f, -0.1f, -0.2f); p.rLeg(0.3f, 0.3f, 0.24f)
+            p.tYaw = 0.45f + 0.15f * k; p.tPitch = 0.05f + 0.01f * b; p.drop = 1.6f + 0.8f * k
+            p.rHand.set(-8f, 12.8f + 0.2f * b + tremor, 1.5f); p.blade.set(-0.5f, 0f, 1f)
+            p.lLeg(-0.36f - 0.08f * k, -0.1f, -0.2f); p.rLeg(0.3f + 0.06f * k, 0.3f, 0.24f)
         }
         p.lHand.set(4f, 6f, -5f)
     }
 
-    /** Der Klare Schnitt: Treffer bei [ArtTimings.ART_HIT]; danach Durchzug, Erholung, Rückkehr. */
-    private fun artRelease(p: Pose, c: Ctx, t: Float, a: Float, horizontal: Boolean) {
+    /**
+     * Der Klare Schnitt, Treffer bei [ArtTimings.ART_HIT] (3 Ticks). Ausholen mit Spannung (die Klinge geht noch einmal
+     * zurück, der Körper hebt sich), dann beschleunigt der Schnitt bis zum Treffer, die Hüfte führt. Durchziehen: Der Körper
+     * sinkt in den Ausfallschritt, die Klinge schwingt über die Endhaltung hinaus, die linke Hand löst sich als Gegengewicht.
+     * Nachhall: tief verharren (länger bei voller Ladung), ausatmen, dann zurück in die Ruhe.
+     */
+    private fun artRelease(p: Pose, c: Ctx, t: Float, a: Float, horizontal: Boolean, charge: Float) {
         val hit = ArtTimings.ART_HIT.toFloat()
-        artCharge(keyA, c, t, horizontal)
-        // keyB = Zwischenstand, keyC = Treffer, p am Ende = Durchzug / Ruhe
+        artCharge(keyA, c, t, horizontal, charge)
+        // keyB = Ausholen, keyC = Treffer, keyD = Durchzug, keyE = Ruhe
         keyB.set(keyA)
         keyC.set(keyA)
         if (!horizontal) {
-            keyB.apply { rHand.set(-2.0f, -7f, -8.5f); blade.set(0f, -1f, -0.15f); tYaw = 0.1f; tPitch = 0.08f }
+            keyB.apply {
+                rHand.set(-5f, -7.3f, 0.5f); blade.set(0f, -0.3f, 1f); tYaw = 0.45f; tPitch = -0.12f; drop = 0.5f
+                lLeg(-0.3f, -0.05f, -0.06f); rLeg(0.3f, 0.25f, 0.08f)
+            }
             keyC.apply {
-                rHand.set(-1.5f, 11.0f, -4.5f); blade.set(0f, 0.35f, -1f); tYaw = -0.2f; tPitch = 0.3f; drop = 2.0f
-                lLeg(-0.5f, -0.05f, -0.06f); rLeg(0.4f, 0.25f, 0.08f)
+                rHand.set(0f, 13f, -3f); blade.set(0f, 0.35f, -1f); tYaw = -0.2f; tPitch = 0.32f; drop = 2.4f; grip = 0.55f
+                lHand.set(5f, 9f, -6f)
+                lLeg(-0.56f, -0.05f, -0.06f); rLeg(0.46f, 0.25f, 0.08f)
             }
         } else {
-            keyB.apply { rHand.set(-5f, 12.5f, -4f); blade.set(-1f, 0f, -0.2f); tYaw = 0.3f }
-            keyC.apply { rHand.set(-1.5f, 13f, -3.5f); blade.set(0f, 0f, -1f); tYaw = -0.15f; tPitch = 0.12f; drop = 1.6f }
+            keyB.apply { rHand.set(-9f, 12.5f, 2.5f); blade.set(-0.7f, 0f, 0.7f); tYaw = 0.68f; drop = 1.2f }
+            keyC.apply {
+                rHand.set(-1.5f, 13f, -3.7f); blade.set(0f, 0f, -1f); tYaw = -0.15f; tPitch = 0.12f; drop = 1.9f; grip = 0.6f
+                lHand.set(6f, 10f, -5f)
+            }
         }
         val follow = keyD.set(keyC).apply {
-            if (!horizontal) { rHand.set(-1.5f, 12.0f, -3.5f); blade.set(0f, 0.6f, -1f); tPitch = 0.33f; drop = 2.2f }
-            else { rHand.set(2f, 13f, -3f); blade.set(1f, 0.15f, 0f); tYaw = -0.5f; tPitch = 0.1f }
+            grip = 0f
+            if (!horizontal) {
+                rHand.set(-1f, 12.5f, 1f); blade.set(0f, 0.8f, -0.6f); tYaw = -0.3f; tPitch = 0.4f; drop = 2.9f
+                lHand.set(8.5f, 8f, 2f); lPalm.set(-0.5f, 0.6f, 0.6f)
+            } else {
+                rHand.set(-3.6f, 13.6f, -3f); blade.set(1f, 0.15f, 0f); tYaw = -0.62f; tPitch = 0.12f; drop = 2.2f
+                lHand.set(9f, 10f, 3f); lPalm.set(-0.5f, 0.6f, 0.6f)
+            }
         }
         val rest = keyE.set(follow).apply {
             tYaw = 0f; tPitch = 0.02f; drop = 0f; grip = 0f
             rHand.set(-6f, 10f, -4.5f); blade.set(0f, -0.5f, -1f)
-            lHand.set(6f, 10.5f, -2f)
+            lHand.set(6f, 10.5f, -2f); lPalm.set(-1f, 0f, 0f)
             rLeg(0.05f, 0.05f, 0.03f); lLeg(-0.05f, -0.05f, -0.03f)
         }
+        val raise = 1.1f
+        val linger = 9f + 3f * charge
         when {
-            a < hit * 0.5f -> p.mix(keyA, keyB, easeIn(a / (hit * 0.5f)))
-            a < hit -> p.mix(keyB, keyC, seg(a, hit * 0.5f, hit))
-            a < hit + 3f -> p.mix(keyC, follow, easeOut(seg(a, hit, hit + 3f)))
-            a < 8f -> p.set(follow)
-            else -> p.mix(follow, rest, smooth(seg(a, 8f, ArtTimings.ART_RELEASE.toFloat())))
+            a < raise -> p.mix(keyA, keyB, easeOut(a / raise))
+            a < hit -> {
+                val u = seg(a, raise, hit)
+                p.mix(keyB, keyC, drive(u, 0f))
+                p.bodyFrom(keyB, keyC, smooth(u * 1.4f))
+            }
+            a < hit + 2.5f -> {
+                val v = seg(a, hit, hit + 2.5f)
+                p.mixFree(keyC, follow, easeOut(v) + 0.14f * bump(v))
+                p.drop += 0.4f * bump(v)
+            }
+            a < linger -> {
+                // Nachhall: tief verharren, langsam ausatmen; die Klinge sinkt kaum merklich nach.
+                val v = seg(a, hit + 2.5f, linger)
+                p.set(follow)
+                p.drop += 0.35f * bump(v)
+                p.blade.y += 0.06f * bump(v)
+            }
+            else -> p.mix(follow, rest, smooth(seg(a, linger, ArtTimings.ART_RELEASE.toFloat())))
         }
     }
 

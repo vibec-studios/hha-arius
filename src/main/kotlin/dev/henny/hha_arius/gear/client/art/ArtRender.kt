@@ -31,6 +31,9 @@ object ArtRender {
                 @Suppress("UNCHECKED_CAST")
                 helper.register(GauntletFeature(renderer as FeatureRendererContext<PlayerEntityRenderState, PlayerEntityModel>))
             }
+            if (renderer is dev.henny.hha_arius.client.model.arius.AriusRenderer) {
+                helper.register(dev.henny.hha_arius.client.fx.AriusBladeTrail(renderer))
+            }
         }
         ArtVisuals.init()
     }

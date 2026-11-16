@@ -36,6 +36,8 @@
   "hha_arius.client.flash_off": "Bildblitze des Arius-Kampfs: aus",
   "hha_arius.client.flash_on": "Bildblitze des Arius-Kampfs: an",
   "hha_arius.client.fx": "Eigene Partikel des Arius-Kampfs: %s %%",
+  "hha_arius.client.shake_off": "Kamerarucken bei schweren Treffern: aus",
+  "hha_arius.client.shake_on": "Kamerarucken bei schweren Treffern: an",
   "hha_arius.echo.stage.1": "Tempel",
   "hha_arius.echo.stage.2": "Gletscher",
   "hha_arius.echo.stage.3": "Herz",
