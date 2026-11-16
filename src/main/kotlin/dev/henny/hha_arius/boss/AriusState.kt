@@ -34,6 +34,8 @@ class AriusState(var data: Data = Data()) : PersistentState() {
         var sendHome: Boolean = false,
         var againIndex: Int = 0,
         var rumorIndex: Int = 0,
+        /** Eingesetzte Siegel, die nicht zurückgegeben werden konnten (offline, volles Inventar). */
+        var pendingSeals: Int = 0,
     )
 
     class Data(
@@ -64,6 +66,18 @@ class AriusState(var data: Data = Data()) : PersistentState() {
             val p = state.player(player.uuid)
             p.home = Home(player.entityWorld.registryKey.value.toString(), player.x, player.y, player.z, player.yaw)
             p.sendHome = false
+            state.save()
+        }
+
+        /**
+         * Rückweg für jemanden, der nicht über das Siegel in die Arena kam (Nachzügler, fremder Teleport): die Welt, aus
+         * der er kam, an einer sicheren Stelle (Oberfläche am Weltursprung). Die genaue Herkunft ist nicht mehr bekannt.
+         */
+        fun rememberFallbackHome(player: ServerPlayerEntity, from: ServerWorld) {
+            val server = player.entityWorld.server ?: return
+            val state = get(server)
+            val top = from.getTopPosition(Heightmap.Type.MOTION_BLOCKING, BlockPos.ORIGIN).toBottomCenterPos()
+            state.player(player.uuid).home = Home(from.registryKey.value.toString(), top.x, top.y, top.z, player.yaw)
             state.save()
         }
 

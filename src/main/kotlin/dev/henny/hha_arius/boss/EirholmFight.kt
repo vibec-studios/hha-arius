@@ -58,6 +58,8 @@ class EirholmFight(
     val training: Int,
     /** 0 = Arena steht schon, 1 = bauen, 2 = leeren und neu bauen. */
     private val buildMode: Int,
+    /** Das eingesetzte Siegel (leer im Training/bei Admin-Start): Sieg verbraucht es, sonst kommt es zurück. */
+    private var sealStake: net.minecraft.item.ItemStack = net.minecraft.item.ItemStack.EMPTY,
 ) {
     val origin: BlockPos = ArenaLayout.origin(slot)
     val server: net.minecraft.server.MinecraftServer = world.server!!
@@ -212,7 +214,7 @@ class EirholmFight(
 
     private val forced = ArrayList<ChunkPos>()
 
-    private var lastCombatLine = Long.MIN_VALUE
+    private var lastCombatLine = -100_000L
 
     val now: Long get() = world.time
 
@@ -417,10 +419,15 @@ class EirholmFight(
         }
         updateDuelTarget(active)
         director?.step()
+        if (ended) return
+        // Aus einer Momentaufnahme ausführen: Tasks dürfen neue Tasks anlegen oder den Kampf beenden.
         if (tasks.isNotEmpty()) {
-            val it = tasks.iterator()
-            while (it.hasNext()) if (!it.next().step()) it.remove()
+            for (runner in tasks.toList()) {
+                if (ended) return
+                if (!runner.step()) tasks.remove(runner)
+            }
         }
+        if (ended) return
         arius?.let { if (it.open && now >= ariusOpenUntil) it.open = false }
         if (world.time % 5L == 0L) updateBars()
         keepInArena(active)
@@ -647,9 +654,13 @@ class EirholmFight(
 
     /** Treffer, der zu einer Sequenz gehört (darf den gehaltenen Spieler treffen). */
     fun hurtHeld(player: ServerPlayerEntity, base: Float, kind: Damage.Kind = Damage.Kind.IMPACT): Float {
-        if (player.uuid !in fighters || player.entityWorld !== world) return 0f
+        if (!canSequence(player)) return 0f
         return Hold.hitting { Damage.hit(player, arius, kind, base, BossConfig.damageScale()) }
     }
+
+    /** Darf eine laufende Sequenz diesen Spieler weiter führen (nicht k. o., noch in dieser Arena, Kampf läuft)? */
+    fun canSequence(player: ServerPlayerEntity): Boolean =
+        !ended && player.isAlive && !player.isRemoved && player.entityWorld === world && fighters[player.uuid]?.ko == false
 
     fun grounded(player: ServerPlayerEntity): Boolean = player.isOnGround || player.y <= floorY + 0.4
 
@@ -863,22 +874,25 @@ class EirholmFight(
             }
             return
         }
-        val state = AriusState.get(server)
+        // Das Siegel ist verbraucht. Die Beute gibt es erst am Heimatort, damit nichts im Aufräumen der Arena verloren geht.
+        sealStake = net.minecraft.item.ItemStack.EMPTY
         val flawless = !anyKo
         for (p in audience()) {
-            val data = state.player(p.uuid)
-            GearRewards.grant(p, data.wins == 0, flawless)
-            data.wins++
             Advancements.grant(p, "white_blade")
             if (flawless) Advancements.grant(p, "no_storm")
         }
-        state.save()
-        server.playerManager.getPlayer(summonerId)?.let { GearRewards.consumeSeal(it) }
         task(script {
             wait(400)
             val everyone = audience()
             finish(win = true)
-            for (p in everyone) AriusState.sendHome(p)
+            val state = AriusState.get(server)
+            for (p in everyone) {
+                AriusState.sendHome(p)
+                val data = state.player(p.uuid)
+                GearRewards.grant(p, data.wins == 0, flawless)
+                data.wins++
+            }
+            state.save()
         })
     }
 
@@ -908,6 +922,12 @@ class EirholmFight(
         if (training == 0) {
             val state = AriusState.get(server)
             state.data.dirtySlots.remove(slot)
+            // Niederlage oder Abbruch: Einsatz zurück (online ins Inventar, sonst beim nächsten Einloggen).
+            if (!win && !sealStake.isEmpty) {
+                val owner = server.playerManager.getPlayer(summonerId)
+                if (owner == null || !owner.inventory.insertStack(sealStake.copy())) state.player(summonerId).pendingSeals++
+                sealStake = net.minecraft.item.ItemStack.EMPTY
+            }
             state.save()
         }
         Encounters.onFinished(this)

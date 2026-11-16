@@ -20,9 +20,10 @@ object Hold {
 
     enum class Mode { FREEZE, FLIGHT }
 
+    /** [deadline]: harte Obergrenze der GANZEN Sequenz (bleibt bei Wechseln Einfrieren ↔ Flug erhalten). */
     private class State(
         val world: ServerWorld, val mode: Mode, val start: Long, val end: Long,
-        var anchor: Vec3d?, val landing: Vec3d?, val fallback: Vec3d?,
+        var anchor: Vec3d?, val landing: Vec3d?, val fallback: Vec3d?, val deadline: Long,
     )
 
     private val held = HashMap<UUID, State>()
@@ -72,15 +73,18 @@ object Hold {
 
     private fun begin(player: ServerPlayerEntity, mode: Mode, ticks: Int, anchor: Vec3d?, landing: Vec3d?, fallback: Vec3d?) {
         val world = player.entityWorld as? ServerWorld ?: return
-        val limit = ticks.coerceIn(1, 60)
-        held[player.uuid] = State(world, mode, world.time, world.time + limit, anchor, landing, fallback)
-        AriusNet.send(player, HoldS2C(true, limit + 5))
+        val now = world.time
+        // Läuft schon eine Sequenz, gilt deren Obergrenze weiter; sonst beginnt eine neue mit HOLD_MAX.
+        val deadline = held[player.uuid]?.deadline ?: (now + AriusTimings.HOLD_MAX)
+        val end = minOf(now + ticks.coerceAtLeast(1), deadline)
+        held[player.uuid] = State(world, mode, now, end, anchor, landing, fallback, deadline)
+        AriusNet.send(player, HoldS2C(true, (end - now).toInt() + 5))
         player.stopUsingItem()
     }
 
     /** Wechselt eine laufende Haltung in Flug (z. B. Einfrieren → Tritt). */
     fun switchToLaunch(player: ServerPlayerEntity, velocity: Vec3d, maxTicks: Int, landing: Vec3d? = null, fallback: Vec3d? = null) {
-        held.remove(player.uuid)
+        if (player.uuid !in held) return
         launch(player, velocity, maxTicks, landing, fallback)
     }
 

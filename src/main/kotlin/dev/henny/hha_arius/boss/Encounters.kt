@@ -7,7 +7,15 @@ import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents
+import dev.henny.hha_arius.HhaArius as Arius
+import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents
+import net.fabricmc.fabric.api.event.player.UseBlockCallback
+import net.fabricmc.fabric.api.event.player.UseItemCallback
+import net.minecraft.item.BlockItem
+import net.minecraft.item.BucketItem
 import net.minecraft.item.ItemStack
+import net.minecraft.registry.Registries
+import net.minecraft.util.ActionResult
 import net.minecraft.registry.RegistryKey
 import net.minecraft.registry.RegistryKeys
 import net.minecraft.registry.tag.DamageTypeTags
@@ -59,11 +67,26 @@ object Encounters {
         }
         ServerPlayConnectionEvents.JOIN.register { handler, _, server ->
             val player = handler.player
-            server.execute { onArrive(player) }
+            server.execute {
+                onArrive(player, null)
+                deliverPending(player)
+            }
         }
         ServerEntityWorldChangeEvents.AFTER_PLAYER_CHANGE_WORLD.register { player, origin, destination ->
             if (origin.registryKey == WORLD) fights[slotOf(player.lastX)]?.takeIf { it.isParticipant(player) }?.onLeave(player)
-            if (destination.registryKey == WORLD && player.uuid !in arriving) onArrive(player)
+            if (destination.registryKey == WORLD && player.uuid !in arriving) onArrive(player, origin)
+        }
+        // Die Arena ist kein Bauplatz: kein Abbauen, kein Platzieren, keine Eimer (außer im Kreativmodus).
+        PlayerBlockBreakEvents.BEFORE.register { world, player, _, _, _ ->
+            !(world.registryKey == WORLD && !player.isCreative)
+        }
+        UseBlockCallback.EVENT.register { player, world, hand, _ ->
+            val item = player.getStackInHand(hand).item
+            if (world.registryKey == WORLD && !player.isCreative && (item is BlockItem || item is BucketItem)) ActionResult.FAIL else ActionResult.PASS
+        }
+        UseItemCallback.EVENT.register { player, world, hand ->
+            val item = player.getStackInHand(hand).item
+            if (world.registryKey == WORLD && !player.isCreative && item is BucketItem) ActionResult.FAIL else ActionResult.PASS
         }
         ServerLifecycleEvents.SERVER_STOPPING.register { _ ->
             for (fight in fights.values.toList()) fight.finish(false)
@@ -72,10 +95,12 @@ object Encounters {
     }
 
     /** Ein Spieler steht (wieder) in der Arena-Welt: in seinen Kampf einsteigen oder nach Hause. */
-    private fun onArrive(player: ServerPlayerEntity) {
+    private fun onArrive(player: ServerPlayerEntity, from: ServerWorld?) {
         if (player.entityWorld.registryKey != WORLD) return
         val fight = fights[slotOf(player.x)]
         if (fight != null && !fight.ended) {
+            // Kam er von außen dazu (nicht über das Siegel), braucht er einen eigenen Rückweg.
+            if (from != null && from.registryKey != WORLD && !fight.isParticipant(player)) AriusState.rememberFallbackHome(player, from)
             fight.onJoin(player)
         } else if (!player.isCreative && !player.isSpectator) {
             AriusState.sendHome(player)
@@ -96,11 +121,23 @@ object Encounters {
         fights.remove(fight.slot)
     }
 
-    fun requestStart(player: ServerPlayerEntity, seal: ItemStack): Boolean = start(player, 0)
+    fun requestStart(player: ServerPlayerEntity, seal: ItemStack): Boolean = start(player, 0, seal)
 
-    fun requestTraining(player: ServerPlayerEntity, stage: Int): Boolean = start(player, stage.coerceIn(1, 4))
+    fun requestTraining(player: ServerPlayerEntity, stage: Int): Boolean = start(player, stage.coerceIn(1, 4), ItemStack.EMPTY)
 
-    private fun start(player: ServerPlayerEntity, training: Int): Boolean {
+    /** Eingesetzte Siegel, die beim letzten Mal nicht zurückgegeben werden konnten. */
+    private fun deliverPending(player: ServerPlayerEntity) {
+        if (player.entityWorld.registryKey == WORLD) return
+        val state = AriusState.get(player.entityWorld.server ?: return)
+        val data = state.player(player.uuid)
+        if (data.pendingSeals <= 0) return
+        val seal = Registries.ITEM.get(HhaArius.id("eirholm_seal"))
+        repeat(data.pendingSeals) { player.giveOrDropStack(ItemStack(seal)) }
+        data.pendingSeals = 0
+        state.save()
+    }
+
+    private fun start(player: ServerPlayerEntity, training: Int, seal: ItemStack): Boolean {
         val server = player.entityWorld.server ?: return false
         if (player.entityWorld.registryKey == WORLD) {
             player.sendMessage(Text.translatable("hha_arius.msg.already_inside").formatted(Formatting.RED), true)
@@ -123,14 +160,13 @@ object Encounters {
             it !== player && !it.isSpectator && it.isAlive && it.squaredDistanceTo(player) <= 12.0 * 12.0 && !isParticipant(it)
         }
         val origin = ArenaLayout.origin(slot)
+        // Jeder Versuch prüft den ganzen Bauplan und ersetzt Abweichungen (schnell, wenn alles stimmt); nach einem
+        // Absturz wird zusätzlich das ganze Volumen geleert.
         val dirty = slot in AriusState.get(server).data.dirtySlots
-        val built = !world.getBlockState(origin.down()).isAir
-        val mode = when {
-            dirty -> 2
-            !built -> 1
-            else -> 0
-        }
-        val fight = EirholmFight(world, slot, player, invited, training, mode)
+        val mode = if (dirty) 2 else 1
+        // Das Siegel ist der Einsatz: Es wird jetzt entnommen und bei Niederlage/Abbruch zurückgegeben.
+        val stake = if (training == 0 && !seal.isEmpty) seal.copyWithCount(1).also { seal.decrement(1) } else ItemStack.EMPTY
+        val fight = EirholmFight(world, slot, player, invited, training, mode, stake)
         fights[slot] = fight
         fight.begin()
         if (training == 0) for (p in listOf(player) + invited) Advancements.grant(p, "seal")

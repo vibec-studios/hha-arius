@@ -230,6 +230,7 @@ class Scenes(private val f: EirholmFight) {
             f.world.spawnParticles(ParticleTypes.SNOWFLAKE, x + 0.5, y + 0.5, gate.z + 0.5, 3, 0.4, 0.4, 0.4, 0.15)
         }
         for ((i, p) in players.withIndex()) {
+            if (!f.canSequence(p) || !Hold.isHeld(p)) continue
             val landing = f.abs(ArenaLayout.LANDING[i % ArenaLayout.LANDING.size])
             val d = Vec3d(landing.x - p.x, 0.0, landing.z - p.z)
             val dist = d.length()
@@ -929,8 +930,9 @@ class Scenes(private val f: EirholmFight) {
                 yield(Unit)
             }
             Vfx.crescent(f.world, Vfx.Style.HEAVEN, from.add(0.0, 1.1, 0.0), dir, sqrt(from.squaredDistanceTo(to)).toFloat(), 1.2f, 6)
+            // Wer getroffen wurde, ohne perfekt zu blocken, nimmt Schaden, egal was andere tun.
+            for (p in lost) f.hurt(p, 12f, Damage.Kind.NULL_CUT)
             if (lost.isNotEmpty() && perfect.isEmpty()) {
-                for (p in lost) f.hurt(p, 12f, Damage.Kind.NULL_CUT)
                 wait(AriusTimings.IAI_RESET)
                 a.sheathed = true
                 a.play(AriusPose.IAI_STANCE)

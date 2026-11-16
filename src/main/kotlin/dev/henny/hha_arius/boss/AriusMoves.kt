@@ -445,9 +445,10 @@ class AriusMoves(private val f: EirholmFight) {
             f.face(a, player.entityPos)
             a.play(AriusPose.PARRY_KICK, AriusTimings.ARIUS_WINDUP[AriusPose.PARRY_KICK])
             wait(AriusTimings.ARIUS_WINDUP[AriusPose.PARRY_KICK])
-            if (!Hold.isHeld(player)) return@script
+            if (!Hold.isHeld(player) || !f.canSequence(player)) return@script
             val dir = flatDir(a.entityPos, player.entityPos)
             f.hurtHeld(player, 8f)
+            if (!Hold.isHeld(player) || !f.canSequence(player)) return@script
             f.sound("arius.kick", player.entityPos, 2.4f)
             f.sound("hold.impact", player.entityPos, 1.8f)
             f.calls.hitShake(player.entityPos, 3f, 8f)
@@ -466,8 +467,9 @@ class AriusMoves(private val f: EirholmFight) {
             f.face(a, player.entityPos)
             a.play(AriusPose.LAUNCH, AriusTimings.ARIUS_WINDUP[AriusPose.LAUNCH])
             wait(AriusTimings.ARIUS_WINDUP[AriusPose.LAUNCH])
-            if (!Hold.isHeld(player)) return@script
+            if (!Hold.isHeld(player) || !f.canSequence(player)) return@script
             f.hurtHeld(player, 6f)
+            if (!Hold.isHeld(player) || !f.canSequence(player)) return@script
             f.sound("arius.slash", player.entityPos, 2f, 1.25f)
             val start = player.entityPos
             val apex = start.add(0.0, 4.0, 0.0)
@@ -484,8 +486,9 @@ class AriusMoves(private val f: EirholmFight) {
                 f.face(a, apex)
                 yield(Unit)
             }
-            if (!Hold.isHeld(player)) return@script
+            if (!Hold.isHeld(player) || !f.canSequence(player)) return@script
             f.hurtHeld(player, 8f)
+            if (!Hold.isHeld(player) || !f.canSequence(player)) return@script
             f.sound("arius.kick", apex, 2.4f, 0.8f)
             f.calls.hitShake(apex, 3f, 8f)
             val dir = flatDir(ground, apex)
@@ -525,8 +528,10 @@ class AriusMoves(private val f: EirholmFight) {
         f.face(a, caught.entityPos)
         a.play(AriusPose.POMMEL, 6)
         wait(6)
-        if (Hold.isHeld(caught)) {
+        if (Hold.isHeld(caught) && f.canSequence(caught)) {
             f.hurtHeld(caught, 10f)
+        }
+        if (Hold.isHeld(caught) && f.canSequence(caught)) {
             f.sound("hold.impact", caught.entityPos, 2f)
             val dir = flatDir(a.entityPos, caught.entityPos)
             Hold.switchToLaunch(caught, dir.multiply(0.8).add(0.0, 0.3, 0.0), 20, f.clampToArena(caught.entityPos.add(dir.multiply(4.0)), 1.5), f.landingSpot(caught))
