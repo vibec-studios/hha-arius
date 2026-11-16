@@ -47,7 +47,8 @@ Ton: ruhig, knapp, konkret. Trockener Humor nur dort, wo er die Spannung nicht b
 | 4 | `intro.test` | er zieht Solvane, Kampfbeginn | Leg es weg. … Nein? Dann zeig mir, wofür du es trägst. | Put it down. … No? Then show me what you carry it for. | ruhig, keine Drohung | wie 1 |
 | 5 | `serious` | Abschnitt I, Arius' Leben fällt unter 40 % | …Gut. | …Good. | anerkennend, kurz | jeder Kampf |
 | — | *(Szene)* `scene.cut_after` | 2 s nach dem Schnitt, wenn der Tempel bricht | *Erst jetzt hörst du den Schnitt.* | *Only now do you hear the cut.* | — | jeder Kampf |
-| 6 | `dragon.name` | Abschnitt II, Nivaris landet über den Landeplätzen | Nivaris. | Nivaris. | fast zärtlich | jeder Kampf |
+| 5b | `dragon.wake` | Auftritt an der Nadel: der Schneesturm verdichtet sich, bevor die Windungen sichtbar werden | Hört ihr das? Das ist nicht der Wind. | Do you hear that? That isn't the wind. | leise, angespannt | jeder Kampf |
+| 6 | `dragon.name` | Abschnitt II, Nivaris landet nach dem Auftritt an der Nadel vor den Landeplätzen | Nivaris. | Nivaris. | fast zärtlich | jeder Kampf |
 | — | *(Szene)* `scene.dragon` | gleichzeitig | *Ein Auge golden, eines eisblau. Wie seine.* | *One eye gold, one ice-blue. Like his.* | — | erste Begegnung je Spieler |
 | 7 | `dragon.polite` | 4 s danach, Arius setzt sich auf die Tempelhälfte | Ich bin ihr bis hierher gefolgt. Sie war vor mir da. Sei höflich. | I followed her all the way here. She was here first. Be polite. | trocken | jeder Kampf; bei Wiederholung nur „Sei höflich.“ (`dragon.polite_short`) |
 | 8 | `home.astoria` | Abschnitt II, wenn Nivaris zum ersten Mal landet und Arius zusieht | Wo ich herkomme, gibt es ein Dorf namens Eirholm. Dieser Ort hatte keinen Namen. Jetzt hat er meinen. | Where I come from there's a village called Eirholm. This place had no name. Now it has mine. | ruhig, Heimweh nur angedeutet | erste Begegnung je Spieler |
