@@ -728,7 +728,7 @@ TEX3D = 64           # Texturgröße (wird bei Bedarf verdoppelt)
 PX = 2               # Texel je Modelleinheit
 
 # Paletten (dunkel -> hell)
-STEEL = [hexc('#5f6b80'), hexc('#8693a8'), hexc('#adb9cb'), hexc('#cfd8e5'), hexc('#e7edf5'), hexc('#f7f9fc'),
+BLADE_STEEL = [hexc('#5f6b80'), hexc('#8693a8'), hexc('#adb9cb'), hexc('#cfd8e5'), hexc('#e7edf5'), hexc('#f7f9fc'),
          hexc('#ffffff')]
 AUR = [hexc('#3d2509'), hexc('#6b4615'), hexc('#9a722c'), hexc('#c69d4c'), hexc('#e6c67f'), hexc('#fbedc4')]
 WRAP = [hexc('#0f0e12'), hexc('#1a181e'), hexc('#28252c'), hexc('#3a3540'), hexc('#4e4855')]
@@ -791,9 +791,9 @@ def paint_solvane(name, face, p, i, j, pw, ph):
             if flat:
                 outer = abs(x - 8) > 1.0 if name == 'edge' else True
                 k += 0.6 if outer else 0.0                                   # helle Schneidkante
-            return ramp(STEEL, k / 6.0)
+            return ramp(BLADE_STEEL, k / 6.0)
         if not flat:
-            return ramp(STEEL, (3.6 + top) / 6.0)
+            return ramp(BLADE_STEEL, (3.6 + top) / 6.0)
         d = x - 8.0                                                          # Abstand zur Mittellinie
         if abs(d) < 0.25 and y < FULLER_END:                                 # Hohlkehle
             if y < FULLER_GOLD:
@@ -810,7 +810,7 @@ def paint_solvane(name, face, p, i, j, pw, ph):
         if face == 'north':
             side = -side
         k = 4.0 + side + (n - 0.5) * 0.35 - along * 0.2
-        return ramp(STEEL, k / 6.0)
+        return ramp(BLADE_STEEL, k / 6.0)
     if name in ('guard', 'collar', 'ferrule', 'langet'):
         k = 2.9 + (n - 0.5) * 0.9 + top + _bevel(i, j, pw, ph, face)
         if name == 'guard' and flat and ph > 2 and j == ph // 2 and 2 < i < pw - 3:

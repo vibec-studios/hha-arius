@@ -448,34 +448,12 @@ Arius (Stufe I trägt dieselbe Rüstung) und Weiß bleibt der Verwandlung vorbeh
 - **Material:** Werte wie Netherite (3/8/6/3), Härte 3,5 (statt 3), Rückstoßresistenz 0,15 (statt 0,1), feuerfest.
   Herkunft: Netherite-Teil + **Eirholm-Schmiedevorlage** + **Herzfrost** am Schmiedetisch.
 
-### 10.1 Fähigkeiten: eine Ressource mit Entscheidungen
-**Frostresonanz (0–100)** steigt durch Können, nicht durch Zeit:
-- +10 je **voll aufgeladenem** Treffer mit Solvane (Abklingbalken ≥ 90 %), +4 mit anderen Nahkampfwaffen bei voller Ladung
-- +25 je erfolgreicher Konterhaltung (Solvane) oder perfektem Schildblock (Schild in den letzten 10 Ticks erhoben)
-- +3 je erlittenem Treffer
-- Zerfällt um 2/s nach 6 s ohne Kampf. Anzeige: schmaler Balken über der HHA-Cooldown-Leiste.
-
-Ausgeben (HHA-Tasten, nur mit vollem Set). Entscheidung: **Schaden jetzt, Bewegung oder Schutz?**
-
-| Taste | Fähigkeit | Kosten | Wirkung | Abklingzeit |
-|---|---|---|---|---|
-| **Ability 1 (G)** | **Weiße Linie**: kleiner Bruder des Schnitts | ≥ 40 (alles, was da ist) | 12 Ticks Aufladen (verlangsamt), dann Schnitt entlang des Blicks: 12 × 2 Blöcke, Schaden 8 + 0,15 × Resonanz (14–23), zerschneidet feindliche Geschosse in der Linie. Trifft nur Gegner (HHA-Trust/Targeting) | 8 s |
-| **Ability 2 (H)** | **Frostschritt**: Frostkontrolle als Bewegung | 20 | Schneller Schritt 6 Blöcke in Laufrichtung, 6 Ticks keine Nahkampftreffer; **über Wasser** entsteht ein Pfad aus brüchigem Eis (Vanilla *frosted ice*, schmilzt wieder zu Wasser, verändert nichts dauerhaft) | 2,5 s |
-| **Ability 4** | **Weißer Kern**: kompakter Energieimpuls | 60 | 0,5 s Kern an der Brust, dann Druckstoß R 6: Gegner 3 Blöcke weggeschoben, 6 Schaden, feindliche Geschosse zerstört, du erhältst 3 s Resistenz I | 25 s |
-
-**Passiv (volles Set):** immun gegen Gefrieren (Pulverschnee), Pulverschnee trägt. **Keine** automatischen Effekte, die die
-Welt verändern: Eis entsteht nur bei bewusstem Frostschritt über Wasser, und nur als selbstschmelzendes Frosted Ice.
-
-### 10.2 Solvane (Abbild) *(Mod)*
-Ein aus dem Eis des Herzgewölbes geformtes Abbild der echten Klinge. Gold-Kreuzparierstange mit Rautenstern, schwarzer
-gewickelter Griff, weiße Klinge.
-- Werte: 9 Schaden, 1,6 Angriffe/s (wie ein schnelles Netherite-Schwert).
-- **Klare Schneide:** Nur voll aufgeladene Treffer zählen: +2 Frostschaden und Resonanz. Jeder dritte volle Treffer am
-  selben Ziel **zerspringt** (Rauhreif: +5 Schaden, Langsamkeit I für 1 s). Spam-Klicks verlieren Wert.
-- **Konterhaltung (Rechtsklick):** 8 Ticks Haltung. Kommt in dieser Zeit ein Nahkampftreffer oder Geschoss an, wird es
-  abgewehrt, der Angreifer zurückgestoßen, Geschosse zerschnitten, +25 Resonanz. Abklingzeit 2 s nach Erfolg,
-  3 s nach einem Fehlschlag.
-- Ohne Set sinnvoll (Timing-Schwert mit Konter). Mit Set füllt es die Resonanz am schnellsten.
+### 10.1 / 10.2 Fähigkeiten, Kampfhandschuhe und Solvane
+**Ersetzt durch `docs/AUSRUESTUNG.md` (Stand 1.1.0).** Dort stehen die gemeinsame Ressource (Frostresonanz mit
+Ruhepunkt), die Verteilung der Rüstungsfähigkeiten (Brust Ability 1, Beine Ability 2, volles Set Ability 3 = Weißes
+Loch), Arius' Kampfhandschuhe (Nahkampf-Moveset, Magiemodus mit Auswahlrad, 13 Techniken aus Wind, Eis und Yang),
+Solvane als mittellanges Bastardschwert mit der Waffentechnik „Klarer Schnitt“ sowie Kosten, Grenzen und Balancing.
+Die frühere „Weiße Linie“ entfällt (sie hätte Solvanes Schnitt gedoppelt).
 
 ### 10.3 Drachenrelikt: **Nivaris' Schwingenschuppe** *(Mod)*
 Eigener Zweck: **Bewegung und Gelände**, keine Resonanz, kein Schaden.
@@ -489,6 +467,7 @@ Eigener Zweck: **Bewegung und Gelände**, keine Resonanz, kein Schaden.
 | Belohnung | Erster Sieg | Weitere Siege | Verwendung |
 |---|---|---|---|
 | **Solvane (Abbild)** | garantiert | 10 % | Waffe |
+| **Arius' Kampfhandschuhe** | garantiert | 10 % | Waffe und Zauberwerkzeug |
 | **Herzfrost** | 4 | 2 | Rüstungsaufwertung, Schwingenschuppe |
 | **Eirholm-Schmiedevorlage** | 1 | 50 % | Netherite → Eirholm (vervielfältigen: Vorlage + 7 Diamanten + Herzfrost → 2) |
 | **Nivaris-Schuppe** | 6 | 3 | Schwingenschuppe (3 Schuppen + 2 Phantomhaut + Herzfrost) |

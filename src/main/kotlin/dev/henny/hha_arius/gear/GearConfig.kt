@@ -129,13 +129,13 @@ object GearConfig {
         "solvane_counter_cooldown_fail" to 60.0,
         "solvane_counter_knockback" to 0.8,
         // Frostschritt (Ability 2)
-        "frost_step_cost" to 20.0,
+        "frost_step_cost" to 15.0,
         "frost_step_distance" to 6.0,
         "frost_step_guard_ticks" to 6.0,
         "frost_step_cooldown" to 50.0,
         "frost_step_ice_max_ticks" to 240.0,
         // Weißer Kern (Ability 4)
-        "white_core_cost" to 60.0,
+        "white_core_cost" to 40.0,
         "white_core_charge_ticks" to 10.0,
         "white_core_radius" to 6.0,
         "white_core_push" to 3.0,

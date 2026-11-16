@@ -181,17 +181,17 @@ def wind_pull():
 def frost_shards():
     """Frostsplitter: drei schlanke Eissplitter, fächerförmig nach rechts oben."""
     c = Canvas()
-    for ang, ln in ((-20, 11.5), (-45, 13.5), (-70, 11.5)):
+    for ang, ln, w in ((-18, 12.0, 1.7), (-45, 14.5, 2.0), (-72, 12.0, 1.7)):
         a = math.radians(ang)
         ux, uy = math.cos(a), math.sin(a)
         nx, ny = -uy, ux
-        bx, by = 2.0, 14.0
+        bx, by = 1.5, 14.5
         tip = (bx + ux * ln, by + uy * ln)
-        mid = (bx + ux * ln * 0.55, by + uy * ln * 0.55)
-        pts = [(mid[0] + nx * 1.5, mid[1] + ny * 1.5), tip, (mid[0] - nx * 1.5, mid[1] - ny * 1.5),
-               (bx + ux * ln * 0.25, by + uy * ln * 0.25)]
-        c.poly(pts, lambda x, y, nx=nx, ny=ny, mx=mid[0], my=mid[1]: I1 if (x - mx) * nx + (y - my) * ny > 0 else I2)
-        c.line(mid[0], mid[1], tip[0] - ux * 0.8, tip[1] - uy * 0.8, 0.3, I0)
+        mid = (bx + ux * ln * 0.5, by + uy * ln * 0.5)
+        root = (bx + ux * ln * 0.12, by + uy * ln * 0.12)
+        c.poly([(mid[0] + nx * w, mid[1] + ny * w), tip, (mid[0] - nx * w, mid[1] - ny * w), root],
+               lambda x, y, nx=nx, ny=ny, mx=mid[0], my=mid[1]: I1 if (x - mx) * nx + (y - my) * ny < 0 else I2)
+        c.line(mid[0] - ux * 2, mid[1] - uy * 2, tip[0] - ux * 1.2, tip[1] - uy * 1.2, 0.3, I0)
     return c.done()
 
 
@@ -209,12 +209,12 @@ def ice_wall():
 
 
 def frost_field():
-    """Frostfeld: flacher Kreis am Boden, darüber kleine Eiszacken."""
+    """Frostfeld: Frostkreis flach am Boden (Ellipse), in ihm Eiszacken."""
     c = Canvas()
-    c.ring(8, 11.5, 4.6, 7.2, lambda x, y: I1 if y < 11.5 else I2, ry=2.9)
-    c.shape(lambda x, y: ((x - 8) / 4.3) ** 2 + ((y - 11.5) / 1.6) ** 2 <= 1, I3)
-    for x0, h in ((5.0, 4.0), (8.0, 6.5), (11.0, 4.0)):
-        c.poly([(x0 - 1.2, 11.8), (x0, 11.8 - h), (x0 + 1.2, 11.8)], lambda x, y, x0=x0: I0 if x < x0 else I1)
+    c.ring(8, 11, 5.0, 7.4, lambda x, y: I1 if y < 11 else I2, ry=3.6)
+    c.shape(lambda x, y: ((x - 8) / 5.0) ** 2 + ((y - 11) / 2.4) ** 2 <= 1, I3)
+    for x0, h in ((4.8, 5.0), (8.0, 8.5), (11.2, 5.0)):
+        c.poly([(x0 - 1.4, 11.6), (x0, 11.6 - h), (x0 + 1.4, 11.6)], lambda x, y, x0=x0: I0 if x < x0 else I1)
     return c.done()
 
 
@@ -325,19 +325,19 @@ def school_yang():
 FIST = [
     '................',
     '................',
-    '....pppppppp....',
-    '...pPPpPPpPPg...',
-    '...pPPpPPpPPg...',
-    '...ggggggggggp..',
-    '...pPPPPPPPPPPp.',
-    '..ppPPPPPPPPPPp.',
-    '..pPPtttPPPPPPp.',
-    '..pPPttttPPPPp..',
-    '...pPPPPPPPPPp..',
+    '....pp.pp.pp....',
+    '...pPPpPPpPPp...',
+    '...pPPpPPpPPpp..',
+    '..ppPPpPPpPPPPp.',
+    '..pPPPPPPPPPPPp.',
+    '..pPttttttPPPp..',
+    '..pPPPPPPtPPPp..',
+    '...pPPPPPPPPp...',
     '....ggggggggg...',
     '....pPPPPPPPp...',
     '....pPPPPPPPp...',
-    '....pppppppp....',
+    '....pPPPPPPPp...',
+    '....ppppppppp...',
     '................',
 ]
 OPEN_HAND = [
@@ -411,50 +411,60 @@ HUD_ART = {
 # ---------------------------------------------------------------------------------------------------------------------
 # Bau-Blöcke (16 x 16, durchscheinend)
 # ---------------------------------------------------------------------------------------------------------------------
+def _voronoi(pts, x, y, size=16):
+    """Abstand zum nächsten und zweitnächsten Punkt (nahtlos kachelnd), Index des nächsten."""
+    best = []
+    for i, (px, py) in enumerate(pts):
+        dx = min(abs(x - px), size - abs(x - px))
+        dy = min(abs(y - py), size - abs(y - py))
+        best.append((math.hypot(dx, dy), i))
+    best.sort()
+    return best[0][0], best[1][0], best[0][1]
+
+
+FROST_SEEDS = [(2.5, 3.0), (8.5, 1.5), (13.5, 4.5), (5.5, 8.5), (11.0, 9.5), (1.5, 12.5), (7.5, 13.5), (14.0, 14.0)]
+
+
 def frost_construct():
-    """Blasses Kristalleis: Facetten im 60°-Gitter (hexagonaler Eiskristall), feine helle Bruchlinien, Rand heller.
-    Alpha ca. 45–70 %; kein Vanilla-Eis (dort diagonale Schlieren)."""
+    """Blasses Kristalleis: unregelmäßige Kristallfacetten mit feinen hellen Bruchkanten (Voronoi, nahtlos), jede
+    Facette leicht anders getönt, Rand heller. Alpha ca. 45–72 %; bewusst kein Vanilla-Eis (dort diagonale Schlieren)."""
     t = Tex(16, 16)
-    base = hexc('#d4f0ff')
+    tints = [hexc('#cfeeff'), hexc('#dcf3ff'), hexc('#c4e6fb'), hexc('#e6f7ff')]
+    alphas = [0.48, 0.55, 0.5, 0.6]
     for y in range(16):
         for x in range(16):
-            # Facettenhelligkeit aus einem Dreiecksgitter (Seitenlänge ~6 px)
-            u = x + y * 0.5
-            v = y * 0.866
-            cell = (int(u // 6) * 7 + int(v // 5.2) * 13 + int((u - v * 0.577) // 6) * 5) % 4
-            a = (0.46, 0.52, 0.58, 0.5)[cell]
-            col = mix(base, hexc('#eefaff'), 0.15 * cell)
-            # feine Kristalllinien: drei Richtungen
-            on = (abs((x + 2 * y) % 12 - 0) < 0.6 and y > 1) or (x - 2 * y) % 13 == 0 or y in (9,) and 3 < x < 12
-            if on:
-                col, a = hexc('#f6fdff'), 0.74
+            d1, d2, i = _voronoi(FROST_SEEDS, x + 0.5, y + 0.5)
+            col, a = tints[i % 4], alphas[i % 4]
+            # leichter Verlauf in jeder Facette: zur Kante hin heller (Lichtbrechung)
+            col = mix(col, hexc('#f4fbff'), max(0.0, 0.35 - (d2 - d1) * 0.12))
+            if d2 - d1 < 0.9:
+                col, a = hexc('#f7fdff'), 0.74                               # feine Bruchkante
             if x in (0, 15) or y in (0, 15):
-                col, a = hexc('#f2fbff'), 0.72
-            elif x in (1, 14) or y in (1, 14):
-                col, a = mix(col, hexc('#a6dcf6'), 0.5), max(a, 0.6)
+                col, a = hexc('#effaff'), 0.72
             t.set(x, y, col[:3] + (int(a * 255),))
-    for x, y in ((4, 4), (11, 6), (6, 11), (12, 12)):
-        t.set(x, y, (255, 255, 255, 220))                                   # Funkelpunkte
+    for x, y in ((3, 4), (12, 7), (6, 11)):
+        t.set(x, y, (255, 255, 255, 225))                                   # Funkelpunkte
     return t
 
 
 def yang_construct():
-    """Warmweißes Licht mit feinem goldenem Wabenmuster und hellerem Rand; Mitte ein zarter Sonnenpunkt."""
+    """Warmweißes Licht mit feinem goldenem Wabenmuster und hellerem Rand; die Mittelwabe ist eine kleine Sonne."""
     t = Tex(16, 16)
     light = hexc('#fff3d8')
+    centers = [(7.5 + i * 6 + (j % 2) * 3, 7.5 + j * 5.2) for i in range(-2, 3) for j in range(-2, 3)]
     for y in range(16):
         for x in range(16):
-            col, a = light, 0.44 + 0.08 * math.exp(-((x - 7.5) ** 2 + (y - 7.5) ** 2) / 30.0)
-            # Wabengitter: Sechsecke, Zeilen versetzt (Kantenlänge ~4 px)
-            row = y // 4
-            ox = 2 if row % 2 else 0
-            lx, ly = (x + ox) % 4, y % 4
-            if ly == 0 and lx in (1, 2) or lx == 0 and ly in (1, 2, 3):
-                col, a = hexc('#f0c564'), 0.7
+            ds = sorted((math.hypot(x - cx, y - cy), k) for k, (cx, cy) in enumerate(centers))
+            (d1, k1), (d2, _) = ds[0], ds[1]
+            col, a = light, 0.42 + 0.1 * math.exp(-((x - 7.5) ** 2 + (y - 7.5) ** 2) / 26.0)
+            if d2 - d1 < 0.75:
+                col, a = hexc('#eec062'), 0.68                               # goldene Wabenkante
+            elif centers[k1] == (7.5, 7.5) and d1 < 1.6:
+                col, a = hexc('#fffaee'), 0.66                               # Sonnenkern
             if x in (0, 15) or y in (0, 15):
-                col, a = hexc('#fffaf0'), 0.78
+                col, a = hexc('#fffaf0'), 0.8
             elif x in (1, 14) or y in (1, 14):
-                col, a = mix(light, hexc('#ffe6a6'), 0.6), 0.64
+                col, a = mix(light, hexc('#ffe7a8'), 0.55), max(a, 0.6)
             t.set(x, y, col[:3] + (int(a * 255),))
     return t
 
@@ -465,19 +475,20 @@ BLOCKS = {'frost_construct': frost_construct, 'yang_construct': yang_construct}
 # ---------------------------------------------------------------------------------------------------------------------
 # Handschuh-Icon: aus dem 3D-Modell gerendert
 # ---------------------------------------------------------------------------------------------------------------------
-def icon_gauntlets(n=32, ss=8):
+def icon_gauntlets(n=32, ss=8, dx=2.2, roll=-0.1, turn=0.5, view=-25.0, dy=1.5, dz=2.0):
     import boss_models
     import preview as P
 
     model = boss_models.build('gauntlets')
     P.FACE_SHADE = {'top': 1.0, 'bottom': 0.62, 'front': 0.92, 'back': 0.78, 'left': 0.74, 'right': 0.84}
-    # Beide Hände im Magiemodus, Arme senkrecht und dicht nebeneinander, leicht zueinander geneigt (wie die
-    # Referenz): Handflächen zueinander, Schienen oben etwas auseinander.
-    pose = {'r_base': (0, 0, 0.1, -1.1, 0, 0), 'r_open': (0, 0, 0.1, -1.1, 0, 0), 'r_fist': None,
-            'l_base': (0, 0, -0.1, 1.1, 0, 0), 'l_open': (0, 0, -0.1, 1.1, 0, 0), 'l_fist': None}
+    # Beide Hände im Magiemodus, senkrecht wie in der Referenz, aber versetzt hintereinander (vorn links tiefer,
+    # hinten rechts höher) und leicht gedreht, damit sich die zwei Umrisse im 32er-Icon nicht zu einem Block vereinen.
+    r = (0, turn, -roll, -dx, dy, -dz)
+    l_ = (0, -turn, roll, dx, -dy, dz)
+    pose = {'r_base': r, 'r_open': r, 'r_fist': None, 'l_base': l_, 'l_open': l_, 'l_fist': None}
     pts = P.world_points(model, pose)
     P.FACE_SHADE = None
-    yaw = math.radians(-14)
+    yaw = math.radians(view)
     proj = P.project(pts, yaw)
     xs, ys = [q[0] for q in proj], [q[1] for q in proj]
     span = max(max(xs) - min(xs), max(ys) - min(ys))

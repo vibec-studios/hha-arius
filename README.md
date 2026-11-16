@@ -35,17 +35,31 @@ in the next part.
 
 | | First win | Later wins |
 |---|---|---|
-| Solvane (sword with counter stance) | yes | 10 % |
+| Solvane (bastard sword with counter stance and the *Clear Cut* weapon art) | yes | 10 % |
+| Arius' Gauntlets (melee style and Wind/Ice/Yang magic) | yes | 10 % |
 | Heartfrost | 4 | 2 |
 | Eirholm upgrade template | 1 | 50 % |
 | Nivaris scales | 6 | 3 |
 | Echo of Eirholm (train single parts) | yes | – |
 | "White Blade" armour trim template | only if nobody was knocked out | same |
 
-**Eirholm armour**: netherite + template + heartfrost at the smithing table. Netherite silhouette in anthracite and
-steel blue with old-gold four-point-star trims and ice-blue glowing seams. With the full set you build **frost
-resonance** through skill (charged hits, counters, perfect blocks) and spend it on HHA's ability keys: *White Line*
-(Ability 1), *Frost Step* (Ability 2), *White Core* (Ability 4). The kit is available via `/hha kit hha_arius.eirholm`.
+**Arius armour** (item IDs `eirholm_*`): netherite + template + heartfrost at the smithing table. Netherite
+silhouette in anthracite and steel blue with old-gold four-point-star trims and ice-blue glowing seams. Following the
+other HHA sets: chestplate → *White Core* (Ability 1), leggings → *Frost Step* (Ability 2), full set → *White Hole*
+(Ability 3, replaces Ultra), plus passives on helmet, chestplate and boots. The kit is available via
+`/hha kit hha_arius.eirholm`.
+
+**Arius' Gauntlets**: one main-hand item that shows both hands. *Melee mode*: jab, cross, body hook, side kick, spin
+kick, palm parry with counter – real animations in first and third person. *Magic mode*: a two-step spell wheel
+(technique key, default R) with 13 techniques of Wind, Ice and Yang (attack, defence, movement, constructs such as
+platform, bridge and ice wall, and a light glider). Switch modes with the mode key (default V).
+
+**Solvane – Clear Cut**: hold the technique key to charge, aim the visible cutting plane (sneak = horizontal), release
+for a limited planar cut that can also split wood and stone (configurable, never containers, protected areas or the
+arena).
+
+Armour, gauntlets and Solvane share one resource, **frost resonance**, which rests at 30 (50 with the full set) out of
+combat and grows only through skill. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
 ## Requirements
 
