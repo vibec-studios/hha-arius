@@ -13,8 +13,8 @@
   "icon": "assets/hha_arius/icon.png",
   "environment": "*",
   "entrypoints": {
-    "main": ["dev.henny.hha_arius.HhaArius"],
-    "client": ["dev.henny.hha_arius.client.HhaAriusClient"],
+    "main": [{"adapter": "kotlin", "value": "dev.henny.hha_arius.HhaArius"}],
+    "client": [{"adapter": "kotlin", "value": "dev.henny.hha_arius.client.HhaAriusClient"}],
     "hha": ["dev.henny.hha_arius.AriusAddon"],
     "hha_client": ["dev.henny.hha_arius.client.AriusAddonClient"]
   },

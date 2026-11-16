@@ -15,7 +15,8 @@ base {
 
 val targetJavaVersion = 21
 java {
-    toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
     withSourcesJar()
 }
 
@@ -58,6 +59,17 @@ tasks.withType<KotlinCompile>().configureEach {
 tasks.jar {
     from("LICENSE.txt") {
         rename { "${it}_${project.base.archivesName.get()}" }
+    }
+}
+
+// Start the real client to catch entrypoint/loading failures that compilation cannot detect.
+fabricApi {
+    configureTests {
+        createSourceSet.set(true)
+        modId.set("hha_arius-gametest")
+        enableGameTests.set(false)
+        enableClientGameTests.set(true)
+        eula.set(true)
     }
 }
 

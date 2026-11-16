@@ -89,7 +89,12 @@ combat and grows only through skill. Full design and numbers: `docs/AUSRUESTUNG.
 ./gradlew build
 ```
 
-JDK 21. Design documents (German): [docs/KONZEPT.md](docs/KONZEPT.md), [docs/STIMME.md](docs/STIMME.md).
+JDK 21 or newer (Java 21 bytecode). Run `./gradlew runClientGameTest` for the startup regression test: it initializes
+the real client, loads a singleplayer world, and checks that the client world and player exist. This is not a boss
+fight playtest. Version 1.0.1 fixes the startup crash by loading both Kotlin singleton entrypoints with Fabric's
+Kotlin language adapter.
+
+Design documents (German): [docs/KONZEPT.md](docs/KONZEPT.md), [docs/STIMME.md](docs/STIMME.md).
 
 Voice lines are optional: the game shows subtitles and plays `hha_arius:voice.<de|en>.<line>` if such a sound exists
 (`tools/assets/voice_lines.py`, ElevenLabs key via environment variable only).
