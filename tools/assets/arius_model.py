@@ -1,7 +1,10 @@
 """Arius, die weiße Klinge: ein Skelett, drei Formen, zwei Atlanten gleicher Aufteilung.
 
-Mensch, 19, ca. 185 cm. Modellhöhe 61,5 Einheiten von der Sohle bis zur Haarspitze (ohne Antenne), Renderer-Faktor
-SCALE (siehe AriusRenderer.kt) → 1,90 Blöcke. Heroisch, aber realistisch proportioniert (7,5 Köpfe).
+Mensch, 19, ca. 185 cm. Sohle bis Scheitel (Haarkappe) 61,7 Einheiten, Renderer-Faktor SCALE = 0,49 (AriusRenderer.kt)
+→ 1,89 Blöcke; Haarspitzen 1,95, Antenne 2,03 (Trefferbox 0,7 × 1,95). Heroisch, aber realistisch proportioniert
+(7,5 Köpfe). Posen über analytische Zwei-Knochen-IK (Hände mit Klingenrahmen, Füße am Boden), siehe dress().
+Die „07“ auf dem linken Handrücken ist ein geschrumpfter Quader (negative Dilation, höhere Texeldichte); preview.py
+zeichnet Quader ungeschrumpft und blendet sie deshalb aus.
 
 Koordinaten: 1/16 Block vor dem Renderer-Faktor, +y nach unten, -z vorn, +x = seine Linke, Sohlen bei y = 24.
 
@@ -191,6 +194,8 @@ def face_upper(face, x, y, w, h):
     hair = HAIR_W if MODE == 'white' else HAIR_D
     if face in ('top', 'back'):
         return ramp(hair, 0.55 + 0.1 * math.sin(x * 1.7))
+    if face == 'bottom':
+        return ramp(SKIN, 0.4)
     if face != 'front':
         return ramp(hair, 0.5) if y < 3 else ramp(SKIN, 0.5 + LIGHT[face] - 0.04 * y)
     skin = 0.66 - (0.1 if x in (0, w - 1) else 0.0) - 0.02 * y
@@ -198,7 +203,7 @@ def face_upper(face, x, y, w, h):
         return ramp(hair, 0.6 + 0.12 * math.sin(x * 2.3)) if (y == 0 or x not in (2, 4)) else ramp(SKIN, 0.6)
     if y == 2:
         if x in (0, 1, 4, 5):
-            return ramp(hair, 0.32 if x in (1, 4) else 0.42)     # Brauen: hell, ruhig, leicht gesenkt
+            return hexc('#3b3640') if x in (1, 4) else hexc('#6a5c5a')   # Lidlinie: ruhig, halb gesenkt
         return ramp(SKIN, skin)
     if y == 3:
         if x in (0, 5):
@@ -290,7 +295,7 @@ def glove(seed=0, knuckles=None, cuff=False):
 
 
 def mark_07(face, x, y, w, h):
-    """„07“ auf dem linken Handrücken (Platte mit doppelter Texeldichte, siehe glove_mark)."""
+    """„07“ auf dem linken Handrücken (Platte mit erhöhter Texeldichte, siehe hand_parts.mark)."""
     if MODE == 'eyes':
         return None
     if face == 'left':
@@ -484,13 +489,13 @@ def head_part():
     antenna = Part('antenna', (0.6, -11.2, -0.6), (-12, 0, 14), cubes=[C(-0.5, -3, -0.5, 1, 3, 1, hair_paint(9, 0.75))],
                    children=[Part('antenna_1', (0, -3, 0), (-60, 0, 0), cubes=[C(-0.5, -2.5, -0.5, 1, 3, 1, hair_paint(10, 0.8))])])
     tufts = [
-        tuft('tuft_0', (-3.4, -8.2, -2.4), (-8, 0, -118), 2, 3, 2, 11),       # Schläfen-Flügel, nach außen unten
-        tuft('tuft_1', (3.4, -8.2, -2.4), (-8, 0, 118), 2, 3, 2, 12),
+        tuft('tuft_0', (-3.4, -8.4, -1.6), (-6, 0, -138), 2, 3, 2, 11),       # Schläfen-Strähnen, nach außen unten
+        tuft('tuft_1', (3.4, -8.4, -1.6), (-6, 0, 138), 2, 3, 2, 12),
         tuft('tuft_2', (-2.8, -9.4, 2.0), (62, 0, -48), 2, 3, 2, 13),         # Hinterkopf, nach hinten außen
         tuft('tuft_3', (2.8, -9.4, 2.2), (66, 0, 46), 2, 3, 2, 14),
         tuft('tuft_4', (0.0, -10.2, 3.0), (78, 0, 0), 3, 3, 2, 15),            # Wirbel hinten
-        tuft('tuft_5', (-3.8, -5.0, 0.8), (8, 0, -162), 2, 2, 2, 16),         # über den Ohren, nach unten
-        tuft('tuft_6', (3.8, -5.0, 0.8), (8, 0, 162), 2, 2, 2, 17),
+        tuft('tuft_5', (-3.6, -5.4, 1.9), (14, 0, -166), 2, 2, 2, 16),         # über den Ohren, nach unten
+        tuft('tuft_6', (3.6, -5.4, 1.9), (14, 0, 166), 2, 2, 2, 17),
         tuft('tuft_7', (-1.6, -10.4, -3.0), (-62, 0, -14), 2, 2, 2, 18),      # Pony hebt sich vorn
         tuft('tuft_8', (1.8, -10.4, -2.8), (-56, 0, 20), 2, 2, 2, 19),
         tuft('tuft_9', (-2.4, -4.4, 3.8), (152, 0, -22), 2, 2, 2, 20),        # Nackenspitzen
@@ -548,12 +553,12 @@ def scabbard_part():
     hilt = Part('sheath_hilt', (0, 0, -4.0), cubes=cubes, children=kids)
     band = by_mode(gold(0.62, 40))
     return Part('scabbard', SCABBARD_MOUTH, SCABBARD_ROT, cubes=[
-        C(-1, -2, 0, 2, 4, 28, scabbard_paint(41)),
+        C(-1, -2, 0, 2, 4, 27, scabbard_paint(41)),
         C(-1.5, -2.5, -1, 3, 5, 2, band),                     # Mundblech
         C(-1.5, -2.5, 9, 3, 5, 1, leather(42, 0.5, BROWN)),  # Trageriemen
         C(-1.5, -2.5, 18, 3, 5, 1, leather(43, 0.5, BROWN)),
-        C(-1, -1.5, 28, 2, 3, 3, band),                       # Ortblech
-        C(-0.5, -1, 31, 1, 2, 1, band),
+        C(-1, -1.5, 27, 2, 3, 2, by_mode(gold(0.48, 44))),    # Ortblech
+        C(-0.5, -1, 29, 1, 2, 1, by_mode(gold(0.44, 45))),
     ], children=[hilt])
 
 
@@ -567,19 +572,22 @@ def hand_parts(s):
     ])
     if s == 'r':
         return [fist]
+    # „07“ auf dem Handrücken: 4 x 5 x 6 Texel, um 1,75 geschrumpft → 0,5 x 1,5 x 2,5 Einheiten (2,4 Texel je Einheit),
+    # bündig auf der Außenseite (sx) der Hand. Die Vorschau zeigt Quader ungeschrumpft, deshalb blendet sie die Marke aus.
+    def mark(name, sx):
+        return Part(name, cubes=[C(sx - 1.75, -1.25, -3.0, 4, 5, 6, mark_07, dilate=-1.75)])
+    fist.children.append(mark('mark_fist', 1.5))
     open_ = Part('open_l', cubes=[
         C(-0.5, 0, -2, 1, 3, 4, glove(54)),                   # Handteller
         C(-0.5, 3, -2, 1, 3, 4, glove(55)),                   # Finger
         C(-0.5, 0.8, -3.2, 1, 2, 1, glove(56)),               # Daumen
-    ])
+    ], children=[mark('mark_open', 0.5)])
     point = Part('point_l', cubes=[
         C(-1.5, 0, -2, 3, 3, 4, glove(57, knuckles='left')),
         C(-0.5, 2.6, -2, 1, 4, 2, glove(58)),                 # Zeige- und Mittelfinger gestreckt
         C(-1.0, 0.4, -2.7, 2, 2, 1, glove(59)),
-    ])
-    # „07“: 4 x 5 x 6 Texel, um 1,5 geschrumpft → 1 x 2 x 3 Einheiten mit doppelter Texeldichte (im Spiel).
-    mark = Part('glove_mark', cubes=[C(-0.1, -0.9, -2.5, 4, 5, 6, mark_07, dilate=-1.5)])
-    return [fist, open_, point, mark]
+    ], children=[mark('mark_point', 1.5)])
+    return [fist, open_, point]
 
 
 def arm_part(s):
@@ -724,7 +732,7 @@ def torso_parts():
 PALM = (0, 1.5, 0)
 GRIP_L = 4.0                       # zweite Hand: so weit hinter der rechten am Griff (Richtung Knauf)
 SCABBARD_MOUTH = (-3.6, -10.4, 5.3)
-SCABBARD_DIR = (-0.42, -0.9, 0.0)   # Richtung vom Mundblech zum Heft (über die rechte Schulter)
+SCABBARD_DIR = (-0.34, -0.94, 0.0)   # Richtung vom Mundblech zum Heft (über die rechte Schulter)
 SCABBARD_ROT = (0, 0, 0)            # wird unten aus SCABBARD_DIR berechnet
 
 
@@ -1106,6 +1114,13 @@ def dress(prim, feet=None, ground_=True, hand_r=None, blade=None, two=False, han
             flat_foot(pose, s, *toe.get(s, (0.0, 0.0)))
     if ground_:
         ground(pose)
+    def resolve(tgt, side):
+        if isinstance(tgt, tuple) and tgt and tgt[0] == 'S':      # relativ zur eigenen Schulter (Weltachsen)
+            sh = chain(pose, f'arm_{side}')[1]
+            return (sh[0] + tgt[1], sh[1] + tgt[2], sh[2] + tgt[3])
+        return tgt
+    hand_r = resolve(hand_r, 'r')
+    hand_l = resolve(hand_l, 'l')
     rot_r = frame(*blade) if blade else None
     if hand_r == 'hilt':
         # Hand am Heft in der Scheide über der rechten Schulter (Iai, Ziehen).
@@ -1293,26 +1308,26 @@ K('lunge_crouch', P(hips=(0.55, 0.15, 0.0, 0.0, 8.0, 1.0), torso=(0.25, 0.0, 0.0
                     head=(-0.75, 0.0, 0.0), arm_r=(0.6, 0.0, 0.4), fore_r=(-0.3, 0.0, 0.0),
                     arm_l=(-1.2, 0.0, -0.2), fore_l=(-0.6, 0.0, 0.0)),
   feet={'r': (-4.5, 7.0), 'l': (3.5, -6.0)}, toe={'r': (0.8, 0.0)},
-  hand_r=V(-9.0, -2.0, 12.0), blade=(V(-0.1, 0.25, 1), V(0.1, -0.6, -1)),
+  hand_r=('S', -2.0, 12.0, 16.0), blade=(V(-0.1, 0.25, 1), V(0.1, -0.6, -1)),
   hand_l=V(3.5, 5.0, -14.0), frame_l=(V(0, 0, -1), V(0, -0.6, 1)), shape='open', coat=(0.35, 0.0), hair=0.4)
 K('lunge_sprint', P(hips=(0.75, 0.0, 0.0, 0.0, 3.0, 0.0), torso=(0.08, 0.0, 0.0), chest=(0.0, 0.08, 0.0),
                     head=(-0.85, -0.05, 0.0), arm_r=(0.9, 0.0, 0.3), fore_r=(-0.2, 0.0, 0.0),
                     arm_l=(-1.4, 0.0, -0.1), fore_l=(-1.2, 0.0, 0.0),
                     thigh_r=(0.9, 0.0, 0.05), shin_r=(1.6, 0.0, 0.0), thigh_l=(-1.25, 0.0, -0.05), shin_l=(0.7, 0.0, 0.0)),
-  hand_r=V(-9.0, -4.0, 14.0), blade=(V(-0.1, 0.12, 1), V(0.1, -0.7, -1)), coat=(0.8, 0.1), coat_low=0.3, hair=0.8,
+  hand_r=('S', -2.5, 7.0, 19.5), blade=(V(-0.1, 0.12, 1), V(0.1, -0.7, -1)), coat=(0.8, 0.1), coat_low=0.3, hair=0.8,
   toe={'r': (0.9, 0.0)})
 K('lunge_sprint_b', P(hips=(0.75, -0.08, 0.0, 0.0, 3.0, 0.0), torso=(0.08, 0.05, 0.0), chest=(0.0, 0.05, 0.0),
                       head=(-0.85, 0.0, 0.0), arm_r=(0.8, 0.0, 0.3), fore_r=(-0.2, 0.0, 0.0),
                       arm_l=(-0.5, 0.0, -0.2), fore_l=(-1.4, 0.0, 0.0),
                       thigh_r=(-1.1, 0.0, 0.05), shin_r=(0.8, 0.0, 0.0), thigh_l=(0.8, 0.0, -0.05), shin_l=(1.6, 0.0, 0.0)),
-  hand_r=V(-9.0, -4.0, 14.0), blade=(V(-0.1, 0.12, 1), V(0.1, -0.7, -1)), coat=(0.8, 0.1), coat_low=0.3, hair=0.8,
+  hand_r=('S', -2.5, 7.0, 19.5), blade=(V(-0.1, 0.12, 1), V(0.1, -0.7, -1)), coat=(0.8, 0.1), coat_low=0.3, hair=0.8,
   toe={'l': (0.9, 0.0)})
-K('lunge_slide', P(hips=(0.25, -0.55, 0.25, 0.0, 9.0, 0.0), torso=(0.2, -0.2, -0.15), chest=(0.15, -0.1, -0.1),
+K('lunge_slide', P(hips=(0.3, -0.55, 0.15, 0.0, 13.0, 0.0), torso=(0.3, -0.2, 0.25), chest=(0.2, -0.1, 0.15),
                    head=(-0.3, 0.75, 0.15), arm_r=(-0.4, 0.0, 1.2), fore_r=(-0.3, 0.0, 0.0),
                    arm_l=(-0.4, 0.0, -0.5), fore_l=(-0.3, 0.0, 0.0)),
   feet={'r': (-9.0, -4.0), 'l': (4.0, 4.0)},
-  hand_r=V(-17.0, -10.0, 5.0), blade=(V(-0.6, 0.25, 0.75), V(0.7, -0.3, -0.5)),
-  hand_l=V(7.0, 22.0, -3.0), frame_l=(V(0, 0, -1), V(0, -1, 0.2)), shape='open', coat=(-0.3, 0.3), hair=-0.2)
+  hand_r=('S', -15.0, 6.0, 10.0), blade=(V(-0.6, 0.25, 0.75), V(0.7, -0.3, -0.5)),
+  hand_l=('S', 2.0, 21.0, -3.0), frame_l=(V(0, 0, -1), V(0, -1, 0.2)), shape='open', coat=(-0.3, 0.3), hair=-0.2)
 
 # ------------------------------------------------------------------------------------------------ Frostwand
 K('wall_crouch', P(hips=(0.3, 0.2, 0.0, 0.0, 10.0, 0.0), torso=(0.25, -0.05, 0.0), chest=(0.2, -0.1, 0.0),
@@ -1320,19 +1335,19 @@ K('wall_crouch', P(hips=(0.3, 0.2, 0.0, 0.0, 10.0, 0.0), torso=(0.25, -0.05, 0.0
                    arm_l=(-1.0, 0.0, -0.1), fore_l=(-0.2, 0.0, 0.0)),
   feet={'r': (-5.0, 3.0), 'l': (4.5, -3.0)},
   hand_r=V(-13.0, 2.0, 6.0), blade=(V(-0.35, 0.55, 0.75), V(0.4, -0.8, -0.3)),
-  hand_l=V(3.0, 21.0, -11.0), frame_l=(V(0, 0, -1), V(0, -1, 0.3)), shape='open', coat=(0.0, 0.25))
+  hand_l=('S', -1.0, 21.5, -5.0), frame_l=(V(0, 0, -1), V(0, -1, 0.3)), shape='open', coat=(0.0, 0.25))
 K('wall_press', P(hips=(0.35, 0.2, 0.0, 0.0, 11.0, -1.0), torso=(0.3, -0.05, 0.0), chest=(0.25, -0.1, 0.0),
                   head=(-0.55, 0.0, 0.0), arm_r=(0.4, 0.0, 0.6), fore_r=(-0.3, 0.0, 0.0),
                   arm_l=(-1.1, 0.0, -0.1), fore_l=(-0.1, 0.0, 0.0)),
   feet={'r': (-5.0, 3.0), 'l': (4.5, -3.0)},
   hand_r=V(-13.0, 3.0, 6.0), blade=(V(-0.35, 0.55, 0.75), V(0.4, -0.8, -0.3)),
-  hand_l=V(3.0, 22.0, -12.0), frame_l=(V(0, 0, -1), V(0, -1, 0.3)), shape='open', coat=(0.0, 0.35))
+  hand_l=('S', -1.0, 22.0, -5.5), frame_l=(V(0, 0, -1), V(0, -1, 0.3)), shape='open', coat=(0.0, 0.35))
 K('wall_rise', P(hips=(0.15, 0.2, 0.0, 0.0, 4.0, 0.0), torso=(0.1, -0.05, 0.0), chest=(0.08, -0.08, 0.0),
                  head=(-0.15, 0.0, 0.0), arm_r=(0.2, 0.0, 0.5), fore_r=(-0.3, 0.0, 0.0),
                  arm_l=(-0.8, 0.0, -0.3), fore_l=(-0.4, 0.0, 0.0)),
   feet={'r': (-5.0, 3.0), 'l': (4.5, -3.0)},
   hand_r=V(-11.0, -2.0, 4.0), blade=(V(-0.35, 0.55, 0.75), V(0.4, -0.8, -0.3)),
-  hand_l=V(5.0, 4.0, -12.0), frame_l=(V(0, 0, -1), V(0, -1, 0.5)), shape='open')
+  hand_l=('S', 1.0, 17.0, -8.0), frame_l=(V(0, 0, -1), V(0, -1, 0.5)), shape='open')
 
 # ------------------------------------------------------------------------------------------------ Streifenhieb
 K('strip_wind', P(hips=(0.3, 0.85, 0.0, 0.0, 8.0, 1.0), torso=(0.1, 0.3, 0.0), chest=(0.06, 0.3, -0.06),
@@ -1374,7 +1389,7 @@ K('pk_kick', P(hips=(-0.05, -1.45, 0.35, 0.0, 0.0, -1.0), torso=(-0.05, -0.1, 0.
                arm_l=(-1.3, 0.0, -0.8), fore_l=(-1.6, 0.0, 0.0),
                thigh_r=(-0.2, 0.0, 1.35), shin_r=(0.15, 0.0, 0.0)),
   feet={'l': (1.0, 1.0)}, toe={'l': (0.25, 0.0)},
-  hand_r=V(-3.0, -1.0, 14.0), blade=(V(0.1, 0.55, 0.85), V(-0.2, -0.8, -0.4)), hand_l=V(0.0, -22.0, -6.0),
+  hand_r=('S', -5.0, 15.0, 10.0), blade=(V(0.1, 0.55, 0.85), V(-0.2, -0.8, -0.4)), hand_l=V(0.0, -22.0, -6.0),
   coat=(0.0, 0.55), coat_low=0.1)
 
 # ------------------------------------------------------------------------------------------------ Frostgriff, Knaufschlag
@@ -1406,7 +1421,7 @@ K('stab_raise', P(hips=(-0.05, 0.1, 0.0, 0.0, -1.0, 0.0), torso=(-0.08, 0.0, 0.0
                   head=(-0.2, 0.0, 0.0), arm_r=(-2.9, 0.0, 0.3), fore_r=(-0.5, 0.0, 0.0),
                   arm_l=(-2.9, 0.0, -0.3), fore_l=(-0.5, 0.0, 0.0)),
   feet={'r': (-4.0, 1.5), 'l': (3.0, -3.0)}, toe={'r': (0.5, 0.0), 'l': (0.5, 0.0)},
-  hand_r=V(-0.5, -45.0, -4.0), blade=(V(0.0, 1, -0.08), V(0.3, 0.2, 1)), two=True, hair=-0.1)
+  hand_r=V(-0.5, -43.0, -4.0), blade=(V(0.0, 1, -0.08), V(0.3, 0.2, 1)), two=True, hair=-0.1)
 K('stab_hit', P(hips=(0.15, 0.1, 0.0, 0.0, 12.0, -1.0), torso=(0.25, 0.0, 0.0), chest=(0.2, 0.0, 0.0),
                 head=(0.1, 0.0, 0.0), arm_r=(-1.0, 0.0, 0.3), fore_r=(-0.6, 0.0, 0.0),
                 arm_l=(-1.0, 0.0, -0.3), fore_l=(-0.6, 0.0, 0.0),
@@ -1427,15 +1442,16 @@ K('stab_pull', P(hips=(0.15, 0.1, 0.0, 0.0, 4.0, 1.0), torso=(0.05, 0.0, 0.0), c
 
 # ------------------------------------------------------------------------------------------------ Seitschritt, Pfeilschnitt
 for _s, _sg in (('r', -1.0), ('l', 1.0)):
-    K(f'step_{_s}', P(hips=(0.05, 0.2, -_sg * 0.12, _sg * 3.0, 2.5, 0.0), torso=(0.0, -0.05, _sg * 0.08), chest=(0.0, -0.05, _sg * 0.06),
-                      head=(0.0, -0.1, -_sg * 0.12), arm_l=(0.1, 0.0, -0.4 if _s == 'r' else -0.25), fore_l=(-0.5, 0.0, 0.0)),
-      feet={'r': (-4.5 + (_sg * 4 if _s == 'r' else 2.0), 1.5), 'l': (3.0 + (_sg * 4 if _s == 'l' else -2.0), -3.0)},
-      toe={('l' if _s == 'r' else 'r'): (0.45, 0.0)},
-      hand_r=V(-9.0 + _sg * 3.0, -3.0, -4.0), blade=(V(-0.3, 0.5, -1), V(0.15, -1, 0.35)), coat=(0.0, 0.25))
-    K(f'step_{_s}_land', P(hips=(0.06, 0.2, 0.0, _sg * 6.0, 3.0, 0.0), torso=(0.02, -0.06, -_sg * 0.03), chest=(0.02, -0.06, 0.0),
+    # Der Server verschiebt die Entity; das Modell zeigt nur die Beinarbeit (Ausfallschritt, Nachziehen, Landen).
+    _lead = {'r': (-10.0, 1.5), 'l': (9.0, -2.5)}[_s]
+    _trail = {'r': ('l', (2.2, -2.5)), 'l': ('r', (-3.2, 1.5))}[_s]
+    K(f'step_{_s}', P(hips=(0.05, 0.2, -_sg * 0.1, _sg * 1.5, 3.0, 0.0), torso=(0.0, -0.05, _sg * 0.1), chest=(0.0, -0.05, _sg * 0.06),
+                      head=(0.0, -0.1, -_sg * 0.15), arm_l=(0.1, 0.0, -0.45 if _s == 'r' else -0.2), fore_l=(-0.5, 0.0, 0.0)),
+      feet={_s: _lead, _trail[0]: _trail[1]}, toe={_trail[0]: (0.5, 0.0)},
+      hand_r=('S', -3.0 + _sg * 1.5, 21.0, -4.0), blade=(V(-0.3, 0.5, -1), V(0.15, -1, 0.35)), coat=(0.0, -_sg * 0.3))
+    K(f'step_{_s}_land', P(hips=(0.07, 0.22, 0.0, 0.0, 2.5, 0.0), torso=(0.03, -0.06, -_sg * 0.03), chest=(0.03, -0.06, 0.0),
                            head=(0.0, -0.1, 0.0), arm_l=(0.1, 0.0, -0.2), fore_l=(-0.4, 0.0, 0.0)),
-      feet={'r': (-5.0 + _sg * 6.0, 2.0), 'l': (3.5 + _sg * 6.0, -3.5)},
-      hand_r=V(-8.5 + _sg * 6.0, -2.0, -4.0), blade=(V(-0.25, 0.5, -1), V(0.15, -1, 0.35)))
+      feet={'r': (-5.0, 2.0), 'l': (3.5, -3.5)}, **LOW_R)
 K('arrow_wind', dict(STAND, chest=(0.0, 0.25, -0.05), head=(0.0, -0.3, 0.0)), feet=STAND_FEET,
   hand_r=V(-8.0, -29.0, -6.0), blade=(V(-0.1, -0.7, -0.7), V(0.2, 0.8, 0.4)))
 K('arrow_hit', dict(STAND, chest=(0.05, -0.3, 0.05), head=(0.0, 0.2, 0.0), arm_l=(0.2, 0.0, -0.3)), feet=STAND_FEET,
@@ -1496,7 +1512,7 @@ K('tr_kneel', P(hips=(0.35, 0.15, 0.0, 0.0, 12.0, 0.0), torso=(0.3, 0.0, 0.0), c
                 thigh_r=(0.25, 0.0, 0.1), shin_r=(1.45, 0.0, 0.0)),
   feet={'l': (3.5, -8.0)},
   hand_r=V(-12.0, 5.0, 3.0), blade=(V(-0.3, 0.9, 0.3), V(0.3, -0.8, -0.3)),
-  hand_l=V(2.5, 22.0, -10.0), frame_l=(V(0, 0, -1), V(0, -1, 0.3)), shape='open', coat=(-0.35, 0.5), coat_low=-0.3,
+  hand_l=('S', 0.5, 21.5, -6.0), frame_l=(V(0, 0, -1), V(0, -1, 0.3)), shape='open', coat=(-0.35, 0.5), coat_low=-0.3,
   hair=-0.3)
 K('tr_rise', P(hips=(0.15, 0.1, 0.0, 0.0, 5.0, 0.0), torso=(0.1, 0.0, 0.0), chest=(0.05, 0.0, 0.0),
                head=(-0.1, 0.0, 0.0), arm_r=(0.1, 0.0, 0.5), fore_r=(-0.3, 0.0, 0.0),
@@ -1532,20 +1548,20 @@ K('air_tuck', P(hips=(0.1, 0.35, 0.0, 0.0, -14.0, 0.0), torso=(0.15, 0.1, 0.0), 
                 head=(0.2, -0.4, 0.0), arm_r=(0.2, 0.0, 1.2), fore_r=(-0.4, 0.0, 0.0),
                 arm_l=(-1.2, 0.0, -0.9), fore_l=(-1.0, 0.0, 0.0),
                 thigh_r=(-2.1, 0.0, 0.2), shin_r=(2.2, 0.0, 0.0), thigh_l=(-1.0, 0.0, -0.1), shin_l=(2.1, 0.0, 0.0)),
-  ground_=False, hand_r=V(-17.0, -14.0, 4.0), blade=(V(-0.8, 0.3, 0.5), V(0.7, -0.2, -0.6)),
+  ground_=False, hand_r=('S', -15.0, 9.0, 6.0), blade=(V(-0.8, 0.3, 0.5), V(0.7, -0.2, -0.6)),
   coat=(-0.4, 0.3), coat_low=-0.3, hair=-0.5, toe={'r': (0.6, 0.0), 'l': (0.6, 0.0)})
 K('air_kick', P(hips=(-0.15, -0.75, 0.15, 0.0, -10.0, -2.0), torso=(-0.15, -0.2, 0.1), chest=(-0.05, -0.1, 0.05),
                 head=(0.45, 0.85, -0.1), arm_r=(0.6, 0.0, 1.2), fore_r=(-0.3, 0.0, 0.0),
                 arm_l=(-1.0, 0.0, -1.0), fore_l=(-0.9, 0.0, 0.0),
                 thigh_r=(-1.35, 0.0, 0.1), shin_r=(0.1, 0.0, 0.0), thigh_l=(0.35, 0.0, -0.05), shin_l=(1.6, 0.0, 0.0)),
-  ground_=False, hand_r=V(-14.0, -12.0, 12.0), blade=(V(-0.4, 0.5, 0.8), V(0.6, -0.6, -0.3)),
+  ground_=False, hand_r=('S', -11.0, 13.0, 11.0), blade=(V(-0.4, 0.5, 0.8), V(0.6, -0.6, -0.3)),
   coat=(-0.2, 0.3), coat_low=-0.2, hair=-0.3, toe={'r': (0.5, 0.0), 'l': (0.7, 0.0)})
 K('air_land', P(hips=(0.35, 0.15, 0.0, 0.0, 12.0, 0.0), torso=(0.25, 0.05, 0.0), chest=(0.2, 0.05, 0.0),
                 head=(-0.45, -0.1, 0.0), arm_r=(0.2, 0.0, 0.9), fore_r=(-0.3, 0.0, 0.0),
                 arm_l=(-1.0, 0.0, -0.3), fore_l=(-0.2, 0.0, 0.0)),
   feet={'r': (-5.5, 3.0), 'l': (4.5, -3.5)},
   hand_r=V(-15.0, -4.0, 3.0), blade=(V(-0.6, 0.45, 0.6), V(0.6, -0.6, -0.3)),
-  hand_l=V(3.0, 22.0, -9.0), frame_l=(V(0, 0, -1), V(0, -1, 0.3)), shape='open', coat=(0.0, 0.4))
+  hand_l=('S', 0.5, 21.5, -5.0), frame_l=(V(0, 0, -1), V(0, -1, 0.3)), shape='open', coat=(0.0, 0.4))
 
 # ------------------------------------------------------------------------------------------------ Null-Schnitt
 K('null_wind', P(hips=(0.3, -0.35, 0.0, 0.0, 8.0, 1.0), torso=(0.15, -0.25, 0.0), chest=(0.1, -0.3, 0.05),
@@ -1558,19 +1574,19 @@ K('null_hit', P(hips=(0.25, 0.45, 0.0, 0.0, 8.0, -6.0), torso=(0.1, 0.2, 0.0), c
                 head=(-0.35, -0.75, 0.0), arm_r=(-1.5, 0.0, 1.0), fore_r=(-0.05, 0.0, 0.0),
                 arm_l=(0.3, 0.0, -0.6), fore_l=(-0.4, 0.0, 0.0)),
   feet={'r': (-6.0, 8.0), 'l': (4.5, -16.0)}, toe={'r': (0.8, 0.0)},
-  hand_r=V(-16.0, -14.0, -11.0), blade=(V(-0.8, 0.02, -0.6), V(0.6, 0.1, 0.8)), hand_l=V(9.0, -9.0, 5.0), coat=(0.25, 0.3))
+  hand_r=V(-16.0, -14.0, -11.0), blade=(V(-0.8, 0.02, -0.6), V(0.6, 0.1, 0.8)), hand_l=('S', 6.0, 14.0, 6.0), coat=(0.25, 0.3))
 K('null_follow', P(hips=(0.25, 0.65, 0.0, 0.0, 8.5, -6.0), torso=(0.1, 0.25, 0.0), chest=(0.06, 0.3, -0.06),
                    head=(-0.3, -0.95, 0.0), arm_r=(-1.3, 0.0, 1.3), fore_r=(-0.05, 0.0, 0.0),
                    arm_l=(0.4, 0.0, -0.7), fore_l=(-0.3, 0.0, 0.0)),
   feet={'r': (-6.0, 8.0), 'l': (4.5, -16.0)}, toe={'r': (0.8, 0.0)},
-  hand_r=V(-19.0, -15.0, -1.0), blade=(V(-0.9, 0.08, 0.25), V(0.95, 0.1, 0.1)), hand_l=V(10.0, -8.0, 6.0), coat=(0.2, 0.35))
+  hand_r=V(-19.0, -15.0, -1.0), blade=(V(-0.9, 0.08, 0.25), V(0.95, 0.1, 0.1)), hand_l=('S', 6.0, 14.0, 7.0), coat=(0.2, 0.35))
 
 # ------------------------------------------------------------------------------------------------ Weißes Loch, Durchbruch
 K('core_raise', P(hips=(-0.03, 0.0, 0.0, 0.0, 0.5, 0.0), torso=(-0.06, 0.0, 0.0), chest=(-0.1, 0.0, 0.0),
                   head=(-0.55, 0.0, 0.0), arm_r=(-3.0, 0.0, 0.15), fore_r=(-0.1, 0.0, 0.0),
                   arm_l=(0.1, 0.0, -0.45), fore_l=(-0.2, 0.0, 0.0)),
   feet={'r': (-5.0, 1.0), 'l': (4.5, -1.5)},
-  hand_r=V(-4.0, -50.0, -1.0), blade=(V(0.04, -1, -0.04), V(0.2, 0.0, 1)),
+  hand_r=('S', 1.5, -21.0, -1.5), blade=(V(0.04, -1, -0.04), V(0.2, 0.0, 1)),
   hand_l=V(12.5, -3.0, -1.0), frame_l=(V(0, 0, -1), V(-0.3, -1, 0.0)), shape='open', hair=-0.15)
 K('bt_air', P(hips=(-0.25, 0.0, 0.0, 0.0, -14.0, 2.0), torso=(-0.2, 0.0, 0.0), chest=(-0.2, 0.0, 0.0),
               head=(0.2, 0.0, 0.0), arm_r=(-2.9, 0.0, 0.3), fore_r=(-1.0, 0.0, 0.0),
@@ -1631,7 +1647,7 @@ K('throw_hit', P(hips=(-0.05, -0.2, 0.0, 0.0, 0.0, -1.0), torso=(-0.08, -0.1, 0.
                  arm_l=(-2.7, 0.0, -0.3), fore_l=(-0.2, 0.0, 0.0)),
   feet={'r': (-4.5, 2.0), 'l': (3.5, -5.0)}, toe={'r': (0.5, 0.0), 'l': (0.3, 0.0)},
   hand_r=V(-13.0, -3.0, 2.0), blade=(V(-0.5, 0.6, 0.6), V(0.5, -0.8, -0.2)),
-  hand_l=V(6.0, -46.0, -6.0), frame_l=(V(0, 0, -1), V(0.0, 1, 0.3)), shape='open', hair=-0.2)
+  hand_l=('S', 1.0, -21.0, -3.0), frame_l=(V(0, 0, -1), V(0.0, 1, 0.3)), shape='open', hair=-0.2)
 K('split_raise', P(hips=(-0.05, 0.1, 0.0, 0.0, 0.0, 1.0), torso=(-0.1, 0.0, 0.0), chest=(-0.15, 0.0, 0.0),
                    head=(-0.15, 0.0, 0.0), arm_r=(-3.0, 0.0, 0.2), fore_r=(-0.7, 0.0, 0.0),
                    arm_l=(-3.0, 0.0, -0.2), fore_l=(-0.7, 0.0, 0.0)),
@@ -1648,7 +1664,8 @@ K('split_low', P(hips=(0.35, 0.0, 0.0, 0.0, 9.0, -4.0), torso=(0.25, 0.0, 0.0), 
   feet={'r': (-4.5, 8.0), 'l': (3.5, -12.0)}, toe={'r': (0.8, 0.0)},
   hand_r=V(-1.0, -1.0, -15.0), blade=(V(0.0, 0.66, -0.75), V(0.0, -0.9, 0.4)), two=True, coat=(0.25, 0.0))
 K('whistle', dict(STAND, head=(-0.45, -0.1, 0.0), chest=(-0.04, -0.1, 0.0), arm_l=(-1.5, 0.0, -0.6), fore_l=(-2.0, 0.0, 0.0)),
-  feet=STAND_FEET, **LOW_R, hand_l=V(2.0, -26.5, -6.5), frame_l=(V(-1, 0, 0), V(0.3, 0.75, -0.6)), shape='point')
+  feet=STAND_FEET, **LOW_R, hand_l=V(1.5, -22.0, -7.5), frame_l=(V(-1, 0, 0.2), V(0.05, 1, 0.25)), shape='point',
+  elbow={'l': V(0.8, 0.7, -0.2)})
 
 # ------------------------------------------------------------------------------------------------ Drehschnitt
 K('spin_wind', P(hips=(0.25, -0.95, 0.0, 0.0, 7.0, 0.0), torso=(0.1, -0.35, 0.0), chest=(0.08, -0.35, 0.05),
@@ -1681,7 +1698,8 @@ def visible(pose, form):
     out = {k: v for k, v in pose.items() if not k.startswith('_')}
     for n in FORM_HIDE[form]:
         out[n] = None
-    out['glove_mark'] = None
+    for n in ('mark_fist', 'mark_open', 'mark_point'):
+        out[n] = None
     out['sheath_hilt' if not pose.get('_sheathed') else 'solvane'] = None
     return out
 
@@ -1732,3 +1750,111 @@ POSES = _LazyPoses()
 
 # Für die Größenprüfung in preview.py: Zubehör über dem Scheitel zählt nicht zur Körperhöhe.
 HEIGHT_EXCLUDE = ('antenna', 'scabbard', 'solvane', 'tuft_4', 'tuft_2', 'tuft_3', 'coat_collar')
+
+
+# =====================================================================================================================
+# Kotlin-Block für AriusModel.kt
+# =====================================================================================================================
+KOTLIN_MODEL = os.path.join(HERE, '..', '..', 'src', 'main', 'kotlin', 'dev', 'henny', 'hha_arius', 'client', 'model',
+                            'arius', 'AriusModel.kt')
+
+
+def bone_paths():
+    _model()
+    paths = {}
+
+    def walk(part, prefix):
+        path = f'{prefix}/{part.name}' if prefix else part.name
+        paths[part.name] = path
+        for ch in part.children:
+            walk(ch, path)
+    for p in _MODEL.parts:
+        walk(p, '')
+    return paths
+
+
+def kotlin_block():
+    paths = bone_paths()
+    poses = built()
+    lines = ['    // <keys> erzeugt von tools/assets/arius_model.py --kotlin; nicht von Hand ändern', '    object Keys {',
+             '        /** Knochenpfade in Kanalreihenfolge (je 6 Werte: pitch, yaw, roll, dx, dy, dz). */',
+             '        val BONES = arrayOf(' + ', '.join(f'"{paths[b]}"' for b in BONES) + ')']
+    for i, b in enumerate(BONES):
+        lines.append(f'        const val {b.upper()} = {i}')
+    lines.append(f'        const val COUNT = {len(BONES)}')
+    lines.append('        /** Mantelschöße (oberes Glied; das untere folgt im Index): vorn rechts, vorn links, hinten rechts, hinten links. */')
+    lines.append('        val SKIRT = intArrayOf(COAT_FR, COAT_FL, COAT_BR, COAT_BL)')
+    for form, label in ((0, 'DARK'), (1, 'SERIOUS'), (2, 'WHITE')):
+        lines.append(f'        /** In Form {label} ausgeblendet (samt Kindern). */')
+        lines.append(f'        val HIDE_{label} = arrayOf(' + ', '.join(f'"{paths[n]}"' for n in FORM_HIDE[form]) + ')')
+    lines.append(f'        const val SOLVANE = "{paths["solvane"]}"')
+    lines.append(f'        const val SHEATH_HILT = "{paths["sheath_hilt"]}"')
+    lines.append('        /** Schlüsselposen: je Knochen 6 Werte; die Liste nennt Knochen, die in der Pose ausgeblendet sind. */')
+    for name, pose in poses.items():
+        vals, hidden = [], []
+        for i, b in enumerate(BONES):
+            v = pose.get(b)
+            if v is None:
+                hidden.append(i)
+                v = ZERO6
+            vals.extend(_full(v))
+        data = ','.join(('%.4f' % x).rstrip('0').rstrip('.') if abs(x) >= 5e-5 else '0' for x in vals)
+        lines.append(f'        val {name.upper()} = key("{data}", intArrayOf({", ".join(map(str, hidden))}))')
+    lines.append('    }')
+    lines.append('    // </keys>')
+    return '\n'.join(lines)
+
+
+def write_kotlin():
+    with open(KOTLIN_MODEL, encoding='utf8') as f:
+        text = f.read()
+    new = re.sub(r'    // <keys>.*?// </keys>', lambda m: kotlin_block(), text, flags=re.S)
+    if '// <keys>' not in text:
+        raise SystemExit('Marker // <keys> fehlt in AriusModel.kt')
+    with open(KOTLIN_MODEL, 'w', encoding='utf8', newline='\n') as f:
+        f.write(new)
+    print(f'AriusModel.kt: {len(KEYS)} Schlüsselposen geschrieben')
+
+
+# =====================================================================================================================
+# Weißer Atlas und Augen (gleiche UVs): boss_models.py ruft variants() nach dem dunklen Atlas auf.
+# =====================================================================================================================
+def render_atlas(model, mode):
+    global MODE
+    old = MODE
+    MODE = mode
+    albedo = Image(model.tex_w, model.tex_h)
+    glow = Image(model.tex_w, model.tex_h)
+    try:
+        for c in model.cubes():
+            u, v, w, h, d = c.u, c.v, c.w, c.h, c.d
+            faces = [('top', u + d, v, w, d), ('bottom', u + d + w, v, w, d), ('right', u, v + d, d, h),
+                     ('front', u + d, v + d, w, h), ('left', u + d + w, v + d, d, h), ('back', u + d + w + d, v + d, w, h)]
+            for name, fu, fv, fw, fh in faces:
+                for iy in range(fh):
+                    for ix in range(fw):
+                        res = c.paint(name, ix, iy, fw, fh)
+                        if res is None:
+                            continue
+                        if isinstance(res[0], tuple):
+                            albedo.set(fu + ix, fv + iy, res[0])
+                            if res[1] is not None:
+                                glow.set(fu + ix, fv + iy, res[1])
+                        else:
+                            albedo.set(fu + ix, fv + iy, res)
+    finally:
+        MODE = old
+    return albedo, glow
+
+
+def variants(model, albedo, glow):
+    a, g = render_atlas(model, 'white')
+    save(a, 'textures/entity/arius_white.png')
+    save(g, 'textures/entity/arius_white_glow.png')
+    _, eyes = render_atlas(model, 'eyes')
+    save(eyes, 'textures/entity/arius_eyes.png')
+
+
+if __name__ == '__main__':
+    if '--kotlin' in sys.argv:
+        write_kotlin()
