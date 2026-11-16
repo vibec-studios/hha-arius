@@ -27,6 +27,7 @@ object AriusFxClient {
 
     fun init() {
         AriusClientConfig.load()
+        ArtPipelines.init()
         ClientPlayNetworking.registerGlobalReceiver(HoldS2C.ID) { p, _ -> HoldClient.set(p.on, p.ticks) }
         ClientPlayNetworking.registerGlobalReceiver(SliceS2C.ID) { p, _ -> SliceRender.handle(p) }
         ClientPlayNetworking.registerGlobalReceiver(dev.henny.hha_arius.gear.art.ArtCutS2C.ID) { p, _ -> CutHalves.handle(p) }
@@ -42,7 +43,7 @@ object AriusFxClient {
         ClientTickEvents.END_CLIENT_TICK.register { client ->
             val world = client.world ?: return@register
             if (!client.isPaused) {
-                effects.removeIf { !it.advance(world) }
+                effects.removeIf { !it.advance(world) || (it is WhiteHoleFx && it.finished) }
                 SliceRender.tick()
                 CutHalves.tick()
                 Atmos.tick(world)
@@ -63,6 +64,7 @@ object AriusFxClient {
             Atmos.render(draw)
             if (effects.isEmpty()) return@register
             for (fx in effects) fx.render(draw, matrices, fx.age + tickDelta)
+            for (fx in effects) if (fx is WhiteHoleFx) WhiteLens.render(fx, tickDelta)
         }
         HudRenderCallback.EVENT.register { context, _ ->
             ScreenFlash.render(context)
@@ -86,6 +88,11 @@ object AriusFxClient {
                     })),
             )
         }
+    }
+
+    /** Bosskampf: das weiße Loch bei [pos] kollabiert jetzt. */
+    fun collapseWhiteHole(pos: net.minecraft.util.math.Vec3d) {
+        effects.filterIsInstance<WhiteHoleFx>().minByOrNull { it.center.squaredDistanceTo(pos) }?.takeIf { it.center.squaredDistanceTo(pos) < 64.0 }?.collapseNow()
     }
 
     fun reset() {

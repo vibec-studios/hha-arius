@@ -776,7 +776,7 @@ class Scenes(private val f: EirholmFight) {
         val warn = 40
         val travel = ((f.arenaRadius - 3.0) / 0.8).toInt() + 2
         val total = AriusTimings.CORE_BUILD + pulses * (warn + travel) + AriusTimings.CORE_LULL + AriusTimings.CORE_STRIKE + 40
-        f.fx(FxKind.CORE, core, a = 1.2f, life = total)
+        f.fx(FxKind.WHITE_HOLE, core, a = 14f, b = (total + 600).toFloat(), life = total + 640)
         f.ambient("core.form", core, 5f)
         Vfx.skyMood(f.world, Vfx.Style.STORM, c, 0.5f, total, 60f)
         if (d != null && !f.dragonDowned) {
@@ -852,6 +852,7 @@ class Scenes(private val f: EirholmFight) {
         // Der Kern kollabiert: großes Doppelfenster.
         f.ambient("core.collapse", core, 6f)
         f.fx(FxKind.FLASH, core, a = 0.35f, life = 10)
+        f.fx(FxKind.WHITE_HOLE, core, b = -1f, life = 1)
         f.ariusVulnerable = true
         a.play(AriusPose.STAGGER)
         f.openArius(AriusTimings.CORE_END_OPEN)

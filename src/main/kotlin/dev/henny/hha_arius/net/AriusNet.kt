@@ -213,6 +213,9 @@ enum class FxKind {
 
     /** Windsog: Spirale zu e1 hin, a = Radius. */
     PULL,
+
+    /** Weißes Loch (Linsen-Shader): Mitte pos, a = Sog-Radius, b = Ticks bis zum Kollaps (b < 0: das nächste Loch bei pos kollabiert jetzt). */
+    WHITE_HOLE,
 }
 
 /**

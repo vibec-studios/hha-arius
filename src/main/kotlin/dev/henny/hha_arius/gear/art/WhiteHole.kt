@@ -83,8 +83,7 @@ object WhiteHole {
         val radius = GearConfig.num("white_hole_radius")
         val pull = GearConfig.num("white_hole_pull")
         val pullTicks = 40
-        ArtFx.send(world, FxKind.CORE, center, a = 0.9f, life = pullTicks + 6)
-        ArtFx.send(world, FxKind.REVERSE_WIND, center, a = radius.toFloat(), life = pullTicks)
+        ArtFx.send(world, FxKind.WHITE_HOLE, center, a = radius.toFloat(), b = pullTicks.toFloat(), life = pullTicks + 22)
         GearSounds.play(world, center, "white_hole.pull", SoundEvents.BLOCK_PORTAL_AMBIENT, 0.8f, 1.6f)
         for (t in 1..pullTicks) {
             GearTasks.later(t) {
@@ -124,7 +123,6 @@ object WhiteHole {
         }
         if (any) Resonance.markCombat(player)
         ArtFx.send(world, FxKind.CLEAR_WAVE, center.add(0.0, -0.5, 0.0), a = (radius + 2).toFloat(), life = 14)
-        GearVfx.nova(world, Vfx.Style.HEAVEN, center, radius.toFloat() * 0.6f, 10)
         GearSounds.play(world, center, "white_hole.collapse", SoundEvents.ENTITY_WARDEN_SONIC_BOOM, 0.6f, 1.5f)
     }
 }
