@@ -1,0 +1,78 @@
+# HHA Arius – The White Blade
+
+**An endgame addon for [H&H Armors (HHA)](https://github.com/vibec-studios/HHA): the duel against Arius, the old white
+dragon Nivaris, and the Eirholm frost armour.**
+
+Fabric · Minecraft 1.21.11 · Kotlin · MIT
+
+> Arius is the protagonist of our own light novel *The White Blade*. This mod is a **free adaptation**: the dragon
+> Nivaris, the Sanctum of Eirholm, the white form, the white hole, the Eirholm armour and every technique name except
+> *White Null* are mod inventions and set nothing for the story. Other HHA bosses are not changed and never mention him.
+
+## The encounter
+
+Craft the **Seal of Eirholm** (nether star, 4 blue ice, 2 echo shards, 2 gold ingots) and use it in a cold biome. Snow
+starts to fall upward, and everyone within 12 blocks is taken into the Sanctum of Eirholm, a separate dimension that is
+rebuilt from vanilla blocks for every attempt. Nothing in your survival world is ever damaged.
+
+1. **The Temple of Eirholm**: Arius alone. Readable stances, sword combos, wind steps, a parry that punishes greedy
+   attacks, frost walls that close escape routes. Below 40 % he takes you seriously and adapts to repeated tactics,
+   within limits.
+2. **The Cut**: the wind turns, the hall goes silent, a single line crosses the temple. He strikes, nothing happens for
+   a moment, then the temple splits along the line and slides apart. He kicks you through the breaking gate.
+3. **The Glacier Threshold**: Nivaris alone while Arius watches. Her breath leaves ice ridges; lure her dive into a
+   ridge to bring her down, choke her breath with hits to the throat, punish her landings.
+4. **The Heart of the Glacier**: she crashes through the ice, Arius sheds his dark armour and fights in white. They fight
+   **in rhythm**: one leads, the other supports, and resonance attacks have clear safe paths. Break the rhythm and the
+   partner is open. Once per fight: **the white hole**, a core that pushes instead of pulls.
+5. **The last clear moment**: no storm, no dragon. Three exchanges against his drawn-from-the-sheath cut.
+
+Every attack is announced on the ground through HHA's telegraph system. **Gold always means safe or open.** Vanilla
+movement, shield and bow are enough to win. Dying in the sanctum knocks you out instead: you keep everything and rejoin
+in the next part.
+
+## Rewards
+
+| | First win | Later wins |
+|---|---|---|
+| Solvane (sword with counter stance) | yes | 10 % |
+| Heartfrost | 4 | 2 |
+| Eirholm upgrade template | 1 | 50 % |
+| Nivaris scales | 6 | 3 |
+| Echo of Eirholm (train single parts) | yes | – |
+| "White Blade" armour trim template | only if nobody was knocked out | same |
+
+**Eirholm armour**: netherite + template + heartfrost at the smithing table. Netherite silhouette in anthracite and
+steel blue with old-gold four-point-star trims and ice-blue glowing seams. With the full set you build **frost
+resonance** through skill (charged hits, counters, perfect blocks) and spend it on HHA's ability keys: *White Line*
+(Ability 1), *Frost Step* (Ability 2), *White Core* (Ability 4). The kit is available via `/hha kit hha_arius.eirholm`.
+
+## Requirements
+
+| Dependency | Note |
+|---|---|
+| Fabric Loader ≥ 0.19.3, Fabric API, Fabric Language Kotlin | |
+| **H&H Armors 0.8.0 with the boss overhaul** | uses HHA's addon API plus `Telegraph`/`Vfx`. The matching build is in `libs/` of this repository. Older 0.8.0 jars without `Telegraph` stop the game at start-up with a clear message. |
+
+## Commands
+
+| Command | |
+|---|---|
+| `/hhaarius start` / `stage <1-4>` / `stop` / `skip` / `info` | admin tools (OP 2) |
+| `/ariusc fx <0-100>` / `flash <true/false>` | client: own particles and screen flashes. Camera shake and 3D effects follow HHA's settings (`K` menu) |
+| `/hha set hha_arius.boss_damage_scale <x>` | all values via HHA's config |
+
+## Building
+
+```
+./gradlew build
+```
+
+JDK 21. Design documents (German): [docs/KONZEPT.md](docs/KONZEPT.md), [docs/STIMME.md](docs/STIMME.md).
+
+Voice lines are optional: the game shows subtitles and plays `hha_arius:voice.<de|en>.<line>` if such a sound exists
+(`tools/assets/voice_lines.py`, ElevenLabs key via environment variable only).
+
+## License
+
+[MIT](LICENSE.txt). Music and sounds are synthesised from scratch (`tools/assets/audio`).

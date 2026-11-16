@@ -4,8 +4,8 @@ Aufruf:  ELEVENLABS_API_KEY=... python voice_lines.py [--lang de] [--dry-run] [-
 
 Der Schlüssel wird nur aus der Umgebung gelesen und nie gespeichert. Unveränderte Zeilen werden übersprungen (verglichen
 wird über Text, Stimme und Einstellungen), nachträgliche Läufe kosten also nur neue oder geänderte Zeilen.
-Ausgabe: assets/hha/sounds/voice/<sprache>/<zeile>.ogg, Einträge in sounds.json und HhaVoiceLengths.kt.
-Ohne Sprachdatei fällt das Spiel automatisch auf die alten Stimm-Blips zurück.
+Ausgabe: assets/hha_arius/sounds/voice/<sprache>/<zeile>.ogg und Einträge `voice.<sprache>.<zeile>` in sounds.json.
+Ohne Sprachdatei zeigt das Spiel nur den Untertitel. Zeilen stehen in tools/lang/story.*.json (docs/STIMME.md).
 
 Hinweis zur Lizenz: Audio aus dem kostenlosen ElevenLabs-Plan darf nur nicht-kommerziell und mit Namensnennung
 verwendet werden. Wer die Mod kommerziell veröffentlicht, sollte die Zeilen mit einem bezahlten Plan neu erzeugen.
@@ -24,76 +24,33 @@ import urllib.request
 
 from texkit import ASSETS
 
-LANG_DIR = os.path.join(ASSETS, 'lang')
+LANG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'lang')
 VOICE_DIR = os.path.join(ASSETS, 'sounds', 'voice')
 MANIFEST = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'voice_manifest.json')
-KOTLIN = os.path.abspath(os.path.join(ASSETS, '..', '..', '..', 'kotlin', 'dev', 'henny', 'hha', 'logic', 'boss', 'HhaVoiceLengths.kt'))
-LANG_FILES = {'de': 'de_de.json', 'en': 'en_us.json'}
+LANG_FILES = {'de': 'story.de_de.json', 'en': 'story.en_us.json'}
 MODEL = 'eleven_multilingual_v2'
-PREFIX = 'hha.hermes.line.'
+PREFIX = 'hha_arius.line.'
 TARGET_LUFS = -14.0
 
 # Wer spricht, mit welcher Stimme und welcher Nachbearbeitung. Die Voice-IDs stammen aus der Liste von GET /v1/voices.
 CAST = {
-    'hermes': {
-        'voice': 'N2lVS1w4EtoT3dr4eOWO',  # Callum, "Husky Trickster"
-        'settings': {'stability': 0.38, 'similarity_boost': 0.78, 'style': 0.45, 'use_speaker_boost': True},
-        'filter': 'highpass=f=70,acompressor=threshold=-18dB:ratio=3:attack=8:release=120',
+    # Arius: jung, ruhig, kontrolliert. Liam ("young, articulate"), wenig Stil, etwas kalter Raum.
+    'arius': {
+        'voice': 'TX3LPaxmHKxFdv7VOQHJ',
+        'settings': {'stability': 0.62, 'similarity_boost': 0.8, 'style': 0.12, 'use_speaker_boost': True},
+        'filter': 'highpass=f=75,acompressor=threshold=-18dB:ratio=2.5:attack=10:release=150,aecho=0.8:0.4:55:0.08',
     },
-    'zeus': {
-        'voice': 'pNInz6obpgDQGcFmaJgB',  # Adam, "Dominant, Firm"
-        'settings': {'stability': 0.55, 'similarity_boost': 0.8, 'style': 0.35, 'use_speaker_boost': True},
-        # Tiefer und mit Hall: Die Stimme kommt aus dem ganzen Himmel.
-        'filter': 'asetrate=44100*0.84,aresample=44100,atempo=1.05,aecho=0.8:0.75:90|170|300:0.45|0.32|0.2,bass=g=5,alimiter=limit=0.95',
-    },
-    'shade': {
-        'voice': 'N2lVS1w4EtoT3dr4eOWO',  # Derselbe Mann, nur falsch: tiefer, flacher, mit einem Echo aus der Halle.
-        'settings': {'stability': 0.62, 'similarity_boost': 0.82, 'style': 0.2, 'use_speaker_boost': True},
-        'filter': 'asetrate=44100*0.88,aresample=44100,atempo=1.04,aecho=0.8:0.6:45|120:0.35|0.22,lowpass=f=6500,alimiter=limit=0.95',
-    },
-    'hades': {
-        'voice': 'nPczCjzI2devNBz1zQrb',  # Brian, "Deep, Resonant and Comforting"; ruhig, und genau das ist das Unheimliche.
-        'settings': {'stability': 0.68, 'similarity_boost': 0.8, 'style': 0.18, 'use_speaker_boost': True},
-        'filter': 'asetrate=44100*0.87,aresample=44100,atempo=1.03,aecho=0.8:0.7:70|160:0.3|0.18,bass=g=4,alimiter=limit=0.95',
-    },
-    'kronos': {
-        'voice': 'pNInz6obpgDQGcFmaJgB',  # Adam, tief heruntergezogen: ein Titan, der aus der ganzen Halle spricht.
-        'settings': {'stability': 0.6, 'similarity_boost': 0.8, 'style': 0.3, 'use_speaker_boost': True},
-        'filter': 'asetrate=44100*0.78,aresample=44100,atempo=1.08,aecho=0.8:0.8:120|260|420:0.5|0.35|0.22,bass=g=7,alimiter=limit=0.95',
-    },
-    'narrator': {
-        'voice': 'JBFqnCBsd6RMkjVDRZzb',  # George, "Warm, Captivating Storyteller"
-        'settings': {'stability': 0.6, 'similarity_boost': 0.75, 'style': 0.15, 'use_speaker_boost': True},
-        'filter': 'highpass=f=60,aecho=0.8:0.5:60:0.12',
-    },
-}
-
-NARRATOR_KEYS = {
-    'prologue.seal', 'prologue.pull', 'prologue.altar', 'feather.falls', 'zeus.feather', 'finale.catch', 'finale.stinger',
-    'shade.coin', 'shade.voice', 'shade.open', 'hades.enter',
 }
 
 
 def speaker_of(key):
-    if key in NARRATOR_KEYS:
-        return 'narrator'
-    if key.startswith('shade.'):
-        return 'shade'
-    if key.startswith('kronos.'):
-        return 'kronos'
-    if key == 'hades.pact':
-        return 'shade'
-    if key.startswith('hades.') and key not in ('hades.excuse', 'hades.sign', 'hades.never'):
-        return 'hades'
-    if key in ('zeus.name', 'zeus.end_it'):
-        return 'zeus'
-    return 'hermes'
+    return 'arius'
 
 
 # Wo die Automatik nicht reicht: Großschreibung von Hauptwörtern geht beim Umwandeln der Versalien verloren.
 SPOKEN_OVERRIDE = {
-    'de': {'zeus.end_it': 'Du spielst mit diesem Sterblichen. Beende es!', 'zeus.name': 'Hermes!'},
-    'en': {'zeus.end_it': 'You are playing with this mortal. End it!', 'zeus.name': 'Hermes!'},
+    'de': {'serious': 'Gut.', 'intro.test': 'Leg es weg. ... Nein? Dann zeig mir, wofür du es trägst.'},
+    'en': {'serious': 'Good.', 'intro.test': 'Put it down. ... No? Then show me what you carry it for.'},
 }
 
 
@@ -130,7 +87,7 @@ def synthesize(key, text, cast, language):
     request = urllib.request.Request(
         f"https://api.elevenlabs.io/v1/text-to-speech/{cast['voice']}?output_format=mp3_44100_128",
         data=body,
-        headers={'xi-api-key': key, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg', 'User-Agent': 'hha-voice-lines'},
+        headers={'xi-api-key': key, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg', 'User-Agent': 'voice-lines'},
     )
     with urllib.request.urlopen(request, timeout=120) as response:
         return response.read()
@@ -182,35 +139,9 @@ def write_sounds(manifest):
     for lang, lines in sorted(manifest.items()):
         for key in sorted(lines):
             name = file_name(key)
-            sounds[f'voice.{lang}.{name}'] = {'sounds': [f'hha:voice/{lang}/{name}']}
+            sounds[f'voice.{lang}.{key}'] = {'sounds': [f'hha_arius:voice/{lang}/{name}']}
     with open(path, 'w', encoding='utf8') as f:
         json.dump(sounds, f, indent=2)
-
-
-def write_lengths(manifest):
-    """Längste Fassung je Zeile: Der Server kennt die Sprache der Spieler nicht und wartet auf die langsamste."""
-    longest = {}
-    for lines in manifest.values():
-        for key, info in lines.items():
-            ticks = int(info['seconds'] * 20) + 12
-            longest[key] = max(longest.get(key, 0), ticks)
-    rows = ',\n'.join(f'        "{PREFIX}{key}" to {ticks}' for key, ticks in sorted(longest.items()))
-    table = f'mapOf(\n{rows},\n    )' if rows else 'emptyMap()'
-    source = f'''package dev.henny.hha.logic.boss
-
-/**
- * GENERIERT von tools/assets/voice_lines.py: wie viele Ticks jede gesprochene Dialogzeile dauert.
- * So bleibt eine Szene stehen, bis der Satz zu Ende gesprochen ist. Ohne Einträge gelten die Zeiten aus dem Drehbuch.
- */
-object HhaVoiceLengths {{
-
-    private val LENGTHS: Map<String, Int> = {table}
-
-    fun ticks(key: String, base: Int): Int = maxOf(base, LENGTHS[key] ?: 0)
-}}
-'''
-    with open(KOTLIN, 'w', encoding='utf8', newline='\n') as f:
-        f.write(source)
 
 
 def main():
@@ -276,7 +207,6 @@ def main():
     with open(MANIFEST, 'w', encoding='utf8', newline='\n') as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False, sort_keys=True)
     write_sounds(manifest)
-    write_lengths(manifest)
 
 
 if __name__ == '__main__':

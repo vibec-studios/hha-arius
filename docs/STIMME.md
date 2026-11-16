@@ -30,8 +30,8 @@ nutzt Arius nichts. Das hält ihn unabhängig.
 - **Szenentexte** (kursiv, grau, ohne Sprecher) beschreiben kurz, was man sieht oder hört. Sie stehen nur bei
   inszenierten Momenten.
 - **Voicelines:** Für jede Zeile gibt es ein optionales Sound-Event `hha_arius:voice.<de|en>.<id>`. Fehlt die Datei,
-  bleibt nur der Untertitel. Die Stimme wird wie bei HHA mit ElevenLabs erzeugt (`tools/assets/voice_lines.py`, Key nur
-  per Umgebungsvariable).
+  bleibt nur der Untertitel. Die Stimme würde wie bei HHA mit ElevenLabs erzeugt (`tools/assets/voice_lines.py`, Key nur
+  per Umgebungsvariable). **Stand 1.0.0: keine Stimmen erzeugt (Entscheidung des Nutzers: erst nur Text).**
 - **Im Kampf** spricht Arius höchstens alle 45 s und nie während einer laufenden Ansage gegen den Untertitel-Empfänger.
   Beim Schnitt, beim Tritt und bei der Verwandlung schweigt er.
 

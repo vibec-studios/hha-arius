@@ -883,6 +883,9 @@ class Scenes(private val f: EirholmFight) {
         val a = f.arius ?: return@script
         f.setPhase(P.FINALE)
         f.reviveAll(ArenaLayout.VAULT_LANDING)
+        // Treffer zählen im Finale nur als Konter im offenen Fenster (siehe EirholmFight.hitArius).
+        f.ariusVulnerable = true
+        f.dragonVulnerable = false
         f.music("music.finale", 60)
         f.nivaris?.let { d ->
             d.flying = false
