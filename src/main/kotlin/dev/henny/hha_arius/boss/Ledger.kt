@@ -90,7 +90,8 @@ object Ledgers {
                 continue
             }
             while (entry.count > 0) {
-                val stack = ItemStack(item, minOf(entry.count, item.maxCount))
+                // Im Kreativmodus einzeln: Dort verwirft insertStack eine Restmenge, die nicht passt.
+                val stack = ItemStack(item, if (player.isCreative) 1 else minOf(entry.count, item.maxCount))
                 // Nur einfügen, wenn wirklich Platz ist: Im Kreativmodus verwirft insertStack sonst, was nicht passt.
                 val inv = player.inventory
                 if (inv.getOccupiedSlotWithRoomForStack(stack) < 0 && inv.emptySlot < 0) break
