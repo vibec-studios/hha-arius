@@ -79,6 +79,13 @@ object GearRewards {
      * @param flawless niemand aus der Gruppe war k. o.
      */
     fun grant(player: ServerPlayerEntity, firstWin: Boolean, flawless: Boolean) {
+        for (stack in loot(player, firstWin, flawless)) player.giveOrDropStack(stack)
+        GearAdvancements.grant(player, "white_blade")
+        if (flawless) GearAdvancements.grant(player, "no_storm")
+    }
+
+    /** Die Beute eines Siegs als Liste (ohne sie zu vergeben); der Kampf legt sie ins Eirholm-Fach des Spielers. */
+    fun loot(player: ServerPlayerEntity, firstWin: Boolean, flawless: Boolean): List<ItemStack> {
         val random = player.random
         val loot = ArrayList<ItemStack>()
         fun add(item: Item, count: Int) {
@@ -99,11 +106,7 @@ object GearRewards {
             add(GearItems.NIVARIS_SCALE, GearConfig.ticks("reward_scales_repeat"))
         }
         if (flawless) add(GearItems.WHITE_BLADE_TRIM_TEMPLATE, 1)
-
-        for (stack in loot) player.giveOrDropStack(stack)
-
-        GearAdvancements.grant(player, "white_blade")
-        if (flawless) GearAdvancements.grant(player, "no_storm")
+        return loot
     }
 
     /**

@@ -75,6 +75,7 @@
   "hha_arius.msg.forming": "Das Heiligtum von Eirholm formt sich …",
   "hha_arius.msg.forming_pct": "Das Heiligtum von Eirholm formt sich … %s %%",
   "hha_arius.msg.full": "Alle Heiligtümer sind gerade belegt. Versuch es gleich noch einmal.",
+  "hha_arius.msg.inbox": "Aus Eirholm liegen noch %s Gegenstände für dich bereit. Sie kommen ins Inventar, sobald Platz ist.",
   "hha_arius.msg.ko": "Du bist k. o. und behältst alles. Im nächsten Abschnitt steigst du wieder ein.",
   "hha_arius.msg.latejoin": "Der Kampf läuft bereits. Du steigst im nächsten Abschnitt ein.",
   "hha_arius.msg.need_resonance": "Zu wenig Frostresonanz (%s nötig, %s vorhanden)",

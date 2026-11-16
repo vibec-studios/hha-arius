@@ -45,6 +45,7 @@
  "hha_arius.msg.latejoin": "The fight is already running. You join in the next part.",
  "hha_arius.msg.defeat": "The snow settles. The seal is still in your pocket.",
  "hha_arius.msg.training_done": "Training finished.",
+ "hha_arius.msg.inbox": "%s items from Eirholm are still waiting for you. They move into your inventory as soon as there is room.",
  "hha_arius.msg.sent_home": "The sanctum is quiet. You're back outside.",
  "hha_arius.msg.already_inside": "You're already inside the sanctum.",
  "hha_arius.msg.busy": "You're already part of an encounter.",

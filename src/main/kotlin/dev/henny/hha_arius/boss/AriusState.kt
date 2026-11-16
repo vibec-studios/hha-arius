@@ -48,6 +48,8 @@ class AriusState(var data: Data = Data()) : PersistentState() {
         var kind: String = "loot",
         var firstWin: Boolean = false,
         var flawless: Boolean = false,
+        /** Begegnung, aus der der Anspruch stammt (beim Beschwörer: erledigt beim Zustellen auch seinen Einsatz). */
+        var encounter: String = "",
     )
 
     class Data(
@@ -75,8 +77,7 @@ class AriusState(var data: Data = Data()) : PersistentState() {
 
     fun markWon(encounter: String) {
         isWon(encounter)
-        data.wonEncounters.add(encounter)
-        while (data.wonEncounters.size > 500) data.wonEncounters.removeAt(0)
+        if (encounter !in data.wonEncounters) data.wonEncounters.add(encounter)
         save()
     }
 

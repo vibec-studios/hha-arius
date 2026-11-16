@@ -887,19 +887,14 @@ class EirholmFight(
         // erst am Heimatort (oder beim nächsten Einloggen), damit nichts im Aufräumen der Arena verloren geht.
         val flawless = !anyKo
         val state = AriusState.get(server)
-        if (!sealStake.isEmpty) {
-            // Verbraucht: Ist der Beschwörer online, wird der Einsatzvermerk in seiner Spielerdatei gelöscht; sonst
-            // erkennt das Einloggen die Begegnung als gewonnen.
-            state.markWon(encounterId)
-            server.playerManager.getPlayer(summonerId)?.let { owner ->
-                val ledger = Ledgers.of(owner)
-                if (ledger.stake == encounterId) ledger.stake = ""
-            }
-            sealStake = net.minecraft.item.ItemStack.EMPTY
-        }
+        // Verbraucht ist das Siegel erst, wenn der Beuteanspruch dieser Begegnung beim Beschwörer zugestellt ist: Dann
+        // löscht die Zustellung den Einsatzvermerk im selben Schreibvorgang (Spielerdatei). Rollt ein Absturz den Sieg
+        // zurück, erstattet das Einloggen den Einsatz.
+        state.markWon(encounterId)
+        sealStake = net.minecraft.item.ItemStack.EMPTY
         for (id in fighters.keys) {
             val data = state.player(id)
-            data.pendingRewards.add(AriusState.Claim(firstWin = data.wins == 0, flawless = flawless))
+            data.pendingRewards.add(AriusState.Claim(firstWin = data.wins == 0, flawless = flawless, encounter = encounterId))
             data.wins++
         }
         state.save()
@@ -952,10 +947,10 @@ class EirholmFight(
                 if (owner != null) {
                     val ledger = Ledgers.of(owner)
                     if (ledger.stake == encounterId) {
+                        // Vermerk löschen und Siegel ins Fach: beides Spielerdatei. Das Fach füllt das Inventar, sobald Platz ist.
                         ledger.stake = ""
-                        if (!owner.inventory.insertStack(sealStake.copy())) {
-                            state.player(summonerId).pendingRewards.add(AriusState.Claim(kind = "seal"))
-                        }
+                        Ledgers.deposit(owner, listOf(sealStake.copy()))
+                        Ledgers.flush(owner)
                     }
                 }
                 sealStake = net.minecraft.item.ItemStack.EMPTY

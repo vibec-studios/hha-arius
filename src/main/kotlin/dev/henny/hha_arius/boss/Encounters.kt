@@ -43,6 +43,7 @@ object Encounters {
     fun init() {
         ServerTickEvents.END_SERVER_TICK.register { server ->
             Hold.tick(server)
+            tickInboxes(server)
             for (fight in fights.values.toList()) fight.tick()
         }
         ServerLivingEntityEvents.ALLOW_DEATH.register { entity, _, _ ->
@@ -143,16 +144,12 @@ object Encounters {
         val state = AriusState.get(server)
         val ledger = Ledgers.of(player)
         val seal = Registries.ITEM.get(HhaArius.id("eirholm_seal"))
-        if (ledger.stake.isNotEmpty() && fights.values.none { it.encounterId == ledger.stake && !it.ended }) {
-            val won = state.isWon(ledger.stake)
-            ledger.stake = ""
-            if (!won) player.giveOrDropStack(ItemStack(seal))
-        }
         val data = state.player(player.uuid)
-        if (data.pendingRewards.isEmpty()) return
         var changed = false
+        // 1) Ansprüche zustellen: Quittung, Beute ins Fach und ggf. Einsatz-Erledigung in EINEM Spielerdatei-Stand.
         for (claim in data.pendingRewards.toList()) {
             if (claim.id in ledger.paid) {
+                // Quittung aus einer früheren Sitzung = nachweislich gespeichert: Anspruch darf weg.
                 if (claim.id !in ledger.sessionPaid) {
                     data.pendingRewards.remove(claim)
                     changed = true
@@ -161,10 +158,35 @@ object Encounters {
             }
             ledger.paid.add(claim.id)
             ledger.sessionPaid.add(claim.id)
-            while (ledger.paid.size > 300) ledger.paid.removeAt(0)
-            if (claim.kind == "seal") player.giveOrDropStack(ItemStack(seal)) else GearRewards.grant(player, claim.firstWin, claim.flawless)
+            if (claim.kind == "seal") {
+                Ledgers.deposit(player, listOf(ItemStack(seal)))
+            } else {
+                Ledgers.deposit(player, GearRewards.loot(player, claim.firstWin, claim.flawless))
+                Advancements.grant(player, "white_blade")
+                if (claim.flawless) Advancements.grant(player, "no_storm")
+            }
+            if (claim.encounter.isNotEmpty() && claim.encounter == ledger.stake) ledger.stake = ""
         }
+        // 2) Offener Einsatz ohne laufenden Kampf und ohne Anspruch dieser Begegnung: Sieg erledigt, sonst zurück.
+        if (ledger.stake.isNotEmpty() && fights.values.none { it.encounterId == ledger.stake && !it.ended } &&
+            data.pendingRewards.none { it.encounter == ledger.stake && it.id !in ledger.paid }
+        ) {
+            if (!state.isWon(ledger.stake)) Ledgers.deposit(player, listOf(ItemStack(seal)))
+            ledger.stake = ""
+        }
+        // 3) Fach ins Inventar, so weit Platz ist.
+        val left = Ledgers.flush(player)
+        if (left > 0) player.sendMessage(Text.translatable("hha_arius.msg.inbox", left).formatted(Formatting.AQUA), false)
         if (changed) state.save()
+    }
+
+    /** Volles Fach regelmäßig nachfüllen, sobald Platz im Inventar ist. */
+    private fun tickInboxes(server: MinecraftServer) {
+        if (server.ticks % 40 != 0) return
+        for (player in server.playerManager.playerList) {
+            if (player.entityWorld.registryKey == WORLD) continue
+            if (Ledgers.of(player).inbox.isNotEmpty()) Ledgers.flush(player)
+        }
     }
 
     private fun start(player: ServerPlayerEntity, training: Int, seal: ItemStack): Boolean {

@@ -75,6 +75,7 @@
   "hha_arius.msg.forming": "The Sanctum of Eirholm is taking shape …",
   "hha_arius.msg.forming_pct": "The Sanctum of Eirholm is taking shape … %s %%",
   "hha_arius.msg.full": "Every sanctum is in use right now. Try again in a moment.",
+  "hha_arius.msg.inbox": "%s items from Eirholm are still waiting for you. They move into your inventory as soon as there is room.",
   "hha_arius.msg.ko": "You're knocked out and keep everything. You rejoin in the next part.",
   "hha_arius.msg.latejoin": "The fight is already running. You join in the next part.",
   "hha_arius.msg.need_resonance": "Not enough Frost Resonance (%s needed, %s held)",
