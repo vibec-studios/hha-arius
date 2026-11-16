@@ -2,6 +2,7 @@ package dev.henny.hha_arius
 
 import dev.henny.hha_arius.boss.AriusEntity
 import dev.henny.hha_arius.boss.NivarisEntity
+import dev.henny.hha_arius.boss.NivarisHeadEntity
 import net.fabricmc.api.ModInitializer
 import net.fabricmc.fabric.api.`object`.builder.v1.entity.FabricDefaultAttributeRegistry
 import net.minecraft.entity.Entity
@@ -31,6 +32,7 @@ object HhaArius : ModInitializer {
 
     override fun onInitialize() {
         checkHhaBuild()
+        AriusSounds.init()
         AriusEntities.init()
         dev.henny.hha_arius.net.AriusNet.init()
         dev.henny.hha_arius.boss.Encounters.init()
@@ -56,6 +58,7 @@ object AriusEntities {
 
     val ARIUS: EntityType<AriusEntity> = register("arius", 0.7f, 1.95f, ::AriusEntity)
     val NIVARIS: EntityType<NivarisEntity> = register("nivaris", 4.5f, 3.6f, ::NivarisEntity)
+    val NIVARIS_HEAD: EntityType<dev.henny.hha_arius.boss.NivarisHeadEntity> = register("nivaris_head", 1.9f, 1.9f, ::NivarisHeadEntity)
 
     private fun <T : Entity> register(name: String, width: Float, height: Float, factory: (EntityType<T>, World) -> T): EntityType<T> {
         val key: RegistryKey<EntityType<*>> = RegistryKey.of(RegistryKeys.ENTITY_TYPE, HhaArius.id(name))
@@ -73,5 +76,6 @@ object AriusEntities {
     fun init() {
         FabricDefaultAttributeRegistry.register(ARIUS, AriusEntity.attributes())
         FabricDefaultAttributeRegistry.register(NIVARIS, NivarisEntity.attributes())
+        FabricDefaultAttributeRegistry.register(NIVARIS_HEAD, dev.henny.hha_arius.boss.NivarisHeadEntity.attributes())
     }
 }

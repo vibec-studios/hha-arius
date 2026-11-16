@@ -295,9 +295,7 @@ def model_chunk(model):
 
 def assemble_kotlin(chunks, name):
     """Schreibt die Modelldaten EINES Modells nach client/model/<name>/<Name>ModelData.kt (atomar)."""
-    body = '
-
-'.join(chunks)
+    body = '\n\n'.join(chunks)
     cls = ''.join(p.capitalize() for p in name.split('_')) + 'ModelData'
     src = f'''package dev.henny.hha_arius.client.model.{name}
 
@@ -319,8 +317,7 @@ object {cls} {{
     path = os.path.abspath(os.path.join(KOTLIN_DIR, name, f'{cls}.kt'))
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = f'{path}.{os.getpid()}.tmp'
-    with open(tmp, 'w', encoding='utf8', newline='
-') as f:
+    with open(tmp, 'w', encoding='utf8', newline='\n') as f:
         f.write(src)
     os.replace(tmp, path)
     print('Kotlin:', path)

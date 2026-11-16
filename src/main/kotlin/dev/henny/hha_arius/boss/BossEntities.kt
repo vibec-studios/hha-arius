@@ -239,3 +239,28 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
             .add(EntityAttributes.FOLLOW_RANGE, 128.0)
     }
 }
+
+/**
+ * Unsichtbare Trefferbox für Nivaris' Kopf. Ihr Kopf liegt bis zu 5,8 Blöcke vor der Rumpfmitte, also außerhalb der
+ * Rumpf-Box; der Kampf setzt diese Box jeden Tick an den Kopf und wertet Treffer darauf als Kopftreffer.
+ */
+class NivarisHeadEntity(type: EntityType<out NivarisHeadEntity>, world: World) : EirholmPuppet(type, world) {
+
+    init {
+        isInvisible = true
+    }
+
+    override fun poseData(): TrackedData<Int> = POSE
+    override fun windupData(): TrackedData<Int> = WINDUP
+    override fun serialData(): TrackedData<Int> = SERIAL
+
+    companion object {
+        private val POSE: TrackedData<Int> = DataTracker.registerData(NivarisHeadEntity::class.java, TrackedDataHandlerRegistry.INTEGER)
+        private val WINDUP: TrackedData<Int> = DataTracker.registerData(NivarisHeadEntity::class.java, TrackedDataHandlerRegistry.INTEGER)
+        private val SERIAL: TrackedData<Int> = DataTracker.registerData(NivarisHeadEntity::class.java, TrackedDataHandlerRegistry.INTEGER)
+
+        fun attributes(): DefaultAttributeContainer.Builder = MobEntity.createMobAttributes()
+            .add(EntityAttributes.MAX_HEALTH, 1000.0)
+            .add(EntityAttributes.KNOCKBACK_RESISTANCE, 1.0)
+    }
+}

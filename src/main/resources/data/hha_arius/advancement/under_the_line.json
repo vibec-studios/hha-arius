@@ -1,0 +1,29 @@
+{
+  "parent": "hha_arius:seal",
+  "display": {
+    "icon": {
+      "count": 1,
+      "id": "hha_arius:solvane"
+    },
+    "title": {
+      "translate": "advancements.hha_arius.under_the_line.title"
+    },
+    "description": {
+      "translate": "advancements.hha_arius.under_the_line.description"
+    },
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "granted": {
+      "trigger": "minecraft:impossible"
+    }
+  },
+  "requirements": [
+    [
+      "granted"
+    ]
+  ]
+}

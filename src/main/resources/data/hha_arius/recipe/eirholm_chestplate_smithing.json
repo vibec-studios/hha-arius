@@ -1,0 +1,9 @@
+{
+  "type": "minecraft:smithing_transform",
+  "addition": "hha_arius:heartfrost",
+  "base": "minecraft:netherite_chestplate",
+  "result": {
+    "id": "hha_arius:eirholm_chestplate"
+  },
+  "template": "hha_arius:eirholm_upgrade_smithing_template"
+}

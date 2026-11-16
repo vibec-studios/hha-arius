@@ -1,0 +1,9 @@
+{
+  "type": "minecraft:smithing_transform",
+  "addition": "hha_arius:heartfrost",
+  "base": "minecraft:netherite_boots",
+  "result": {
+    "id": "hha_arius:eirholm_boots"
+  },
+  "template": "hha_arius:eirholm_upgrade_smithing_template"
+}

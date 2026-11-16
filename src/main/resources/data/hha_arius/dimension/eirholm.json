@@ -1,0 +1,18 @@
+{
+  "type": "hha_arius:eirholm",
+  "generator": {
+    "type": "minecraft:flat",
+    "settings": {
+      "biome": "hha_arius:eirholm",
+      "features": false,
+      "lakes": false,
+      "layers": [
+        {
+          "block": "minecraft:air",
+          "height": 1
+        }
+      ],
+      "structure_overrides": []
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "B": "minecraft:blue_ice",
+    "E": "minecraft:echo_shard",
+    "G": "minecraft:gold_ingot",
+    "N": "minecraft:nether_star"
+  },
+  "pattern": [
+    "BEB",
+    "GNG",
+    "BEB"
+  ],
+  "result": {
+    "count": 1,
+    "id": "hha_arius:eirholm_seal"
+  }
+}

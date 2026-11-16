@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "equipment",
+  "key": {
+    "S": "hha_arius:nivaris_scale",
+    "P": "minecraft:phantom_membrane",
+    "H": "hha_arius:heartfrost"
+  },
+  "pattern": [
+    "SSS",
+    "PHP"
+  ],
+  "result": {
+    "count": 1,
+    "id": "hha_arius:nivaris_wingscale"
+  }
+}

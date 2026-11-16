@@ -1,0 +1,29 @@
+{
+  "parent": "hha_arius:white_blade",
+  "display": {
+    "icon": {
+      "count": 1,
+      "id": "hha_arius:white_blade_armor_trim_smithing_template"
+    },
+    "title": {
+      "translate": "advancements.hha_arius.no_storm.title"
+    },
+    "description": {
+      "translate": "advancements.hha_arius.no_storm.description"
+    },
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "granted": {
+      "trigger": "minecraft:impossible"
+    }
+  },
+  "requirements": [
+    [
+      "granted"
+    ]
+  ]
+}

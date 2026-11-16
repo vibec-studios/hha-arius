@@ -3,8 +3,15 @@
   "minVersion": "0.8",
   "package": "dev.henny.hha_arius.mixin",
   "compatibilityLevel": "JAVA_21",
-  "mixins": [],
-  "client": [],
+  "mixins": [
+    "gear.LivingEntityFreezeMixin",
+    "gear.PowderSnowBlockMixin"
+  ],
+  "client": [
+    "gear.client.EquipmentRendererGlowMixin",
+    "client.HoldKeyboardInputMixin",
+    "client.HoldActionsMixin"
+  ],
   "injectors": {
     "defaultRequire": 1
   }

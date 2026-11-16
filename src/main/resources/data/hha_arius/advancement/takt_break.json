@@ -1,0 +1,29 @@
+{
+  "parent": "hha_arius:seal",
+  "display": {
+    "icon": {
+      "count": 1,
+      "id": "hha_arius:nivaris_scale"
+    },
+    "title": {
+      "translate": "advancements.hha_arius.takt_break.title"
+    },
+    "description": {
+      "translate": "advancements.hha_arius.takt_break.description"
+    },
+    "frame": "goal",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "granted": {
+      "trigger": "minecraft:impossible"
+    }
+  },
+  "requirements": [
+    [
+      "granted"
+    ]
+  ]
+}

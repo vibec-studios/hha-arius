@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "hha_arius:item/white_blade_armor_trim_smithing_template"
+  }
+}

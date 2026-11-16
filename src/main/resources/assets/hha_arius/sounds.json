@@ -1,0 +1,362 @@
+{
+  "music.temple": {
+    "sounds": [
+      {
+        "name": "hha_arius:music/temple",
+        "stream": true
+      }
+    ]
+  },
+  "music.glacier": {
+    "sounds": [
+      {
+        "name": "hha_arius:music/glacier",
+        "stream": true
+      }
+    ]
+  },
+  "music.heart": {
+    "sounds": [
+      {
+        "name": "hha_arius:music/heart",
+        "stream": true
+      }
+    ]
+  },
+  "music.finale": {
+    "sounds": [
+      {
+        "name": "hha_arius:music/finale",
+        "stream": true
+      }
+    ]
+  },
+  "arius.slash": {
+    "subtitle": "subtitles.hha_arius.arius.slash",
+    "sounds": [
+      "hha_arius:sfx/arius_slash_1",
+      "hha_arius:sfx/arius_slash_2",
+      "hha_arius:sfx/arius_slash_3"
+    ]
+  },
+  "arius.thrust": {
+    "subtitle": "subtitles.hha_arius.arius.thrust",
+    "sounds": [
+      "hha_arius:sfx/arius_thrust_1",
+      "hha_arius:sfx/arius_thrust_2"
+    ]
+  },
+  "arius.parry": {
+    "subtitle": "subtitles.hha_arius.arius.parry",
+    "sounds": [
+      "hha_arius:sfx/arius_parry_1",
+      "hha_arius:sfx/arius_parry_2",
+      "hha_arius:sfx/arius_parry_3"
+    ]
+  },
+  "arius.kick": {
+    "subtitle": "subtitles.hha_arius.arius.kick",
+    "sounds": [
+      "hha_arius:sfx/arius_kick_1",
+      "hha_arius:sfx/arius_kick_2"
+    ]
+  },
+  "arius.wind_step": {
+    "subtitle": "subtitles.hha_arius.arius.wind_step",
+    "sounds": [
+      "hha_arius:sfx/arius_wind_step_1",
+      "hha_arius:sfx/arius_wind_step_2"
+    ]
+  },
+  "arius.guard": {
+    "subtitle": "subtitles.hha_arius.arius.guard",
+    "sounds": [
+      "hha_arius:sfx/arius_guard_1",
+      "hha_arius:sfx/arius_guard_2"
+    ]
+  },
+  "arius.ice_wall": {
+    "subtitle": "subtitles.hha_arius.arius.ice_wall",
+    "sounds": [
+      "hha_arius:sfx/arius_ice_wall_1",
+      "hha_arius:sfx/arius_ice_wall_2"
+    ]
+  },
+  "arius.frost_strip": {
+    "subtitle": "subtitles.hha_arius.arius.frost_strip",
+    "sounds": [
+      "hha_arius:sfx/arius_frost_strip_1",
+      "hha_arius:sfx/arius_frost_strip_2"
+    ]
+  },
+  "arius.stab_ground": {
+    "subtitle": "subtitles.hha_arius.arius.stab_ground",
+    "sounds": [
+      "hha_arius:sfx/arius_stab_ground_1",
+      "hha_arius:sfx/arius_stab_ground_2"
+    ]
+  },
+  "arius.grip": {
+    "subtitle": "subtitles.hha_arius.arius.grip",
+    "sounds": [
+      "hha_arius:sfx/arius_grip_1",
+      "hha_arius:sfx/arius_grip_2"
+    ]
+  },
+  "arius.arrow_cut": {
+    "subtitle": "subtitles.hha_arius.arius.arrow_cut",
+    "sounds": [
+      "hha_arius:sfx/arius_arrow_cut_1",
+      "hha_arius:sfx/arius_arrow_cut_2",
+      "hha_arius:sfx/arius_arrow_cut_3"
+    ]
+  },
+  "arius.null_cut": {
+    "subtitle": "subtitles.hha_arius.arius.null_cut",
+    "sounds": [
+      "hha_arius:sfx/arius_null_cut_1",
+      "hha_arius:sfx/arius_null_cut_2"
+    ]
+  },
+  "cut.reverse_wind": {
+    "subtitle": "subtitles.hha_arius.cut.reverse_wind",
+    "sounds": [
+      "hha_arius:sfx/cut_reverse_wind_1"
+    ]
+  },
+  "cut.charge": {
+    "subtitle": "subtitles.hha_arius.cut.charge",
+    "sounds": [
+      "hha_arius:sfx/cut_charge_1"
+    ]
+  },
+  "cut.strike": {
+    "subtitle": "subtitles.hha_arius.cut.strike",
+    "sounds": [
+      "hha_arius:sfx/cut_strike_1"
+    ]
+  },
+  "cut.split": {
+    "subtitle": "subtitles.hha_arius.cut.split",
+    "sounds": [
+      "hha_arius:sfx/cut_split_1"
+    ]
+  },
+  "nivaris.roar": {
+    "subtitle": "subtitles.hha_arius.nivaris.roar",
+    "sounds": [
+      "hha_arius:sfx/nivaris_roar_1",
+      "hha_arius:sfx/nivaris_roar_2"
+    ]
+  },
+  "nivaris.inhale": {
+    "subtitle": "subtitles.hha_arius.nivaris.inhale",
+    "sounds": [
+      "hha_arius:sfx/nivaris_inhale_1",
+      "hha_arius:sfx/nivaris_inhale_2"
+    ]
+  },
+  "nivaris.breath": {
+    "subtitle": "subtitles.hha_arius.nivaris.breath",
+    "sounds": [
+      "hha_arius:sfx/nivaris_breath_1",
+      "hha_arius:sfx/nivaris_breath_2"
+    ]
+  },
+  "nivaris.wing": {
+    "subtitle": "subtitles.hha_arius.nivaris.wing",
+    "sounds": [
+      "hha_arius:sfx/nivaris_wing_1",
+      "hha_arius:sfx/nivaris_wing_2",
+      "hha_arius:sfx/nivaris_wing_3"
+    ]
+  },
+  "nivaris.land": {
+    "subtitle": "subtitles.hha_arius.nivaris.land",
+    "sounds": [
+      "hha_arius:sfx/nivaris_land_1",
+      "hha_arius:sfx/nivaris_land_2"
+    ]
+  },
+  "nivaris.claw": {
+    "subtitle": "subtitles.hha_arius.nivaris.claw",
+    "sounds": [
+      "hha_arius:sfx/nivaris_claw_1",
+      "hha_arius:sfx/nivaris_claw_2",
+      "hha_arius:sfx/nivaris_claw_3"
+    ]
+  },
+  "nivaris.tail": {
+    "subtitle": "subtitles.hha_arius.nivaris.tail",
+    "sounds": [
+      "hha_arius:sfx/nivaris_tail_1",
+      "hha_arius:sfx/nivaris_tail_2"
+    ]
+  },
+  "nivaris.choke": {
+    "subtitle": "subtitles.hha_arius.nivaris.choke",
+    "sounds": [
+      "hha_arius:sfx/nivaris_choke_1",
+      "hha_arius:sfx/nivaris_choke_2"
+    ]
+  },
+  "nivaris.crash": {
+    "subtitle": "subtitles.hha_arius.nivaris.crash",
+    "sounds": [
+      "hha_arius:sfx/nivaris_crash_1",
+      "hha_arius:sfx/nivaris_crash_2"
+    ]
+  },
+  "glacier.crack": {
+    "subtitle": "subtitles.hha_arius.glacier.crack",
+    "sounds": [
+      "hha_arius:sfx/glacier_crack_1",
+      "hha_arius:sfx/glacier_crack_2",
+      "hha_arius:sfx/glacier_crack_3"
+    ]
+  },
+  "glacier.collapse": {
+    "subtitle": "subtitles.hha_arius.glacier.collapse",
+    "sounds": [
+      "hha_arius:sfx/glacier_collapse_1",
+      "hha_arius:sfx/glacier_collapse_2"
+    ]
+  },
+  "ridge.rise": {
+    "subtitle": "subtitles.hha_arius.ridge.rise",
+    "sounds": [
+      "hha_arius:sfx/ridge_rise_1",
+      "hha_arius:sfx/ridge_rise_2"
+    ]
+  },
+  "ridge.break": {
+    "subtitle": "subtitles.hha_arius.ridge.break",
+    "sounds": [
+      "hha_arius:sfx/ridge_break_1",
+      "hha_arius:sfx/ridge_break_2",
+      "hha_arius:sfx/ridge_break_3"
+    ]
+  },
+  "crystal.hang": {
+    "subtitle": "subtitles.hha_arius.crystal.hang",
+    "sounds": [
+      "hha_arius:sfx/crystal_hang_1",
+      "hha_arius:sfx/crystal_hang_2"
+    ]
+  },
+  "seal.blizzard": {
+    "subtitle": "subtitles.hha_arius.seal.blizzard",
+    "sounds": [
+      "hha_arius:sfx/seal_blizzard_1"
+    ]
+  },
+  "transform.shatter": {
+    "subtitle": "subtitles.hha_arius.transform.shatter",
+    "sounds": [
+      "hha_arius:sfx/transform_shatter_1"
+    ]
+  },
+  "transform.pulse": {
+    "subtitle": "subtitles.hha_arius.transform.pulse",
+    "sounds": [
+      "hha_arius:sfx/transform_pulse_1"
+    ]
+  },
+  "resonance.chime": {
+    "subtitle": "subtitles.hha_arius.resonance.chime",
+    "sounds": [
+      "hha_arius:sfx/resonance_chime_1",
+      "hha_arius:sfx/resonance_chime_2"
+    ]
+  },
+  "core.form": {
+    "subtitle": "subtitles.hha_arius.core.form",
+    "sounds": [
+      "hha_arius:sfx/core_form_1"
+    ]
+  },
+  "core.pulse": {
+    "subtitle": "subtitles.hha_arius.core.pulse",
+    "sounds": [
+      "hha_arius:sfx/core_pulse_1",
+      "hha_arius:sfx/core_pulse_2"
+    ]
+  },
+  "core.collapse": {
+    "subtitle": "subtitles.hha_arius.core.collapse",
+    "sounds": [
+      "hha_arius:sfx/core_collapse_1"
+    ]
+  },
+  "iai.glint": {
+    "subtitle": "subtitles.hha_arius.iai.glint",
+    "sounds": [
+      "hha_arius:sfx/iai_glint_1",
+      "hha_arius:sfx/iai_glint_2"
+    ]
+  },
+  "iai.draw": {
+    "subtitle": "subtitles.hha_arius.iai.draw",
+    "sounds": [
+      "hha_arius:sfx/iai_draw_1",
+      "hha_arius:sfx/iai_draw_2"
+    ]
+  },
+  "hold.impact": {
+    "subtitle": "subtitles.hha_arius.hold.impact",
+    "sounds": [
+      "hha_arius:sfx/hold_impact_1",
+      "hha_arius:sfx/hold_impact_2"
+    ]
+  },
+  "lead.switch": {
+    "subtitle": "subtitles.hha_arius.lead.switch",
+    "sounds": [
+      "hha_arius:sfx/lead_switch_1",
+      "hha_arius:sfx/lead_switch_2"
+    ]
+  },
+  "solvane.parry": {
+    "subtitle": "subtitles.hha_arius.solvane.parry",
+    "sounds": [
+      "hha_arius:sfx/solvane_parry_1",
+      "hha_arius:sfx/solvane_parry_2",
+      "hha_arius:sfx/solvane_parry_3"
+    ]
+  },
+  "white_line.charge": {
+    "subtitle": "subtitles.hha_arius.white_line.charge",
+    "sounds": [
+      "hha_arius:sfx/white_line_charge_1"
+    ]
+  },
+  "white_line.release": {
+    "subtitle": "subtitles.hha_arius.white_line.release",
+    "sounds": [
+      "hha_arius:sfx/white_line_release_1",
+      "hha_arius:sfx/white_line_release_2"
+    ]
+  },
+  "frost_step": {
+    "subtitle": "subtitles.hha_arius.frost_step",
+    "sounds": [
+      "hha_arius:sfx/frost_step_1",
+      "hha_arius:sfx/frost_step_2",
+      "hha_arius:sfx/frost_step_3"
+    ]
+  },
+  "white_core": {
+    "subtitle": "subtitles.hha_arius.white_core",
+    "sounds": [
+      "hha_arius:sfx/white_core_1"
+    ]
+  },
+  "wingscale.flap": {
+    "subtitle": "subtitles.hha_arius.wingscale.flap",
+    "sounds": [
+      "hha_arius:sfx/wingscale_flap_1",
+      "hha_arius:sfx/wingscale_flap_2",
+      "hha_arius:sfx/wingscale_flap_3"
+    ]
+  }
+}
