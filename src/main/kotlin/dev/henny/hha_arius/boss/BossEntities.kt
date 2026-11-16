@@ -195,6 +195,33 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
         builder.add(THROAT_GLOW, 0)
         builder.add(EYE_GLOW, 50)
         builder.add(LEAD, false)
+        builder.add(MODE, NivarisMode.NORMAL)
+        builder.add(UNCOIL, 0f)
+    }
+
+    /** Darstellung des Schlangenkörpers, siehe [NivarisMode] (Windung um die Nadel im Auftritt). */
+    var mode: Int
+        get() = dataTracker.get(MODE)
+        set(value) = dataTracker.set(MODE, value)
+
+    /** Fortschritt beim Lösen von der Nadel 0..1 (nur in [NivarisMode.UNCOIL]), Weg entlang [EntrancePath]. */
+    var uncoil: Float
+        get() = dataTracker.get(UNCOIL)
+        set(value) = dataTracker.set(UNCOIL, value.coerceIn(0f, 1f))
+
+    // --- nur Client: Fortschritt des Vor-Ticks für weiches Zeichnen zwischen den Ticks ---
+    var lastUncoil = 0f
+        private set
+    private var seenUncoil = 0f
+
+    override fun tick() {
+        super.tick()
+        if (entityWorld.isClient) {
+            lastUncoil = seenUncoil
+            seenUncoil = uncoil
+            // Sprung (Nachzügler, Überspringen): nicht über den ganzen Weg gleiten.
+            if (kotlin.math.abs(seenUncoil - lastUncoil) > 0.05f) lastUncoil = seenUncoil
+        }
     }
 
     /** Fliegt (Flügelschlag-Zyklus, Beine angezogen). */
@@ -231,8 +258,13 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
         private val THROAT_GLOW: TrackedData<Int> = DataTracker.registerData(NivarisEntity::class.java, TrackedDataHandlerRegistry.INTEGER)
         private val EYE_GLOW: TrackedData<Int> = DataTracker.registerData(NivarisEntity::class.java, TrackedDataHandlerRegistry.INTEGER)
         private val LEAD: TrackedData<Boolean> = DataTracker.registerData(NivarisEntity::class.java, TrackedDataHandlerRegistry.BOOLEAN)
+        private val MODE: TrackedData<Int> = DataTracker.registerData(NivarisEntity::class.java, TrackedDataHandlerRegistry.INTEGER)
+        private val UNCOIL: TrackedData<Float> = DataTracker.registerData(NivarisEntity::class.java, TrackedDataHandlerRegistry.FLOAT)
 
-        /** Trefferbox 4,5 × 3,6 (Rumpf); Kopf/Schwanz werden über Trefferzonen zugeordnet. */
+        /**
+         * Trefferbox 4,5 × 3,6: der Rumpf vorn (Glieder 2–4). Der 96 Blöcke lange Körper ist nur Darstellung und
+         * blockiert nichts; Kopf/Schwanz werden über Trefferzonen bzw. die Kopf-Trefferbox zugeordnet.
+         */
         fun attributes(): DefaultAttributeContainer.Builder = MobEntity.createMobAttributes()
             .add(EntityAttributes.MAX_HEALTH, 1000.0)
             .add(EntityAttributes.KNOCKBACK_RESISTANCE, 1.0)
@@ -241,8 +273,9 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
 }
 
 /**
- * Unsichtbare Trefferbox für Nivaris' Kopf. Ihr Kopf liegt bis zu 5,8 Blöcke vor der Rumpfmitte, also außerhalb der
- * Rumpf-Box; der Kampf setzt diese Box jeden Tick an den Kopf und wertet Treffer darauf als Kopftreffer.
+ * Unsichtbare Trefferbox für Nivaris' Kopf. Der Kopf des Schlangendrachen sitzt 3–8 Blöcke vor bzw. über dem Rumpf
+ * ([NivarisShape.headCenter]), also außerhalb der Rumpf-Box; der Kampf setzt diese Box jeden Tick an den Kopf und
+ * wertet Treffer darauf als Kopftreffer.
  */
 class NivarisHeadEntity(type: EntityType<out NivarisHeadEntity>, world: World) : EirholmPuppet(type, world) {
 

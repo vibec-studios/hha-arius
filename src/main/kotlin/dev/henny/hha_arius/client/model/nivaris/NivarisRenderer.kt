@@ -3,23 +3,34 @@ package dev.henny.hha_arius.client.model.nivaris
 import dev.henny.hha_arius.HhaArius
 import dev.henny.hha_arius.boss.AriusTimings
 import dev.henny.hha_arius.boss.NivarisEntity
-import net.minecraft.client.render.OverlayTexture
+import dev.henny.hha_arius.boss.NivarisMode
+import dev.henny.hha_arius.boss.NivarisShape
+import net.minecraft.client.model.ModelPart
+import net.minecraft.client.render.Frustum
+import net.minecraft.client.render.RenderLayer
 import net.minecraft.client.render.RenderLayers
 import net.minecraft.client.render.command.OrderedRenderCommandQueue
 import net.minecraft.client.render.command.RenderCommandQueue
 import net.minecraft.client.render.entity.EntityRendererFactory
 import net.minecraft.client.render.entity.LivingEntityRenderer
-import net.minecraft.client.render.entity.feature.FeatureRenderer
+import net.minecraft.client.render.state.CameraRenderState
 import net.minecraft.client.util.math.MatrixStack
 import net.minecraft.util.Identifier
 import net.minecraft.util.math.MathHelper
+import org.joml.Matrix3f
+import org.joml.Quaternionf
 import java.util.WeakHashMap
 import kotlin.math.sin
 
 /**
- * Renderer der Drachin: Farbtextur (Cutout, Membranlöcher), dazu drei Leuchtschichten mit denselben UVs:
- * Augen + Hornspitzen ([NivarisEntity.eyeGlow], heller bei [NivarisEntity.lead]), Kehle + Herzkern
- * ([NivarisEntity.throatGlow]) und die Resonanzlinien in Membranen und Kamm (nur bei [NivarisEntity.resonance]).
+ * Renderer der Drachin als Schlangendrache: setzt Kopf, 40 Glieder, Läufe, Schwingen und Schwanzfächer einzeln auf den
+ * Körper, den [NivarisBody] je Frame berechnet (Matrix je Teil, die Teile selbst bleiben unverdreht). Farbtextur als
+ * Cutout (Membranlöcher), darüber die drei Leuchtschichten mit denselben UVs: Augen + Hornspitzen
+ * ([NivarisEntity.eyeGlow], heller bei [NivarisEntity.lead]), Kehle + Maul + Herzkern ([NivarisEntity.throatGlow]) und
+ * die Resonanzlinien (nur bei [NivarisEntity.resonance]).
+ *
+ * Der Körper reicht bis zu 96 Blöcke von der Entity weg (an der Nadel noch weiter): Culling ist aus, gezeichnet wird
+ * immer, solange der Client die Entity kennt.
  */
 class NivarisRenderer(context: EntityRendererFactory.Context) :
     LivingEntityRenderer<NivarisEntity, NivarisRenderState, NivarisModel>(context, NivarisModel(context.getPart(NivarisRenderers.LAYER)), 3.2f) {
@@ -32,30 +43,12 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
     /** Weiche Überblendung Boden ↔ Flug je Entity (Flag wechselt sofort, das Modell nicht). */
     private val flyBlend = WeakHashMap<NivarisEntity, FloatArray>()
 
-    init {
-        addFeature(object : FeatureRenderer<NivarisRenderState, NivarisModel>(this) {
-            override fun render(matrices: MatrixStack, queue: OrderedRenderCommandQueue, light: Int, state: NivarisRenderState, limbAngle: Float, limbDistance: Float) {
-                val batch = queue.getBatchingQueue(1)
-                // Augen: Grundglimmen, eyeGlow hebt; führt sie den Takt, leuchten sie heller und pulsieren ruhig.
-                var eyes = 0.3f + state.eyeGlow / 100f * 0.7f
-                if (state.lead) eyes = 0.85f + 0.15f * sin(state.age * 0.18f)
-                submit(batch, state, matrices, eyesLayer, eyes)
-                // Kehle und Herzkern: kaum sichtbar in Ruhe, beim Atemholen hell mit leichtem Flackern.
-                val throat = state.throatGlow / 100f
-                val heart = 0.1f + throat * 0.9f * (0.92f + 0.08f * sin(state.age * 0.9f))
-                submit(batch, state, matrices, heartLayer, heart)
-                if (state.resonance) {
-                    submit(batch, state, matrices, resonanceLayer, 0.8f + 0.2f * sin(state.age * 0.25f))
-                }
-            }
-        })
-    }
+    /** Körper (Spur, Überblendung) je Entity. */
+    private val bodies = WeakHashMap<NivarisEntity, NivarisBody>()
 
-    private fun submit(batch: RenderCommandQueue, state: NivarisRenderState, matrices: MatrixStack, layer: net.minecraft.client.render.RenderLayer, alpha: Float) {
-        val a = (MathHelper.clamp(alpha, 0f, 1f) * 255f).toInt()
-        if (a <= 2) return
-        batch.submitModel(model, state, matrices, layer, 0xF000F0, OverlayTexture.DEFAULT_UV, (a shl 24) or 0xFFFFFF, null, 0, null)
-    }
+    private val rot = Quaternionf()
+    private val rot2 = Quaternionf()
+    private val m3 = Matrix3f()
 
     override fun createRenderState() = NivarisRenderState()
     override fun getTexture(state: NivarisRenderState): Identifier = texture
@@ -73,6 +66,7 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
         state.eyeGlow = entity.eyeGlow
         state.lead = entity.lead
         state.resonance = entity.resonance
+        state.mode = entity.mode
         // Flug-Überblendung: etwa 10 Ticks von Boden zu Luft und zurück.
         val now = entity.age + tickDelta
         val blend = flyBlend.getOrPut(entity) { floatArrayOf(if (entity.flying) 1f else 0f, now) }
@@ -82,18 +76,132 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
         blend[0] = if (blend[0] < target) minOf(target, blend[0] + step) else maxOf(target, blend[0] - step)
         blend[1] = now
         state.fly = blend[0]
+        model.pose(state)
+        bodies.getOrPut(entity) { NivarisBody() }.update(entity, state, tickDelta)
     }
 
-    override fun scale(state: NivarisRenderState, matrices: MatrixStack) {
-        matrices.scale(SCALE, SCALE, SCALE)
+    override fun render(state: NivarisRenderState, matrices: MatrixStack, queue: OrderedRenderCommandQueue, cameraState: CameraRenderState) {
+        if (!state.bodyReady || state.invisible) return
+        val overlay = getOverlay(state, 0f)
+        model.openJaw(state.p[NivarisModel.JAW])
+        draw(queue, matrices, state, model.getLayer(texture), overlay, -1, ALL, true)
+        val batch = queue.getBatchingQueue(1)
+        // Augen: Grundglimmen, eyeGlow hebt; führt sie den Takt, leuchten sie heller und pulsieren ruhig.
+        var eyes = 0.3f + state.eyeGlow / 100f * 0.7f
+        if (state.lead) eyes = 0.85f + 0.15f * sin(state.age * 0.18f)
+        glow(batch, matrices, state, eyesLayer, eyes, HEAD)
+        // Kehle, Maul und Herzkern: kaum sichtbar in Ruhe, beim Atemholen hell mit leichtem Flackern.
+        val throat = state.throatGlow / 100f
+        glow(batch, matrices, state, heartLayer, 0.1f + throat * 0.9f * (0.92f + 0.08f * sin(state.age * 0.9f)), FRONT)
+        if (state.resonance) glow(batch, matrices, state, resonanceLayer, 0.8f + 0.2f * sin(state.age * 0.25f), ALL)
     }
+
+    private fun glow(q: RenderCommandQueue, matrices: MatrixStack, state: NivarisRenderState, layer: RenderLayer, alpha: Float, which: Int) {
+        val a = (MathHelper.clamp(alpha, 0f, 1f) * 255f).toInt()
+        if (a <= 2) return
+        draw(q, matrices, state, layer, net.minecraft.client.render.OverlayTexture.DEFAULT_UV, (a shl 24) or 0xFFFFFF, which, false)
+    }
+
+    /** Alle (oder einige) Teile auf den Körper setzen. [lit] = Weltlicht je Glied, sonst voll leuchtend. */
+    private fun draw(q: RenderCommandQueue, matrices: MatrixStack, s: NivarisRenderState, layer: RenderLayer, overlay: Int, color: Int, which: Int, lit: Boolean) {
+        val m = model
+        val scale = NivarisShape.SCALE
+        fun light(i: Int) = if (lit) s.lights[i] else FULL
+
+        // Kopf (mit Kiefer).
+        matrices.push()
+        matrices.translate(s.px[0], s.py[0], s.pz[0])
+        orient(matrices, s.headFrame, 0)
+        matrices.scale(scale, scale, scale)
+        q.submitModelPart(m.head, matrices, layer, light(0), overlay, null, color, null)
+        matrices.pop()
+        if (which == HEAD) return
+
+        val count = if (which == FRONT) 6 else NivarisShape.SEGMENTS
+        for (i in 0 until count) {
+            matrices.push()
+            matrices.translate(s.px[i], s.py[i], s.pz[i])
+            orient(matrices, s.frame, i * 9)
+            val g = scale * s.girth[i]
+            val st = s.stretch[i]
+            // Etwas länger als der Abstand, damit an Biegungen keine Fugen aufgehen.
+            matrices.scale(g, g, scale * st * 1.03f)
+            q.submitModelPart(m.glied(i), matrices, layer, light(i), overlay, null, color, null)
+            if (which == ALL) attachments(q, matrices, s, i, layer, light(i), overlay, color, st)
+            matrices.pop()
+        }
+        if (which != ALL) return
+
+        // Schwanzfächer am letzten Punkt, unverjüngt (für den Endquerschnitt gebaut).
+        val last = NivarisShape.SEGMENTS
+        matrices.push()
+        matrices.translate(s.px[last], s.py[last], s.pz[last])
+        orient(matrices, s.frame, (last - 1) * 9)
+        matrices.scale(scale, scale, scale)
+        q.submitModelPart(m.tailFan, matrices, layer, light(last), overlay, null, color, null)
+        matrices.pop()
+    }
+
+    /** Läufe und Schwingen im Raum ihres Glieds (Ansatzstellen aus tools/assets/nivaris_model.py, ATTACH). */
+    private fun attachments(q: RenderCommandQueue, matrices: MatrixStack, s: NivarisRenderState, i: Int, layer: RenderLayer, light: Int, overlay: Int, color: Int, stretch: Float) {
+        val p = s.p
+        val m = model
+        when (i) {
+            NivarisShape.WING_GLIED -> {
+                val w = MathHelper.clamp(p[NivarisModel.WING], 0f, 1f)
+                val flap = p[NivarisModel.FLAP]
+                val flapRoll = (if (flap > 0f) 40f * flap else 34f * flap) * MathHelper.RADIANS_PER_DEGREE
+                val yaw = 84f * MathHelper.RADIANS_PER_DEGREE * (1f - w)
+                val roll = 14f * MathHelper.RADIANS_PER_DEGREE * (1f - w) + flapRoll * w
+                // wing_r: Winkel wie in WING_POSES, wing_l gespiegelt (yaw und roll mit umgekehrtem Vorzeichen).
+                limb(q, matrices, m.wingR, -6f, -6f, 4f, rot.rotationZYX(roll, yaw, 0f), stretch, layer, light, overlay, color)
+                limb(q, matrices, m.wingL, 6f, -6f, 4f, rot.rotationZYX(-roll, -yaw, 0f), stretch, layer, light, overlay, color)
+            }
+            NivarisShape.FORE_GLIED -> {
+                val fore = p[NivarisModel.FORE]
+                val swipe = p[NivarisModel.SWIPE]
+                limb(q, matrices, m.foreR, -7f, 3f, 8f, rot.rotationZYX(-0.6f * swipe, 0.3f * swipe, fore - 0.9f * swipe), stretch, layer, light, overlay, color)
+                limb(q, matrices, m.foreL, 7f, 3f, 8f, rot.rotationZYX(0f, 0f, fore), stretch, layer, light, overlay, color)
+            }
+            NivarisShape.HIND_GLIED -> {
+                val hind = p[NivarisModel.HIND]
+                limb(q, matrices, m.hindR, -6f, 3f, 8f, rot.rotationZYX(0f, 0f, hind), stretch, layer, light, overlay, color)
+                limb(q, matrices, m.hindL, 6f, 3f, 8f, rot.rotationZYX(0f, 0f, hind), stretch, layer, light, overlay, color)
+            }
+        }
+    }
+
+    private fun limb(
+        q: RenderCommandQueue, matrices: MatrixStack, part: ModelPart, x: Float, y: Float, z: Float, r: Quaternionf, stretch: Float,
+        layer: RenderLayer, light: Int, overlay: Int, color: Int,
+    ) {
+        matrices.push()
+        matrices.translate(x / 16f, y / 16f, z / 16f)
+        // Die Längsdehnung des Glieds nicht auf Läufe und Schwingen übertragen.
+        matrices.scale(1f, 1f, 1f / (stretch * 1.03f))
+        matrices.multiply(rot2.set(r))
+        q.submitModelPart(part, matrices, layer, light, overlay, null, color, null)
+        matrices.pop()
+    }
+
+    /** Dreht den Modellraum auf den Rahmen (Spalten: Modell-x, Modell-y, Modell-z in Weltrichtung). */
+    private fun orient(matrices: MatrixStack, f: FloatArray, at: Int) {
+        m3.set(f[at], f[at + 1], f[at + 2], f[at + 3], f[at + 4], f[at + 5], f[at + 6], f[at + 7], f[at + 8])
+        matrices.multiply(rot.setFromNormalized(m3))
+    }
+
+    override fun getShadowRadius(state: NivarisRenderState): Float = if (state.mode != NivarisMode.NORMAL) 0f else super.getShadowRadius(state)
+
+    override fun shouldRender(entity: NivarisEntity, frustum: Frustum, x: Double, y: Double, z: Double): Boolean = true
 
     override fun canBeCulled(entity: NivarisEntity): Boolean = false
 
     override fun hasLabel(entity: NivarisEntity, squaredDistance: Double): Boolean = false
 
     private companion object {
-        /** Modell in 1/10 Block gebaut (tools/assets/nivaris_model.py: SCALE). */
-        const val SCALE = 1.6f
+        const val ALL = 0
+        const val HEAD = 1
+        const val FRONT = 2
+        const val FULL = 0xF000F0
     }
 }

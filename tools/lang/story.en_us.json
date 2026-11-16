@@ -13,6 +13,7 @@
  "hha_arius.line.dragon.name": "Nivaris.",
  "hha_arius.line.dragon.polite": "I followed her all the way here. She was here first. Be polite.",
  "hha_arius.line.dragon.polite_short": "Be polite.",
+ "hha_arius.line.dragon.wake": "Hear that? That is not the wind.",
  "hha_arius.line.home.astoria": "Where I come from there's a village called Eirholm. This place had no name. Now it has mine.",
  "hha_arius.line.home.far": "Astoria is farther than your maps go. I checked.",
  "hha_arius.line.rumor.olympus": "On my way here there was a temple on a marble mountain. Four stones wanted gifts from me. All I had was snow.",
@@ -73,5 +74,6 @@
  "death.attack.hha_arius.null_cut.player": "%1$s stood in the line",
  "death.attack.hha_arius.impact": "%1$s was brought down by %2$s",
  "death.attack.hha_arius.impact.player": "%1$s was brought down",
- "biome.hha_arius.eirholm": "Sanctum of Eirholm"
+ "biome.hha_arius.eirholm": "Sanctum of Eirholm",
+ "hha_arius.cine.nivaris": "The Old One of the Eir Glacier"
 }

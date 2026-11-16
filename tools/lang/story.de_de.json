@@ -13,6 +13,7 @@
  "hha_arius.line.dragon.name": "Nivaris.",
  "hha_arius.line.dragon.polite": "Ich bin ihr bis hierher gefolgt. Sie war vor mir da. Sei höflich.",
  "hha_arius.line.dragon.polite_short": "Sei höflich.",
+ "hha_arius.line.dragon.wake": "Hört ihr das? Das ist nicht der Wind.",
  "hha_arius.line.home.astoria": "Wo ich herkomme, gibt es ein Dorf namens Eirholm. Dieser Ort hatte keinen Namen. Jetzt hat er meinen.",
  "hha_arius.line.home.far": "Astoria ist weiter weg, als eure Karten reichen. Ich habe nachgesehen.",
  "hha_arius.line.rumor.olympus": "Auf dem Weg hierher stand ein Tempel auf einem Marmorberg. Vier Steine wollten Geschenke von mir. Ich hatte nur Schnee dabei.",
@@ -73,5 +74,6 @@
  "death.attack.hha_arius.null_cut.player": "%1$s stand in der Linie",
  "death.attack.hha_arius.impact": "%1$s wurde von %2$s zu Boden gebracht",
  "death.attack.hha_arius.impact.player": "%1$s wurde zu Boden gebracht",
- "biome.hha_arius.eirholm": "Heiligtum von Eirholm"
+ "biome.hha_arius.eirholm": "Heiligtum von Eirholm",
+ "hha_arius.cine.nivaris": "Die Alte vom Eirgletscher"
 }

@@ -158,12 +158,14 @@ object ArenaLayout {
 
     /**
      * Windung um die Nadel (Auftritt): Punkt auf der Helix bei s = 0 (Schwanzspitze, unten) … 1 (Hals unter dem Gipfel),
-     * 2,25 Umläufe zwischen y 70 und y 168, Abstand zur Felswand 2,5 Blöcke (+ Körperradius). Der Kopf ragt darüber auf.
+     * 1½ Umläufe um das obere, schlanke Drittel zwischen y 144 und y 170 – genau so viel, wie der 96-Block-Körper füllt
+     * (Abstand zur Felswand ≥ 1,6 Blöcke). Der Kopf richtet sich knapp über dem Gipfel (y 185) auf. Für die Wucht soll
+     * die weite Kameraeinstellung das obere Drittel der Nadel füllen, nicht den ganzen Berg.
      */
     fun coil(s: Double): Vec3d {
-        val y = 70.0 + (168.0 - 70.0) * s
+        val y = 144.0 + (170.0 - 144.0) * s
         val r = spireRadius(y) + 2.5 + 2.2
-        val a = s * 2.25 * 2 * PI
+        val a = s * 1.5 * 2 * PI
         return Vec3d(SPIRE.x + 0.5 + sin(a) * r, y, SPIRE.z + 0.5 + cos(a) * r)
     }
 

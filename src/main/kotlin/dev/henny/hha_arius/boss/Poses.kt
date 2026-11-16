@@ -191,3 +191,128 @@ object NivarisPose {
 
     const val COUNT = 20
 }
+
+/**
+ * Darstellungszustand des Schlangenkörpers ([NivarisEntity.mode]). Nur hinten anfügen (geht über den DataTracker).
+ * Der Server schaltet ihn im Auftritt ([entrance]); die Clients zeichnen danach, Nachzügler bekommen ihn mit dem
+ * DataTracker automatisch.
+ */
+object NivarisMode {
+    /** Kampf: Kopf folgt der Entity, der Körper der mitgeschriebenen Spur (Flug) bzw. liegt in Bögen (Boden). */
+    const val NORMAL = 0
+
+    /** Um die Nadel gewunden (Helix [dev.henny.hha_arius.arena.ArenaLayout.coil]), Kopf über dem Gipfel. */
+    const val COIL = 1
+
+    /** Löst sich von der Nadel: [NivarisEntity.uncoil] 0..1 ist der Weg entlang [EntrancePath]. */
+    const val UNCOIL = 2
+}
+
+/**
+ * Gemeinsame Maße des Schlangenkörpers für Server (Anker, Trefferzonen) und Client (Renderer). Alle Längen in Blöcken.
+ *
+ * Der Entity-Punkt ist der Bodenpunkt unter dem **Rumpf vorn** (Glieder 2–4, Trefferbox 4,5 × 3,6); die Rumpfachse
+ * liegt [SPINE_UP] darüber. Der Kopf hängt nicht an einem festen Körper, sondern sitzt je Pose an einem Gelenkpunkt
+ * vor/über dem Rumpf ([head]); Hals und Körper folgen ihm (siehe client/model/nivaris/NivarisModel.kt).
+ */
+object NivarisShape {
+    /** Renderer-Faktor: 1 Modelleinheit = SCALE/16 Blöcke, ein Glied (16 Einheiten) = 2,4 Blöcke. */
+    const val SCALE = 2.4f
+
+    /** Bogenlänge je Glied. */
+    const val SEGMENT = 2.4
+
+    const val SEGMENTS = dev.henny.hha_arius.arena.ArenaLayout.NIVARIS_SEGMENTS
+
+    /** Höhe der Rumpfachse über dem Entity-Punkt (Mitte der Trefferbox). */
+    const val SPINE_UP = 1.8
+
+    /** Schädelmitte (Modell: (0, −2,5, −9) im Kopfteil) liegt so weit vor bzw. über dem Kopfgelenk. */
+    const val HEAD_CENTER = 9.0 * SCALE / 16.0
+    const val HEAD_CENTER_UP = 2.5 * SCALE / 16.0
+
+    /** Kehlnaht (Modell: (0, 4,5, −1) im Kopfteil) unter dem Kopfgelenk. */
+    const val THROAT_DOWN = 4.5 * SCALE / 16.0
+
+    /** Herzkern (Modell: (0, 7,5, 8) in Glied 3) unter der Rumpfachse; Glied 3 liegt etwa über dem Entity-Punkt. */
+    const val HEART_DOWN = 7.5 * SCALE / 16.0 * 1.1
+
+    /** Gliedteile: 0 = Hals, 3 = Herzenserbe, jedes zweite (bis 37) mit Kristallplatte. */
+    const val HEART_GLIED = 3
+    const val WING_GLIED = 2
+    const val FORE_GLIED = 3
+    const val HIND_GLIED = 17
+
+    /** Kopfgelenk relativ zur Entity: [fwd] entlang der Blickrichtung, [up] über dem Entity-Punkt, [pitch] + = Nase runter. */
+    class Head(val fwd: Double, val up: Double, val pitch: Double)
+
+    private fun h(fwd: Double, up: Double, pitch: Double) = Head(fwd, up, pitch)
+
+    private val GROUND = Array(NivarisPose.COUNT) { h(3.0, 5.4, 0.2) }.also {
+        it[NivarisPose.INHALE] = h(1.6, 6.8, -0.45)
+        it[NivarisPose.BREATH] = h(4.0, 4.4, 0.5)
+        it[NivarisPose.LAND] = h(3.2, 4.6, 0.3)
+        it[NivarisPose.TAIL] = h(2.8, 5.0, 0.2)
+        it[NivarisPose.WING_GUST] = h(2.8, 5.8, 0.0)
+        it[NivarisPose.GRAB] = h(4.6, 1.6, 1.0)
+        it[NivarisPose.THROW] = h(3.2, 5.6, 0.1)
+        it[NivarisPose.ROAR] = h(2.2, 7.2, -0.75)
+        it[NivarisPose.DOWNED] = h(5.0, 0.9, 0.05)
+        it[NivarisPose.EXHAUSTED] = h(4.6, 1.2, 0.25)
+        it[NivarisPose.TAKEOFF] = h(3.4, 5.6, 0.05)
+        it[NivarisPose.RESONANCE] = h(2.0, 7.6, -0.55)
+        it[NivarisPose.LIE_DOWN] = h(3.6, 1.1, 0.1)
+        it[NivarisPose.FREEZE_FIELD] = h(3.8, 5.0, 0.6)
+    }
+
+    private val AIR = Array(NivarisPose.COUNT) { h(5.6, 2.6, 0.15) }.also {
+        it[NivarisPose.GLIDE] = h(6.4, 1.9, 0.05)
+        it[NivarisPose.INHALE] = h(4.2, 4.0, -0.4)
+        it[NivarisPose.BREATH] = h(6.2, 1.4, 0.6)
+        it[NivarisPose.DIVE] = h(6.6, 0.8, 0.55)
+        it[NivarisPose.CRASH_DIVE] = h(3.0, -3.5, 1.35)
+        it[NivarisPose.LAND] = h(5.2, 2.4, 0.3)
+        it[NivarisPose.DOWNED] = h(4.5, 1.0, 0.3)
+        it[NivarisPose.RESONANCE] = h(4.0, 5.5, -0.5)
+        it[NivarisPose.FREEZE_FIELD] = h(5.6, 2.0, 0.7)
+        it[NivarisPose.WING_GUST] = h(5.0, 3.0, 0.0)
+        it[NivarisPose.ROAR] = h(4.6, 4.6, -0.7)
+    }
+
+    /** Gehaltene Endhaltung des Kopfgelenks (Anker, Trefferbox). Das Modell blendet weich dorthin. */
+    fun head(pose: Int, flying: Boolean): Head = (if (flying) AIR else GROUND).getOrElse(pose) { if (flying) AIR[0] else GROUND[0] }
+
+    /** Schädelmitte (vor, hoch) relativ zur Entity. */
+    fun headCenter(pose: Int, flying: Boolean): Pair<Double, Double> {
+        val k = head(pose, flying)
+        val c = kotlin.math.cos(k.pitch)
+        val s = kotlin.math.sin(k.pitch)
+        return (k.fwd + c * HEAD_CENTER + s * HEAD_CENTER_UP) to (k.up - s * HEAD_CENTER + c * HEAD_CENTER_UP)
+    }
+
+    /** Mitte zwischen Kehlnaht (unter dem Kopfgelenk) und Herzkern (Bauch von Glied 3, etwa über dem Entity-Punkt). */
+    fun throat(pose: Int, flying: Boolean): Pair<Double, Double> {
+        val k = head(pose, flying)
+        val throatFwd = k.fwd - kotlin.math.sin(k.pitch) * THROAT_DOWN
+        val throatUp = k.up - kotlin.math.cos(k.pitch) * THROAT_DOWN
+        return (throatFwd + 0.0) * 0.5 to (throatUp + SPINE_UP - HEART_DOWN) * 0.5
+    }
+
+    /**
+     * Verjüngung des Querschnitts (x und y) je Glied (0 = Hals … 39); die Länge bleibt, damit der Bogenabstand stimmt.
+     * Gleiche Tabelle wie `taper(i)` in tools/assets/nivaris_model.py (docs/NIVARIS_SERPENT.md).
+     */
+    fun taper(i: Int): Float = when {
+        i <= 0 -> 1f
+        i < 5 -> floatArrayOf(0.96f, 1.04f, 1.1f, 1.12f)[i - 1]
+        else -> (1.12 - 0.8 * Math.pow(((i - 5) / (SEGMENTS - 1.0 - 5.0)).coerceIn(0.0, 1.0), 1.25)).toFloat()
+    }
+
+    /** Welches Teil auf Glied i sitzt (wie `glied_part` in nivaris_model.py). */
+    fun gliedPart(i: Int): String = when {
+        i == 0 -> "neck"
+        i == HEART_GLIED -> "segment_heart"
+        i % 2 == 0 && i < SEGMENTS - 2 -> "segment_dorsal"
+        else -> "segment"
+    }
+}

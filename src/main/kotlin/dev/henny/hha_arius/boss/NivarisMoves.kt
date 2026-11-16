@@ -15,6 +15,9 @@ import kotlin.math.sqrt
 /**
  * Nivaris (Konzept 4.3, 5.2): Luft ≤ 9 s → Landung → Boden mit 2–3 Angriffen → Erschöpfung (offen) → Abflug. Ihr Atem
  * hinterlässt Eiskämme; ein Sturzflug durch einen Kamm bringt sie zu Boden. Ansagen in der Gefahrenfarbe SOUL.
+ *
+ * Seit V2 ein 96 Blöcke langer Schlangendrache: Mechanik, Zeiten und Ansagen sind unverändert; der Server bewegt nur den
+ * Rumpf vorn (Entity, Trefferbox) und setzt die Pose, Kopf und Körper ergeben sich daraus ([NivarisShape], Renderer).
  */
 class NivarisMoves(private val f: EirholmFight) {
 
@@ -31,19 +34,19 @@ class NivarisMoves(private val f: EirholmFight) {
 
     // --- Trefferzonen ----------------------------------------------------------------------------------------------------
 
-    /** Anker relativ zur Entity: vorwärts entlang der Blickrichtung, hoch. Werte aus docs/NIVARIS_ANCHORS.md. */
+    /**
+     * Anker relativ zur Entity: vorwärts entlang der Blickrichtung, hoch (siehe docs/NIVARIS_ANCHORS.md). Kopf und
+     * Kehle folgen dem Kopfgelenk der laufenden Pose ([NivarisShape]); der lange Körper ist nur Darstellung.
+     */
     private fun anchor(zone: Zone): Pair<Double, Double> {
         val d = f.nivaris ?: return 0.0 to 0.0
+        // An der Nadel (Auftritt) steht die Entity als Stellvertreter in Reichweite; keine Zonen, Kopfbox bleibt bei ihr.
+        if (d.mode != NivarisMode.NORMAL) return 0.0 to NivarisShape.SPINE_UP
         return when (zone) {
-            Zone.HEAD -> when (d.pose) {
-                NivarisPose.DOWNED -> NivarisAnchors.HEAD_DOWNED
-                NivarisPose.EXHAUSTED -> NivarisAnchors.HEAD_LOW
-                NivarisPose.INHALE -> if (d.flying) 3.17 to 7.81 else NivarisAnchors.HEAD_INHALE
-                else -> if (d.flying) NivarisAnchors.HEAD_HOVER else NivarisAnchors.HEAD
-            }
-            Zone.THROAT -> if (d.flying) NivarisAnchors.THROAT_HOVER else NivarisAnchors.THROAT
+            Zone.HEAD -> NivarisShape.headCenter(d.pose, d.flying)
+            Zone.THROAT -> NivarisShape.throat(d.pose, d.flying)
             Zone.BODY -> NivarisAnchors.BODY
-            Zone.TAIL -> NivarisAnchors.TAIL
+            Zone.TAIL -> if (d.flying) NivarisAnchors.TAIL_AIR else NivarisAnchors.TAIL
         }
     }
 
@@ -52,6 +55,15 @@ class NivarisMoves(private val f: EirholmFight) {
         val (fwd, up) = anchor(zone)
         val dir = f.facing(d)
         return Vec3d(d.x + dir.x * fwd, d.y + up, d.z + dir.z * fwd)
+    }
+
+    /** Maul (vor der Schädelmitte), für sichtbare Effekte. */
+    private fun mouth(): Vec3d {
+        val d = f.nivaris ?: return Vec3d.ZERO
+        val k = NivarisShape.head(d.pose, d.flying)
+        val dir = f.facing(d)
+        val c = anchorPos(Zone.HEAD)
+        return c.add(dir.multiply(kotlin.math.cos(k.pitch) * 1.4)).add(0.0, -kotlin.math.sin(k.pitch) * 1.4 - 0.3, 0.0)
     }
 
     fun zoneOf(player: ServerPlayerEntity, source: DamageSource, projectile: Boolean): Zone {
@@ -248,7 +260,8 @@ class NivarisMoves(private val f: EirholmFight) {
         d.play(NivarisPose.BREATH)
         f.sound("nivaris.breath", d.entityPos, 3.5f)
         for (p in line.hits(f.players())) if (!f.coveredFrom(d.entityPos.add(0.0, 2.0, 0.0), p)) f.hurt(p, 14f, Damage.Kind.FROST_BREATH, d)
-        Vfx.beam(f.world, style, d.entityPos.add(lineDir.multiply(3.0)).add(0.0, 2.0, 0.0), Vec3d(b.x, f.floorY + 0.5, b.z), 2.2f, 16)
+        // Sichtbar aus dem Maul (Kopf des Schlangenkörpers); Treffer und Deckung wie bisher über die Bahn.
+        Vfx.beam(f.world, style, mouth(), Vec3d(b.x, f.floorY + 0.5, b.z), 2.2f, 16)
         // Sie gleitet die Bahn entlang.
         val endAir = airPoint(b.add(lineDir.multiply(3.0)), 6.0)
         flyTo(endAir, 1.6, 22, faceTarget = endAir.add(lineDir))
@@ -426,7 +439,7 @@ class NivarisMoves(private val f: EirholmFight) {
         val line = f.calls.line(from, to, 2.5f, AriusTimings.NIVARIS_WINDUP[NivarisPose.THROW], Telegraph.Pace.PROJECTILE, style = style)
         d.play(NivarisPose.THROW, line.ticks)
         wait(line.ticks - 8)
-        f.fx(FxKind.ICE_CHUNK, d.entityPos.add(0.0, 3.0, 0.0), to.add(0.0, 0.5, 0.0), a = 2f, life = 8)
+        f.fx(FxKind.ICE_CHUNK, mouth(), to.add(0.0, 0.5, 0.0), a = 2f, life = 8)
         wait(8)
         f.sound("ridge.break", to, 3f, 0.6f)
         for (p in line.hits(f.players())) f.hurt(p, 14f, Damage.Kind.IMPACT, d)
@@ -476,19 +489,25 @@ class NivarisMoves(private val f: EirholmFight) {
 }
 
 /**
- * Trefferzonen-Anker von Nivaris (vorwärts, hoch) in Blöcken relativ zur Entity. Startwerte; nach dem Modell-Bericht
- * (docs/NIVARIS_ANCHORS.md) abgeglichen.
+ * Trefferzonen-Anker von Nivaris (vorwärts, hoch) in Blöcken relativ zur Entity, die nicht am Kopf hängen. Kopf und
+ * Kehle kommen je Pose aus [NivarisShape.headCenter] bzw. [NivarisShape.throat] (Tabelle in docs/NIVARIS_ANCHORS.md).
  */
 object NivarisAnchors {
-    val HEAD = 5.06 to 5.41
-    val HEAD_INHALE = 3.58 to 6.87
-    val HEAD_LOW = 5.48 to 0.68
-    val HEAD_DOWNED = 5.81 to 0.71
-    val HEAD_HOVER = 5.23 to 6.05
+    /** Rumpf vorn: Mitte der Trefferbox (Glieder 2–4). */
+    val BODY = 0.0 to NivarisShape.SPINE_UP
 
-    /** Mitte zwischen Kehle und Herzkern (IDLE). */
-    val THROAT = 2.75 to 2.65
-    val THROAT_HOVER = 2.65 to 3.66
-    val BODY = 0.0 to 1.8
-    val TAIL = -8.28 to 1.11
+    /**
+     * Schwanz am Boden: Die Schwanzspitze liegt innen in der Ruhe-Spirale hinter ihr (siehe NivarisModel.restCurve);
+     * als Trefferzone zählt die erste Windung hinter der Trefferbox.
+     */
+    val TAIL = -8.0 to 0.9
+
+    /** Im Flug zieht der Körper weit hinter ihr her; nur der Anfang ist in Reichweite der Trefferbox. */
+    val TAIL_AIR = -14.0 to 1.2
+
+    // Gehaltene Endhaltungen für Verweise in Szenen (vorher Konstanten): jetzt aus der Formtabelle.
+    val HEAD: Pair<Double, Double> get() = NivarisShape.headCenter(NivarisPose.IDLE, false)
+    val HEAD_HOVER: Pair<Double, Double> get() = NivarisShape.headCenter(NivarisPose.HOVER, true)
+    val THROAT: Pair<Double, Double> get() = NivarisShape.throat(NivarisPose.IDLE, false)
+    val THROAT_HOVER: Pair<Double, Double> get() = NivarisShape.throat(NivarisPose.HOVER, true)
 }

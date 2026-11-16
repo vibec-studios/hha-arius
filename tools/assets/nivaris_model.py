@@ -1,1247 +1,1143 @@
-"""Nivaris, die Alte vom Eirgletscher: uralte weiße Drachin (Abschnitt II/III).
+"""Nivaris, die Alte vom Eirgletscher: uralte weiße Drachin, jetzt als langer Schlangendrache (96 Blöcke, 40 Glieder).
 
-Erkennungsmerkmale (alle im Schattenriss):
-1. Langer, gerader Hals; am Hinterkopf eine Krone aus nach hinten gekämmten Eishörnern, die wie ein gebrochener
-   Heiligenschein um den Kopf steht (ein Horn abgebrochen, eines fehlt).
-2. Vierbeiner mit schweren Vorderläufen und hohen Schultern; die Schwingen sind eigene Glieder auf dem Rücken.
-3. Zerfranste Membranen mit Löchern wie altes Segeltuch (Ausschnitt über die Textur, Cutout).
-4. Rückenkamm aus Kristallplatten, langer Schwanz mit einem Fächer aus Eisklingen.
+Erkennungsmerkmale (wie beim alten Vierbeiner, siehe _reference_nivaris_quadruped.py):
+1. Krone aus nach hinten gekämmten Eishörnern am Hinterkopf, wie ein gebrochener Heiligenschein; ein Horn abgebrochen,
+   an einer Stelle fehlt eines ganz. Dazu Eisbart unter dem Kinn, lange Barteln und Wangenstacheln.
+2. Augen: rechtes golden, linkes eisblau (rechts = -x, Blick nach -z).
+3. Rückenkamm aus Kristallplatten (auf jedem zweiten Glied), dazwischen kleine Dornen.
+4. Schwanzfächer aus Eisklingen nach dem letzten Glied.
+5. Weiße Schuppen mit grauen Altersrändern, perlmuttgrauer, quer geschienter Bauch.
+6. Herzenserbe in der Brust (Glied 3, Bauchseite): goldener Kern mit blauem Rand zwischen zwei Brustschilden.
+7. Zerfranste, alte Schwingen mit Löchern (Cutout), kleine kräftige Läufe mit Klauen.
 
-Material: weiße Schuppen mit grauen Altersrändern, Bauch perlmuttgrau, Membranen blassblau-grau, Eis für Hörner, Kamm
-und Fächer. Augen: rechtes golden, linkes eisblau. In der Brust das Herzenserbe (goldener Kern mit blauem Rand) zwischen
-zwei Brustschuppen.
+Vertrag mit dem Renderer (siehe docs/NIVARIS_SERPENT.md): Modellraum 1 Einheit = 1/16, +y nach unten, Kopf blickt
+nach -z; Renderer-Faktor SCALE = 2,4, ein Glied = 16 Einheiten = 2,4 Blöcke. Alle Teile hängen direkt unter root mit
+Drehpunkt 0 und ohne Drehung; Kinder (Kiefer, Flügelglieder, Beinglieder, Barteln) haben eigene Drehpunkte.
 
-Koordinaten: 1/16 Block vor dem Renderer-Faktor SCALE = 1,6 (also 10 Einheiten = 1 Block), +y nach unten, -z vorn,
-Füße bei y = 24. Ursprung (x = z = 0) liegt unter der Rumpfmitte, dort steht die Entity.
+HD: gemalt mit RES = 2 Texeln je Einheit (Bild 512 x 512), Kotlin meldet 256 x 256 (Minecraft normiert die UVs).
+Alle Maße liegen auf dem Halbeinheiten-Raster. Gemalt wird nach **Raumposition** (Maler bekommen den 3D-Punkt des
+Texels im Teilraum): So laufen Schuppen nahtlos über Quaderkanten und von Glied zu Glied, egal wie die Quader liegen.
+
+Achtung Abbildung: Ober- und Unterseite eines Quaders liegen im Spiel mit Zeile 0 bei z = max (geprüft am
+Bytecode von ModelPart$Cube, 1.21.11); preview.py legt sie bei z = min an. Der Atlas wird deshalb mit der
+Spiel-Abbildung gemalt, preview.py bekommt über Cube.paint die eigene (gleiche Raumpunkte, nur anders adressiert).
 
 Texturen (alle mit denselben UVs):
-* nivaris.png              Farbe (Membranlöcher und Fransen sind transparent, Cutout)
-* nivaris_glow.png         alle Leuchttexel (Augen, Hornspitzen, Kehle, Herzkern), Übersicht
+* nivaris.png              Farbe (Membranlöcher und Fransen transparent, Cutout)
+* nivaris_glow.png         alle Leuchttexel (Übersicht)
 * nivaris_glow_eyes.png    Augen + Hornspitzen (Renderer: eyeGlow, lead)
 * nivaris_glow_heart.png   Kehle, Maul innen, Herzkern (Renderer: throatGlow)
-* nivaris_resonance.png    weiße/blaue Linien in Membranen und Kamm (nur bei resonance = true)
+* nivaris_resonance.png    Linien in Membranen, Kamm, Klingen und entlang des Rückens (nur bei resonance)
 
-`POSES` enthält jede Schlüsselpose der Kotlin-Animation (client/model/nivaris/NivarisModel.kt). Der Block zwischen
-`// <keys>` und `// </keys>` dort wird mit `python tools/assets/nivaris_model.py --kotlin` aus genau diesen Posen
-erzeugt. `python tools/assets/nivaris_model.py --anchors` schreibt docs/NIVARIS_ANCHORS.md.
+Aufrufe:
+    python tools/assets/boss_models.py --only nivaris        # Texturen + NivarisModelData.kt
+    python tools/assets/preview.py nivaris <png> --poses kopf,vorderteil ...
+    python tools/assets/nivaris_serpent_preview.py           # Gesamtwirkung auf Kurven (liegend, Flug, Nadel)
+    python tools/assets/nivaris_model.py --taper             # Verjüngungstabelle für den Renderer
 """
 import math
 import os
-import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
-from bosskit import Cube as _BCube  # noqa: E402
-from modelkit import Model, Part, hexc, mix, ramp, rgb, speckle  # noqa: E402
+from modelkit import Cube as _Cube, Model, Part, hexc, mix, ramp, rgb  # noqa: E402
 from texkit import Image, save  # noqa: E402
 
-SCALE = 1.6          # Renderer-Faktor
-U = 16 / SCALE       # Einheiten je Block (10)
-GROUND = 24
+RES = 2              # Texel je Modelleinheit
+SCALE = 2.4          # Renderer-Faktor
+SEG = 16             # Gliedlänge in Einheiten
+SEGMENTS = 40        # ArenaLayout.NIVARIS_SEGMENTS
+TEX_W, TEX_H = 256, 256
 
 # ---------------------------------------------------------------------------------------------------------------------
-# Paletten
+# Paletten (dunkel -> hell)
 # ---------------------------------------------------------------------------------------------------------------------
-
-SCALES = rgb('#5d636d', '#8a919c', '#b9bfc8', '#dde1e7', '#f3f5f8', '#ffffff')
-AGE = rgb('#6a6f78', '#868b95', '#a3a8b1', '#bfc3ca')
-PEARL = rgb('#6e6a78', '#958fa2', '#b9b3c6', '#d6d1e0', '#ece8f2', '#fbf9fd')
-MEMB = rgb('#4a586c', '#6c7d93', '#8fa1b7', '#b2c2d4', '#d2dee9', '#e8f0f6')
-ICE = rgb('#2f5578', '#5383ac', '#86b3d8', '#b9daf1', '#e2f3fd', '#ffffff')
-CLAW = rgb('#2c2c33', '#4a4a52', '#76747a', '#a8a39a', '#d2cdc2')
-MOUTH = rgb('#1a1420', '#2c2234', '#433248', '#5e4560')
-GOLD_EYE = hexc('#ffd04a')
-BLUE_EYE = hexc('#8fe0ff')
+SCALES = rgb('#4f5663', '#7c8491', '#a9b0bb', '#d2d7de', '#ebeef2', '#f8f9fb', '#ffffff')
+AGE = rgb('#5a5c62', '#77787d', '#94948f', '#b1aea5', '#c9c5ba')        # Altersränder: grau, leicht vergilbt
+FROST = hexc('#7fa3c8')                                                 # kalte Schatten
+PEARL = rgb('#5d5c66', '#86848f', '#adacb6', '#cecdd6', '#e6e5ec', '#f8f7fa')
+MEMB = rgb('#33404f', '#4f5f72', '#6f8297', '#93a5b8', '#b6c5d3', '#d6e1ea')
+ICE = rgb('#17324f', '#2c5a82', '#4f86b3', '#82b5da', '#b8dcf2', '#e4f5fe', '#ffffff')
+CLAW = rgb('#1f2026', '#3a3a42', '#5f5d62', '#8f8a82', '#c2bcae', '#e4dfd2')
+MOUTH = rgb('#140f19', '#261c2e', '#3b2b43', '#56405c', '#7a5a78')
+GOLD_EYE = rgb('#7a4a08', '#c88a18', '#ffcf48', '#fff0a8')
+BLUE_EYE = rgb('#0e3f6e', '#2f88c8', '#8fe0ff', '#e0f8ff')
 GOLD_CORE = rgb('#b86e10', '#f0a828', '#ffd45c', '#fff0b0', '#fffbe6')
-BLUE_RIM = rgb('#1d4f8c', '#2f7fd0', '#5cb4ff', '#a4dcff')
-LIGHT = {'top': 0.14, 'bottom': -0.24, 'front': 0.0, 'back': -0.08, 'left': -0.05, 'right': -0.05}
+BLUE_RIM = rgb('#163f78', '#2f7fd0', '#5cb4ff', '#a4dcff')
 RESO_WHITE = (236, 246, 255)
 RESO_BLUE = (120, 200, 255)
+THROAT_GLOW = (255, 205, 110)
+MOUTH_GLOW = (150, 210, 255)
+
+LIGHT = {'top': 0.12, 'bottom': -0.2, 'front': 0.0, 'back': -0.06, 'left': -0.04, 'right': -0.04}
+NORMAL = {'front': (0, 0, -1), 'back': (0, 0, 1), 'right': (-1, 0, 0), 'left': (1, 0, 0), 'top': (0, -1, 0),
+          'bottom': (0, 1, 0)}
 
 
 def _hash(*v):
     h = 2166136261
     for x in v:
         h = ((h ^ (int(x) & 0xffffffff)) * 16777619) & 0xffffffff
+        h ^= h >> 13
     return h / 0xffffffff
 
 
-def Cube(x, y, z, w, h, d, paint, ch=None, reso=None):
-    """Quader mit Leuchtkanal ('eyes' oder 'heart') und optionalem Resonanz-Maler."""
-    c = _BCube(x, y, z, w, h, d, paint)
-    c.ch = ch
-    c.reso = reso
-    return c
+def vnoise(x, y, z, seed=0):
+    """Glattes Wertrauschen 0..1 (Gitter 1 Einheit)."""
+    ix, iy, iz = math.floor(x), math.floor(y), math.floor(z)
+    fx, fy, fz = x - ix, y - iy, z - iz
+    fx, fy, fz = fx * fx * (3 - 2 * fx), fy * fy * (3 - 2 * fy), fz * fz * (3 - 2 * fz)
+
+    def g(a, b, c):
+        return _hash(ix + a, iy + b, iz + c, seed)
+    x00 = g(0, 0, 0) + (g(1, 0, 0) - g(0, 0, 0)) * fx
+    x10 = g(0, 1, 0) + (g(1, 1, 0) - g(0, 1, 0)) * fx
+    x01 = g(0, 0, 1) + (g(1, 0, 1) - g(0, 0, 1)) * fx
+    x11 = g(0, 1, 1) + (g(1, 1, 1) - g(0, 1, 1)) * fx
+    y0 = x00 + (x10 - x00) * fy
+    y1 = x01 + (x11 - x01) * fy
+    return y0 + (y1 - y0) * fz
+
+
+def fbm(x, y, z, seed=0, octaves=3):
+    v, a, t = 0.0, 1.0, 0.0
+    for o in range(octaves):
+        v += a * vnoise(x, y, z, seed + o * 17)
+        t += a
+        x, y, z, a = x * 2.03, y * 2.03, z * 2.03, a * 0.5
+    return v / t
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-# Maler
+# HD-Quader und Modell
 # ---------------------------------------------------------------------------------------------------------------------
 
-def scales(base=0.6, seed=0, size=3, pal=SCALES, belly_face=None):
-    """Weiße Schuppen als versetzte Bögen; der untere Bogenrand ist grau (Altersrand), alte Schuppen dunkler."""
-    sx = size + 1
-    sy = size
+def _half(v):
+    return abs(v * 2 - round(v * 2)) < 1e-6
 
-    def paint(face, x, y, w, h):
-        if belly_face and face == belly_face:
-            return pearl(0.55, seed)(face, x, y, w, h)
-        row = y // sy
-        shift = (row % 2) * (sx // 2)
-        col = (x + shift) // sx
-        fx = (x + shift) % sx
-        fy = y % sy
-        age = _hash(col, row, seed + 7)
-        v = base + LIGHT[face] + (0.5 - y / max(h - 1, 1)) * 0.1
-        v += (speckle(x, y, seed) - 0.5) * 0.04 + (_hash(col, row, seed) - 0.5) * 0.04
-        v += (0.5 - fy / max(sy - 1, 1)) * 0.06
-        edge = (fy == sy - 1 and 0 < fx < sx - 1) or (fy == sy - 2 and fx in (0, sx - 1))
-        if edge:
-            if age > 0.72:
-                return ramp(AGE, 0.65 + (1.0 - age) * 1.0 + LIGHT[face])
-            v -= 0.05
-        return ramp(pal, v)
+
+class Cube(_Cube):
+    """Quader mit RES Texeln je Einheit. paint(face, p, cube) bekommt den Raumpunkt p des Texels im Teilraum und
+    liefert Farbe, (Farbe, Leuchten) oder (Farbe, Leuchten, Kanal) bzw. None (durchsichtig). Kanal: 'eyes' oder
+    'heart' (Standard: ch des Quaders). reso(face, p, cube) liefert die Resonanzlinie (RGBA) oder None."""
+    res = RES
+
+    def __init__(self, x, y, z, w, h, d, paint, ch=None, reso=None):
+        for v in (w, h, d):
+            if not _half(v):
+                raise SystemExit(f'Nivaris: Maß {v} liegt nicht auf dem Halbeinheiten-Raster')
+        super().__init__(x, y, z, w, h, d, self._preview_paint)
+        self.p3 = paint
+        self.ch = ch
+        self.reso = reso
+        self.share = None     # gleicher Schlüssel = gleiche UVs (nur für Quader mit gleicher Form und gleichem Maler)
+
+    def where(self, face, i, j, game=True):
+        r = RES
+        x0, y0, z0, w, h, d = self.x, self.y, self.z, self.w, self.h, self.d
+        a, b = (i + 0.5) / r, (j + 0.5) / r
+        if face == 'front':
+            return (x0 + a, y0 + b, z0)
+        if face == 'back':
+            return (x0 + w - a, y0 + b, z0 + d)
+        if face == 'right':
+            return (x0, y0 + b, z0 + d - a)
+        if face == 'left':
+            return (x0 + w, y0 + b, z0 + a)
+        zz = (z0 + d - b) if game else (z0 + b)
+        return (x0 + a, y0 if face == 'top' else y0 + h, zz)
+
+    def eval(self, face, i, j, game=True):
+        p = self.where(face, i, j, game)
+        res = self.p3(face, p, self)
+        if res is None:
+            return None, None, None, None
+        if isinstance(res[0], tuple):
+            col, glow = res[0], res[1]
+            ch = res[2] if len(res) > 2 else self.ch
+        else:
+            col, glow, ch = res, None, None
+        reso = self.reso(face, p, self) if self.reso else None
+        return col, glow, ch, reso
+
+    def _preview_paint(self, face, i, j, fw, fh):
+        col, glow, _, _ = self.eval(face, i, j, game=False)
+        if col is None:
+            return None
+        return col if glow is None else (col, glow)
+
+
+def faces_px(c):
+    """Flächen eines Quaders im Bild (Pixel): Name, u, v, Breite, Höhe."""
+    u, v = c.u * RES, c.v * RES
+    w, h, d = (int(round(k * RES)) for k in (c.w, c.h, c.d))
+    return [('top', u + d, v, w, d), ('bottom', u + d + w, v, w, d), ('right', u, v + d, d, h),
+            ('front', u + d, v + d, w, h), ('left', u + d + w, v + d, d, h), ('back', u + d + w + d, v + d, w, h)]
+
+
+class SerpentModel(Model):
+    """Wie modelkit.Model, aber UV-Raster in Modelleinheiten und Bild in RES-facher Größe; malt alle fünf Texturen."""
+
+    def pack(self):
+        cubes = sorted(self.cubes(), key=lambda c: (-math.ceil(c.uv_size[1] - 1e-6), -math.ceil(c.uv_size[0] - 1e-6)))
+        x = y = row = 0
+        shared = {}
+        for c in cubes:
+            if c.share is not None and c.share in shared:
+                c.u, c.v = shared[c.share]
+                continue
+            cw, ch = (int(math.ceil(v - 1e-6)) for v in c.uv_size)
+            if x + cw > self.tex_w:
+                x, y, row = 0, y + row, 0
+            if y + ch > self.tex_h:
+                raise SystemExit(f'Atlas {self.name} zu klein ({self.tex_w}x{self.tex_h})')
+            c.u, c.v = x, y
+            if c.share is not None:
+                shared[c.share] = (x, y)
+            x += cw
+            row = max(row, ch)
+        print(f'{self.name}: {len(cubes)} Quader ({len(cubes) - len(shared) - sum(1 for c in cubes if c.share is None)} mit geteilten UVs), Atlas belegt bis y={y + row}/{self.tex_h} (Bild {self.tex_w * RES}px)')
+
+    def paint(self):
+        W, H = self.tex_w * RES, self.tex_h * RES
+        self.images = {k: Image(W, H) for k in ('albedo', 'glow', 'eyes', 'heart', 'reso')}
+        im = self.images
+        done = set()
+        for c in self.cubes():
+            if c.share is not None:
+                if c.share in done:
+                    continue
+                done.add(c.share)
+            for name, fu, fv, fw, fh in faces_px(c):
+                for iy in range(fh):
+                    for ix in range(fw):
+                        col, glow, ch, reso = c.eval(name, ix, iy, game=True)
+                        if col is None:
+                            continue
+                        im['albedo'].set(fu + ix, fv + iy, col)
+                        if glow is not None:
+                            im['glow'].set(fu + ix, fv + iy, glow)
+                            im['heart' if ch == 'heart' else 'eyes'].set(fu + ix, fv + iy, glow)
+                        if reso is not None:
+                            im['reso'].set(fu + ix, fv + iy, reso)
+        save(im['albedo'], f'textures/entity/{self.texture}.png')
+        save(im['glow'], f'textures/entity/{self.texture}_glow.png')
+        return im['albedo'], im['glow']
+
+
+def variants(model, albedo, glow):
+    save(model.images['eyes'], 'textures/entity/nivaris_glow_eyes.png')
+    save(model.images['heart'], 'textures/entity/nivaris_glow_heart.png')
+    save(model.images['reso'], 'textures/entity/nivaris_resonance.png')
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Maler (alle nach Raumposition)
+# ---------------------------------------------------------------------------------------------------------------------
+
+def _plane(face, p):
+    """Die beiden Flächenkoordinaten eines Raumpunkts (für Facetten und Risse)."""
+    x, y, z = p
+    if face in ('front', 'back'):
+        return x, y
+    if face in ('left', 'right'):
+        return z, y
+    return x, z
+
+
+def _edge_dist(face, p, c):
+    """Abstand (Einheiten) zur nächsten Kante der Fläche."""
+    x, y, z = p
+    dx = min(x - c.x, c.x + c.w - x)
+    dy = min(y - c.y, c.y + c.h - y)
+    dz = min(z - c.z, c.z + c.d - z)
+    if face in ('front', 'back'):
+        return min(dx, dy)
+    if face in ('left', 'right'):
+        return min(dz, dy)
+    return min(dx, dz)
+
+
+def _cold(col, v, k=0.45):
+    """Kalte, blaue Schatten in dunklen Bereichen (Eislicht statt grauem Schmutz)."""
+    return mix(col, FROST, max(0.0, min(1.0, (0.55 - v) * k)))
+
+
+def scale_field(z, s, zp, wp, seed):
+    """Überlappende Schuppen: Reihen entlang z (Länge zp), Spalten um den Körper (Breite wp), jede zweite Reihe
+    versetzt. Jede Schuppe ist eine nach vorn verlängerte Ellipse; die weiter vorn liegende Reihe deckt die nächste
+    (freie Kante zeigt zum Schwanz, +z) und wirft dort einen Schatten.
+    Liefert (Helligkeitsversatz, 'rim'|'shadow'|None, Schuppen-Alter 0..1)."""
+    row0 = math.floor(z / zp)
+    best = None
+    shadow = 0.0
+    for r in (row0 - 2, row0 - 1, row0):
+        shift = 0.5 * (r % 2)
+        c0 = math.floor(s / wp - shift)
+        zc = (r + 0.5) * zp
+        for c in (c0 - 1, c0, c0 + 1):
+            sc = (c + 0.5 + shift) * wp
+            dz = (z - zc) / (0.92 * zp)
+            ds = (s - sc) / (0.66 * wp)
+            d = ds * ds + (dz * dz if dz > 0 else dz * dz * 0.2)
+            if d < 1.0:
+                if best is None or r < best[0] or (r == best[0] and d < best[2]):
+                    best = (r, c, d, dz, ds)
+            elif dz > 0 and d < 1.5:
+                shadow = max(shadow, (1.5 - d) / 0.5)
+    if best is None:
+        return -0.08, 'shadow', 0.5
+    r, c, d, dz, ds = best
+    # Schatten nur von Schuppen, die über dieser liegen (weiter vorn)
+    if shadow > 0 and r == row0 - 2:
+        shadow = 0.0
+    period = max(1, round(16 / zp)) if abs(16 / zp - round(16 / zp)) < 1e-6 else 997
+    age = _hash(c, r % period, seed)
+    dv = 0.08 * (1.0 - d) - 0.02 + (_hash(c, r % 4, seed + 5) - 0.5) * 0.08   # gewölbt; jede Schuppe etwas anders
+    dv -= 0.07 * ds                                   # Licht von oben: obere Hälfte heller (s wächst nach unten)
+    if dz > 0.1:
+        dv += 0.05 * min(1.0, dz)                     # die freie Kante hebt sich ins Licht
+    if abs(ds) < 0.12 and dz > -0.6:
+        dv += 0.03                                    # feiner Kiel
+    kind = None
+    if d > 0.86 and dz > 0.25:
+        kind = 'rim'
+    elif shadow > 0.0:
+        kind = 'shadow'
+        dv -= 0.15 * min(1.0, shadow) ** 0.7
+    return dv, kind, age
+
+
+def hide(seed=0, zp=4.0, wp=3.4, belly=2.2, throat=False, radius=7.0, cy=0.0, base=0.72, joint=True):
+    """Rumpfhaut: weiße Schuppen (oben/Flanken), perlmuttgraue Querschienen (Bauch). Achse = z durch (0, cy)."""
+    def paint(face, p, cube):
+        x, y, z = p
+        yy = y - cy
+        th = math.atan2(x, -yy)
+        a = abs(th)
+        rr = math.hypot(x, yy) or 1.0
+        ny = yy / rr
+        lit = -0.13 * ny + LIGHT[face] * 0.45
+        if joint and z < 1.0:
+            lit -= 0.07 * min(1.0, (1.0 - z) / 1.5)   # Schatten unter dem überlappenden Vorderglied
+        weather = fbm(x * 0.22, y * 0.22, z * 0.22, seed + 3)
+        if a > belly:
+            return scute(face, p, lit, seed, throat)
+        dv, kind, age = scale_field(z, a * radius, zp, wp, seed)
+        v = base + lit + dv + (weather - 0.5) * 0.12 + (_hash(x * 4, y * 4, z * 4, seed) - 0.5) * 0.035
+        if a > belly - 0.16:
+            v -= 0.06                                 # Saum zum Bauch: kleinere, dunklere Schuppen
+            dv2, kind2, _ = scale_field(z * 2.0, a * radius * 2.0, zp, wp, seed + 9)
+            v += dv2 * 0.5
+            kind = kind2 or kind
+        if kind == 'rim':
+            if age > 0.7 or weather > 0.74:
+                return _cold(ramp(AGE, 0.62 + (1 - age) * 0.5 + lit), v - 0.04)  # grauer Altersrand
+            v -= 0.03
+        if age > 0.955 and kind is None:
+            v -= 0.16                                 # abgeplatzte Schuppe
+        col = ramp(SCALES, v)
+        if weather > 0.68:
+            col = mix(col, ramp(AGE, v + 0.1), (weather - 0.68) * 1.6)
+        if _hash(x * 6, y * 6, z * 6, seed + 1) > 0.992:
+            col = mix(col, hexc('#f2fbff'), 0.8)      # Reifglitzer
+        return _cold(col, v)
     return paint
 
 
-def pearl(base=0.55, seed=0, stripes=True):
-    """Bauch: perlmuttgrau, quer gebändert, mit leichtem Farbschimmer."""
-    def paint(face, x, y, w, h):
-        v = base + LIGHT[face] * 0.8 + (speckle(x, y, seed + 5) - 0.5) * 0.08
-        band = (y % 3 == 2) if face in ('top', 'bottom') else (y % 3 == 2)
-        if stripes and band:
-            v -= 0.16
-        c = ramp(PEARL, v)
-        tint = speckle(x + 17, y + 3, seed + 11)
-        hue = hexc('#c9d6f0') if tint > 0.5 else hexc('#ead2e6')
-        return mix(c, hue, 0.12)
-    return paint
+def scute(face, p, lit, seed, throat=False):
+    """Bauchschienen: quer liegende Perlmuttplatten (4 Einheiten lang), dunkle Fugen, heller Vordergrat."""
+    x, y, z = p
+    fb = (z / 4.0) % 1.0
+    v = 0.6 + lit * 0.7
+    if fb > 0.87:
+        v -= 0.26
+    elif fb < 0.12:
+        v += 0.1
+    else:
+        v += (0.5 - fb) * 0.1
+    v -= min(1.0, abs(x) / 6.5) ** 2 * 0.16
+    v += (fbm(x * 0.3, y * 0.3, z * 0.3, seed + 7) - 0.5) * 0.1
+    col = ramp(PEARL, v)
+    hue = mix(hexc('#c4d4f2'), hexc('#ecd0e4'), 0.5 + 0.5 * math.sin(z * 0.37 + x * 0.6))
+    col = mix(col, hue, 0.08)
+    if throat and face == 'bottom' and abs(x) < 0.9:
+        return (mix(col, hexc('#ffe7a0'), 0.35), THROAT_GLOW + (200,), 'heart')
+    return _cold(col, v, 0.3)
 
 
-def ice(base=0.58, seed=0, facet=True, tip_glow=0, edge=0.2):
-    """Eis: kantig facettiert, heller Grat, dunkler Kern. tip_glow > 0: obere Reihen leuchten schwach."""
-    def paint(face, x, y, w, h):
-        v = base + LIGHT[face] * 1.1 + (0.5 - y / max(h - 1, 1)) * 0.18
-        v += (speckle(x, y, seed + 21) - 0.5) * 0.12
-        if facet and ((x + y + seed) % 5 == 0):
-            v += 0.14
-        if x == 0 or x == w - 1:
+def hide_reso(face, p, cube):
+    """Resonanz: feine Linie auf dem Rücken und je eine Seitenlinie auf den Flanken."""
+    x, y, z = p
+    if face == 'top' and abs(x) < 0.5:
+        return RESO_WHITE + (170,)
+    th = abs(math.atan2(x, -y))
+    if face in ('left', 'right') and abs(th - 1.62) < 0.07:
+        return RESO_BLUE + (120,)
+    return None
+
+
+def ice(base=0.58, seed=0, axis='-y', tip_glow=0, edge=0.2, ch='eyes'):
+    """Eis: kantige Facetten, heller Grat an den Kanten, tiefblauer Kern, feine Risse. axis = Richtung zur Spitze;
+    tip_glow > 0: das letzte Fünftel leuchtet schwach (Kanal ch)."""
+    def paint(face, p, c):
+        x, y, z = p
+        rel = {'-y': (c.y + c.h - y) / c.h, '+y': (y - c.y) / c.h, '+z': (z - c.z) / c.d, '-z': (c.z + c.d - z) / c.d,
+               '+x': (x - c.x) / c.w, '-x': (c.x + c.w - x) / c.w}[axis]
+        a, b = _plane(face, p)
+        v = base + LIGHT[face] * 1.1 + (rel - 0.5) * 0.24
+        v += (_hash(math.floor((a * 0.9 + b * 0.5) / 1.7), math.floor((a * 0.4 - b * 0.8) / 2.1), seed) - 0.5) * 0.18
+        if abs(math.sin(a * 1.1 - b * 1.9 + seed)) < 0.05:
+            v -= 0.2                                   # Riss
+        ed = _edge_dist(face, p, c)
+        if ed < 0.5:
             v += edge
-        c = ramp(ICE, v)
-        if tip_glow and y <= 1:
-            return (mix(c, hexc('#e8f6ff'), 0.6), (190, 230, 255, tip_glow))
-        return c
+        else:
+            v -= 0.08 * min(1.0, (ed - 0.5) / 1.5)    # Kern dunkler, wirkt tiefer
+        col = ramp(ICE, v)
+        if _hash(x * 8, y * 8, z * 8, seed) > 0.985:
+            col = mix(col, hexc('#ffffff'), 0.7)
+        if tip_glow and rel > 0.8:
+            return (mix(col, hexc('#e8f6ff'), 0.55), (190, 230, 255, tip_glow), ch)
+        return col
     return paint
 
 
-def claws(base=0.5, seed=0):
-    def paint(face, x, y, w, h):
-        v = base + LIGHT[face] + (y / max(h - 1, 1)) * 0.25 + (speckle(x, y, seed + 31) - 0.5) * 0.1
+def ice_reso(face, p, c):
+    """Resonanz in Kristallen und Klingen: helle Mittelader, blauer Saum an der Kante."""
+    if _edge_dist(face, p, c) < 0.5:
+        return RESO_BLUE + (130,)
+    x, y, z = p
+    if face in ('left', 'right') and abs(z - (c.z + c.d / 2)) < 0.5:
+        return RESO_WHITE + (220,)
+    if face in ('front', 'back') and abs(x - (c.x + c.w / 2)) < 0.5:
+        return RESO_WHITE + (220,)
+    return None
+
+
+def claw(base=0.45, seed=0, axis='-z'):
+    """Klaue/Zahn: dunkles Horn an der Wurzel, elfenbeinhell zur Spitze."""
+    def paint(face, p, c):
+        x, y, z = p
+        rel = {'-z': (c.z + c.d - z) / c.d, '+y': (y - c.y) / c.h, '+z': (z - c.z) / c.d, '-y': (c.y + c.h - y) / c.h}[axis]
+        v = base + LIGHT[face] + rel * 0.4 + (vnoise(x * 2, y * 2, z * 2, seed) - 0.5) * 0.1
+        if _edge_dist(face, p, c) < 0.5:
+            v += 0.06
         return ramp(CLAW, v)
     return paint
 
 
-def membrane(length, depth, root_low_x, kind, seed=0):
-    """Schwingenhaut als dünne Platte (Front/Rückseite groß). x läuft entlang des Knochens, y vom Knochen weg (Hinterkante).
-
-    kind: 'inner' (am Rumpf), 'mid', 'tip' (Dreieck zur Flügelspitze). Außerhalb der Umrisslinie und in den Löchern
-    bleibt die Textur leer (Cutout). Gleiche Funktion liefert über `lines` die Resonanzlinien.
-    """
-    ribs = {'inner': [0.0, 1.0], 'mid': [0.0, 1.0], 'tip': [0.0, 0.42, 0.75, 1.0]}[kind]
+def membrane(length, depth, side, kind, seed=0):
+    """Schwingenhaut als Platte im Teilraum: x entlang des Knochens (0 = Wurzel), y vom Knochen zur Hinterkante.
+    kind: 'inner' (am Rumpf), 'mid', 'tip' (Dreieck zur Flügelspitze). Löcher und Fransen sind durchsichtig."""
+    sign = -1 if side == 'r' else 1
+    ribs = {'inner': [0.0, 0.5, 1.0], 'mid': [0.0, 0.5, 1.0], 'tip': [0.0, 0.42, 0.75, 1.0]}[kind]
     holes = []
-    rnd = seed * 31 + 7
     count = {'inner': 3, 'mid': 4, 'tip': 2}[kind]
     for i in range(count):
-        s = (i + 0.25 + 0.5 * _hash(rnd, i, 1)) / count * (0.8 if kind == 'tip' else 1.0)
-        t = 0.3 + 0.45 * _hash(rnd, i, 2)
-        r = 1.4 + 2.4 * _hash(rnd, i, 3)
+        s = (i + 0.25 + 0.5 * _hash(seed, i, 1)) / count * (0.75 if kind == 'tip' else 0.95)
+        t = 0.32 + 0.45 * _hash(seed, i, 2)
+        r = 1.3 + 2.6 * _hash(seed, i, 3)
         holes.append((s, t, r))
 
     def limit(s):
-        """Tiefe der Haut (Anteil von depth) an der Stelle s (0 = Wurzel, 1 = Spitze)."""
         if kind == 'inner':
-            d = 1.0 - 0.18 * s
+            d = 1.0 - 0.16 * s
         elif kind == 'mid':
-            d = 0.92 - 0.05 * s
+            d = 0.9 - 0.06 * s
         else:
-            d = max(0.06, 0.9 * (1 - s) ** 0.85)
-        # Bögen zwischen den Rippen (alte Segeltuchkante) und Risse.
+            d = max(0.04, 0.86 * (1 - s) ** 0.8)
         for a, b in zip(ribs, ribs[1:]):
             if a <= s <= b:
                 k = (s - a) / max(b - a, 1e-6)
-                d -= 0.2 * math.sin(math.pi * k) ** 0.7 * (1.0 if kind != 'tip' else 0.7)
-        # Kleinere Bögen (Segeltuchkante zwischen den Adern) und Risse.
-        d -= 0.05 * abs(math.sin(s * math.pi * 3.5))
-        tear = _hash(rnd, int(s * 19), 9)
-        if tear > 0.78:
-            d -= 0.14 + 0.2 * (tear - 0.78) * 4.5
-        elif tear > 0.58:
-            d -= 0.05
+                d -= 0.17 * math.sin(math.pi * k) ** 0.7 * (1.0 if kind != 'tip' else 0.6)
+        d -= 0.045 * abs(math.sin(s * math.pi * 5.5))
+        d -= 0.05 * fbm(s * length * 0.35, 0, 0, seed + 4)
+        # wenige, unregelmäßige Risse in der Hinterkante (alte Segeltuchkante)
+        tear = _hash(seed, math.floor(s * 7 + 0.5 * math.sin(s * 9)), 9)
+        if tear > 0.84:
+            k = abs(((s * 7) % 1.0) - 0.5) * 2           # V-förmiger Einriss
+            d -= (0.1 + 1.6 * (tear - 0.84)) * (1 - k)
         return d
 
-    def coords(face, x, y, w, h):
-        if face == 'back':
-            x = w - 1 - x
-        s = (x + 0.5) / w if root_low_x else 1.0 - (x + 0.5) / w
-        t = (y + 0.5) / h
-        return s, t
+    def st(p):
+        return (sign * p[0]) / length, p[1] / depth
 
     def inside(s, t):
-        if t > limit(s):
+        if t > limit(s) or s < 0 or s > 1:
             return False
         for hs, ht, hr in holes:
-            dx = (s - hs) * length
-            dy = (t - ht) * depth
+            dx, dy = (s - hs) * length, (t - ht) * depth
             wob = 1 + 0.35 * math.sin(math.atan2(dy, dx) * 3 + hs * 10)
             if dx * dx + dy * dy < (hr * wob) ** 2:
                 return False
         return True
 
     def vein(s, t):
-        """Abstand zur nächsten Ader (in Einheiten): Adern laufen von der Knochenkante schräg nach hinten."""
         best = 99.0
-        for i in range(6):
-            s0 = (i + 0.3) / 6
-            # Ader: von (s0, 0) nach (s0 - 0.18, 1)
-            ss = s0 - 0.18 * t
-            best = min(best, abs(s - ss) * length)
+        # drei Adern je Platte, vom Knochen zur Hinterkante gefächert und leicht gebogen
+        for i in range(3):
+            s0 = (i + 0.35 + 0.3 * _hash(seed, i, 5)) / 3
+            fan = -0.25 + 0.5 * (s0 - 0.5) + 0.12 * (_hash(seed, i, 6) - 0.5)
+            best = min(best, abs(s - (s0 + fan * t + 0.05 * math.sin(t * 5 + i))) * length)
         return best
 
-    def paint(face, x, y, w, h):
+    def paint(face, p, c):
         if face not in ('front', 'back'):
             return None
-        s, t = coords(face, x, y, w, h)
+        s, t = st(p)
         if not inside(s, t):
             return None
         lim = limit(s)
-        v = 0.6 + (speckle(x, y, seed + 41) - 0.5) * 0.12 - 0.2 * t
+        v = 0.6 + (fbm(p[0] * 0.4, p[1] * 0.4, seed, seed) - 0.5) * 0.16 - 0.2 * t
         if face == 'back':
-            v -= 0.08
-        if t < 0.06:
-            v -= 0.15                      # dunkler Saum am Knochen
-        if lim - t < 0.05:
-            v -= 0.18                      # ausgefranster, dunklerer Rand
-        if vein(s, t) < 0.7:
-            v += 0.14                      # Adern heller (durchscheinend)
-        for hs, ht, hr in holes:           # Lochränder dunkler
+            v -= 0.07
+        if t < 0.05:
+            v -= 0.16                      # Saum am Knochen
+        if lim - t < 0.045:
+            v -= 0.16                      # ausgefranster, dunklerer Rand
+        if vein(s, t) < 0.45:
+            v += 0.09                      # Adern heller (durchscheinend)
+        v += 0.05 * math.sin(s * length * 0.9 + t * 3) * (1 - t)   # leichte Falten
+        for hs, ht, hr in holes:           # Lochränder dunkler, wie verbranntes Segeltuch
             dd = math.hypot((s - hs) * length, (t - ht) * depth)
-            if dd < hr * 1.35 + 0.8:
+            if dd < hr * 1.35 + 0.7:
                 v -= 0.12
-        if _hash(x, y, seed + 51) > 0.93:
-            v -= 0.1
-        return ramp(MEMB, v)
+        col = ramp(MEMB, v)
+        if lim - t < 0.03 and _hash(p[0] * 4, p[1] * 4, seed) > 0.55:
+            col = mix(col, hexc('#eef7ff'), 0.6)   # Reif an den Fransen
+        return col
 
-    def lines(face, x, y, w, h):
+    def lines(face, p, c):
         if face not in ('front', 'back'):
             return None
-        s, t = coords(face, x, y, w, h)
+        s, t = st(p)
         if not inside(s, t):
             return None
         d = vein(s, t)
-        if d < 0.6:
+        if d < 0.5:
             return RESO_WHITE + (235,)
-        if d < 1.2:
+        if d < 1.1:
             return RESO_BLUE + (150,)
-        if limit(s) - t < 0.04:
+        if limit(s) - t < 0.035:
             return RESO_BLUE + (110,)
         return None
-
     return paint, lines
 
 
-def crystal_lines(face, x, y, w, h):
-    """Resonanzlinien in den Kammplatten: eine helle Mittelader, blauer Saum."""
-    if face in ('left', 'right'):
-        mid = (w - 1) / 2
-        if abs(x - mid) < 0.6:
-            return RESO_WHITE + (230,)
-        if abs(x - mid) < 1.6 or y == 0:
-            return RESO_BLUE + (140,)
-    if face in ('front', 'back') and y <= 1:
-        return RESO_BLUE + (120,)
-    return None
+def heart_core(face, p, c):
+    """Herzenserbe: goldener Kern, nach außen blau, feine Kristallrisse; hell im Herzkanal."""
+    x, y, z = p
+    cx, cz = c.x + c.w / 2, c.z + c.d / 2
+    r = math.hypot((x - cx) / (c.w / 2), (z - cz) / (c.d / 2))
+    if face != 'bottom':
+        return (ramp(BLUE_RIM, 0.45), (90, 170, 255, 190), 'heart')
+    if abs(math.sin((x - cx) * 2.4 + (z - cz) * 1.1)) < 0.08 and r > 0.25:
+        return (ramp(GOLD_CORE, 0.35), (255, 170, 70, 200), 'heart')
+    if r < 0.42:
+        return (ramp(GOLD_CORE, 0.98 - r), (255, 225, 130, 255), 'heart')
+    if r < 0.78:
+        return (ramp(GOLD_CORE, 0.62 - (r - 0.42)), (255, 192, 82, 240), 'heart')
+    return (ramp(BLUE_RIM, 0.75), (110, 190, 255, 230), 'heart')
 
 
-def spine_lines(face, x, y, w, h):
-    """Resonanz: feine Linie auf dem Rücken entlang des Kamms."""
-    if face == 'top' and abs(x - (w - 1) / 2) < 0.6:
-        return RESO_BLUE + (130,)
-    return None
+def breast_shield(seed):
+    """Brustschild neben dem Herzen: große Perlmuttplatte, zur Mitte golden durchädert (schwach leuchtend)."""
+    base = scute
+
+    def paint(face, p, c):
+        x, y, z = p
+        col = base(face, p, LIGHT[face] * 0.5 + 0.06, seed)
+        if isinstance(col[0], tuple):
+            col = col[0]
+        if _edge_dist(face, p, c) < 0.5:
+            col = mix(col, hexc('#f8f6fb'), 0.35)
+        if face == 'bottom' and abs(x) < 2.2 and abs(math.sin(z * 1.3 + x * 2.0 + seed)) < 0.16:
+            return (mix(col, hexc('#ffdf8a'), 0.5), (255, 200, 100, 120), 'heart')
+        return col
+    return paint
 
 
-def heart_core(face, x, y, w, h):
-    """Herzenserbe: goldener Kern, nach außen blau."""
-    cx, cy = (w - 1) / 2, (h - 1) / 2
-    r = math.hypot((x - cx) / max(cx, 0.5), (y - cy) / max(cy, 0.5))
-    if face not in ('front',):
-        return (ramp(BLUE_RIM, 0.5), (90, 170, 255, 200))
-    if r < 0.45:
-        return (ramp(GOLD_CORE, 0.95 - r), (255, 220, 120, 255))
-    if r < 0.8:
-        return (ramp(GOLD_CORE, 0.6 - (r - 0.45)), (255, 190, 80, 240))
-    return (ramp(BLUE_RIM, 0.7), (110, 190, 255, 230))
+# ---------------------------------------------------------------------------------------------------------------------
+# Rumpfglieder
+# ---------------------------------------------------------------------------------------------------------------------
+
+def shell(half, z0, length, paint, reso=hide_reso, cy=0.0):
+    """Gerundeter Querschnitt (2*half breit und hoch) aus Kern und zwei Stufen je Seite."""
+    k = half - 1          # Kern
+    a = half - 3          # breite Stufe 1 dick
+    b = half - 2          # schmale Stufe 0,5 dick
+    cubes = [Cube(-k, cy - k, z0, 2 * k, 2 * k, length, paint, reso=reso)]
+    for sgn in (-1, 1):
+        # oben/unten
+        y1 = cy - half if sgn < 0 else cy + k
+        cubes.append(Cube(-a, y1, z0, 2 * a, 1, length, paint, reso=reso))
+        y2 = cy - k - 0.5 if sgn < 0 else cy + k
+        cubes.append(Cube(-b, y2, z0, 2 * b, 0.5, length, paint, reso=reso))
+        # Flanken
+        x1 = -half if sgn < 0 else k
+        cubes.append(Cube(x1, cy - a, z0, 1, 2 * a, length, paint, reso=reso))
+        x2 = -k - 0.5 if sgn < 0 else k
+        cubes.append(Cube(x2, cy - b, z0, 0.5, 2 * b, length, paint, reso=reso))
+    return cubes
 
 
-def chest_paint(seed):
-    """Rippenkorb: Schuppen, vorn unten der blaue Rand des Herzkerns zwischen den Brustplatten."""
-    base = scales(0.62, seed, 3)
-    belly = pearl(0.55, seed)
+def dorsal_spines(z_list, top, seed):
+    """Kleine Dornen auf dem Rückengrat (alte, abgewetzte Eisdornen)."""
+    cubes = []
+    for i, z in enumerate(z_list):
+        cubes.append(Cube(-1, top - 1.5, z, 2, 1.5, 4, ice(0.42, seed + i, axis='-y', edge=0.14)))
+        cubes.append(Cube(-0.5, top - 2.5, z + 1.5, 1, 1, 2.5, ice(0.55, seed + i + 5, axis='-y', edge=0.14)))
+    return cubes
 
-    def paint(face, x, y, w, h):
-        if face == 'bottom':
-            return belly(face, x, y, w, h)
+
+def crystal(name, pivot, rot, height, length, seed, thick=3.0):
+    """Kristallplatte des Rückenkamms: Splitter, der nach oben schmaler wird und mit jeder Stufe nach hinten rückt;
+    wächst entlang -y (der Teil ist nach hinten geneigt)."""
+    h1 = round(height * 0.3 * 2) / 2
+    h2 = round(height * 0.4 * 2) / 2
+    h3 = height - h1 - h2
+    L = length
+    t2, t3 = max(1.0, thick - 1), max(1.0, thick - 2)
+    l2, l3 = round(L * 0.7 * 2) / 2, max(1.5, round(L * 0.4 * 2) / 2)
+    cubes = [
+        Cube(-thick / 2, -h1, -L / 2, thick, h1, L, ice(0.5, seed, '-y', edge=0.14), reso=ice_reso),
+        Cube(-t2 / 2, -h1 - h2, -L / 2 + 1, t2, h2, l2, ice(0.62, seed + 1, '-y', edge=0.16), reso=ice_reso),
+        Cube(-t3 / 2, -height, -L / 2 + 1 + l2 - l3, t3, h3, l3, ice(0.78, seed + 2, '-y', tip_glow=40, edge=0.16,
+                                                                      ch='eyes'), reso=ice_reso),
+    ]
+    return Part(name, pivot, rot, cubes=cubes)
+
+
+def segment(name, kind='plain'):
+    """Rumpfglied z 0..16 (Kern ragt 3 Einheiten nach vorn ins Vorderglied, damit Biegungen keine Lücken zeigen)."""
+    paint = hide(seed=11)
+    cubes = shell(7, -0.5, 17, paint)
+    cubes.append(Cube(-5, -5, -3, 10, 10, 2.5, paint, reso=hide_reso))          # Gelenkfüller
+    for k, c in enumerate(cubes):
+        c.share = f'segment_shell_{k}'       # alle drei Rumpfglieder teilen sich die Haut (gleiche Form, gleicher Maler)
+    children = []
+    if kind == 'dorsal':
+        cubes += dorsal_spines([1.5], -7, 40)
+        children.append(crystal('crest', (0, -6.5, 9), (-34, 0, 0), 15, 9, 60))
+        children.append(crystal('crest_shard', (1.5, -6.5, 13), (-48, 0, 22), 7, 5, 64, thick=2.0))
+    else:
+        cubes += dorsal_spines([2.5, 10.5], -7, 44)
+    if kind == 'heart':
+        cubes.append(Cube(-5.5, 6.5, 1.5, 4, 1.5, 13, breast_shield(70)))
+        cubes.append(Cube(1.5, 6.5, 1.5, 4, 1.5, 13, breast_shield(71)))
+        cubes.append(Cube(-1.5, 6.5, 3.5, 3, 1, 9, heart_core, ch='heart'))
+    return Part(name, cubes=cubes, children=children)
+
+
+def neck():
+    """Erstes Glied hinter dem Kopf: schlanker (12 x 12), Kehlnaht leuchtet am Bauch, kleine Dornen statt Kamm."""
+    paint = hide(seed=13, throat=True)
+    cubes = shell(6, -0.5, 17, paint)
+    cubes.append(Cube(-4, -4, -2.5, 8, 8, 2, paint, reso=hide_reso))
+    cubes += dorsal_spines([3, 10], -6, 48)
+    return Part('neck', cubes=cubes)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Kopf
+# ---------------------------------------------------------------------------------------------------------------------
+
+def head_hide(seed):
+    """Kopfschuppen: kleiner als am Rumpf, um die Kopfachse (y = -1) gelegt."""
+    return hide(seed=seed, zp=2.6, wp=2.4, belly=2.35, radius=6.0, cy=-1.0, base=0.76, joint=False)
+
+
+def eye_paint(side):
+    """Auge als eigener Quader: Iris (rechts golden, links eisblau), senkrechter Schlitz, dunkler Lidrand."""
+    pal = GOLD_EYE if side == 'r' else BLUE_EYE
+    out_face = 'right' if side == 'r' else 'left'
+
+    def paint(face, p, c):
+        x, y, z = p
+        if face not in (out_face, 'front'):
+            return ramp(SCALES, 0.3)
         if face == 'front':
-            cx = (w - 1) / 2
-            # Schlitz zwischen den Brustplatten: blauer Rand, innen golden.
-            if abs(x - cx) < 3.2 and h * 0.5 <= y < h * 0.9:
-                dx = abs(x - cx)
-                if dx < 1.4:
-                    return (ramp(GOLD_CORE, 0.75), (255, 200, 90, 230))
-                return (ramp(BLUE_RIM, 0.6), (90, 175, 255, 210))
-            if y >= h * 0.45:
-                return belly(face, x, y, w, h)
-        return base(face, x, y, w, h)
+            du = (x - (c.x + c.w / 2)) / (c.w / 2)
+        else:
+            du = (z - (c.z + c.d / 2)) / (c.d / 2)
+        dv = (y - (c.y + c.h / 2)) / (c.h / 2)
+        if abs(dv) > 0.74 or abs(du) > 0.86:
+            return ramp(AGE, 0.12)                      # Lidrand
+        if abs(du) < 0.17 and face != 'front':
+            return (hexc('#120c08'), pal[1][:3] + (140,), 'eyes')     # Schlitzpupille
+        k = 1 - math.hypot(du, dv) * 0.6
+        col = ramp(pal, 0.4 + k * 0.6)
+        if dv < -0.3 and du < -0.3:
+            col = mix(col, hexc('#ffffff'), 0.55)        # Glanzlicht
+        return (col, pal[2][:3] + (255,), 'eyes')
     return paint
 
 
-def neck_paint(seed, throat=True):
-    """Hals: Schuppen oben, perlmuttgraue Kehle unten mit leuchtender Naht (Kehle/Atemholen)."""
-    base = scales(0.64, seed, 3)
-    belly = pearl(0.56, seed)
+def _teeth(face, p, c, rows_from_edge, upper):
+    """Zahnreihe: spitze, elfenbeinfarbene Zähne mit dunklen Lücken (nur an den Seiten)."""
+    x, y, z = p
+    k = (z / 1.5) % 1.0
+    tip = rows_from_edge < 0.5
+    if (k < 0.42 and not tip) or (0.08 < k < 0.3 and tip):
+        return claw(0.78, 5 if upper else 6, '+y' if upper else '-y')(face, p, c)
+    return ramp(MOUTH, 0.25)
 
-    def paint(face, x, y, w, h):
+
+def snout_paint(seed=63):
+    base = head_hide(seed)
+
+    def paint(face, p, c):
+        x, y, z = p
         if face == 'bottom':
-            c = belly(face, x, y, w, h)
-            if throat and abs(x - (w - 1) / 2) < 1.1:
-                return (mix(c, hexc('#ffe7a0'), 0.35), (255, 205, 110, 200))
-            return c
-        if face in ('left', 'right') and y >= h - 2:
-            return belly(face, x, y, w, h)
-        return base(face, x, y, w, h)
+            return (ramp(MOUTH, 0.35 + (z + 20) / 40), MOUTH_GLOW + (70,), 'heart')     # Gaumen
+        edge = c.y + c.h - y
+        if face in ('left', 'right') and edge < 1.0:
+            return _teeth(face, p, c, edge, True)
+        if face == 'front' and edge < 0.5:
+            return ramp(MOUTH, 0.3)
+        return base(face, p, c)
     return paint
 
 
-def skull_paint(face, x, y, w, h):
-    """Schädel mit Augen: rechtes Auge (x klein, -x) golden, linkes eisblau; dunkler Brauenschatten darüber."""
-    base = scales(0.7, 61, 2)
-    eye_rows = (h - 5, h - 4)
-    if face in ('right', 'left'):
-        # i läuft auf 'right' von hinten nach vorn, auf 'left' von vorn nach hinten.
-        front = x >= w - 3 if face == 'right' else x <= 2
-        nearer = x == w - 2 if face == 'right' else x == 1
-        if front and y in eye_rows:
-            col = GOLD_EYE if face == 'right' else BLUE_EYE
-            if nearer or y == eye_rows[0]:
-                return (col, col[:3] + (255,))
-            return (mix(col, hexc('#ffffff'), 0.3), col[:3] + (255,))
-        if front and y == eye_rows[0] - 1:
-            return ramp(AGE, 0.2)
-    if face == 'front':
-        if y in eye_rows and (x == 0 or x == w - 1):
-            col = GOLD_EYE if x == 0 else BLUE_EYE
-            return (col, col[:3] + (255,))
-    if face == 'bottom':
-        return pearl(0.52, 62)(face, x, y, w, h)
-    return base(face, x, y, w, h)
+def nose_paint(face, p, c):
+    x, y, z = p
+    if face == 'front' and -3.5 < y < -3.0 and 1.5 < abs(x) < 2.5:
+        return hexc('#3a4050')                                       # Nüstern (schmale Schlitze oben außen)
+    if face == 'front' and -3.0 < y < -2.5 and 1.5 < abs(x) < 2.5:
+        return hexc('#7a8292')
+    if face == 'front' and y > c.y + c.h - 0.5:
+        return ramp(MOUTH, 0.3)
+    return head_hide(69)(face, p, c)
 
 
-def snout_paint(face, x, y, w, h):
-    base = scales(0.72, 63, 2)
-    if face == 'front' and y == 1 and x in (1, w - 2):
-        return hexc('#2a2a32')               # Nüstern
-    if face in ('left', 'right', 'front') and y == h - 1:
-        if x % 2 == 0:
-            return ramp(CLAW, 0.95)          # obere Zahnreihe
-        return ramp(MOUTH, 0.4)
-    if face == 'bottom':
-        return (ramp(MOUTH, 0.35), (120, 190, 255, 60))
-    return base(face, x, y, w, h)
+def jaw_paint():
+    base = head_hide(64)
+
+    def paint(face, p, c):
+        x, y, z = p
+        if face == 'top':
+            if abs(x) < 1.4:
+                return (ramp(MOUTH, 0.75), MOUTH_GLOW + (170,), 'heart')            # Zunge, Kehle glüht
+            if abs(x) > c.w / 2 - 0.5:
+                return claw(0.72, 7, '-y')(face, p, c) if (z / 1.5) % 1.0 < 0.42 else ramp(MOUTH, 0.3)
+            return (ramp(MOUTH, 0.42), (110, 180, 255, 90), 'heart')
+        edge = y - c.y
+        if face in ('left', 'right') and edge < 1.0:
+            return _teeth(face, p, c, edge, False)
+        if face == 'bottom':
+            return scute(face, (x, y, z * 0.6), LIGHT[face] * 0.5 + 0.08, 65)
+        return base(face, p, c)
+    return paint
 
 
-def jaw_paint(face, x, y, w, h):
-    base = scales(0.6, 64, 2)
-    if face == 'top':
-        # Maul innen: dunkel, Zunge, die Kehle leuchtet beim Atemholen von innen.
-        cx = (w - 1) / 2
-        if abs(x - cx) < 1.2:
-            return (ramp(MOUTH, 0.7), (150, 210, 255, 170))
-        if x == 0 or x == w - 1:
-            return ramp(CLAW, 0.95) if y % 2 == 0 else ramp(MOUTH, 0.3)
-        return (ramp(MOUTH, 0.4), (110, 180, 255, 90))
-    if face in ('left', 'right', 'front') and y == 0:
-        return ramp(CLAW, 0.9) if x % 2 == 1 else ramp(MOUTH, 0.4)
-    if face == 'bottom':
-        return pearl(0.5, 65)(face, x, y, w, h)
-    return base(face, x, y, w, h)
+def skull_paint():
+    base = head_hide(61)
+
+    def paint(face, p, c):
+        x, y, z = p
+        if face == 'bottom' and z > -6:
+            # Kehle unter dem Schädel: Fortsetzung der leuchtenden Kehlnaht des Halses
+            col = scute(face, p, LIGHT[face] * 0.5, 62)
+            if isinstance(col[0], tuple):
+                col = col[0]
+            if abs(x) < 0.9:
+                return (mix(col, hexc('#ffe7a0'), 0.35), THROAT_GLOW + (220,), 'heart')
+            return col
+        if face in ('left', 'right') and -8 < z < -3 and y < -3.5:
+            return _cold(ramp(SCALES, 0.42), 0.42)                # Brauenschatten hinter den Augen
+        return base(face, p, c)
+    return paint
 
 
-# ---------------------------------------------------------------------------------------------------------------------
-# Formhelfer
-# ---------------------------------------------------------------------------------------------------------------------
-
-def horn(name, pivot, rot, segs, seed, broken=False):
-    """Eishorn aus Gliedern, wächst entlang -y; jedes Glied biegt um x (nach hinten). Spitze schwach leuchtend."""
+def horn(name, pivot, rot, segs, seed, broken=False, tine=None):
+    """Eishorn aus Gliedern, wächst entlang -y; jedes Glied biegt um x (nach hinten). Spitze schwach leuchtend.
+    tine = (Glied, Länge): kleiner Seitenspross wie bei einem Geweih."""
     root = cur = None
     prev = 0
     for i, (w, l, bend) in enumerate(segs):
         last = i == len(segs) - 1
-        paint = ice(0.6 - i * 0.04, seed + i, tip_glow=(0 if broken else 95) if last else 0)
-        c = Cube(-w / 2, -l, -w / 2, w, l, w, paint, ch='eyes' if last and not broken else None)
+        glow = (0 if broken else 110) if last else 0
+        c = Cube(-w / 2, -l, -w / 2, w, l, w, ice(0.5 + i * 0.07, seed + i, '-y', tip_glow=glow, edge=0.1),
+                 ch='eyes', reso=ice_reso if i else None)
         if cur is None:
             cur = root = Part(name, pivot, rot, cubes=[c])
         else:
-            nxt = Part(f'{name}_{i}', (0, -prev, 0), (bend, 0, 0), cubes=[c])
+            nxt = Part(f'{name}_{i}', (0, -prev + 0.5, 0), (bend, 0, 0), cubes=[c])
+            cur.add(nxt)
+            cur = nxt
+        if broken and last:
+            # Bruchkante: helle, zersplitterte Fläche oben
+            cur.cubes.append(Cube(-w / 2 + 0.5, -l - 0.5, -w / 2 + 0.5, max(0.5, w - 1), 0.5, max(0.5, w - 1),
+                                  ice(0.85, seed + 9, '-y', edge=0.05)))
+        if tine and i == tine[0]:
+            cur.add(Part(f'{name}_tine', (0, -l * 0.6, 0), (-10, 0, 40 if pivot[0] > 0 else -40), cubes=[
+                Cube(-0.5, -tine[1], -0.5, 1, tine[1], 1, ice(0.7, seed + 7, '-y', tip_glow=90, edge=0.2),
+                     ch='eyes')]))
+        prev = l
+    return root
+
+
+def whisker(side):
+    """Lange Bartel an der Oberlippe: fließt flach nach hinten an der Wange vorbei (Kette; der Renderer darf die
+    Glieder whisker_<s>_1..3 sanft schwingen lassen)."""
+    s = -1 if side == 'r' else 1
+    links = [(1, 5, (0, 0, 0)), (1, 6, (-8, -s * 14, 0)), (1, 6, (-6, -s * 14, 0)), (1, 5, (10, -s * 8, 0))]
+    root = cur = None
+    prev = 0
+    for i, (w, l, rot) in enumerate(links):
+        paint = ice(0.74 + i * 0.05, 150 + i, '+z', tip_glow=80 if i == 3 else 0, edge=0.08)
+        c = Cube(-w / 2, -w / 2, 0, w, w, l, paint, ch='eyes')
+        if cur is None:
+            cur = root = Part(f'whisker_{side}', (s * 3.5, -0.5, -18), (4, s * 62, 0), cubes=[c])
+        else:
+            nxt = Part(f'whisker_{side}_{i}', (0, 0, prev - 0.25), rot, cubes=[c])
             cur.add(nxt)
             cur = nxt
         prev = l
     return root
 
 
-def plate(name, pivot, h, d, tilt, seed, thick=2):
-    """Kristallplatte des Rückenkamms: dünn in x, hoch, nach hinten geneigt."""
-    return Part(name, pivot, (-tilt, 0, 0), cubes=[
-        Cube(-thick / 2, -h, -d / 2, thick, h, d, ice(0.62, seed, edge=0.25), reso=crystal_lines),
-        Cube(-thick / 2 + 0.5, -h - 2, -d / 4, max(1, thick - 1), 2, max(2, d // 2), ice(0.75, seed + 1), reso=crystal_lines),
-    ])
+def frill(side):
+    """Wangenstacheln hinter dem Kiefer: drei kurze Eisdornen, nach hinten gekämmt."""
+    s = -1 if side == 'r' else 1
+    spikes = []
+    for i, (y, ln, pitch, roll) in enumerate(((-2, 8, -72, 30), (0.5, 6, -86, 36), (3, 4, -100, 40))):
+        segs = [(2, ln * 0.5, 0), (1.5, round(ln * 0.6) / 2, -10), (1, ln * 0.5 - round(ln * 0.6) / 2, -10)]
+        spikes.append(horn(f'frill_{side}_{i}', (0, y, 0), (pitch, 0, s * roll), segs, 170 + i * 4 + (side == 'l')))
+    return Part(f'frill_{side}', (s * 6.5, 0, 0), cubes=[], children=spikes)
 
 
-def blade(name, pivot, rot, length, width, seed):
-    """Eisklinge des Schwanzfächers: flach (dünn in x), wächst entlang +z, Spitze schmal."""
-    return Part(name, pivot, rot, cubes=[
-        Cube(-1, -width / 4, 0, 2, width / 2, length * 0.3, ice(0.55, seed, edge=0.3), reso=crystal_lines),
-        Cube(-0.5, -width / 2, length * 0.3, 1, width, length * 0.35, ice(0.64, seed + 1, edge=0.3), reso=crystal_lines),
-        Cube(-0.5, -width / 2 + 1.5, length * 0.65, 1, max(2, width - 3), length * 0.2, ice(0.72, seed + 2, edge=0.3), reso=crystal_lines),
-        Cube(-0.5, -width / 2 + 3, length * 0.85, 1, max(1, width - 6), length * 0.15, ice(0.85, seed + 3, edge=0.3), reso=crystal_lines),
+def head():
+    skull = skull_paint()
+    hh = head_hide(66)
+    cubes = [
+        Cube(-6, -6, -10, 12, 10, 13, skull, reso=hide_reso),                   # Schädel
+        Cube(-4.5, -7, -9.5, 9, 1, 11.5, hh),                                    # Schädeldach
+        Cube(-6.5, -8, -12, 4.5, 2.5, 7.5, head_hide(67)),                       # Brauenwulst rechts
+        Cube(2, -8, -12, 4.5, 2.5, 7.5, head_hide(68)),                          # Brauenwulst links
+        Cube(-7, -3.5, -9, 1.5, 7, 10, hh),                                      # Wange rechts
+        Cube(5.5, -3.5, -9, 1.5, 7, 10, hh),                                     # Wange links
+        Cube(-6.5, -5.5, -11, 1, 2, 3, eye_paint('r'), ch='eyes'),               # Auge rechts (golden)
+        Cube(5.5, -5.5, -11, 1, 2, 3, eye_paint('l'), ch='eyes'),                # Auge links (eisblau)
+        Cube(-4.5, -4.5, -15.5, 9, 5.5, 6, snout_paint(63)),                     # Oberkiefer hinten
+        Cube(-3.5, -4, -20, 7, 5, 5, snout_paint(64)),                           # Oberkiefer vorn (schmaler)
+        Cube(-2.5, -5.5, -19.5, 5, 1.5, 10, head_hide(69)),                      # Nasenrücken
+        Cube(-1.5, -6.5, -15, 3, 1, 5.5, head_hide(70)),                         # Nasenkamm
+        Cube(-3, -3.5, -21, 6, 4, 1, nose_paint),                                # Nasenspitze
+        Cube(-3.5, 1, -19.5, 1, 2, 1, claw(0.6, 1, '+y')),                       # Fänge oben
+        Cube(2.5, 1, -19.5, 1, 2, 1, claw(0.6, 2, '+y')),
+        Cube(-5, -5, 3, 10, 9, 1.5, hh),                                         # Nacken in den Hals
+    ]
+    beard = Part('beard', (0, 3.5, -10), (38, 0, 0), cubes=[
+        Cube(-2, 0, -1, 4, 3.5, 2.5, ice(0.55, 180, '+y', edge=0.2)),
+        Cube(-1.5, 3.5, -0.5, 3, 3, 2, ice(0.65, 181, '+y', edge=0.2)),
+        Cube(-1, 6.5, 0, 2, 3, 1.5, ice(0.75, 182, '+y', edge=0.2), reso=ice_reso),
+        Cube(-0.5, 9.5, 0.5, 1, 2, 1, ice(0.85, 183, '+y', edge=0.2)),
     ])
+    jaw = Part('jaw', (0, 1, -4), cubes=[
+        Cube(-3.5, 0, -16, 7, 2.5, 12.5, jaw_paint()),                            # Unterkiefer vorn
+        Cube(-5.5, 0, -5, 11, 3.5, 6.5, head_hide(65)),                          # Kieferwinkel
+        Cube(-2.5, 2.5, -15.5, 5, 1, 7, jaw_paint()),                            # Kinn
+        Cube(-3, -1.5, -15, 1, 1.5, 1, claw(0.6, 3, '-y')),                      # Fänge unten
+        Cube(2, -1.5, -15, 1, 1.5, 1, claw(0.6, 4, '-y')),
+    ], children=[beard])
+    # Krone: Hörner im Halbkreis um den Hinterkopf (0 = senkrecht nach oben), weit nach hinten gekämmt und gebogen.
+    # (Winkel, Länge, abgebrochen, Seitenspross); bei +118 Grad fehlt ein Horn ganz (nur der Sockel).
+    halo = [(-104, 11, False, None, -26), (-66, 17, False, None, -34), (-30, 22, False, None, -46),
+            (4, 6, True, None, -40), (36, 21, False, (1, 5), -46), (72, 16, False, None, -32)]
+    horns = []
+    for i, (ang, ln, broken, tine, sweep) in enumerate(halo):
+        a = math.radians(ang)
+        pivot = (math.sin(a) * 5.5, -math.cos(a) * 5.5, 0)
+        if broken:
+            segs = [(3, 3.5, 0), (2.5, 2.5, -8)]
+        else:
+            n = 4 if ln > 14 else 3
+            widths = [2.5, 2, 1.5, 1] if n == 4 else [2.5, 1.5, 1]
+            segs = [(widths[k], round(ln / n * 2) / 2, 0 if k == 0 else -13 - k * 3) for k in range(n)]
+        horns.append(horn(f'horn_{i}', pivot, (sweep, 0, ang), segs, 100 + i * 5, broken=broken, tine=tine))
+    socket = math.radians(118)
+    crown = Part('crown', (0, -1.5, 1.5), cubes=[
+        Cube(-5, -1.5, -1.5, 10, 3, 3, ice(0.45, 120, '-y', edge=0.15)),
+        Cube(math.sin(socket) * 5.5 - 1.5, -math.cos(socket) * 5.5 - 1, -1.5, 3, 2, 3, ice(0.4, 121, '-y', edge=0.1)),
+    ], children=horns)
+    return Part('head', cubes=cubes, children=[jaw, crown, whisker('r'), whisker('l'), frill('r'), frill('l')])
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-# Glieder
+# Läufe, Schwingen, Fächer
 # ---------------------------------------------------------------------------------------------------------------------
 
-ARM_L1, ARM_L2, HAND_SOLE = 14, 11, 3
-LEG_L1, LEG_L2, LEG_L3, TOE_SOLE = 11, 9, 7, 2
-WING_L = (22, 28, 30)
-NECK_L = 8
-TAIL_L = 10
+def limb_hide(seed, axis='y'):
+    """Schuppen für Läufe (Achse y, Schuppen zeigen nach unten) und Flügelknochen (Achse x, nach außen).
+    Gerechnet um die Mittelachse des jeweiligen Quaders; oben hell, unten/innen perlgrau."""
+    def paint(face, p, c):
+        x, y, z = p
+        cx, cy, cz = c.x + c.w / 2, c.y + c.h / 2, c.z + c.d / 2
+        if axis == 'y':
+            along, th = y, math.atan2(x - cx, -(z - cz))
+            up = -0.1 if face == 'bottom' else (0.1 if face == 'top' else 0.0)
+        else:
+            along, th = abs(x), math.atan2(z - cz, -(y - cy))
+            up = 0.12 * -math.cos(th)
+        a = abs(th)
+        dv, kind, age = scale_field(along, a * 2.4, 2.0, 1.9, seed)
+        v = 0.74 + dv + LIGHT[face] * 0.5 - up * 0.0 + up + (fbm(x * 0.3, y * 0.3, z * 0.3, seed) - 0.5) * 0.1
+        if axis == 'x' and face == 'bottom':
+            return scute(face, (y, x, abs(x) * 1.0), LIGHT[face] * 0.5, seed)
+        if kind == 'rim' and age > 0.7:
+            return _cold(ramp(AGE, 0.6 + LIGHT[face]), v - 0.05)
+        return _cold(ramp(SCALES, v), v)
+    return paint
+
+
+def mx(side, x, w):
+    """x-Lage eines Quaders für die Seite (Maße für rechts, -x = außen; links gespiegelt)."""
+    return x if side == 'r' else -(x + w)
+
+
+def claws(side, y, z, seed, n=3, size=1.5):
+    out = []
+    for k in range(n):
+        x = -2.5 + k * 1.75
+        out.append(Cube(mx(side, x, size), y, z - 2, size, size, 2.5, claw(0.42, seed + k, '-z')))
+        out.append(Cube(mx(side, x + 0.25, 1), y + size - 0.5, z - 3.5, 1, 1.5, 1.5, claw(0.7, seed + k + 5, '-z')))
+    return out
 
 
 def foreleg(side):
+    """Kleiner, kräftiger Vorderlauf. Drehpunkt an der Schulter; Ruhe: Unterarm schräg nach vorn, Klauen nach
+    vorn/unten. Kinder: foreleg_<s>_lower (Ellbogen), foreleg_<s>_foot (Handgelenk)."""
     s = -1 if side == 'r' else 1
-    hand = Part(f'hand_{side}', (0, ARM_L2, 0), cubes=[
-        Cube(-4, 0, -6, 8, HAND_SOLE, 10, scales(0.55, 70, 2)),
-    ], children=[
-        Part(f'claws_{side}', (0, 0.5, -6), cubes=[
-            Cube(-4, 0, -3, 2, 2.5, 3, claws(0.6, 71)),
-            Cube(-1, 0, -4, 2, 2.5, 4, claws(0.6, 72)),
-            Cube(2, 0, -3, 2, 2.5, 3, claws(0.6, 73)),
-        ]),
-    ])
-    fore = Part(f'fore_{side}', (0, ARM_L1, 0), cubes=[
-        Cube(-3, 0, -3.5, 6, ARM_L2, 7, scales(0.6, 74, 3)),
-        Cube(-3.5, -1.5, 1.5, 7, 5, 3, scales(0.55, 75, 2)),     # Ellbogen
-    ], children=[hand])
-    return Part(f'arm_{side}', (s * 10, -3, -15), cubes=[
-        Cube(-4.5, -5, -5, 9, ARM_L1 + 5, 10, scales(0.62, 76, 3)),
-    ], children=[fore])
+    foot = Part(f'foreleg_{side}_foot', (0, 7, 0), (40, 0, 0), cubes=[
+        Cube(mx(side, -3, 5.5), -0.5, -4, 5.5, 2.5, 6, limb_hide(84)),
+    ] + claws(side, 0.5, -4, 85))
+    lower = Part(f'foreleg_{side}_lower', (s * 1.75, 7.5, 0), (-40, 0, 0), cubes=[
+        Cube(mx(side, -2, 4), -0.5, -2, 4, 8, 4, limb_hide(82)),
+        Cube(mx(side, -1, 2), -1, 1.5, 2, 2, 3.5, ice(0.5, 83, '+z', edge=0.2)),        # Ellbogendorn
+    ], children=[foot])
+    return Part(f'foreleg_{side}', cubes=[
+        Cube(mx(side, -4.5, 6), -3, -3, 6, 11, 6, limb_hide(80)),
+        Cube(mx(side, -5, 3), -2, -2, 3, 6, 4, limb_hide(81)),                           # Schultermuskel
+    ], children=[lower])
 
 
 def hindleg(side):
+    """Hinterlauf: dicker Schenkel, Schienbein schräg nach hinten, Fuß flach mit Klauen nach vorn."""
     s = -1 if side == 'r' else 1
-    toes = Part(f'toes_{side}', (0, LEG_L3, 0), (math.degrees(-META_TILT), 0, 0), cubes=[
-        Cube(-3, 0, -6, 6, TOE_SOLE, 8, scales(0.55, 80, 2)),
-        Cube(-3, 0.5, -8, 2, 1.5, 2, claws(0.6, 81)),
-        Cube(-0.5, 0.5, -9, 1.5, 1.5, 3, claws(0.6, 82)),
-        Cube(1.5, 0.5, -8, 2, 1.5, 2, claws(0.6, 83)),
-    ])
-    foot = Part(f'foot_{side}', (0, LEG_L2, 0), cubes=[
-        Cube(-2, 0, -2, 4, LEG_L3, 4, scales(0.6, 84, 2)),
-    ], children=[toes])
-    shin = Part(f'shin_{side}', (0, LEG_L1, 0), cubes=[
-        Cube(-2.5, -1, -2.5, 5, LEG_L2 + 1, 5, scales(0.6, 85, 3)),
+    foot = Part(f'hindleg_{side}_foot', (0, 8, 0), (-30, 0, 0), cubes=[
+        Cube(mx(side, -3, 5.5), -0.5, -4.5, 5.5, 2.5, 7, limb_hide(94)),
+        Cube(mx(side, -1, 2), 0, 2, 2, 1.5, 2.5, claw(0.5, 95, '+z')),                    # Sporn hinten
+    ] + claws(side, 0.5, -4.5, 96))
+    lower = Part(f'hindleg_{side}_lower', (s * 2, 8, 0.5), (30, 0, 0), cubes=[
+        Cube(mx(side, -1.75, 3.5), -0.5, -1.75, 3.5, 9, 3.5, limb_hide(92)),
     ], children=[foot])
-    return Part(f'thigh_{side}', (s * 9, -2, 14), cubes=[
-        Cube(-4, -4, -5, 8, LEG_L1 + 4, 10, scales(0.62, 86, 3)),
-    ], children=[shin])
+    return Part(f'hindleg_{side}', cubes=[
+        Cube(mx(side, -5, 7), -4, -3.5, 7, 12, 7, limb_hide(90)),
+        Cube(mx(side, -3, 4), 0, -1, 4, 3, 1, ice(0.45, 91, '-y', edge=0.1)),
+    ], children=[lower])
 
 
-def membrane_part(name, length, depth, side, kind, seed, z0=0.5):
-    """Hautplatte am Knochen: liegt in der x-z-Ebene des Knochens, Hinterkante bei +z."""
-    s = -1 if side == 'r' else 1
-    paint, lines = membrane(length, depth, root_low_x=(side == 'l'), kind=kind, seed=seed)
+WING_L = (20, 22, 24)      # Oberarm, Unterarm, Hand
+WING_D = (26, 30, 30)      # Hauttiefe je Glied
+
+
+def membrane_part(name, length, depth, side, kind, seed, z0=0.0):
+    """Hautplatte: im Teilraum x-y-Platte (x entlang des Knochens), um +90 Grad gekippt -> Hinterkante bei +z."""
+    paint, lines = membrane(length, depth, side, kind, seed)
     x0 = -length if side == 'r' else 0
-    # Platte w x depth x 1 in der x-y-Ebene, um +90° gekippt: lokales +y zeigt danach nach +z (hinten).
     return Part(name, (0, 0, z0), (90, 0, 0), cubes=[Cube(x0, 0, -0.5, length, depth, 1, paint, reso=lines)])
 
 
 def wing(side):
+    """Schwinge: Schulter bei 0, Knochen entlang -x (rechts) bzw. +x (links), Haut nach hinten (+z).
+    Ruhe = gespannt (Spannweite etwa 64 Einheiten). Kinder: wing_<s>_fore (Ellbogen), wing_<s>_tip (Handgelenk)."""
     s = -1 if side == 'r' else 1
     l1, l2, l3 = WING_L
+    d1, d2, d3 = WING_D
+    def bone(seed):
+        return limb_hide(seed, 'x')
 
-    def bone(x_len, thick, seed, taper=None):
-        x0 = -x_len if side == 'r' else 0
-        cubes = [Cube(x0, -thick / 2, -thick / 2, x_len, thick, thick, scales(0.66, seed, 2))]
-        return cubes
-
-    spars = []
-    for i, (ang, ln) in enumerate(((24, 30), (48, 27))):
-        spars.append(Part(f'spar_{side}_{i}', (0, 0, 0.5), (0, s * -ang if side == 'l' else ang, 0), cubes=[
-            Cube(-ln if side == 'r' else 0, -0.5, -0.5, ln, 1, 1, ice(0.45, 90 + i, facet=False, edge=0)),
+    fingers = []
+    for i, (ang, ln) in enumerate(((22, 28), (44, 25), (66, 20))):
+        fingers.append(Part(f'wing_{side}_finger_{i}', (0, 0, 0.5), (0, -s * ang, 0), cubes=[
+            Cube(mx(side, -ln, ln), -0.75, -0.75, ln, 1.5, 1.5, ice(0.66, 200 + i, '+x' if side == 'l' else '-x',
+                                                                          edge=0.06)),
         ]))
-    hand = Part(f'wing_hand_{side}', (s * l2, 0, 0), cubes=[
-        Cube(-l3 * 0.6 if side == 'r' else 0, -1, -1, l3 * 0.6, 2, 2, scales(0.68, 91, 2)),
-        Cube(-l3 if side == 'r' else l3 * 0.6, -0.5, -0.5, l3 * 0.4, 1, 1, claws(0.7, 92)),
-    ], children=[
-        membrane_part(f'memb_c_{side}', l3, 30, side, 'tip', 3 if side == 'r' else 4),
-        Part(f'thumb_{side}', (0, -1, -1), (-30, 0, 0), cubes=[Cube(-1, -1, -4, 2, 2, 4, claws(0.6, 93))]),
-    ] + spars)
-    fore = Part(f'wing_fore_{side}', (s * l1, 0, 0), cubes=bone(l2, 3, 94), children=[
-        membrane_part(f'memb_b_{side}', l2, 30, side, 'mid', 2 if side == 'r' else 5),
-        hand,
-    ])
-    return Part(f'wing_{side}', (s * 8, -11, -11), cubes=bone(l1, 4, 95), children=[
-        membrane_part(f'memb_a_{side}', l1, 28, side, 'inner', 1 if side == 'r' else 6),
-        fore,
-    ])
+    tip = Part(f'wing_{side}_tip', (s * l2, 0, 0), (0, -s * 14, 0), cubes=[
+        Cube(mx(side, -9, 9), -1.25, -1.25, 9, 2.5, 2.5, bone(203)),
+        Cube(mx(side, -l3, l3 - 9), -0.75, -0.75, l3 - 9, 1.5, 1.5, claw(0.6, 204, '-z')),
+        Cube(mx(side, -1, 2), -1, -4.5, 2, 2, 3.5, claw(0.5, 205, '-z')),                 # Daumenkralle
+    ], children=[membrane_part(f'wing_{side}_memb_c', l3, d3, side, 'tip', 7 if side == 'r' else 8, z0=0.5)]
+        + fingers)
+    fore = Part(f'wing_{side}_fore', (s * l1, 0, 0), (0, -s * 8, 0), cubes=[
+        Cube(mx(side, -l2, l2), -1.5, -1.5, l2, 3, 3, bone(206)),
+    ], children=[membrane_part(f'wing_{side}_memb_b', l2, d2, side, 'mid', 5 if side == 'r' else 6, z0=1.0), tip])
+    return Part(f'wing_{side}', cubes=[
+        Cube(mx(side, -2.5, 4.5), -2.5, -2.5, 4.5, 5, 5, bone(207)),                       # Schultergelenk
+        Cube(mx(side, -l1, l1 - 1), -1.75, -1.75, l1 - 1, 3.5, 3.5, bone(208)),
+    ], children=[membrane_part(f'wing_{side}_memb_a', l1, d1, side, 'inner', 3 if side == 'r' else 4, z0=1.25),
+                 fore])
 
 
-def head_part():
-    # Krone: Hörner im Halbkreis um den Hinterkopf (Winkel 0 = senkrecht nach oben), nach hinten gekämmt.
-    halo = [(-102, 17), (-70, 22), (-38, 25), (-8, 6, True), (24, 25), (56, 22), (90, 18), (122, 10, True)]
-    horns = []
-    for i, spec in enumerate(halo):
-        ang, ln = spec[:2]
-        broken = len(spec) > 2
-        a = math.radians(ang)
-        pivot = (math.sin(a) * 5.0, -math.cos(a) * 5.0, 0)
-        n = 4 if ln > 12 else 2
-        segs = [(3 if k == 0 else 2 if k < n - 1 else 1, ln / n, 0 if k == 0 else -13) for k in range(n)]
-        horns.append(horn(f'horn_{i}', pivot, (-38, 0, ang), segs, 100 + i * 3, broken=broken))
-    crown = Part('crown', (0, -2.5, 0.5), cubes=[
-        Cube(-5, -1.5, -1.5, 10, 3, 3, ice(0.5, 120)),
-    ], children=horns)
-    jaw = Part('jaw', (0, 1.5, -6), cubes=[
-        Cube(-3, 0, -10, 6, 2, 11, jaw_paint, ch='heart'),
-        Cube(-4, 0, -3, 8, 3, 5, scales(0.58, 66, 2)),
-    ])
-    return Part('head', (0, 0, -NECK_L), cubes=[
-        Cube(-5, -5, -9, 10, 7, 10, skull_paint, ch='eyes'),
-        Cube(-3.5, -3, -17, 7, 4, 8, snout_paint, ch='heart'),
-        Cube(-6, -6, -9, 3, 2, 5, scales(0.55, 67, 2)),        # Brauenwulst rechts
-        Cube(3, -6, -9, 3, 2, 5, scales(0.55, 68, 2)),         # Brauenwulst links
-        Cube(-2, -4, -16, 4, 2, 6, scales(0.74, 69, 2)),       # Nasenrücken
-    ], children=[jaw, crown])
+def blade(name, pivot, rot, length, width, seed):
+    """Eisklinge des Schwanzfächers: flach (dünn in x), wächst entlang +z, verjüngt sich zur Spitze."""
+    L = length
+    seg = [round(L * f * 2) / 2 for f in (0.3, 0.35, 0.2)]
+    seg.append(L - sum(seg))
+    w = width
+    cubes = [
+        Cube(-1.5, -w / 4, 0, 3, round(w / 2 * 2) / 2, seg[0], ice(0.5, seed, '+z', edge=0.26), reso=ice_reso),
+        Cube(-1, -w / 2, seg[0], 2, w, seg[1], ice(0.6, seed + 1, '+z', edge=0.28), reso=ice_reso),
+        Cube(-0.5, -w / 2 + 1.5, seg[0] + seg[1], 1, max(1.5, w - 3), seg[2], ice(0.7, seed + 2, '+z', edge=0.28),
+             reso=ice_reso),
+        Cube(-0.5, -w / 2 + 2.5, L - seg[3], 1, max(1.0, w - 5), seg[3], ice(0.84, seed + 3, '+z', tip_glow=60,
+                                                                               edge=0.24), reso=ice_reso),
+    ]
+    return Part(name, pivot, rot, cubes=cubes)
 
 
-def neck_parts():
-    sizes = [10, 9, 8, 7]
-    parts = []
-    for i, sz in enumerate(sizes):
-        cubes = [Cube(-sz / 2, -sz / 2, -NECK_L - 1, sz, sz, NECK_L + 2, neck_paint(200 + i), ch='heart')]
-        kids = [plate(f'neck_plate_{i}', (0, -sz / 2 + 0.5, -NECK_L / 2), 3 + (3 - i) // 2, 4, 30, 210 + i)]
-        parts.append(Part(f'neck_{i}', (0, 0, -NECK_L) if i else (0, -7, -23), cubes=cubes, children=kids))
-    for a, b in zip(parts, parts[1:]):
-        a.add(b)
-    parts[-1].add(head_part())
-    return parts[0]
-
-
-def tail_parts():
-    sizes = [(10, 9), (9, 8), (8, 7), (7, 6), (5, 5), (4, 4)]
-    parts = []
-    for i, (w, h) in enumerate(sizes):
-        kids = []
-        if i < 5:
-            kids.append(plate(f'tail_plate_{i}', (0, -h / 2 + 0.5, TAIL_L / 2), 5 - i * 0.7, 5, 40, 300 + i))
-        parts.append(Part(f'tail_{i}', (0, 0, TAIL_L) if i else (0, -4, 19), cubes=[
-            Cube(-w / 2, -h / 2, -1, w, h, TAIL_L + 2, scales(0.62, 310 + i, 3, belly_face='bottom'), reso=spine_lines),
-        ], children=kids))
-    for a, b in zip(parts, parts[1:]):
-        a.add(b)
-    # Fächer aus Eisklingen: fünf Klingen im Halbkreis (hinten, nach oben und zur Seite), eine Mittelklinge am längsten.
+def tail_fan():
+    """Fächer aus Eisklingen nach dem letzten Glied; Gelenk bei 0, zeigt nach +z. Gebaut für den Endquerschnitt
+    (etwa 5 x 5 Einheiten bei taper 0,32); der Renderer setzt ihn unverjüngt an."""
     blades = []
-    for i, (pitch, yaw, ln) in enumerate(((-38, -18, 15), (-8, 14, 21), (22, -4, 27), (52, 14, 21), (82, -18, 15))):
-        blades.append(blade(f'fan_blade_{i}', (0, -0.5, 1), (pitch, yaw, 0), ln, 6 if i == 2 else 5, 330 + i))
-    fan = Part('fan', (0, 0, TAIL_L), cubes=[Cube(-2, -2, -1, 4, 4, 3, ice(0.5, 340))], children=blades)
-    parts[-1].add(fan)
-    return parts[0]
+    spec = ((46, -10, 15, 5), (22, 10, 22, 6), (0, -3, 27, 7), (-24, 9, 21, 6), (-46, -8, 14, 5))
+    for i, (pitch, yaw, ln, w) in enumerate(spec):
+        blades.append(blade(f'fan_blade_{i}', (0, 0, 1.5), (pitch, yaw, 0), ln, w, 330 + i * 4))
+    for i, s in enumerate((-1, 1)):
+        blades.append(blade(f'fan_side_{i}', (s * 1.5, 0.5, 1), (10, s * 38, s * 90), 16, 5, 360 + i * 4))
+    return Part('tail_fan', cubes=[
+        Cube(-2.5, -2.5, -1, 5, 5, 3.5, ice(0.45, 340, '+z', edge=0.2)),
+        Cube(-1.5, -1.5, 2.5, 3, 3, 1.5, ice(0.55, 341, '+z', edge=0.2)),
+    ], children=blades)
 
 
 def nivaris():
-    crest = [plate(f'crest_{i}', (0, -10 + i * 0.5, -19 + i * 6), 9 - i, 6, 32, 400 + i) for i in range(4)]
-    chest = Part('chest', (0, -2, 2), cubes=[
-        Cube(-11, -10, -24, 22, 20, 25, chest_paint(500), ch='heart', reso=spine_lines),
-        Cube(-12, -14, -22, 7, 10, 14, scales(0.66, 501, 3)),     # Schulter rechts (hoch)
-        Cube(5, -14, -22, 7, 10, 14, scales(0.66, 502, 3)),       # Schulter links
-        Cube(-10, -1, -25, 7, 10, 1, pearl(0.62, 503)),           # Brustschuppe rechts
-        Cube(3, -1, -25, 7, 10, 1, pearl(0.62, 504)),             # Brustschuppe links
-        Cube(-2, 1, -25.5, 4, 6, 1, heart_core, ch='heart'),      # Herzenserbe
-    ], children=[neck_parts(), wing('r'), wing('l'), foreleg('r'), foreleg('l')] + crest)
-    hips_crest = [plate(f'hip_crest_{i}', (0, -6.5, 5 + i * 7), 7 - i, 6, 36, 420 + i) for i in range(2)]
-    body = Part('body', (0, 4, 0), cubes=[
-        Cube(-9, -7, -2, 18, 13, 22, scales(0.62, 510, 3, belly_face='bottom'), reso=spine_lines),
-        Cube(-7, 6, 0, 14, 2, 18, pearl(0.55, 511)),
-    ], children=[chest, hindleg('r'), hindleg('l'), tail_parts()] + hips_crest)
-    return Model('nivaris', 512, 256, [body])
+    parts = [head(), neck(), segment('segment'), segment('segment_dorsal', 'dorsal'), segment('segment_heart', 'heart'),
+             foreleg('l'), foreleg('r'), hindleg('l'), hindleg('r'), wing('l'), wing('r'), tail_fan()]
+    return SerpentModel('nivaris', TEX_W, TEX_H, parts)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-# Zusatz-Texturen (gleiche UVs): getrennte Leuchtmasken für Augen/Herz und die Resonanzlinien
+# Renderer-Vorschlag: Glieder, Verjüngung, Ansatzstellen (gleiche Werte in docs/NIVARIS_SERPENT.md)
 # ---------------------------------------------------------------------------------------------------------------------
 
-def _faces(c):
-    u, v, w, h, d = c.u, c.v, c.w, c.h, c.d
-    return [
-        ('top', u + d, v, w, d), ('bottom', u + d + w, v, w, d), ('right', u, v + d, d, h),
-        ('front', u + d, v + d, w, h), ('left', u + d + w, v + d, d, h), ('back', u + d + w + d, v + d, w, h),
-    ]
+WING_GLIED, HEART_GLIED, FORE_GLIED, HIND_GLIED = 2, 3, 3, 17
+ATTACH = {
+    'wing_l': (WING_GLIED, (6, -6, 4)), 'wing_r': (WING_GLIED, (-6, -6, 4)),
+    'foreleg_l': (FORE_GLIED, (7, 3, 8)), 'foreleg_r': (FORE_GLIED, (-7, 3, 8)),
+    'hindleg_l': (HIND_GLIED, (6, 3, 8)), 'hindleg_r': (HIND_GLIED, (-6, 3, 8)),
+}
 
 
-def variants(model, albedo, glow):
-    eyes = Image(model.tex_w, model.tex_h)
-    heart = Image(model.tex_w, model.tex_h)
-    reso = Image(model.tex_w, model.tex_h)
-    for c in model.cubes():
-        for name, fu, fv, fw, fh in _faces(c):
-            for iy in range(fh):
-                for ix in range(fw):
-                    if c.ch:
-                        res = c.paint(name, ix, iy, fw, fh)
-                        if res is not None and isinstance(res[0], tuple) and res[1] is not None:
-                            (eyes if c.ch == 'eyes' else heart).set(fu + ix, fv + iy, res[1])
-                    if c.reso:
-                        r = c.reso(name, ix, iy, fw, fh)
-                        if r is not None:
-                            reso.set(fu + ix, fv + iy, r)
-    save(eyes, 'textures/entity/nivaris_glow_eyes.png')
-    save(heart, 'textures/entity/nivaris_glow_heart.png')
-    save(reso, 'textures/entity/nivaris_resonance.png')
+def taper(i):
+    """Querschnittsfaktor (x und y) für Glied i (0 = Hals). Länge (z) bleibt 1, damit der Bogenabstand stimmt."""
+    if i <= 0:
+        return 1.0
+    if i < 5:
+        return (0.96, 1.04, 1.1, 1.12)[i - 1]
+    t = (i - 5) / (SEGMENTS - 1 - 5)
+    return round(1.12 - 0.8 * t ** 1.25, 3)
+
+
+def glied_part(i):
+    """Welches Teil der Renderer auf Glied i setzt (Vorschlag)."""
+    if i == 0:
+        return 'neck'
+    if i == HEART_GLIED:
+        return 'segment_heart'
+    if i % 2 == 0 and i < SEGMENTS - 2:
+        return 'segment_dorsal'
+    return 'segment'
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-# Posen
+# Posen für preview.py (Teile hängen alle bei 0 unter root, die Posen legen sie für die Vorschau auseinander)
 # ---------------------------------------------------------------------------------------------------------------------
-
-# Knochen, die die Animation bewegt (Reihenfolge = Kotlin-Kanäle). Alle haben Grunddrehung 0.
-BONES = ['body', 'chest',
-         'neck_0', 'neck_1', 'neck_2', 'neck_3', 'head', 'jaw', 'crown',
-         'wing_r', 'wing_fore_r', 'wing_hand_r', 'wing_l', 'wing_fore_l', 'wing_hand_l',
-         'arm_r', 'fore_r', 'hand_r', 'arm_l', 'fore_l', 'hand_l',
-         'thigh_r', 'shin_r', 'foot_r', 'thigh_l', 'shin_l', 'foot_l',
-         'tail_0', 'tail_1', 'tail_2', 'tail_3', 'tail_4', 'tail_5', 'fan']
-
-from preview_model import apply as _apply, mat_mul as _mul, rot_zyx as _rot  # noqa: E402
-
-_MODEL = None
-IDENT = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-
-
-def _model():
-    global _MODEL
-    if _MODEL is None:
-        _MODEL = nivaris()
-    return _MODEL
-
-
-def frames(pose):
-    """Vorwärtskinematik wie preview.collect: Name -> (Drehung, Position, Part) im Modellraum."""
-    out = {}
-
-    def walk(part, rot, pos):
-        value = pose.get(part.name, ...)
-        pivot = part.pivot
-        if value is ... or value is None:
-            r = tuple(math.radians(a) for a in part.rot)
-        else:
-            r = tuple(value[:3])
-            if len(value) >= 6:
-                pivot = (pivot[0] + value[3], pivot[1] + value[4], pivot[2] + value[5])
-        o = _apply(rot, pivot)
-        p = (pos[0] + o[0], pos[1] + o[1], pos[2] + o[2])
-        m = _mul(rot, _rot(*r))
-        out[part.name] = (m, p, part)
-        for ch in part.children:
-            walk(ch, m, p)
-    for top in _model().parts:
-        walk(top, IDENT, (0, 0, 0))
-    return out
-
-
-def point(fr, name, local):
-    m, p, _ = fr[name]
-    w = _apply(m, local)
-    return (w[0] + p[0], w[1] + p[1], w[2] + p[2])
-
-
-def _t(m):
-    return [[m[j][i] for j in range(3)] for i in range(3)]
-
-
-def lowest(fr, names, deep=True):
-    """Tiefster Punkt (größtes y) aller Quader der genannten Knochen (deep: samt Kindern)."""
-    best = -1e9
-    for name in names:
-        stack = [fr[name][2]]
-        while stack:
-            part = stack.pop()
-            m, p, _ = fr[part.name]
-            for c in part.cubes:
-                for x in (c.x, c.x + c.w):
-                    for y in (c.y, c.y + c.h):
-                        for z in (c.z, c.z + c.d):
-                            w = _apply(m, (x, y, z))
-                            best = max(best, w[1] + p[1])
-            if deep:
-                stack.extend(part.children)
-    return best
-
-
-def _pitch_of(m):
-    """Nickwinkel einer Drehung um die x-Achse (für Knochen, die nur nicken)."""
-    return math.atan2(m[2][1], m[1][1])
-
-
-def solve_leg(pose, upper, lower, l1, l2, target, bend_sign, end=None):
-    """Zwei-Glied-IK in der y-z-Ebene des Elternknochens: setzt die Nickwinkel von upper und lower so, dass das Ende
-    von lower (bzw. der Ankerpunkt end im lower-Raum) auf target (Modellraum) liegt. bend_sign: +1 Knie nach vorn
-    (Hinterlauf), -1 Ellbogen nach hinten (Vorderlauf)."""
-    fr = frames(pose)
-    parent_m, _, _ = fr[_parent()[upper]]
-    _, up_p, _ = fr[upper]
-    rel = _apply(_t(parent_m), (target[0] - up_p[0], target[1] - up_p[1], target[2] - up_p[2]))
-    Y, Z = rel[1], rel[2]
-    d = min(math.hypot(Y, Z), l1 + l2 - 0.01)
-    cb = (d * d - l1 * l1 - l2 * l2) / (2 * l1 * l2)
-    b = math.acos(max(-1.0, min(1.0, cb))) * bend_sign
-    theta = math.atan2(Z, Y)
-    a = theta - math.atan2(l2 * math.sin(b), l1 + l2 * math.cos(b))
-    old_u = pose.get(upper, (0, 0, 0))
-    old_l = pose.get(lower, (0, 0, 0))
-    pose[upper] = (a, old_u[1], old_u[2]) + tuple(old_u[3:6])
-    pose[lower] = (b, old_l[1], old_l[2]) + tuple(old_l[3:6])
-
-
-_PARENT = {}
-
-
-def _parent():
-    if not _PARENT:
-        def walk(part, parent):
-            _PARENT[part.name] = parent
-            for ch in part.children:
-                walk(ch, part.name)
-        for p in _model().parts:
-            walk(p, None)
-    return _PARENT
-
-
-# Standfußpunkte (Modellraum, Sohle am Boden) in der Grundhaltung.
-STANCE = {'r_front': (-10, -17), 'l_front': (10, -17), 'r_hind': (-9, 14), 'l_hind': (9, 14)}
-
-
-def plant_fore(pose, side, x, z, lift=0.0, sole_pitch=0.0):
-    """Vorderlauf: Handwurzel über (x, z), Sohle flach (bzw. sole_pitch), lift hebt den Fuß."""
-    target = (x, GROUND - HAND_SOLE - lift, z)
-    solve_leg(pose, f'arm_{side}', f'fore_{side}', ARM_L1, ARM_L2, target, -1)
-    fr = frames(pose)
-    m = fr[f'fore_{side}'][0]
-    pose[f'hand_{side}'] = (-_pitch_of(m) + sole_pitch, 0, 0)
-
-
-META_TILT = -0.42   # Mittelfuß gegen die Senkrechte (negativ = Zehen vorn, Ferse hoch)
-
-
-def plant_hind(pose, side, x, z, lift=0.0, meta=META_TILT):
-    """Hinterlauf (Zehengänger): Zehen auf (x, z); der Mittelfuß steht schräg (meta), Oberschenkel/Schienbein per IK."""
-    # Sprunggelenk = Zehenansatz minus Mittelfuß-Vektor (Weltneigung meta).
-    ankle_to_toe = (0, LEG_L3 * math.cos(meta), LEG_L3 * math.sin(meta))
-    toe_base = (x, GROUND - TOE_SOLE - lift, z + 1)
-    ankle = (toe_base[0], toe_base[1] - ankle_to_toe[1], toe_base[2] - ankle_to_toe[2])
-    solve_leg(pose, f'thigh_{side}', f'shin_{side}', LEG_L1, LEG_L2, ankle, +1)
-    fr = frames(pose)
-    m = fr[f'shin_{side}'][0]
-    pose[f'foot_{side}'] = (meta - _pitch_of(m), 0, 0)
-
 
 def R(*deg):
-    """Grad -> Radiant (pitch, yaw, roll[, dx, dy, dz])."""
     if len(deg) <= 3:
         return tuple(math.radians(a) for a in deg)
     return tuple(math.radians(a) for a in deg[:3]) + tuple(deg[3:])
 
 
-def _norm(v):
-    n = math.sqrt(sum(c * c for c in v)) or 1.0
-    return tuple(c / n for c in v)
+TOP = ['head', 'neck', 'segment', 'segment_dorsal', 'segment_heart', 'foreleg_l', 'foreleg_r', 'hindleg_l',
+       'hindleg_r', 'wing_l', 'wing_r', 'tail_fan']
+# Empfohlene Flügelhaltungen (Renderer): Winkel für wing_r, wing_l gespiegelt (yaw und roll mit umgekehrtem Vorzeichen).
+WING_POSES = {
+    'spread': {'wing': (0, 0, 0)},
+    # Angelegt wie ein zerschlissener Umhang: Knochen nach hinten über die Schulter, Haut außen an der Flanke.
+    # pitch 180 dreht die Schwinge um den eigenen Knochen, sonst zeigt die Haut nach innen in den Rumpf.
+    'fold': {'wing': (180, 84, -45)},
+    'fold_tight': {'wing': (180, 80, -70)},
+    'up': {'wing': (0, 6, 40)},
+    'down': {'wing': (0, 4, -34)},
+}
 
 
-def _cross(a, b):
-    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
-
-
-def _dot(a, b):
-    return sum(x * y for x, y in zip(a, b))
-
-
-def euler(m):
-    """Zerlegt eine Drehmatrix in (pitch, yaw, roll) für die Reihenfolge Z * Y * X (wie ModelPart)."""
-    yaw = math.asin(max(-1.0, min(1.0, -m[2][0])))
-    pitch = math.atan2(m[2][1], m[2][2])
-    roll = math.atan2(m[1][0], m[0][0])
-    return (pitch, yaw, roll)
-
-
-def wing_frames(spec, side):
-    """spec: drei Paare (Knochenrichtung, Hautrichtung) im Brustraum für die RECHTE Schwinge (x < 0 = außen rechts).
-    Liefert die lokalen Euler-Winkel von Humerus, Unterarm und Hand der Schwinge side."""
-    out = []
-    parent = IDENT
-    for bone_dir, memb_dir in spec:
-        if side == 'l':
-            bone_dir = (-bone_dir[0], bone_dir[1], bone_dir[2])
-            memb_dir = (-memb_dir[0], memb_dir[1], memb_dir[2])
-        d = _norm(bone_dir)
-        X = d if side == 'l' else tuple(-c for c in d)
-        mz = _norm(memb_dir)
-        Z = _norm(tuple(mz[i] - _dot(mz, X) * X[i] for i in range(3)))
-        Y = _cross(Z, X)
-        M = [[X[0], Y[0], Z[0]], [X[1], Y[1], Z[1]], [X[2], Y[2], Z[2]]]
-        local = _mul(_t(parent), M)
-        out.append(euler(local))
-        parent = M
-    return out
-
-
-def wings_sym(spec):
-    """Beide Schwingen spiegelbildlich aus einer Richtungs-Beschreibung der rechten Schwinge (siehe wing_frames)."""
+def wing_pose(name, dx=0.0, dy=0.0, dz=0.0, side_dx=0.0):
     out = {}
-    for side in ('r', 'l'):
-        names = [f'wing_{side}', f'wing_fore_{side}', f'wing_hand_{side}']
-        for n, e in zip(names, wing_frames(spec, side)):
-            out[n] = e
-    return out
-
-
-def neck(*pitches, yaw=0.0, roll=0.0):
-    """Halsglieder neck_0..3 und Kopf (pitch in Grad; yaw/roll je Glied gleich verteilt)."""
-    names = ['neck_0', 'neck_1', 'neck_2', 'neck_3', 'head']
-    out = {}
-    for i, n in enumerate(names):
-        p = pitches[i] if i < len(pitches) else 0.0
-        out[n] = R(p, yaw if n != 'head' else yaw * 0.5, roll)
-    return out
-
-
-def tail(*pitch_yaw):
-    out = {}
-    for i, (p, y) in enumerate(pitch_yaw):
-        out[f'tail_{i}'] = R(p, y, 0)
-    return out
-
-
-# Flügel-Haltungen der rechten Schwinge im Brustraum: je Glied (Knochenrichtung, Richtung der Haut-Hinterkante).
-# x < 0 = nach außen (rechts), y > 0 = nach unten, z > 0 = nach hinten.
-DOWN, BACK = (0, 1, 0), (0, 0, 1)
-# Angelegt wie ein zerschlissener Umhang: Ellbogen hoch über der Schulter, Handgelenk vorn an der Schulter, die
-# Fingerknochen laufen die Flanke entlang nach hinten, die Haut hängt außen an der Flanke herab.
-WING_FOLD = (((-0.32, -0.62, 0.72), (-0.45, 1, 0.1)),
-             ((0.06, 0.42, -0.9), (-0.3, 1, 0.15)),
-             ((-0.12, 0.14, 1), (-0.25, 1, 0)))
-WING_TIGHT = (((-0.18, -0.5, 0.85), (-0.3, 1, 0.1)),
-              ((0.05, 0.4, -0.92), (-0.2, 1, 0.1)),
-              ((-0.06, 0.1, 1), (-0.15, 1, 0)))
-WING_HALF = (((-0.8, -0.55, 0.3), (-0.2, 1, 0.6)),
-             ((-0.5, 0.35, -0.8), (-0.2, 0.6, 1)),
-             ((-0.4, 0.3, 0.85), (-0.3, 0.6, 0.2)))
-WING_SPREAD = (((-1, -0.12, 0.14), BACK), ((-1, 0, 0.02), BACK), ((-1, 0.06, 0.5), BACK))
-WING_GLIDE = (((-1, -0.18, 0.14), BACK), ((-1, -0.04, 0.04), BACK), ((-1, 0.08, 0.52), (0.1, 0, 1)))
-WING_UP = (((-0.55, -0.82, 0.12), (0, -0.2, 1)), ((-0.4, -0.9, 0.0), (0, -0.1, 1)), ((-0.15, -1, 0.3), (0, 0.15, 1)))
-WING_DOWN = (((-0.75, 0.62, 0.0), (0, 0.15, 1)), ((-0.45, 0.88, -0.1), (0, 0.2, 1)), ((-0.2, 1, 0.25), (0, 0.3, 1)))
-WING_FWD = (((-0.75, -0.25, -0.6), (0.35, 0, 1)), ((-0.35, 0.1, -0.95), (0.6, 0, 0.5)), ((0.1, 0.15, -1), (0.8, 0, 0.3)))
-WING_BACKUP = (((-0.45, -0.75, 0.5), (0, 0, 1)), ((-0.3, -0.75, 0.6), (0, 0.4, 1)), ((-0.1, -0.6, 0.8), (0, 0.6, 1)))
-WING_SLACK = (((-0.85, 0.35, 0.35), (-0.1, 0.15, 1)), ((-0.85, 0.5, -0.1), (0, 0.25, 1)), ((-0.8, 0.5, 0.35), (0, 0.3, 1)))
-WING_VERTICAL = (((-0.25, -1, 0.05), BACK), ((-0.1, -1, -0.05), BACK), ((0.05, -1, 0.15), BACK))
-WING_BRAKE = (((-0.6, -0.6, -0.5), (0, 0.4, 1)), ((-0.55, -0.4, -0.7), (0, 0.6, 1)), ((-0.4, -0.1, -0.9), (0, 0.8, 0.6)))
-WING_DIVE = (((-0.35, -0.3, 0.9), (0.05, 1, 0.2)), ((0.05, 0.15, -1), (0.0, 1, 0.1)), ((-0.05, 0.05, 1), (0, 1, 0)))
-
-
-def base_pose():
-    return {b: (0.0, 0.0, 0.0) for b in BONES}
-
-
-def build(body=(0, 0, 0), chest=(0, 0, 0), neckp=None, wings=WING_FOLD, tailp=None, jaw=0, extra=None,
-          feet='stand', front=None, hind=None, lift=None, ground_names=None, ground_extra=0.0, flying=False,
-          tuck=None, body_dy=0.0):
-    """Setzt eine Schlüsselpose zusammen. feet='stand': alle vier Füße per IK auf den Boden (front/hind überschreiben
-    Fußpunkte als {seite: (x, z)}); feet='free': Beine stehen in tuck (Flug) bzw. werden nicht gelöst."""
-    pose = base_pose()
-    pose['body'] = R(*body) + (0.0, body_dy, 0.0)
-    pose['chest'] = R(*chest)
-    pose.update(neck(*(neckp or (-24, -6, -4, -2, 30))[:5]))
-    pose.update(wings_sym(wings))
-    pose.update(tail(*(tailp or ((-10, 0), (-6, 0), (-4, 0), (-2, 0), (2, 0), (4, 0)))))
-    pose['jaw'] = R(jaw, 0, 0)
-    if extra:
-        for k, v in extra.items():
-            pose[k] = R(*v)
-    if feet == 'stand':
-        front = front or {}
-        hind = hind or {}
-        lift = lift or {}
-        for _ in range(6):
-            planted = []
-            for side in ('r', 'l'):
-                f = front.get(side, STANCE[f'{side}_front'])
-                if f != 'free':
-                    plant_fore(pose, side, f[0], f[1], lift.get(f'{side}_front', 0.0))
-                    if not lift.get(f'{side}_front'):
-                        planted.append(f'hand_{side}')
-                h = hind.get(side, STANCE[f'{side}_hind'])
-                if h != 'free':
-                    plant_hind(pose, side, h[0], h[1], lift.get(f'{side}_hind', 0.0))
-                    if not lift.get(f'{side}_hind'):
-                        planted.append(f'toes_{side}')
-            fr = frames(pose)
-            if ground_names:
-                shift = GROUND + ground_extra - lowest(fr, ground_names, deep=False)
+    for side, s in (('r', 1), ('l', -1)):
+        spec = WING_POSES[name]
+        for bone, (p, y, r) in spec.items():
+            key = f'wing_{side}' if bone == 'wing' else f'wing_{side}_{bone}'
+            if bone == 'wing':
+                out[key] = R(p, s * y, s * r, dx - s * side_dx, dy, dz)
             else:
-                # Erreichen die Füße den Boden nicht (Aufbäumen), sinkt der Rumpf nach.
-                shift = max(0.0, GROUND - lowest(fr, planted)) if planted else 0.0
-            if abs(shift) < 0.02:
-                break
-            b = list(pose['body'])
-            b[4] += shift
-            pose['body'] = tuple(b)
-    elif tuck:
-        pose.update(tuck)
+                # Kinder: Grunddrehung (Schwung nach hinten) bleibt, die Faltung kommt dazu.
+                base = {'fore': 8, 'tip': 14}[bone]
+                out[key] = R(p, s * (y + base), s * r)
+    return out
+
+
+def only(*names, **offsets):
+    pose = {n: None for n in TOP}
+    for n in names:
+        pose[n] = R(0, 0, 0, *offsets.get(n, (0, 0, 0)))
     return pose
 
 
-# Angezogene Beine im Flug.
-TUCK = {
-    'arm_r': R(55, 0, 0), 'fore_r': R(-95, 0, 0), 'hand_r': R(60, 0, 0),
-    'arm_l': R(55, 0, 0), 'fore_l': R(-95, 0, 0), 'hand_l': R(60, 0, 0),
-    'thigh_r': R(70, 0, 0), 'shin_r': R(-20, 0, 0), 'foot_r': R(70, 0, 0),
-    'thigh_l': R(70, 0, 0), 'shin_l': R(-20, 0, 0), 'foot_l': R(70, 0, 0),
+def _forebody(wings='fold', jaw=0.0):
+    """Kopf, Hals und Glied 1-4 gerade hintereinander, Schwingen und Vorderläufe angesetzt."""
+    pose = only('head', 'neck')
+    pose['segment'] = R(0, 0, 0, 0, 0, 16)
+    pose['segment_dorsal'] = R(0, 0, 0, 0, 0, 32)
+    pose['segment_heart'] = R(0, 0, 0, 0, 0, 48)
+    pose['foreleg_l'] = R(0, 0, 0, 7, 3, 56)
+    pose['foreleg_r'] = R(0, 0, 0, -7, 3, 56)
+    pose.update({k: v for k, v in wing_pose(wings, 0, -6, 36, side_dx=6).items()})
+    pose['jaw'] = R(jaw, 0, 0)
+    return pose
+
+
+POSES = {
+    'kopf': only('head'),
+    'kopf_offen': dict(only('head'), jaw=R(34, 0, 0)),
+    'glied': only('segment_dorsal'),
+    'glieder': only('neck', 'segment', 'segment_dorsal', 'segment_heart',
+                    neck=(0, 0, -40), segment=(0, 0, -20), segment_dorsal=(0, 0, 0), segment_heart=(0, 0, 20)),
+    'vorderteil': _forebody('fold'),
+    'vorderteil_gespannt': _forebody('spread', jaw=20),
+    'laeufe': only('foreleg_l', 'foreleg_r', 'hindleg_l', 'hindleg_r',
+                   foreleg_l=(8, 0, -10), foreleg_r=(-8, 0, -10), hindleg_l=(8, 0, 10), hindleg_r=(-8, 0, 10)),
+    'faecher': only('tail_fan'),
 }
-# Beine hängen lang nach unten (Landeanflug).
-REACH = {
-    'arm_r': R(-30, 0, 0), 'fore_r': R(-20, 0, 0), 'hand_r': R(40, 0, 0),
-    'arm_l': R(-30, 0, 0), 'fore_l': R(-20, 0, 0), 'hand_l': R(40, 0, 0),
-    'thigh_r': R(-30, 0, 0), 'shin_r': R(40, 0, 0), 'foot_r': R(-20, 0, 0),
-    'thigh_l': R(-30, 0, 0), 'shin_l': R(40, 0, 0), 'foot_l': R(-20, 0, 0),
-}
-FLY_TAIL = ((4, 0), (2, 0), (0, 0), (0, 0), (2, 0), (4, 0))
-FLY_DY = -6.0    # Flughaltung: Körper leicht angehoben, bleibt in der Trefferbox (4,5 x 3,6) über dem Entity-Punkt
+HEIGHT_EXCLUDE = ()
 
-
-def flight(body=(0, 0, 0), neckp=(-6, 0, 2, 2, 8), wings=WING_SPREAD, tailp=FLY_TAIL, jaw=0, legs=None, dy=FLY_DY,
-           chest=(0, 0, 0), extra=None):
-    return build(body=body, chest=chest, neckp=neckp, wings=wings, tailp=tailp, jaw=jaw, feet='free',
-                 tuck=legs or TUCK, body_dy=dy, extra=extra)
-
-
-KEYS = {}
-
-
-def lift_tail(pose):
-    """Am Boden: Schwanzglieder, die in den Boden ragen würden, Glied für Glied anheben."""
-    for i in range(6):
-        name = f'tail_{i}'
-        for _ in range(40):
-            fr = frames(pose)
-            if lowest(fr, [name] if i < 5 else [name, 'fan'], deep=(i == 5)) <= GROUND - 0.5:
-                break
-            p = list(pose[name])
-            p[0] += math.radians(3)
-            pose[name] = tuple(p)
-
-
-def lift_neck(pose):
-    """Am Boden: Hals und Kopf liegen höchstens auf, sie stechen nie hinein (vom Rumpf zur Schnauze)."""
-    for name in ('neck_0', 'neck_1', 'neck_2', 'neck_3', 'head'):
-        for _ in range(60):
-            fr = frames(pose)
-            if lowest(fr, [name, 'jaw'] if name == 'head' else [name], deep=False) <= GROUND - 0.3:
-                break
-            p = list(pose[name])
-            p[0] -= math.radians(2)
-            pose[name] = tuple(p)
-
-
-def lift_wings(pose):
-    """Am Boden: Schwingen höchstens bis zum Boden; zu tiefe Schwingen werden an der Schulter angehoben."""
-    for side, sign in (('r', 1), ('l', -1)):
-        name = f'wing_{side}'
-        for _ in range(60):
-            fr = frames(pose)
-            if lowest(fr, [name]) <= GROUND - 0.3:
-                break
-            p = list(pose[name])
-            p[2] += sign * math.radians(2)
-            pose[name] = tuple(p)
-
-
-def key(name, pose):
-    if pose['body'][4] > -3:
-        lift_neck(pose)
-        lift_tail(pose)
-        lift_wings(pose)
-    KEYS[name] = pose
-
-
-# --- Boden ---------------------------------------------------------------------------------------------------------
-# Ruhe: Hals lang und gerade schräg nach oben, Kopf waagerecht; Schwingen angelegt; Schwanz liegt in flachem Bogen.
-key('idle', build(neckp=(-44, -3, -2, -1, 50),
-                  tailp=((-12, 0), (-6, 4), (-2, 6), (2, 6), (4, 4), (4, 0))))
-# Einatmen: Hals weit zurück (S-Kurve nach oben), Brust gehoben, Schwingen halb offen.
-key('inhale', build(body=(-6, 0, 0), chest=(-10, 0, 0), neckp=(-48, -18, 8, 14, 40), wings=WING_HALF, jaw=10,
-                    tailp=((-6, 0), (-4, 0), (-2, 0), (2, 0), (4, 0), (6, 0))))
-# Atem: Hals stößt nach vorn, Kopf gerade, Maul weit offen.
-key('breath', build(body=(4, 0, 0), chest=(6, 0, 0), neckp=(-10, 2, 2, 2, 8), wings=WING_HALF, jaw=46,
-                    tailp=((-8, 0), (-4, 0), (0, 0), (2, 0), (4, 0), (6, 0))))
-# Eisfeld: Atem schräg nach unten in einen Kreis.
-key('freeze_windup', build(body=(-4, 0, 0), chest=(-8, 0, 0), neckp=(-44, -14, 6, 10, 36), wings=WING_HALF, jaw=8))
-key('freeze', build(body=(8, 0, 0), chest=(10, 0, 0), neckp=(16, 10, 8, 6, 14), wings=WING_HALF, jaw=48))
-# Klauenhieb: rechter Vorderlauf hoch und zurück, Schulter hoch, Gewicht nach links.
-key('claw_windup', build(body=(-8, -10, -6), chest=(-8, -14, -8), neckp=(-26, -4, -2, 0, 28, 0, 0), wings=WING_HALF,
-                         front={'r': 'free'}, extra={'arm_r': (-120, 0, -24), 'fore_r': (-40, 0, 0), 'hand_r': (-20, 0, 0)},
-                         tailp=((-8, 10), (-4, 10), (0, 8), (2, 6), (4, 4), (4, 0))))
-key('claw_hit', build(body=(6, 14, 4), chest=(10, 18, 6), neckp=(-16, 2, 2, 2, 22), wings=WING_HALF,
-                      front={'r': 'free'}, extra={'arm_r': (-50, 0, 34), 'fore_r': (-12, 0, 0), 'hand_r': (30, 0, 0)},
-                      tailp=((-10, -10), (-6, -10), (-2, -8), (0, -6), (4, -4), (4, 0))))
-# Schwanzfeger: Körper verdreht, Schwanz holt nach rechts aus und fegt nach links vorn.
-key('tail_windup', build(body=(0, 18, 0), chest=(0, 14, 0), neckp=(-26, -4, -4, -2, 30), wings=WING_HALF,
-                         tailp=((-8, -34), (-2, -24), (0, -18), (2, -14), (4, -10), (10, -6)),
-                         extra={'neck_0': (-26, -24, 0)}))
-key('tail_hit', build(body=(0, -24, 0), chest=(0, -16, 0), neckp=(-22, 0, -2, -2, 28), wings=WING_HALF,
-                      tailp=((-4, 38), (-2, 26), (0, 22), (2, 18), (2, 12), (6, 8)),
-                      extra={'neck_0': (-22, 22, 0)}))
-key('tail_follow', build(body=(0, -30, 0), chest=(0, -20, 0), neckp=(-22, 0, -2, -2, 28), wings=WING_HALF,
-                         tailp=((-6, 44), (-4, 32), (-2, 26), (0, 20), (0, 14), (4, 8)),
-                         extra={'neck_0': (-22, 26, 0)}))
-# Flügelstoß: Schwingen hoch und zurück (sammeln), dann weit nach vorn geschlagen. Hinterbeine stemmen sich.
-key('gust_windup', build(body=(-14, 0, 0), chest=(-10, 0, 0), neckp=(-34, -10, -4, 0, 36), wings=WING_BACKUP, jaw=12,
-                         hind={'r': (-9, 18), 'l': (9, 18)}))
-key('gust_hit', build(body=(8, 0, 0), chest=(6, 0, 0), neckp=(-14, 0, 2, 2, 16), wings=WING_FWD, jaw=30,
-                      hind={'r': (-9, 20), 'l': (9, 20)}))
-# Griff: Kopf und rechte Klaue tief nach vorn, dann mit dem Brocken in der Klaue aufrichten.
-key('grab_reach', build(body=(14, 0, 0), chest=(14, 0, 0), neckp=(10, 10, 8, 6, 20), wings=WING_HALF, jaw=22,
-                        front={'r': (-8, -34)}))
-key('grab_hold', build(body=(-10, 0, 0), chest=(-16, 0, 0), neckp=(-30, -6, -2, 0, 30), wings=WING_HALF, jaw=6,
-                       front={'r': 'free'}, extra={'arm_r': (-70, 0, 10), 'fore_r': (-60, 0, 0), 'hand_r': (-40, 0, 0)}))
-# Wurf: aufbäumen, Klaue weit zurück, dann nach vorn schleudern.
-key('throw_windup', build(body=(-22, 0, 0), chest=(-20, -16, 0), neckp=(-24, -6, 0, 0, 26, 0), wings=WING_BACKUP,
-                          front={'r': 'free'}, extra={'arm_r': (20, 0, 20), 'fore_r': (-70, 0, 0), 'hand_r': (-30, 0, 0)}))
-key('throw_hit', build(body=(10, 0, 0), chest=(10, 16, 0), neckp=(-14, 0, 2, 2, 18), wings=WING_FWD, jaw=20,
-                       front={'r': 'free'}, extra={'arm_r': (-110, 0, -10), 'fore_r': (-10, 0, 0), 'hand_r': (10, 0, 0)}))
-# Brüllen: Kopf hoch, Maul offen, Schwingen halb gespreizt.
-key('roar', build(body=(-10, 0, 0), chest=(-12, 0, 0), neckp=(-44, -10, -6, -4, -10), wings=WING_HALF, jaw=40,
-                  tailp=((-6, 0), (-2, 0), (2, 0), (6, 0), (8, 0), (10, 0))))
-# Zu Boden gebracht: Bauch am Boden, Kopf flach, Schwingen schlaff ausgebreitet.
-key('downed', build(body=(2, 0, 4), chest=(2, 0, -2), neckp=(20, 4, 2, 0, -6, 0), wings=WING_SLACK,
-                    front={'r': (-14, -36), 'l': (13, -38)}, hind={'r': (-17, 16), 'l': (17, 18)},
-                    ground_names=('body', 'chest'),
-                    tailp=((4, 8), (0, 8), (0, 10), (0, 12), (0, 10), (0, 6))))
-# Erschöpft: Kopf tief, Hals hängt, Schwingen halb herabgelassen.
-key('exhausted', build(body=(8, 0, 0), chest=(6, 0, 0), neckp=(16, 8, 6, 4, -4), wings=WING_SLACK, jaw=12,
-                       tailp=((-14, 0), (-8, 6), (-2, 6), (0, 6), (2, 4), (2, 0))))
-# Abflug: tief in die Hocke, Schwingen hoch (Ausholen), dann ein Schlag nach unten.
-key('takeoff_crouch', build(body=(-4, 0, 0), neckp=(-20, -6, -4, -2, 26), wings=WING_UP, body_dy=7,
-                            hind={'r': (-9, 12), 'l': (9, 12)}))
-key('takeoff_beat', flight(body=(-10, 0, 0), neckp=(-24, -6, -2, 0, 24), wings=WING_DOWN, legs=REACH, dy=-10))
-# Resonanz: Schwingen senkrecht, Kopf hoch.
-key('resonance', build(body=(-8, 0, 0), chest=(-10, 0, 0), neckp=(-40, -10, -6, -6, 30), wings=WING_VERTICAL,
-                       tailp=((-8, 0), (-4, 0), (0, 0), (2, 0), (4, 0), (8, 0))))
-# Liegt ruhig zusammengerollt: Hals nach rechts um den Körper, Schwanz nach links nach vorn.
-key('lie_down', build(body=(0, 0, 0), chest=(0, 0, 0), neckp=(18, 6, 0, 0, -2), wings=WING_TIGHT,
-                      front={'r': (-12, -36), 'l': (12, -34)}, hind={'r': (-16, 18), 'l': (16, 16)},
-                      ground_names=('body', 'chest'),
-                      tailp=((2, 20), (0, 30), (0, 34), (0, 36), (0, 30), (0, 20)),
-                      extra={'neck_0': (18, -26, 0), 'neck_1': (6, -30, 0), 'neck_2': (0, -32, 0), 'neck_3': (0, -26, 0),
-                             'head': (-2, -20, 0)}))
-
-# --- Luft ----------------------------------------------------------------------------------------------------------
-key('hover', flight(body=(-14, 0, 0), neckp=(-18, -4, 0, 2, 26), wings=WING_SPREAD))
-key('fly_up', flight(body=(-14, 0, 0), neckp=(-18, -4, 0, 2, 26), wings=WING_UP))
-key('fly_down', flight(body=(-14, 0, 0), neckp=(-18, -4, 0, 2, 26), wings=WING_DOWN))
-key('glide', flight(body=(2, 0, 0), neckp=(-4, 0, 2, 2, 4), wings=WING_GLIDE))
-key('dive_windup', flight(body=(-30, 0, 0), neckp=(-10, 0, 0, 0, 20), wings=WING_UP))
-key('dive', flight(body=(38, 0, 0), neckp=(2, 2, 0, 0, -6), wings=WING_DIVE, tailp=((4, 0), (2, 0), (0, 0), (0, 0), (0, 0), (0, 0))))
-key('crash_windup', flight(body=(-36, 0, 0), neckp=(-6, 0, 0, 0, 16), wings=WING_UP))
-key('crash', flight(body=(80, 0, 0), neckp=(0, 0, 0, 0, -4), wings=WING_DIVE, tailp=((4, 0), (2, 0), (0, 0), (0, 0), (0, 0), (0, 0))))
-key('inhale_air', flight(body=(-16, 0, 0), chest=(-8, 0, 0), neckp=(-44, -16, 8, 12, 40), jaw=10))
-key('breath_air', flight(body=(6, 0, 0), chest=(4, 0, 0), neckp=(10, 6, 6, 4, 14), jaw=46))
-# Landung: Anflug mit Schwingen hoch-vorn (Bremsen), Beine gestreckt; Aufprall tief gestaucht, Schwingen nach unten.
-key('land_windup', flight(body=(-24, 0, 0), neckp=(-22, -6, -2, 0, 30), wings=WING_BRAKE,
-                          legs=REACH, dy=-10))
-key('land_hit', build(body=(6, 0, 0), chest=(8, 0, 0), neckp=(6, 6, 6, 4, 6), wings=WING_DOWN, jaw=10, body_dy=0,
-                      front={'r': (-12, -19), 'l': (12, -19)}, hind={'r': (-10, 13), 'l': (10, 13)},
-                      ground_extra=0.0))
-
-
-def _land_squash():
-    """Aufprall: Rumpf 3 Einheiten tiefer als der Stand erlaubt (Beine gebeugt), danach federt alles zurück."""
-    p = KEYS['land_hit']
-    b = list(p['body'])
-    b[4] += 3.0
-    p['body'] = tuple(b)
-    for side in ('r', 'l'):
-        plant_fore(p, side, -12 if side == 'r' else 12, -19)
-        plant_hind(p, side, -10 if side == 'r' else 10, 13)
-
-
-_land_squash()
-
-# Takeoff-Hocke etwas tiefer: Beine neu lösen, nachdem der Rumpf gesenkt ist.
-for _side in ('r', 'l'):
-    plant_fore(KEYS['takeoff_crouch'], _side, -10 if _side == 'r' else 10, -17)
-    plant_hind(KEYS['takeoff_crouch'], _side, -9 if _side == 'r' else 9, 12)
-
-POSES = KEYS
-
-
-# ---------------------------------------------------------------------------------------------------------------------
-# Anker (Trefferzonen) und Kotlin-Block
-# ---------------------------------------------------------------------------------------------------------------------
-
+# Anker der Trefferzonen im Raum ihres Teils (Einheiten, vor SCALE). Siehe docs/NIVARIS_ANCHORS.md.
 ANCHORS = {
-    'head': ('head', (0, -1.5, -8)),
-    'heart': ('chest', (0, 4, -25)),
-    'throat': ('neck_1', (0, 3.5, -4)),
-    'tail_tip': ('fan', (0, 0, 8)),
+    'head': ('head', (0, -2.5, -9)),          # Kopfmitte zwischen den Augen
+    'throat': ('head', (0, 4.5, -1)),         # Kehle: Unterseite hinter dem Kiefergelenk (leuchtende Naht)
+    'heart': ('segment_heart', (0, 7.5, 8)),  # Mitte des Herzkerns auf der Bauchseite von Glied 3
+    'tail_tip': ('tail_fan', (0, -1, 13)),    # Mitte des Klingenfächers
 }
-
-
-def anchor_blocks(pose_name):
-    fr = frames(POSES[pose_name])
-    out = {}
-    for k, (bone, local) in ANCHORS.items():
-        x, y, z = point(fr, bone, local)
-        # Renderer: Modell blickt nach -z; vorwärts = -z, hoch = 24 - y, rechts (der Drachin) = -x.
-        out[k] = (-z / U, (GROUND - y) / U, -x / U)
-    return out
-
-
-def write_anchors():
-    rows = []
-    for p in ('idle', 'inhale', 'downed', 'exhausted', 'hover'):
-        a = anchor_blocks(p)
-        for k, label in (('head', 'Kopfmitte'), ('throat', 'Kehle'), ('heart', 'Herzkern'), ('tail_tip', 'Schwanzspitze')):
-            f, u, r = a[k]
-            rows.append(f'| {p.upper()} | {label} | {f:+.2f} | {u:+.2f} | {r:+.2f} |')
-    text = f'''# Nivaris: Anker der Trefferzonen
-
-Erzeugt von `python tools/assets/nivaris_model.py --anchors` aus denselben Schlüsselposen, die das Kotlin-Modell
-(`client/model/nivaris/NivarisModel.kt`, Block `Keys`) benutzt. Alle Werte in **Blöcken relativ zur Entity-Position**
-(Bodenpunkt unter der Rumpfmitte), Renderer-Faktor {SCALE} schon eingerechnet:
-
-* **vor** = entlang der Blickrichtung (yaw) der Entity, negativ = hinter der Mitte
-* **hoch** = über der Entity-Position (im Flug hebt der Server die Entity an; der Wert gilt relativ dazu)
-* **rechts** = zur rechten Seite der Drachin (bei symmetrischen Posen 0)
-
-| Pose | Zone | vor | hoch | rechts |
-|---|---|---|---|---|
-''' + '\n'.join(rows) + f'''
-
-Hinweise:
-* Die Werte sind die gehaltenen Endhaltungen. Atmen, Gehen und Flügelschlag verschieben sie um höchstens etwa
-  ±0,3 Blöcke (HOVER: Körper hebt und senkt sich mit dem Flügelschlag um etwa ±0,25).
-* INHALE gilt am Boden. Atmet sie im Flug ein (`flying = true`), nimmt das Modell die Flughaltung: Kopf
-  {_inhale_air_note()}.
-* HOVER: Rumpf, Beine und Schwanz bleiben mindestens {_hover_clear():.1f} Blöcke über dem Entity-Punkt (innerhalb der
-  Trefferbox 4,5 × 3,6); nur die Schwingen reichen beim Abschlag bis etwa {-_hover_wing():.1f} Blöcke darunter.
-* Kehle = Unterseite des zweiten Halsglieds (dort, wo die Naht beim Atemholen glüht); Herzkern = Mitte des goldenen
-  Kerns zwischen den Brustschuppen. Für eine einzelne Zone „Kehle/Herzkern“ eignet sich der Mittelpunkt beider.
-* Kopfmitte = Mitte des Schädels (zwischen den Augen), Schwanzspitze = Mitte des Eisklingen-Fächers.
-'''
-    path = os.path.join(HERE, '..', '..', 'docs', 'NIVARIS_ANCHORS.md')
-    with open(path, 'w', encoding='utf8', newline='\n') as f:
-        f.write(text)
-    print('Anker:', os.path.abspath(path))
-    for p in ('idle', 'inhale', 'downed', 'exhausted', 'hover', 'inhale_air'):
-        print(p, {k: tuple(round(v, 2) for v in val) for k, val in anchor_blocks(p).items()})
-
-
-def _hover_clear():
-    fr = frames(POSES['hover'])
-    low = max(lowest(fr, [n], deep=False) for n in fr if not n.startswith(('wing', 'memb', 'spar', 'thumb')))
-    return (GROUND - low) / U
-
-
-def _hover_wing():
-    return (GROUND - lowest(frames(POSES['fly_down']), ['wing_r'])) / U
-
-
-def _inhale_air_note():
-    a = anchor_blocks('inhale_air')
-    f, u, _ = a['head']
-    tf, tu, _ = a['throat']
-    return f'vor {f:+.2f} / hoch {u:+.2f}, Kehle vor {tf:+.2f} / hoch {tu:+.2f}'
-
-
-def bone_paths():
-    paths = {}
-
-    def walk(part, prefix):
-        path = f'{prefix}/{part.name}' if prefix else part.name
-        paths[part.name] = path
-        for ch in part.children:
-            walk(ch, path)
-    for p in _model().parts:
-        walk(p, '')
-    return {b: paths[b] for b in BONES}
-
-
-def kotlin_block():
-    paths = bone_paths()
-    lines = ['    // <keys> erzeugt von tools/assets/nivaris_model.py --kotlin; nicht von Hand ändern', '    object Keys {']
-    lines.append('        /** Knochenpfade in Kanalreihenfolge (je 6 Werte: pitch, yaw, roll, dx, dy, dz). */')
-    lines.append('        val BONES = arrayOf(' + ', '.join(f'"{paths[b]}"' for b in BONES) + ')')
-    for i, b in enumerate(BONES):
-        lines.append(f'        const val {b.upper()} = {i}')
-    lines.append(f'        const val COUNT = {len(BONES)}')
-    lines.append(f'        /** Versatz des Körpers in der Flughaltung (Einheiten, -y = hoch). */')
-    lines.append(f'        const val FLY_DY = {FLY_DY}f')
-    for name, pose in POSES.items():
-        vals = []
-        for b in BONES:
-            v = tuple(pose.get(b, (0.0, 0.0, 0.0)))
-            v = v + (0.0,) * (6 - len(v))
-            vals.extend(v)
-        data = ','.join(('%.4f' % x).rstrip('0').rstrip('.') if abs(x) > 1e-6 else '0' for x in vals)
-        lines.append(f'        val {name.upper()} = key("{data}")')
-    lines.append('    }')
-    lines.append('    // </keys>')
-    return '\n'.join(lines)
-
-
-def write_kotlin():
-    path = os.path.join(HERE, '..', '..', 'src', 'main', 'kotlin', 'dev', 'henny', 'hha_arius', 'client', 'model',
-                        'nivaris', 'NivarisModel.kt')
-    with open(path, encoding='utf8') as f:
-        text = f.read()
-    if '// <keys>' not in text:
-        raise SystemExit('Marker // <keys> fehlt in NivarisModel.kt')
-    new = re.sub(r'    // <keys>.*?// </keys>', lambda m: kotlin_block(), text, flags=re.S)
-    with open(path, 'w', encoding='utf8', newline='\n') as f:
-        f.write(new)
-    print(f'NivarisModel.kt: {len(POSES)} Schlüsselposen geschrieben')
 
 
 if __name__ == '__main__':
-    if '--kotlin' in sys.argv:
-        write_kotlin()
-    if '--anchors' in sys.argv:
-        write_anchors()
-    if '--feet' in sys.argv:
-        for n, p in POSES.items():
-            fr = frames(p)
-            print(n, 'tiefster Punkt', round(lowest(fr, ['body']), 2),
-                  'Füße', [round(lowest(fr, [f]), 1) for f in ('hand_r', 'hand_l', 'toes_r', 'toes_l')])
-
-# Für die Größenprüfung in preview.py: Diese Knochen zählen nicht zur Körperhöhe.
-HEIGHT_EXCLUDE = ('crown',)
+    if '--taper' in sys.argv:
+        for i in range(SEGMENTS):
+            print(f'{i:2d} {glied_part(i):15s} {taper(i):.3f}')

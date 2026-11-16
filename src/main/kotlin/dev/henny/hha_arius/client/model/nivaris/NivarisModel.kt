@@ -2,17 +2,28 @@ package dev.henny.hha_arius.client.model.nivaris
 
 import dev.henny.hha_arius.boss.AriusTimings
 import dev.henny.hha_arius.boss.NivarisPose
+import dev.henny.hha_arius.boss.NivarisShape
+import net.minecraft.client.model.Dilation
+import net.minecraft.client.model.ModelData
 import net.minecraft.client.model.ModelPart
+import net.minecraft.client.model.ModelPartBuilder
+import net.minecraft.client.model.ModelTransform
+import net.minecraft.client.model.TexturedModelData
+import net.minecraft.client.render.LightmapTextureManager
+import net.minecraft.client.render.WorldRenderer
 import net.minecraft.client.render.entity.model.EntityModel
 import net.minecraft.client.render.entity.state.LivingEntityRenderState
+import net.minecraft.util.math.BlockPos
 import net.minecraft.util.math.MathHelper
-import kotlin.math.abs
-import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.max
-import kotlin.math.min
 import kotlin.math.sin
 
+/**
+ * Zustand für einen Frame. Neben Pose und Leuchten trägt er den fertig berechneten Körper: [NivarisShape.SEGMENTS] + 1
+ * Punkte (Kopfgelenk, Gliedgrenzen, Schwanzansatz) relativ zur Render-Position, je Glied ein Rahmen und der Querschnitt.
+ * Berechnet wird er in [NivarisRenderer.updateRenderState] ([NivarisBody]), gezeichnet in [NivarisRenderer.render].
+ */
 class NivarisRenderState : LivingEntityRenderState() {
     var bossPose = NivarisPose.IDLE
     var previousPose = NivarisPose.IDLE
@@ -29,37 +40,92 @@ class NivarisRenderState : LivingEntityRenderState() {
     var eyeGlow = 50
     var lead = false
     var resonance = false
+
+    /** [dev.henny.hha_arius.boss.NivarisMode]. */
+    var mode = 0
+
+    /** Posen-Kanäle, siehe [NivarisModel.FWD] … */
+    val p = FloatArray(NivarisModel.COUNT)
+
+    // --- Körper (relativ zur Render-Position der Entity) ---
+    val px = FloatArray(POINTS)
+    val py = FloatArray(POINTS)
+    val pz = FloatArray(POINTS)
+
+    /** Je Glied 9 Werte: Modell-x (links), Modell-y (Bauch, = −oben), Modell-z (nach hinten). */
+    val frame = FloatArray(NivarisShape.SEGMENTS * 9)
+
+    /** Kopf: gleiche Spalten wie [frame]. */
+    val headFrame = FloatArray(9)
+
+    /** Querschnitt je Glied (Verjüngung × Atmen) und Längenfaktor (Abstand der Punkte / 2,4). */
+    val girth = FloatArray(NivarisShape.SEGMENTS)
+    val stretch = FloatArray(NivarisShape.SEGMENTS)
+
+    /** Licht je Punkt (Körper reicht weit über den Entity-Block hinaus). */
+    val lights = IntArray(POINTS)
+    var bodyReady = false
+
+    companion object {
+        const val POINTS = NivarisShape.SEGMENTS + 1
+    }
 }
 
-/** Eine Schlüsselpose: je Knochen (pitch, yaw, roll, dx, dy, dz), siehe [NivarisModel.Keys]. */
+/** Eine Schlüsselhaltung: ein Wert je Kanal (siehe [NivarisModel.FWD] …). */
 class NivarisKey(val v: FloatArray)
 
-private fun key(data: String) = NivarisKey(data.split(',').map { it.toFloat() }.toFloatArray())
-
 /**
- * Nivaris, die Alte vom Eirgletscher. Geometrie, Textur und alle Schlüsselposen stammen aus
- * tools/assets/nivaris_model.py; der Block [Keys] wird dort erzeugt (`python tools/assets/nivaris_model.py --kotlin`),
- * damit Vorschau und Spiel dieselben Winkel benutzen. Hier steht nur der Ablauf.
+ * Nivaris als Schlangendrache. Die Teile des Modells (tools/assets/nivaris_model.py → [NivarisModelData]) hängen alle
+ * unverdreht unter root und werden einzeln auf den Körper gesetzt (siehe [NivarisRenderer]): `head` (mit `jaw`),
+ * `neck`, `segment`, `segment_dorsal`, `segment_heart`, Läufe, Schwingen, `tail_fan`. Fehlt ein Teil (altes Modell,
+ * Bau in Arbeit), springt ein schlichter Platzhalter ein.
  *
- * Ablaufvertrag (siehe [NivarisPose]): Ausholhaltung weich erreichen, halten, **Treffer genau bei t = windup**,
- * Nachlauf [AriusTimings.NIVARIS_RECOVER], dann zurück in die Ruhe (am Boden IDLE, in der Luft HOVER). Haltungen
- * bleiben stehen, bis der Server die Pose wechselt. Sie ist schwer und alt: Ausholen ruhig, Schlag kurz und hart,
- * jeder Aufprall staucht den Körper und der Hals federt nach.
+ * Hier steht der **Ablauf der Posen** als Kanäle (Kopfgelenk vor/hoch, Neigung, Kiefer, Schwingen, Läufe, Windung …).
+ * Ablaufvertrag wie bisher (siehe [NivarisPose]): Ausholhaltung weich erreichen, halten, **Treffer genau bei
+ * t = windup**, Nachlauf [AriusTimings.NIVARIS_RECOVER], dann zurück in die Ruhe. Die gehaltenen Kopfgelenke stammen aus
+ * [NivarisShape.head] – dieselben Werte benutzt der Server für Anker und Kopf-Trefferbox.
  */
 class NivarisModel(root: ModelPart) : EntityModel<NivarisRenderState>(root) {
 
-    private val parts: Array<ModelPart> = Array(Keys.COUNT) { i ->
-        Keys.BONES[i].split('/').fold(root) { p, n -> p.getChild(n) }
-    }
-    private fun part(i: Int) = parts[i]
+    private val placeholder: ModelPart by lazy { placeholderData().createModel() }
 
-    // --- Hüllkurven -------------------------------------------------------------------------------------------------
+    private fun part(name: String): ModelPart = if (root.hasChild(name)) root.getChild(name) else placeholder.getChild(name)
+
+    val head = part("head")
+    val jaw: ModelPart? = if (head.hasChild("jaw")) head.getChild("jaw") else null
+    private val jawPitch = jaw?.pitch ?: 0f
+    val neck = part("neck")
+    val segment = part("segment")
+    val segmentDorsal = part("segment_dorsal")
+    val segmentHeart = part("segment_heart")
+    val foreL = part("foreleg_l")
+    val foreR = part("foreleg_r")
+    val hindL = part("hindleg_l")
+    val hindR = part("hindleg_r")
+    val wingL = part("wing_l")
+    val wingR = part("wing_r")
+    val tailFan = part("tail_fan")
+
+    /** Teil auf Glied [i] ([NivarisShape.gliedPart]). */
+    fun glied(i: Int): ModelPart = when (NivarisShape.gliedPart(i)) {
+        "neck" -> neck
+        "segment_heart" -> segmentHeart
+        "segment_dorsal" -> segmentDorsal
+        else -> segment
+    }
+
+    /** Kiefer setzen (einziger Teil mit eigener Drehung; alle Layer eines Frames zeichnen denselben Wert). */
+    fun openJaw(amount: Float) {
+        jaw?.pitch = jawPitch + amount
+    }
+
+    // --- Hüllkurven ---------------------------------------------------------------------------------------------------
 
     private fun smooth(t: Float) = t * t * (3f - 2f * t)
     private fun easeIn(t: Float) = t * t
     private fun easeOut(t: Float) = 1f - (1f - t) * (1f - t)
 
-    /** Zeitleiste: hält die zuletzt erreichte Pose und blendet in den Abschnitten [t0, t1] zur nächsten über. */
+    /** Zeitleiste: hält die zuletzt erreichte Haltung und blendet in den Abschnitten [t0, t1] zur nächsten über. */
     private class Track(var cur: FloatArray, private val t: Float) {
         var out: FloatArray? = null
         fun to(t0: Float, t1: Float, target: NivarisKey, ease: (Float) -> Float): Track {
@@ -79,7 +145,6 @@ class NivarisModel(root: ModelPart) : EntityModel<NivarisRenderState>(root) {
     private fun defaultWindup(pose: Int) = AriusTimings.NIVARIS_WINDUP.getOrElse(pose) { 0 }.toFloat()
     private fun recover(pose: Int) = AriusTimings.NIVARIS_RECOVER.getOrElse(pose) { 0 }.toFloat()
 
-    /** Ruhehaltung, in die Angriffe zurückkehren. */
     private fun rest(air: Boolean) = if (air) Keys.HOVER else Keys.IDLE
 
     /** Der Ablauf jeder Pose ab ihrem Beginn. [from] ist die Haltung, aus der sie kommt; w = Treffer-Zeitpunkt. */
@@ -89,11 +154,11 @@ class NivarisModel(root: ModelPart) : EntityModel<NivarisRenderState>(root) {
         val i: (Float) -> Float = ::easeIn
         val o: (Float) -> Float = ::easeOut
         val back = rest(air)
-        // Ausholen höchstens 8–12 Ticks, aber immer vor dem Schlag fertig.
         fun wind(maxTicks: Float, strike: Float) = MathHelper.clamp(w - strike, 1f, maxTicks)
         return when (pose) {
-            NivarisPose.HOVER -> track(from, t).to(0f, 12f, Keys.HOVER, s).get()
-            NivarisPose.GLIDE -> track(from, t).to(0f, 14f, Keys.GLIDE, s).get()
+            NivarisPose.IDLE -> track(from, t).to(0f, 14f, if (air) Keys.HOVER else Keys.IDLE, s).get()
+            NivarisPose.HOVER -> track(from, t).to(0f, 12f, if (air) Keys.HOVER else Keys.IDLE, s).get()
+            NivarisPose.GLIDE -> track(from, t).to(0f, 14f, if (air) Keys.GLIDE else Keys.IDLE, s).get()
             NivarisPose.INHALE -> track(from, t).to(0f, MathHelper.clamp(w * 0.6f, 4f, 16f), if (air) Keys.INHALE_AIR else Keys.INHALE, s).get()
             NivarisPose.BREATH -> track(from, t).to(0f, 4f, if (air) Keys.BREATH_AIR else Keys.BREATH, o).get()
             NivarisPose.DIVE -> track(from, t).to(0f, wind(12f, 6f), Keys.DIVE_WINDUP, s).to(w - 6f, w, Keys.DIVE, i).get()
@@ -103,20 +168,20 @@ class NivarisModel(root: ModelPart) : EntityModel<NivarisRenderState>(root) {
             NivarisPose.CLAW -> track(from, t).to(0f, wind(8f, 3f), Keys.CLAW_WINDUP, s).to(w - 3f, w, Keys.CLAW_HIT, i)
                 .to(w + 2f, w + max(r, 3f), back, s).get()
             NivarisPose.TAIL -> track(from, t).to(0f, wind(10f, 4f), Keys.TAIL_WINDUP, s).to(w - 4f, w, Keys.TAIL_HIT, i)
-                .to(w, w + 4f, Keys.TAIL_FOLLOW, o).to(w + 4f, w + max(r, 5f), back, s).get()
+                .to(w, w + 4f, Keys.TAIL_FOLLOW, o).to(w + 4f, w + max(r, 5f), Keys.TAIL_END, s).get()
             NivarisPose.WING_GUST -> track(from, t).to(0f, wind(12f, 3f), Keys.GUST_WINDUP, s).to(w - 3f, w, Keys.GUST_HIT, i)
                 .to(w + 3f, w + max(r, 4f), back, s).get()
             NivarisPose.GRAB -> track(from, t).to(0f, max(w * 0.5f, 2f), Keys.GRAB_REACH, s).to(max(w * 0.5f, 2f), max(w, 3f), Keys.GRAB_HOLD, s).get()
             NivarisPose.THROW -> track(from, t).to(0f, wind(12f, 3f), Keys.THROW_WINDUP, s).to(w - 3f, w, Keys.THROW_HIT, i)
                 .to(w + 3f, w + max(r, 4f), back, s).get()
-            NivarisPose.ROAR -> track(from, t).to(0f, max(w, 2f), Keys.ROAR, s).to(w + r - 8f, w + r, back, s).get()
-            NivarisPose.DOWNED -> track(from, t).to(0f, 8f, Keys.DOWNED, i).get()
+            NivarisPose.ROAR -> track(from, t).to(0f, max(w, 2f), if (air) Keys.ROAR_AIR else Keys.ROAR, s).to(w + r - 8f, w + r, back, s).get()
+            NivarisPose.DOWNED -> track(from, t).to(0f, 8f, if (air) Keys.DOWNED_AIR else Keys.DOWNED, i).get()
             NivarisPose.EXHAUSTED -> track(from, t).to(0f, 14f, Keys.EXHAUSTED, s).get()
             NivarisPose.TAKEOFF -> track(from, t).to(0f, wind(8f, 2f), Keys.TAKEOFF_CROUCH, s).to(w - 2f, w, Keys.TAKEOFF_BEAT, i)
                 .to(w + 1f, w + max(r, 2f), Keys.HOVER, s).get()
-            NivarisPose.RESONANCE -> track(from, t).to(0f, 16f, Keys.RESONANCE, s).get()
+            NivarisPose.RESONANCE -> track(from, t).to(0f, 16f, if (air) Keys.RESONANCE_AIR else Keys.RESONANCE, s).get()
             NivarisPose.LIE_DOWN -> track(from, t).to(0f, 30f, Keys.LIE_DOWN, s).get()
-            NivarisPose.FREEZE_FIELD -> track(from, t).to(0f, wind(14f, 4f), Keys.FREEZE_WINDUP, s).to(w - 4f, w, Keys.FREEZE, i)
+            NivarisPose.FREEZE_FIELD -> track(from, t).to(0f, wind(14f, 4f), Keys.FREEZE_WINDUP, s).to(w - 4f, w, if (air) Keys.FREEZE_AIR else Keys.FREEZE, i)
                 .to(w + 2f, w + max(r, 3f), back, s).get()
             else -> track(from, t).to(0f, 10f, back, s).get()
         }
@@ -133,21 +198,19 @@ class NivarisModel(root: ModelPart) : EntityModel<NivarisRenderState>(root) {
         }
     }
 
-    /** Posen, deren Schwingen und Beine nicht vom Flug-Zyklus überschrieben werden. */
+    /** Posen, deren Schwingen nicht vom Flug-Zyklus überschrieben werden. */
     private fun ownsWings(pose: Int) = when (pose) {
-        NivarisPose.GLIDE, NivarisPose.DIVE, NivarisPose.CRASH_DIVE, NivarisPose.LAND, NivarisPose.TAKEOFF,
-        NivarisPose.RESONANCE, NivarisPose.WING_GUST, NivarisPose.DOWNED, NivarisPose.LIE_DOWN, NivarisPose.EXHAUSTED -> true
+        NivarisPose.DIVE, NivarisPose.CRASH_DIVE, NivarisPose.LAND, NivarisPose.TAKEOFF, NivarisPose.RESONANCE,
+        NivarisPose.WING_GUST, NivarisPose.DOWNED, NivarisPose.LIE_DOWN, NivarisPose.EXHAUSTED -> true
         else -> false
     }
 
-    private val wingChannels = intArrayOf(Keys.WING_R, Keys.WING_FORE_R, Keys.WING_HAND_R, Keys.WING_L, Keys.WING_FORE_L, Keys.WING_HAND_L)
-    private val legChannels = intArrayOf(
-        Keys.ARM_R, Keys.FORE_R, Keys.HAND_R, Keys.ARM_L, Keys.FORE_L, Keys.HAND_L,
-        Keys.THIGH_R, Keys.SHIN_R, Keys.FOOT_R, Keys.THIGH_L, Keys.SHIN_L, Keys.FOOT_L,
-    )
-
     override fun setAngles(state: NivarisRenderState) {
-        super.setAngles(state)
+        // Nichts: Die Teile werden einzeln mit eigener Matrix gezeichnet (NivarisRenderer); siehe [pose].
+    }
+
+    /** Berechnet die Kanäle der laufenden Pose samt Überlagerungen (Flügelschlag, Atmen, Zittern …) nach [NivarisRenderState.p]. */
+    fun pose(state: NivarisRenderState) {
         val pose = state.bossPose
         val t = state.poseTime
         val age = state.age
@@ -155,127 +218,35 @@ class NivarisModel(root: ModelPart) : EntityModel<NivarisRenderState>(root) {
         val air = fly > 0.5f
         val w = state.windup
         val prev = state.previousPose
-        val start = evaluate(prev, settled(prev), defaultWindup(prev), air, rest(air).v)
-        val v = evaluate(pose, t, w, air, start).copyOf()
+        val start = evaluate(prev, settled(prev), defaultWindup(prev), air, rest(air).v).copyOf()
+        // Eine volle Umdrehung der Windungen (Schwanzfeger) ist dieselbe Lage: nicht zurückdrehen.
+        start[SWEEP] -= Math.round(start[SWEEP]).toFloat()
+        val v = evaluate(pose, t, w, air, start)
+        System.arraycopy(v, 0, state.p, 0, COUNT)
+        val p = state.p
 
-        // Flug-Schicht: Flügelschlag und angezogene Beine, solange die Pose die Schwingen nicht selbst führt.
-        val flap = if (ownsWings(pose)) 0f else fly
-        var flapK = 0f
-        if (flap > 0.001f) {
-            val period = 26f
+        // Flug: Schwingen gespannt, ein langsamer, schwerer Schlag (Abschlag schnell), Läufe angezogen.
+        if (!ownsWings(pose) && fly > 0.001f) {
+            val period = if (pose == NivarisPose.GLIDE) 70f else 34f
             val u = ((age % period) + period) % period / period
-            // Abschlag schnell (40 %), Aufschlag langsam.
-            flapK = if (u < 0.4f) smooth(u / 0.4f) else 1f - smooth((u - 0.4f) / 0.6f)
-            for (c in wingChannels) {
-                val o = c * 6
-                for (k in 0 until 3) {
-                    val target = Keys.FLY_UP.v[o + k] + (Keys.FLY_DOWN.v[o + k] - Keys.FLY_UP.v[o + k]) * flapK
-                    v[o + k] += (target - v[o + k]) * flap
-                }
-            }
-            for (c in legChannels) {
-                val o = c * 6
-                for (k in 0 until 3) v[o + k] += (Keys.HOVER.v[o + k] - v[o + k]) * flap
-            }
-            val dy = Keys.BODY * 6 + 4
-            v[dy] += (Keys.FLY_DY - v[dy]) * flap
-        }
-
-        for (b in 0 until Keys.COUNT) {
-            val p = parts[b]
-            val o = b * 6
-            p.pitch = v[o]
-            p.yaw = v[o + 1]
-            p.roll = v[o + 2]
-            p.originX += v[o + 3]
-            p.originY += v[o + 4]
-            p.originZ += v[o + 5]
-        }
-
-        val body = part(Keys.BODY)
-        val chest = part(Keys.CHEST)
-        val head = part(Keys.HEAD)
-        val jaw = part(Keys.JAW)
-        val neck0 = part(Keys.NECK_0)
-        val neck1 = part(Keys.NECK_1)
-
-        // Flugbewegung: der Körper hebt sich nach jedem Abschlag, der Schwanz steuert nach.
-        if (flap > 0.001f) {
-            body.originY += (0.5f - flapK) * 3.2f * flap
-            body.pitch += (flapK - 0.5f) * 0.04f * flap
-            neck0.pitch -= (flapK - 0.5f) * 0.05f * flap
-            head.pitch += (flapK - 0.5f) * 0.05f * flap
-            for (n in 0..5) part(Keys.TAIL_0 + n).pitch += sin(age * 0.24f - n * 0.6f) * 0.035f * flap
-        }
-        if (pose == NivarisPose.GLIDE) {
-            val g = sin(age * 0.07f)
-            part(Keys.WING_R).roll += g * 0.05f
-            part(Keys.WING_L).roll -= g * 0.05f
-            part(Keys.WING_HAND_R).roll += sin(age * 0.07f - 0.8f) * 0.06f
-            part(Keys.WING_HAND_L).roll -= sin(age * 0.07f - 0.8f) * 0.06f
-            body.roll += sin(age * 0.03f) * 0.05f
+            val beat = if (u < 0.35f) 1f - 2f * smooth(u / 0.35f) else -1f + 2f * smooth((u - 0.35f) / 0.65f)
+            val amp = if (pose == NivarisPose.GLIDE) 0.35f else 0.85f
+            p[WING] += (1f - p[WING]) * fly
+            p[FLAP] += (beat * amp - p[FLAP]) * fly
+            p[FORE] += (max(p[FORE], 1.0f) - p[FORE]) * fly
+            p[HIND] += (max(p[HIND], 1.1f) - p[HIND]) * fly
+            // Nach jedem Abschlag hebt sich der Kopf leicht.
+            p[UP] += -beat * 0.15f * fly
         }
 
         // Atmen: langsam und tief; erschöpft schwer und schnell.
-        val ground = 1f - fly
         val exhausted = pose == NivarisPose.EXHAUSTED || pose == NivarisPose.DOWNED
         val breath = if (exhausted) sin(age * 0.2f) else sin(age * 0.065f)
-        val depth = if (exhausted) 2.4f else 1f
-        chest.pitch -= breath * 0.014f * depth
-        body.originY -= breath * 0.25f * depth * ground
-        neck0.pitch -= breath * 0.012f * depth
-        head.pitch += breath * 0.01f * depth
-        if (exhausted) jaw.pitch += (0.5f + 0.5f * breath) * 0.12f
-
-        // Schwanz pendelt träge (am Boden; liegend nur noch die Spitze).
-        val sway = when (pose) {
-            NivarisPose.LIE_DOWN, NivarisPose.DOWNED -> 0.25f
-            NivarisPose.TAIL -> 0.2f
-            else -> 1f
-        }
-        for (n in 0..5) {
-            part(Keys.TAIL_0 + n).yaw += sin(age * 0.045f - n * 0.55f) * (0.02f + n * 0.012f) * sway
-        }
-        part(Keys.FAN).yaw += sin(age * 0.045f - 3.6f) * 0.06f * sway
-
-        // Gehen: schwerer Kreuzgang (rechts vorn + links hinten gemeinsam). Bei jedem Auftreten sackt der Rumpf ein.
-        val walkFactor = when (pose) {
-            NivarisPose.IDLE, NivarisPose.ROAR, NivarisPose.INHALE -> 1f
-            NivarisPose.DOWNED, NivarisPose.LIE_DOWN, NivarisPose.EXHAUSTED, NivarisPose.TAKEOFF, NivarisPose.LAND -> 0f
-            else -> 0.4f
-        }
-        val wk = state.walk * walkFactor * ground
-        if (wk > 0.01f) {
-            val ph = state.walkPhase * 0.55f
-            fun leg(upper: Int, lower: Int, end: Int, phase: Float, fore: Boolean) {
-                val swing = sin(ph + phase)
-                val lift = max(0f, cos(ph + phase))
-                part(upper).pitch -= swing * (if (fore) 0.3f else 0.28f) * wk
-                if (fore) {
-                    part(lower).pitch -= lift * 0.55f * wk
-                    part(end).pitch += lift * 0.45f * wk + swing * 0.25f * wk
-                } else {
-                    part(lower).pitch += lift * 0.5f * wk
-                    part(end).pitch -= lift * 0.35f * wk - swing * 0.2f * wk
-                }
-            }
-            leg(Keys.ARM_R, Keys.FORE_R, Keys.HAND_R, 0f, true)
-            leg(Keys.THIGH_L, Keys.SHIN_L, Keys.FOOT_L, 0.3f, false)
-            leg(Keys.ARM_L, Keys.FORE_L, Keys.HAND_L, MathHelper.PI, true)
-            leg(Keys.THIGH_R, Keys.SHIN_R, Keys.FOOT_R, MathHelper.PI + 0.3f, false)
-            val step = abs(sin(ph))
-            body.originY += (step * step * 1.6f - 0.4f) * wk
-            body.roll += sin(ph) * 0.035f * wk
-            chest.yaw += sin(ph) * 0.05f * wk
-            chest.roll -= sin(ph) * 0.02f * wk
-            // Der Hals gleicht aus (Kopf bleibt ruhig), wie bei großen Tieren.
-            neck0.pitch += cos(2f * ph) * 0.035f * wk
-            head.pitch -= cos(2f * ph) * 0.03f * wk
-            neck0.yaw -= sin(ph) * 0.04f * wk
-            for (n in 0..5) part(Keys.TAIL_0 + n).yaw += sin(ph - 0.6f - n * 0.35f) * 0.05f * wk
-            part(Keys.WING_R).roll += step * 0.03f * wk
-            part(Keys.WING_L).roll -= step * 0.03f * wk
-        }
+        val depth = if (exhausted) 2.2f else 1f
+        p[BREATHE] = breath * depth
+        p[UP] += breath * 0.08f * depth * (1f - fly)
+        p[PITCH] += breath * 0.02f * depth
+        if (exhausted) p[JAW] += (0.5f + 0.5f * breath) * 0.12f
 
         // Spannung beim Halten des Ausholens: kaum sichtbares Zittern.
         val holding = when (pose) {
@@ -284,164 +255,640 @@ class NivarisModel(root: ModelPart) : EntityModel<NivarisRenderState>(root) {
             else -> false
         }
         if (holding) {
-            chest.roll += sin(age * 1.9f) * 0.006f
-            neck0.pitch += sin(age * 2.3f) * 0.006f
+            p[PITCH] += sin(age * 2.3f) * 0.012f
+            p[YAW] += sin(age * 1.9f) * 0.01f
         }
 
         when (pose) {
             NivarisPose.INHALE -> {
-                // Sie zieht immer tiefer Luft: Brust hebt sich, Hals geht weiter zurück, Maul öffnet sich langsam.
-                val p = MathHelper.clamp(t / max(w, 1f), 0f, 1f)
-                chest.pitch -= p * 0.07f
-                neck0.pitch -= p * 0.06f
-                neck1.pitch -= p * 0.04f
-                jaw.pitch += p * 0.12f
+                // Sie zieht immer tiefer Luft: Kopf geht weiter zurück und hoch, Maul öffnet sich langsam.
+                val k = MathHelper.clamp(t / max(w, 1f), 0f, 1f)
+                p[UP] += k * 0.5f
+                p[FWD] -= k * 0.4f
+                p[PITCH] -= k * 0.12f
+                p[JAW] += k * 0.18f
+                p[REAR] += k * 0.4f
             }
-            NivarisPose.BREATH, NivarisPose.FREEZE_FIELD -> {
-                if (pose == NivarisPose.BREATH || t >= w) {
-                    head.yaw += sin(age * 1.3f) * 0.015f
-                    jaw.pitch += sin(age * 2.1f) * 0.03f
-                    neck0.pitch += sin(age * 0.9f) * 0.01f
-                }
+            NivarisPose.BREATH, NivarisPose.FREEZE_FIELD -> if (pose == NivarisPose.BREATH || t >= w) {
+                p[YAW] += sin(age * 1.3f) * 0.03f
+                p[JAW] += sin(age * 2.1f) * 0.05f
             }
-            NivarisPose.ROAR -> {
-                if (t >= w) {
-                    val k = MathHelper.clamp(1f - (t - w) / max(recover(pose), 1f), 0f, 1f)
-                    head.yaw += sin(age * 2.6f) * 0.035f * k
-                    jaw.pitch += sin(age * 3.1f) * 0.05f * k
-                    chest.pitch += sin(age * 2.0f) * 0.01f * k
-                }
+            NivarisPose.ROAR -> if (t >= w) {
+                val k = MathHelper.clamp(1f - (t - w) / max(recover(pose), 1f), 0f, 1f)
+                p[YAW] += sin(age * 2.6f) * 0.06f * k
+                p[JAW] += sin(age * 3.1f) * 0.08f * k
+                p[PITCH] += sin(age * 2.0f) * 0.03f * k
             }
             NivarisPose.LAND -> {
-                // Aufprall: der Hals schwingt nach unten nach und federt gedämpft zurück, Schwingen zittern.
+                // Aufprall: der Kopf schwingt nach unten nach und federt gedämpft zurück, der Körper staucht.
                 val since = t - w
                 if (since >= 0f) {
                     val spring = exp(-since * 0.16f) * sin(since * 0.5f)
-                    neck0.pitch += spring * 0.32f
-                    neck1.pitch += spring * 0.12f
-                    head.pitch -= spring * 0.3f
-                    chest.pitch += spring * 0.05f
-                    body.originY += max(0f, spring) * 1.5f
-                    part(Keys.WING_HAND_R).roll += spring * 0.12f
-                    part(Keys.WING_HAND_L).roll -= spring * 0.12f
-                    for (n in 0..5) part(Keys.TAIL_0 + n).pitch -= spring * 0.05f
+                    p[UP] -= spring * 0.9f
+                    p[PITCH] += spring * 0.3f
+                    p[REAR] -= max(0f, spring) * 0.6f
+                    p[FLAP] -= spring * 0.4f
                 }
             }
             NivarisPose.TAKEOFF -> {
                 val since = t - w
-                if (since >= 0f) {
-                    val spring = exp(-since * 0.25f) * sin(since * 0.6f)
-                    neck0.pitch -= spring * 0.2f
-                    head.pitch += spring * 0.15f
-                }
+                if (since >= 0f) p[UP] += exp(-since * 0.25f) * sin(since * 0.6f) * 0.5f
             }
             NivarisPose.CLAW, NivarisPose.TAIL, NivarisPose.WING_GUST, NivarisPose.THROW -> {
                 // Nach dem Schlag ruckt das Gewicht nach.
                 val since = t - w
-                if (since in 0f..10f) {
-                    val k = exp(-since * 0.3f) * sin(since * 0.9f)
-                    body.originY += abs(k) * 0.8f
-                    neck0.pitch += k * 0.08f
+                if (since >= 0f) {
+                    val spring = exp(-since * 0.3f) * sin(since * 0.8f)
+                    p[UP] -= spring * 0.25f
+                    p[PITCH] += spring * 0.1f
                 }
-            }
-            NivarisPose.DOWNED -> {
-                // Gerade zu Boden gebracht: ein harter Aufschlag, dann zuckt der Kopf.
-                if (t < 14f) {
-                    val k = exp(-t * 0.25f) * sin(t * 0.8f)
-                    neck0.pitch += k * 0.15f
-                    head.pitch -= k * 0.2f
-                }
-                head.yaw += sin(age * 0.05f) * 0.03f
-            }
-            NivarisPose.RESONANCE -> {
-                part(Keys.WING_HAND_R).roll += sin(age * 0.11f) * 0.03f
-                part(Keys.WING_HAND_L).roll -= sin(age * 0.11f) * 0.03f
-                head.pitch += sin(age * 0.05f) * 0.02f
-            }
-            NivarisPose.LIE_DOWN -> {
-                head.pitch += sin(age * 0.02f) * 0.02f
             }
         }
-        // Der Fächer stellt sich beim Ausholen des Schwanzfegers auf (Warnung), sonst liegt er etwas an.
-        if (pose == NivarisPose.TAIL && t < w) part(Keys.FAN).pitch += min(t / 6f, 1f) * 0.25f
     }
 
-    // <keys> erzeugt von tools/assets/nivaris_model.py --kotlin; nicht von Hand ändern
+    /**
+     * Kanäle einer Haltung. Das Kopfgelenk (vor, hoch, Neigung) kommt für die gehaltenen Posen aus [NivarisShape.head],
+     * damit Server-Anker und Modell übereinstimmen; Zwischenhaltungen (Ausholen, Schlag) stehen hier.
+     */
     object Keys {
-        /** Knochenpfade in Kanalreihenfolge (je 6 Werte: pitch, yaw, roll, dx, dy, dz). */
-        val BONES = arrayOf("body", "body/chest", "body/chest/neck_0", "body/chest/neck_0/neck_1", "body/chest/neck_0/neck_1/neck_2", "body/chest/neck_0/neck_1/neck_2/neck_3", "body/chest/neck_0/neck_1/neck_2/neck_3/head", "body/chest/neck_0/neck_1/neck_2/neck_3/head/jaw", "body/chest/neck_0/neck_1/neck_2/neck_3/head/crown", "body/chest/wing_r", "body/chest/wing_r/wing_fore_r", "body/chest/wing_r/wing_fore_r/wing_hand_r", "body/chest/wing_l", "body/chest/wing_l/wing_fore_l", "body/chest/wing_l/wing_fore_l/wing_hand_l", "body/chest/arm_r", "body/chest/arm_r/fore_r", "body/chest/arm_r/fore_r/hand_r", "body/chest/arm_l", "body/chest/arm_l/fore_l", "body/chest/arm_l/fore_l/hand_l", "body/thigh_r", "body/thigh_r/shin_r", "body/thigh_r/shin_r/foot_r", "body/thigh_l", "body/thigh_l/shin_l", "body/thigh_l/shin_l/foot_l", "body/tail_0", "body/tail_0/tail_1", "body/tail_0/tail_1/tail_2", "body/tail_0/tail_1/tail_2/tail_3", "body/tail_0/tail_1/tail_2/tail_3/tail_4", "body/tail_0/tail_1/tail_2/tail_3/tail_4/tail_5", "body/tail_0/tail_1/tail_2/tail_3/tail_4/tail_5/fan")
-        const val BODY = 0
-        const val CHEST = 1
-        const val NECK_0 = 2
-        const val NECK_1 = 3
-        const val NECK_2 = 4
-        const val NECK_3 = 5
-        const val HEAD = 6
-        const val JAW = 7
-        const val CROWN = 8
-        const val WING_R = 9
-        const val WING_FORE_R = 10
-        const val WING_HAND_R = 11
-        const val WING_L = 12
-        const val WING_FORE_L = 13
-        const val WING_HAND_L = 14
-        const val ARM_R = 15
-        const val FORE_R = 16
-        const val HAND_R = 17
-        const val ARM_L = 18
-        const val FORE_L = 19
-        const val HAND_L = 20
-        const val THIGH_R = 21
-        const val SHIN_R = 22
-        const val FOOT_R = 23
-        const val THIGH_L = 24
-        const val SHIN_L = 25
-        const val FOOT_L = 26
-        const val TAIL_0 = 27
-        const val TAIL_1 = 28
-        const val TAIL_2 = 29
-        const val TAIL_3 = 30
-        const val TAIL_4 = 31
-        const val TAIL_5 = 32
-        const val FAN = 33
-        const val COUNT = 34
-        /** Versatz des Körpers in der Flughaltung (Einheiten, -y = hoch). */
-        const val FLY_DY = -6.0f
-        val IDLE = key("0,0,0,0,0,0,0,0,0,0,0,0,-0.7679,0,0,0,0,0,-0.0524,0,0,0,0,0,-0.0349,0,0,0,0,0,-0.0175,0,0,0,0,0,0.8727,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.9932,0.8011,1.0943,0,0,0,-0.2821,-0.0685,-2.7708,0,0,0,0.0686,0.5644,-3.0186,0,0,0,-0.9932,-0.8011,-1.0943,0,0,0,-0.2821,0.0685,2.7708,0,0,0,0.0686,-0.5644,3.0186,0,0,0,0.227,0,0,0,0,0,-0.9346,0,0,0,0,0,0.7076,0,0,0,0,0,0.227,0,0,0,0,0,-0.9346,0,0,0,0,0,0.7076,0,0,0,0,0,-0.4137,0,0,0,0,0,1.5807,0,0,0,0,0,-1.587,0,0,0,0,0,-0.4137,0,0,0,0,0,1.5807,0,0,0,0,0,-1.587,0,0,0,0,0,-0.2094,0,0,0,0,0,-0.1047,0.0698,0,0,0,0,-0.0349,0.1047,0,0,0,0,0.0349,0.1047,0,0,0,0,0.0698,0.0698,0,0,0,0,0.2793,0,0,0,0,0,0,0,0,0,0,0")
-        val INHALE = key("-0.1047,0,0,0,0,0,-0.1745,0,0,0,0,0,-0.8378,0,0,0,0,0,-0.3142,0,0,0,0,0,0.1396,0,0,0,0,0,0.2443,0,0,0,0,0,0.6981,0,0,0,0,0,0.1745,0,0,0,0,0,0,0,0,0,0,0,-0.935,0.2997,0.6023,0,0,0,0.1055,-0.0312,-1.6026,0,0,0,-0.1043,1.0616,2.4579,0,0,0,-0.935,-0.2997,-0.6023,0,0,0,0.1055,0.0312,1.6026,0,0,0,-0.1043,-1.0616,-2.4579,0,0,0,0.0903,0,0,0,0,0,-0.057,0,0,0,0,0,0.2459,0,0,0,0,0,0.0903,0,0,0,0,0,-0.057,0,0,0,0,0,0.2459,0,0,0,0,0,-0.3644,0,0,0,0,0,1.7789,0,0,0,0,0,-1.7298,0,0,0,0,0,-0.3644,0,0,0,0,0,1.7789,0,0,0,0,0,-1.7298,0,0,0,0,0,-0.1047,0,0,0,0,0,-0.0698,0,0,0,0,0,-0.0349,0,0,0,0,0,0.0349,0,0,0,0,0,0.0698,0,0,0,0,0,0.2618,0,0,0,0,0,0,0,0,0,0,0")
-        val BREATH = key("0.0698,0,0,0,0,0,0.1047,0,0,0,0,0,-0.1745,0,0,0,0,0,0.0349,0,0,0,0,0,0.0349,0,0,0,0,0,0.0349,0,0,0,0,0,0.1396,0,0,0,0,0,0.8029,0,0,0,0,0,0,0,0,0,0,0,-0.935,0.2997,0.6721,0,0,0,0.1055,-0.0312,-1.6026,0,0,0,-0.1043,1.0616,2.4579,0,0,0,-0.935,-0.2997,-0.6721,0,0,0,0.1055,0.0312,1.6026,0,0,0,-0.1043,-1.0616,-2.4579,0,0,0,0.2133,0,0,0,0,0,-1.3237,0,0,0,0,0,0.9359,0,0,0,0,0,0.2133,0,0,0,0,0,-1.3237,0,0,0,0,0,0.9359,0,0,0,0,0,-0.4307,0,0,0,0,0,1.435,0,0,0,0,0,-1.4941,0,0,0,0,0,-0.4307,0,0,0,0,0,1.435,0,0,0,0,0,-1.4941,0,0,0,0,0,-0.1396,0,0,0,0,0,-0.0698,0,0,0,0,0,0,0,0,0,0,0,0.0349,0,0,0,0,0,0.0698,0,0,0,0,0,0.1047,0,0,0,0,0,0,0,0,0,0,0")
-        val FREEZE_WINDUP = key("-0.0698,0,0,0,0,0,-0.1396,0,0,0,0,0,-0.7679,0,0,0,0,0,-0.2443,0,0,0,0,0,0.1047,0,0,0,0,0,0.1745,0,0,0,0,0,0.6283,0,0,0,0,0,0.1396,0,0,0,0,0,0,0,0,0,0,0,-0.935,0.2997,0.6023,0,0,0,0.1055,-0.0312,-1.6026,0,0,0,-0.1043,1.0616,2.4579,0,0,0,-0.935,-0.2997,-0.6023,0,0,0,0.1055,0.0312,1.6026,0,0,0,-0.1043,-1.0616,-2.4579,0,0,0,0.0331,0,0,0,0,0,-0.057,0,0,0,0,0,0.2333,0,0,0,0,0,0.0331,0,0,0,0,0,-0.057,0,0,0,0,0,0.2333,0,0,0,0,0,-0.3841,0,0,0,0,0,1.7153,0,0,0,0,0,-1.6813,0,0,0,0,0,-0.3841,0,0,0,0,0,1.7153,0,0,0,0,0,-1.6813,0,0,0,0,0,-0.1745,0,0,0,0,0,-0.1047,0,0,0,0,0,-0.0698,0,0,0,0,0,-0.0349,0,0,0,0,0,0.0349,0,0,0,0,0,0.6981,0,0,0,0,0,0,0,0,0,0,0")
-        val FREEZE = key("0.1396,0,0,0,0,0,0.1745,0,0,0,0,0,0.2793,0,0,0,0,0,0.1745,0,0,0,0,0,0.1396,0,0,0,0,0,-0.733,0,0,0,0,0,-0.6981,0,0,0,0,0,0.8378,0,0,0,0,0,0,0,0,0,0,0,-0.935,0.2997,0.707,0,0,0,0.1055,-0.0312,-1.6026,0,0,0,-0.1043,1.0616,2.4579,0,0,0,-0.935,-0.2997,-0.707,0,0,0,0.1055,0.0312,1.6026,0,0,0,-0.1043,-1.0616,-2.4579,0,0,0,0.1527,0,0,0,0,0,-1.5683,0,0,0,0,0,1.1015,0,0,0,0,0,0.1527,0,0,0,0,0,-1.5683,0,0,0,0,0,1.1015,0,0,0,0,0,-0.4352,0,0,0,0,0,1.2754,0,0,0,0,0,-1.3998,0,0,0,0,0,-0.4352,0,0,0,0,0,1.2754,0,0,0,0,0,-1.3998,0,0,0,0,0,-0.1745,0,0,0,0,0,-0.1047,0,0,0,0,0,-0.0698,0,0,0,0,0,-0.0349,0,0,0,0,0,0.0349,0,0,0,0,0,0.0698,0,0,0,0,0,0,0,0,0,0,0")
-        val CLAW_WINDUP = key("-0.1396,-0.1745,-0.1047,0,0,0,-0.1396,-0.2443,-0.1396,0,0,0,-0.4538,0,0,0,0,0,-0.0698,0,0,0,0,0,-0.0349,0,0,0,0,0,0,0,0,0,0,0,0.4887,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.935,0.2997,0.7768,0,0,0,0.1055,-0.0312,-1.6026,0,0,0,-0.1043,1.0616,2.4579,0,0,0,-0.935,-0.2997,-0.6023,0,0,0,0.1055,0.0312,1.6026,0,0,0,-0.1043,-1.0616,-2.4579,0,0,0,-2.0944,0,-0.4189,0,0,0,-0.6981,0,0,0,0,0,-0.3491,0,0,0,0,0,0.0575,0,0,0,0,0,-0.057,0,0,0,0,0,0.2504,0,0,0,0,0,-0.212,0,0,0,0,0,1.8881,0,0,0,0,0,-1.9377,0,0,0,0,0,-0.4611,0,0,0,0,0,1.7789,0,0,0,0,0,-1.5791,0,0,0,0,0,-0.1396,0.1745,0,0,0,0,-0.0698,0.1745,0,0,0,0,0,0.1396,0,0,0,0,0.0349,0.1047,0,0,0,0,0.0698,0.0698,0,0,0,0,0.2793,0,0,0,0,0,0,0,0,0,0,0")
-        val CLAW_HIT = key("0.1047,0.2443,0.0698,0,0,0,0.1745,0.3142,0.1047,0,0,0,-0.2793,0,0,0,0,0,0.0349,0,0,0,0,0,0.0349,0,0,0,0,0,0.0349,0,0,0,0,0,0.384,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.935,0.2997,0.6023,0,0,0,0.1055,-0.0312,-1.6026,0,0,0,-0.1043,1.0616,2.4579,0,0,0,-0.935,-0.2997,-0.9164,0,0,0,0.1055,0.0312,1.6026,0,0,0,-0.1043,-1.0616,-2.4579,0,0,0,-0.8727,0,0.5934,0,0,0,-0.2094,0,0,0,0,0,0.5236,0,0,0,0,0,0.8137,0,0,0,0,0,-1.7806,0,0,0,0,0,0.6264,0,0,0,0,0,-0.5904,0,0,0,0,0,1.3368,0,0,0,0,0,-1.2478,0,0,0,0,0,-0.3111,0,0,0,0,0,1.361,0,0,0,0,0,-1.55,0,0,0,0,0,-0.1745,-0.1745,0,0,0,0,-0.1047,-0.1745,0,0,0,0,-0.0349,-0.1396,0,0,0,0,0,-0.1047,0,0,0,0,0.0698,-0.0698,0,0,0,0,0.0698,0,0,0,0,0,0,0,0,0,0,0")
-        val TAIL_WINDUP = key("0,0.3142,0,0,0,0,0,0.2443,0,0,0,0,-0.4538,-0.4189,0,0,0,0,-0.0698,0,0,0,0,0,-0.0698,0,0,0,0,0,-0.0349,0,0,0,0,0,0.5236,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.935,0.2997,0.6372,0,0,0,0.1055,-0.0312,-1.6026,0,0,0,-0.1043,1.0616,2.4579,0,0,0,-0.935,-0.2997,-0.6372,0,0,0,0.1055,0.0312,1.6026,0,0,0,-0.1043,-1.0616,-2.4579,0,0,0,0.0618,0,0,0,0,0,-0.8147,0,0,0,0,0,0.6715,0,0,0,0,0,0.5849,0,0,0,0,0,-0.9364,0,0,0,0,0,0.3016,0,0,0,0,0,-0.7047,0,0,0,0,0,1.6556,0,0,0,0,0,-1.347,0,0,0,0,0,-0.2517,0,0,0,0,0,1.488,0,0,0,0,0,-1.6404,0,0,0,0,0,-0.1396,-0.5934,0,0,0,0,-0.0349,-0.4189,0,0,0,0,0,-0.3142,0,0,0,0,0.0349,-0.2443,0,0,0,0,0.0698,-0.1745,0,0,0,0,0.1745,-0.1047,0,0,0,0,0,0,0,0,0,0")
-        val TAIL_HIT = key("0,-0.4189,0,0,0,0,0,-0.2793,0,0,0,0,-0.384,0.384,0,0,0,0,0,0,0,0,0,0,-0.0349,0,0,0,0,0,-0.0349,0,0,0,0,0,0.4887,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.935,0.2997,0.6372,0,0,0,0.1055,-0.0312,-1.6026,0,0,0,-0.1043,1.0616,2.4579,0,0,0,-0.935,-0.2997,-0.6372,0,0,0,0.1055,0.0312,1.6026,0,0,0,-0.1043,-1.0616,-2.4579,0,0,0,0.6465,0,0,0,0,0,-0.8249,0,0,0,0,0,0.1372,0,0,0,0,0,0.0807,0,0,0,0,0,-0.8311,0,0,0,0,0,0.6202,0,0,0,0,0,-0.2336,0,0,0,0,0,1.4755,0,0,0,0,0,-1.6332,0,0,0,0,0,-0.8147,0,0,0,0,0,1.6466,0,0,0,0,0,-1.2067,0,0,0,0,0,-0.0698,0.6632,0,0,0,0,-0.0349,0.4538,0,0,0,0,0,0.384,0,0,0,0,0.0349,0.3142,0,0,0,0,0.0349,0.2094,0,0,0,0,0.1047,0.1396,0,0,0,0,0,0,0,0,0,0")
-        val TAIL_FOLLOW = key("0,-0.5236,0,0,0,0,0,-0.3491,0,0,0,0,-0.384,0.4538,0,0,0,0,0,0,0,0,0,0,-0.0349,0,0,0,0,0,-0.0349,0,0,0,0,0,0.4887,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.935,0.2997,0.6372,0,0,0,0.1055,-0.0312,-1.6026,0,0,0,-0.1043,1.0616,2.4579,0,0,0,-0.935,-0.2997,-0.6372,0,0,0,0.1055,0.0312,1.6026,0,0,0,-0.1043,-1.0616,-2.4579,0,0,0,0.6581,0,0,0,0,0,-0.5405,0,0,0,0,0,-0.0758,0,0,0,0,0,0.1388,0,0,0,0,0,-0.8773,0,0,0,0,0,0.5294,0,0,0,0,0,-0.2344,0,0,0,0,0,1.476,0,0,0,0,0,-1.6151,0,0,0,0,0,-0.9206,0,0,0,0,0,1.6091,0,0,0,0,0,-1.0391,0,0,0,0,0,-0.1047,0.7679,0,0,0,0,-0.0698,0.5585,0,0,0,0,-0.0349,0.4538,0,0,0,0,0,0.3491,0,0,0,0,0,0.2443,0,0,0,0,0.0698,0.1396,0,0,0,0,0,0,0,0,0,0")
-        val GUST_WINDUP = key("-0.2443,0,0,0,0,0,-0.1745,0,0,0,0,0,-0.5934,0,0,0,0,0,-0.1745,0,0,0,0,0,-0.0698,0,0,0,0,0,0,0,0,0,0,0,0.6283,0,0,0,0,0,0.2094,0,0,0,0,0,0,0,0,0,0,0,0,0.5193,1.0304,0,0,0,-0.2238,0.1247,0.1292,0,0,0,-0.0767,0.2681,0.1763,0,0,0,0,-0.5193,-1.0304,0,0,0,-0.2238,-0.1247,-0.1292,0,0,0,-0.0767,-0.2681,-0.1763,0,0,0,0.1949,0,0,0,0,0,-0.057,0,0,0,0,0,0.2809,0,0,0,0,0,0.1949,0,0,0,0,0,-0.057,0,0,0,0,0,0.2809,0,0,0,0,0,0.1368,0,0,0,0,0,1.7645,0,0,0,0,0,-2.077,0,0,0,0,0,0.1368,0,0,0,0,0,1.7645,0,0,0,0,0,-2.077,0,0,0,0,0,-0.1745,0,0,0,0,0,-0.1047,0,0,0,0,0,-0.0698,0,0,0,0,0,0.5411,0,0,0,0,0,0.0349,0,0,0,0,0,0.3316,0,0,0,0,0,0,0,0,0,0,0")
-        val GUST_HIT = key("0.1396,0,0,0,0,0,0.1047,0,0,0,0,0,-0.2443,0,0,0,0,0,0,0,0,0,0,0,0.0349,0,0,0,0,0,0.0349,0,0,0,0,0,0.2793,0,0,0,0,0,0.5236,0,0,0,0,0,0,0,0,0,0,0,0.1837,-0.6492,0.3218,0,0,0,2.9228,-0.6344,-0.1187,0,0,0,-0.0767,0.4516,-0.0156,0,0,0,0.1837,0.6492,-0.3218,0,0,0,2.9228,0.6344,0.1187,0,0,0,-0.0767,-0.4516,0.0156,0,0,0,0.1905,0,0,0,0,0,-1.4455,0,0,0,0,0,1.0107,0,0,0,0,0,0.1905,0,0,0,0,0,-1.4455,0,0,0,0,0,1.0107,0,0,0,0,0,0.1087,0,0,0,0,0,0.7501,0,0,0,0,0,-1.4184,0,0,0,0,0,0.1087,0,0,0,0,0,0.7501,0,0,0,0,0,-1.4184,0,0,0,0,0,-0.1745,0,0,0,0,0,-0.1047,0,0,0,0,0,-0.0698,0,0,0,0,0,-0.0349,0,0,0,0,0,0.0349,0,0,0,0,0,0.0698,0,0,0,0,0,0,0,0,0,0,0")
-        val GRAB_REACH = key("0.2443,0,0,0,0,0,0.2443,0,0,0,0,0,0.1745,0,0,0,0,0,0.1745,0,0,0,0,0,-0.5236,0,0,0,0,0,-0.2443,0,0,0,0,0,-0.3142,0,0,0,0,0,0.384,0,0,0,0,0,0,0,0,0,0,0,-0.935,0.2997,0.8815,0,0,0,0.1055,-0.0312,-1.6026,0,0,0,-0.1043,1.0616,2.4579,0,0,0,-0.935,-0.2997,-0.8815,0,0,0,0.1055,0.0312,1.6026,0,0,0,-0.1043,-1.0616,-2.4579,0,0,0,-1.4087,0,0,0,0,0,-0.057,0,0,0,0,0,0.977,0,0,0,0,0,0.021,0,0,0,0,0,-1.8221,0,0,0,0,0,1.3124,0,0,0,0,0,-0.4149,0,0,0,0,0,0.9973,0,0,0,0,0,-1.2467,0,0,0,0,0,-0.4149,0,0,0,0,0,0.9973,0,0,0,0,0,-1.2467,0,0,0,0,0,-0.1745,0,0,0,0,0,-0.1047,0,0,0,0,0,-0.0698,0,0,0,0,0,-0.0349,0,0,0,0,0,0.0349,0,0,0,0,0,0.0698,0,0,0,0,0,0,0,0,0,0,0")
-        val GRAB_HOLD = key("-0.1745,0,0,0,0,0,-0.2793,0,0,0,0,0,-0.5236,0,0,0,0,0,-0.1047,0,0,0,0,0,-0.0349,0,0,0,0,0,0,0,0,0,0,0,0.5236,0,0,0,0,0,0.1047,0,0,0,0,0,0,0,0,0,0,0,-0.935,0.2997,0.6023,0,0,0,0.1055,-0.0312,-1.6026,0,0,0,-0.1043,1.0616,2.4579,0,0,0,-0.935,-0.2997,-0.6023,0,0,0,0.1055,0.0312,1.6026,0,0,0,-0.1043,-1.0616,-2.4579,0,0,0,-1.2217,0,0.1745,0,0,0,-1.0472,0,0,0,0,0,-0.6981,0,0,0,0,0,0.2279,0,0,0,0,0,-0.057,0,0,0,0,0,0.2828,0,0,0,0,0,-0.3143,0,0,0,0,0,1.8995,0,0,0,0,0,-1.8307,0,0,0,0,0,-0.3143,0,0,0,0,0,1.8995,0,0,0,0,0,-1.8307,0,0,0,0,0,-0.1745,0,0,0,0,0,-0.1047,0,0,0,0,0,-0.0698,0,0,0,0,0,0.1222,0,0,0,0,0,0.3491,0,0,0,0,0,0.384,0,0,0,0,0,0,0,0,0,0,0")
-        val THROW_WINDUP = key("-0.384,0,0,0,0,0,-0.3491,-0.2793,0,0,0,0,-0.4189,0,0,0,0,0,-0.1047,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.4538,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.5193,1.0304,0,0,0,-0.2238,0.1247,0.1292,0,0,0,-0.0767,0.2681,0.1763,0,0,0,0,-0.5193,-1.0304,0,0,0,-0.2238,-0.1247,-0.1292,0,0,0,-0.0767,-0.2681,-0.1763,0,0,0,0.3491,0,0.3491,0,0,0,-1.2217,0,0,0,0,0,-0.5236,0,0,0,0,0,0.3542,0,0,0,0,0,-0.057,0,0,0,0,0,0.4338,0,0,0,0,0,-0.0584,0,0,0,0,0,2.2058,0,0,0,0,0,-2.1834,0,0,0,0,0,-0.0584,0,0,0,0,0,2.2058,0,0,0,0,0,-2.1834,0,0,0,0,0,-0.1745,0,0,0,0,0,-0.1047,0,0,0,0,0,0.5585,0,0,0,0,0,0.0698,0,0,0,0,0,0.0349,0,0,0,0,0,0.3316,0,0,0,0,0,0,0,0,0,0,0")
-        val THROW_HIT = key("0.1745,0,0,0,0,0,0.1745,0.2793,0,0,0,0,-0.2443,0,0,0,0,0,0,0,0,0,0,0,0.0349,0,0,0,0,0,0.0349,0,0,0,0,0,0.3142,0,0,0,0,0,0.3491,0,0,0,0,0,0,0,0,0,0,0,0.1837,-0.6492,0.3218,0,0,0,2.9228,-0.6344,-0.1187,0,0,0,-0.0767,0.4516,-0.0156,0,0,0,0.1837,0.6492,-0.3218,0,0,0,2.9228,0.6344,0.1187,0,0,0,-0.0767,-0.4516,0.0156,0,0,0,-1.9199,0,-0.1745,0,0,0,-0.1745,0,0,0,0,0,0.1745,0,0,0,0,0,0.3784,0,0,0,0,0,-1.7294,0,0,0,0,0,0.9878,0,0,0,0,0,-0.4325,0,0,0,0,0,1.189,0,0,0,0,0,-1.351,0,0,0,0,0,-0.4325,0,0,0,0,0,1.189,0,0,0,0,0,-1.351,0,0,0,0,0,-0.1745,0,0,0,0,0,-0.1047,0,0,0,0,0,-0.0698,0,0,0,0,0,-0.0349,0,0,0,0,0,0.0349,0,0,0,0,0,0.0698,0,0,0,0,0,0,0,0,0,0,0")
-        val ROAR = key("-0.1745,0,0,0,0,0,-0.2094,0,0,0,0,0,-0.7679,0,0,0,0,0,-0.1745,0,0,0,0,0,-0.1047,0,0,0,0,0,-0.0698,0,0,0,0,0,-0.1745,0,0,0,0,0,0.6981,0,0,0,0,0,0,0,0,0,0,0,-0.935,0.2997,0.6023,0,0,0,0.1055,-0.0312,-1.6026,0,0,0,-0.1043,1.0616,2.4579,0,0,0,-0.935,-0.2997,-0.6023,0,0,0,0.1055,0.0312,1.6026,0,0,0,-0.1043,-1.0616,-2.4579,0,0,0,0.1718,0,0,0,0,0,-0.057,0,0,0,0,0,0.2691,0,0,0,0,0,0.1718,0,0,0,0,0,-0.057,0,0,0,0,0,0.2691,0,0,0,0,0,-0.3143,0,0,0,0,0,1.8995,0,0,0,0,0,-1.8307,0,0,0,0,0,-0.3143,0,0,0,0,0,1.8995,0,0,0,0,0,-1.8307,0,0,0,0,0,-0.1047,0,0,0,0,0,-0.0349,0,0,0,0,0,0.0349,0,0,0,0,0,0.1047,0,0,0,0,0,0.1396,0,0,0,0,0,0.1745,0,0,0,0,0,0,0,0,0,0,0")
-        val DOWNED = key("0.0349,0,0.0698,0,10.0382,0,0.0349,0,-0.0349,0,0,0,0.3491,0,0,0,0,0,0.0698,0,0,0,0,0,0.0349,0,0,0,0,0,-0.2443,0,0,0,0,0,-0.4538,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.1137,0.3638,-0.1812,0,0,0,-0.0306,-0.4401,-0.211,0,0,0,-0.0493,0.4513,0.0751,0,0,0,-0.1137,-0.3638,0.0764,0,0,0,-0.0306,0.4401,0.211,0,0,0,-0.0493,-0.4513,-0.0751,0,0,0,-1.1493,0,0,0,0,0,-0.057,0,0,0,0,0,1.1367,0,0,0,0,0,-1.2135,0,0,0,0,0,-0.057,0,0,0,0,0,1.201,0,0,0,0,0,-0.1279,0,0,0,0,0,2.3515,0,0,0,0,0,-2.6773,0,0,0,0,0,0.2604,0,0,0,0,0,2.2927,0,0,0,0,0,-3.007,0,0,0,0,0,0.0698,0.1396,0,0,0,0,0,0.1396,0,0,0,0,0,0.1745,0,0,0,0,0,0.2094,0,0,0,0,0,0.1745,0,0,0,0,0,0.1047,0,0,0,0,0,0,0,0,0,0")
-        val EXHAUSTED = key("0.1396,0,0,0,0,0,0.1047,0,0,0,0,0,0.2793,0,0,0,0,0,0.1396,0,0,0,0,0,0.1047,0,0,0,0,0,-0.0349,0,0,0,0,0,-0.9425,0,0,0,0,0,0.2094,0,0,0,0,0,0,0,0,0,0,0,-0.1137,0.3638,-0.3208,0,0,0,-0.0306,-0.4401,-0.211,0,0,0,-0.0493,0.4513,0.0751,0,0,0,-0.1137,-0.3638,0.3208,0,0,0,-0.0306,0.4401,0.211,0,0,0,-0.0493,-0.4513,-0.0751,0,0,0,0.1905,0,0,0,0,0,-1.4455,0,0,0,0,0,1.0107,0,0,0,0,0,0.1905,0,0,0,0,0,-1.4455,0,0,0,0,0,1.0107,0,0,0,0,0,-0.4352,0,0,0,0,0,1.2754,0,0,0,0,0,-1.3998,0,0,0,0,0,-0.4352,0,0,0,0,0,1.2754,0,0,0,0,0,-1.3998,0,0,0,0,0,-0.2443,0,0,0,0,0,-0.1396,0.1047,0,0,0,0,-0.0349,0.1047,0,0,0,0,0,0.1047,0,0,0,0,0.0349,0.0698,0,0,0,0,0.0349,0,0,0,0,0,0,0,0,0,0,0")
-        val TAKEOFF_CROUCH = key("-0.0698,0,0,0,7,0,0,0,0,0,0,0,-0.3491,0,0,0,0,0,-0.1047,0,0,0,0,0,-0.0698,0,0,0,0,0,-0.0349,0,0,0,0,0,0.4538,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.114,0.1209,0.98,0,0,0,-0.0931,-0.0987,0.1861,0,0,0,-0.0632,0.299,0.2575,0,0,0,0.114,-0.1209,-0.98,0,0,0,-0.0931,0.0987,-0.1861,0,0,0,-0.0632,-0.299,-0.2575,0,0,0,0.5217,0,0,0,0,0,-1.718,0,0,0,0,0,1.2661,0,0,0,0,0,0.5217,0,0,0,0,0,-1.718,0,0,0,0,0,1.2661,0,0,0,0,0,-0.5853,0,0,0,0,0,2.5771,0,0,0,0,0,-2.3419,0,0,0,0,0,-0.5853,0,0,0,0,0,2.5771,0,0,0,0,0,-2.3419,0,0,0,0,0,-0.1745,0,0,0,0,0,-0.1047,0,0,0,0,0,-0.0698,0,0,0,0,0,0.2269,0,0,0,0,0,0.1396,0,0,0,0,0,0.384,0,0,0,0,0,0,0,0,0,0,0")
-        val TAKEOFF_BEAT = key("-0.1745,0,0,0,-10,0,0,0,0,0,0,0,-0.4189,0,0,0,0,0,-0.1047,0,0,0,0,0,-0.0349,0,0,0,0,0,0,0,0,0,0,0,0.4189,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.1151,0,-0.6908,0,0,0,0.0161,-0.0548,-0.4155,0,0,0,-0.0022,0.3611,-0.2521,0,0,0,-0.1151,0,0.6908,0,0,0,0.0161,0.0548,0.4155,0,0,0,-0.0022,-0.3611,0.2521,0,0,0,-0.5236,0,0,0,0,0,-0.3491,0,0,0,0,0,0.6981,0,0,0,0,0,-0.5236,0,0,0,0,0,-0.3491,0,0,0,0,0,0.6981,0,0,0,0,0,-0.5236,0,0,0,0,0,0.6981,0,0,0,0,0,-0.3491,0,0,0,0,0,-0.5236,0,0,0,0,0,0.6981,0,0,0,0,0,-0.3491,0,0,0,0,0,0.0698,0,0,0,0,0,0.0349,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.0349,0,0,0,0,0,0.0698,0,0,0,0,0,0,0,0,0,0,0")
-        val RESONANCE = key("-0.1396,0,0,0,0,0,-0.1745,0,0,0,0,0,-0.6981,0,0,0,0,0,-0.1745,0,0,0,0,0,-0.1047,0,0,0,0,0,-0.1047,0,0,0,0,0,0.5236,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.0485,1.3258,0,0,0,-0.007,-0.0977,0.1458,0,0,0,0.0076,0.1979,0.1509,0,0,0,0,-0.0485,-1.3258,0,0,0,-0.007,0.0977,-0.1458,0,0,0,0.0076,-0.1979,-0.1509,0,0,0,0.1169,0,0,0,0,0,-0.057,0,0,0,0,0,0.2542,0,0,0,0,0,0.1169,0,0,0,0,0,-0.057,0,0,0,0,0,0.2542,0,0,0,0,0,-0.3412,0,0,0,0,0,1.8403,0,0,0,0,0,-1.7795,0,0,0,0,0,-0.3412,0,0,0,0,0,1.8403,0,0,0,0,0,-1.7795,0,0,0,0,0,-0.1396,0,0,0,0,0,-0.0698,0,0,0,0,0,0,0,0,0,0,0,0.0349,0,0,0,0,0,0.0698,0,0,0,0,0,0.4538,0,0,0,0,0,0,0,0,0,0,0")
-        val LIE_DOWN = key("0,0,0,0,12,0,0,0,0,0,0,0,0.3142,-0.4538,0,0,0,0,0.1047,-0.5236,0,0,0,0,0,-0.5585,0,0,0,0,0,-0.4538,0,0,0,0,-0.0349,-0.3491,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.6821,1.0121,1.9234,0,0,0,-0.1561,-0.0637,-2.9753,0,0,0,0.0755,0.4993,-3.0377,0,0,0,-0.6821,-1.0121,-1.9234,0,0,0,-0.1561,0.0637,2.9753,0,0,0,0.0755,-0.4993,3.0377,0,0,0,-1.1356,0,0,0,0,0,-0.057,0,0,0,0,0,1.1926,0,0,0,0,0,-0.7958,0,0,0,0,0,-0.7565,0,0,0,0,0,1.5523,0,0,0,0,0,0.4306,0,0,0,0,0,2.34,0,0,0,0,0,-3.1906,0,0,0,0,0,0.345,0,0,0,0,0,2.5572,0,0,0,0,0,-3.3222,0,0,0,0,0,0.0349,0.3491,0,0,0,0,0,0.5236,0,0,0,0,0,0.5934,0,0,0,0,0,0.6283,0,0,0,0,0,0.5236,0,0,0,0,0,0.3491,0,0,0,0,0,0,0,0,0,0")
-        val HOVER = key("-0.2443,0,0,0,-6,0,0,0,0,0,0,0,-0.3142,0,0,0,0,0,-0.0698,0,0,0,0,0,0,0,0,0,0,0,0.0349,0,0,0,0,0,0.4538,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1381,0.1194,0,0,0,0.0165,-0.1171,-0.1202,0,0,0,0.0013,0.443,-0.0593,0,0,0,0,-0.1381,-0.1194,0,0,0,0.0165,0.1171,0.1202,0,0,0,0.0013,-0.443,0.0593,0,0,0,0.9599,0,0,0,0,0,-1.6581,0,0,0,0,0,1.0472,0,0,0,0,0,0.9599,0,0,0,0,0,-1.6581,0,0,0,0,0,1.0472,0,0,0,0,0,1.2217,0,0,0,0,0,-0.3491,0,0,0,0,0,1.2217,0,0,0,0,0,1.2217,0,0,0,0,0,-0.3491,0,0,0,0,0,1.2217,0,0,0,0,0,0.0698,0,0,0,0,0,0.0349,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.0349,0,0,0,0,0,0.0698,0,0,0,0,0,0,0,0,0,0,0")
-        val FLY_UP = key("-0.2443,0,0,0,-6,0,0,0,0,0,0,0,-0.3142,0,0,0,0,0,-0.0698,0,0,0,0,0,0,0,0,0,0,0,0.0349,0,0,0,0,0,0.4538,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.114,0.1209,0.98,0,0,0,-0.0931,-0.0987,0.1861,0,0,0,-0.0632,0.299,0.2575,0,0,0,0.114,-0.1209,-0.98,0,0,0,-0.0931,0.0987,-0.1861,0,0,0,-0.0632,-0.299,-0.2575,0,0,0,0.9599,0,0,0,0,0,-1.6581,0,0,0,0,0,1.0472,0,0,0,0,0,0.9599,0,0,0,0,0,-1.6581,0,0,0,0,0,1.0472,0,0,0,0,0,1.2217,0,0,0,0,0,-0.3491,0,0,0,0,0,1.2217,0,0,0,0,0,1.2217,0,0,0,0,0,-0.3491,0,0,0,0,0,1.2217,0,0,0,0,0,0.0698,0,0,0,0,0,0.0349,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.0349,0,0,0,0,0,0.0698,0,0,0,0,0,0,0,0,0,0,0")
-        val FLY_DOWN = key("-0.2443,0,0,0,-6,0,0,0,0,0,0,0,-0.3142,0,0,0,0,0,-0.0698,0,0,0,0,0,0,0,0,0,0,0,0.0349,0,0,0,0,0,0.4538,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.1151,0,-0.6908,0,0,0,0.0161,-0.0548,-0.4155,0,0,0,-0.0022,0.3611,-0.2521,0,0,0,-0.1151,0,0.6908,0,0,0,0.0161,0.0548,0.4155,0,0,0,-0.0022,-0.3611,0.2521,0,0,0,0.9599,0,0,0,0,0,-1.6581,0,0,0,0,0,1.0472,0,0,0,0,0,0.9599,0,0,0,0,0,-1.6581,0,0,0,0,0,1.0472,0,0,0,0,0,1.2217,0,0,0,0,0,-0.3491,0,0,0,0,0,1.2217,0,0,0,0,0,1.2217,0,0,0,0,0,-0.3491,0,0,0,0,0,1.2217,0,0,0,0,0,0.0698,0,0,0,0,0,0.0349,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.0349,0,0,0,0,0,0.0698,0,0,0,0,0,0,0,0,0,0,0")
-        val GLIDE = key("0.0349,0,0,0,-6,0,0,0,0,0,0,0,-0.0698,0,0,0,0,0,0,0,0,0,0,0,0.0349,0,0,0,0,0,0.0349,0,0,0,0,0,0.0698,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1369,0.1781,0,0,0,0.0189,-0.0957,-0.1386,0,0,0,-0.0033,0.4385,-0.1175,0,0,0,0,-0.1369,-0.1781,0,0,0,0.0189,0.0957,0.1386,0,0,0,-0.0033,-0.4385,0.1175,0,0,0,0.9599,0,0,0,0,0,-1.6581,0,0,0,0,0,1.0472,0,0,0,0,0,0.9599,0,0,0,0,0,-1.6581,0,0,0,0,0,1.0472,0,0,0,0,0,1.2217,0,0,0,0,0,-0.3491,0,0,0,0,0,1.2217,0,0,0,0,0,1.2217,0,0,0,0,0,-0.3491,0,0,0,0,0,1.2217,0,0,0,0,0,0.0698,0,0,0,0,0,0.0349,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.0349,0,0,0,0,0,0.0698,0,0,0,0,0,0,0,0,0,0,0")
-        val DIVE_WINDUP = key("-0.5236,0,0,0,-6,0,0,0,0,0,0,0,-0.1745,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.3491,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.114,0.1209,0.98,0,0,0,-0.0931,-0.0987,0.1861,0,0,0,-0.0632,0.299,0.2575,0,0,0,0.114,-0.1209,-0.98,0,0,0,-0.0931,0.0987,-0.1861,0,0,0,-0.0632,-0.299,-0.2575,0,0,0,0.9599,0,0,0,0,0,-1.6581,0,0,0,0,0,1.0472,0,0,0,0,0,0.9599,0,0,0,0,0,-1.6581,0,0,0,0,0,1.0472,0,0,0,0,0,1.2217,0,0,0,0,0,-0.3491,0,0,0,0,0,1.2217,0,0,0,0,0,1.2217,0,0,0,0,0,-0.3491,0,0,0,0,0,1.2217,0,0,0,0,0,0.0698,0,0,0,0,0,0.0349,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.0349,0,0,0,0,0,0.0698,0,0,0,0,0,0,0,0,0,0,0")
-        val DIVE = key("0.6632,0,0,0,-6,0,0,0,0,0,0,0,0.0349,0,0,0,0,0,0.0349,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.1047,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.8011,1.0974,0.7086,0,0,0,0.0141,-0.1736,-2.8388,0,0,0,-0.0051,0.1986,3.1406,0,0,0,-0.8011,-1.0974,-0.7086,0,0,0,0.0141,0.1736,2.8388,0,0,0,-0.0051,-0.1986,-3.1406,0,0,0,0.9599,0,0,0,0,0,-1.6581,0,0,0,0,0,1.0472,0,0,0,0,0,0.9599,0,0,0,0,0,-1.6581,0,0,0,0,0,1.0472,0,0,0,0,0,1.2217,0,0,0,0,0,-0.3491,0,0,0,0,0,1.2217,0,0,0,0,0,1.2217,0,0,0,0,0,-0.3491,0,0,0,0,0,1.2217,0,0,0,0,0,0.0698,0,0,0,0,0,0.0349,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0")
-        val CRASH_WINDUP = key("-0.6283,0,0,0,-6,0,0,0,0,0,0,0,-0.1047,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.2793,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.114,0.1209,0.98,0,0,0,-0.0931,-0.0987,0.1861,0,0,0,-0.0632,0.299,0.2575,0,0,0,0.114,-0.1209,-0.98,0,0,0,-0.0931,0.0987,-0.1861,0,0,0,-0.0632,-0.299,-0.2575,0,0,0,0.9599,0,0,0,0,0,-1.6581,0,0,0,0,0,1.0472,0,0,0,0,0,0.9599,0,0,0,0,0,-1.6581,0,0,0,0,0,1.0472,0,0,0,0,0,1.2217,0,0,0,0,0,-0.3491,0,0,0,0,0,1.2217,0,0,0,0,0,1.2217,0,0,0,0,0,-0.3491,0,0,0,0,0,1.2217,0,0,0,0,0,0.0698,0,0,0,0,0,0.0349,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.0349,0,0,0,0,0,0.0698,0,0,0,0,0,0,0,0,0,0,0")
-        val CRASH = key("1.3963,0,0,0,-6,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.0698,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.8011,1.0974,0.7086,0,0,0,0.0141,-0.1736,-2.8388,0,0,0,-0.0051,0.1986,3.1406,0,0,0,-0.8011,-1.0974,-0.7086,0,0,0,0.0141,0.1736,2.8388,0,0,0,-0.0051,-0.1986,-3.1406,0,0,0,0.9599,0,0,0,0,0,-1.6581,0,0,0,0,0,1.0472,0,0,0,0,0,0.9599,0,0,0,0,0,-1.6581,0,0,0,0,0,1.0472,0,0,0,0,0,1.2217,0,0,0,0,0,-0.3491,0,0,0,0,0,1.2217,0,0,0,0,0,1.2217,0,0,0,0,0,-0.3491,0,0,0,0,0,1.2217,0,0,0,0,0,0.0698,0,0,0,0,0,0.0349,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0")
-        val INHALE_AIR = key("-0.2793,0,0,0,-6,0,-0.1396,0,0,0,0,0,-0.7679,0,0,0,0,0,-0.2793,0,0,0,0,0,0.1396,0,0,0,0,0,0.2094,0,0,0,0,0,0.6981,0,0,0,0,0,0.1745,0,0,0,0,0,0,0,0,0,0,0,0,0.1381,0.1194,0,0,0,0.0165,-0.1171,-0.1202,0,0,0,0.0013,0.443,-0.0593,0,0,0,0,-0.1381,-0.1194,0,0,0,0.0165,0.1171,0.1202,0,0,0,0.0013,-0.443,0.0593,0,0,0,0.9599,0,0,0,0,0,-1.6581,0,0,0,0,0,1.0472,0,0,0,0,0,0.9599,0,0,0,0,0,-1.6581,0,0,0,0,0,1.0472,0,0,0,0,0,1.2217,0,0,0,0,0,-0.3491,0,0,0,0,0,1.2217,0,0,0,0,0,1.2217,0,0,0,0,0,-0.3491,0,0,0,0,0,1.2217,0,0,0,0,0,0.0698,0,0,0,0,0,0.0349,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.0349,0,0,0,0,0,0.0698,0,0,0,0,0,0,0,0,0,0,0")
-        val BREATH_AIR = key("0.1047,0,0,0,-6,0,0.0698,0,0,0,0,0,0.1745,0,0,0,0,0,0.1047,0,0,0,0,0,0.1047,0,0,0,0,0,0.0698,0,0,0,0,0,0.2443,0,0,0,0,0,0.8029,0,0,0,0,0,0,0,0,0,0,0,0,0.1381,0.1194,0,0,0,0.0165,-0.1171,-0.1202,0,0,0,0.0013,0.443,-0.0593,0,0,0,0,-0.1381,-0.1194,0,0,0,0.0165,0.1171,0.1202,0,0,0,0.0013,-0.443,0.0593,0,0,0,0.9599,0,0,0,0,0,-1.6581,0,0,0,0,0,1.0472,0,0,0,0,0,0.9599,0,0,0,0,0,-1.6581,0,0,0,0,0,1.0472,0,0,0,0,0,1.2217,0,0,0,0,0,-0.3491,0,0,0,0,0,1.2217,0,0,0,0,0,1.2217,0,0,0,0,0,-0.3491,0,0,0,0,0,1.2217,0,0,0,0,0,0.0698,0,0,0,0,0,0.0349,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.0349,0,0,0,0,0,0.0698,0,0,0,0,0,0,0,0,0,0,0")
-        val LAND_WINDUP = key("-0.4189,0,0,0,-10,0,0,0,0,0,0,0,-0.384,0,0,0,0,0,-0.1047,0,0,0,0,0,-0.0349,0,0,0,0,0,0,0,0,0,0,0,0.5236,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.3753,-0.5325,0.7854,0,0,0,-0.5307,-0.2116,-0.2055,0,0,0,-0.9446,-0.1258,-0.3804,0,0,0,-0.3753,0.5325,-0.7854,0,0,0,-0.5307,0.2116,0.2055,0,0,0,-0.9446,0.1258,0.3804,0,0,0,-0.5236,0,0,0,0,0,-0.3491,0,0,0,0,0,0.6981,0,0,0,0,0,-0.5236,0,0,0,0,0,-0.3491,0,0,0,0,0,0.6981,0,0,0,0,0,-0.5236,0,0,0,0,0,0.6981,0,0,0,0,0,-0.3491,0,0,0,0,0,-0.5236,0,0,0,0,0,0.6981,0,0,0,0,0,-0.3491,0,0,0,0,0,0.0698,0,0,0,0,0,0.0349,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.0349,0,0,0,0,0,0.0698,0,0,0,0,0,0,0,0,0,0,0")
-        val LAND_HIT = key("0.1047,0,0,0,3,0,0.1396,0,0,0,0,0,0.1047,0,0,0,0,0,0.1047,0,0,0,0,0,0.1047,0,0,0,0,0,0.0698,0,0,0,0,0,-0.4538,0,0,0,0,0,0.1745,0,0,0,0,0,0,0,0,0,0,0,-0.1151,0,0.0073,0,0,0,0.0161,-0.0548,-0.4155,0,0,0,-0.0022,0.3611,-0.2521,0,0,0,-0.1151,0,-0.0073,0,0,0,0.0161,0.0548,0.4155,0,0,0,-0.0022,-0.3611,0.2521,0,0,0,0.1374,0,0,0,0,0,-1.7244,0,0,0,0,0,1.3427,0,0,0,0,0,0.1374,0,0,0,0,0,-1.7244,0,0,0,0,0,1.3427,0,0,0,0,0,-0.6279,0,0,0,0,0,1.8088,0,0,0,0,0,-1.7056,0,0,0,0,0,-0.6279,0,0,0,0,0,1.8088,0,0,0,0,0,-1.7056,0,0,0,0,0,-0.1745,0,0,0,0,0,-0.1047,0,0,0,0,0,-0.0698,0,0,0,0,0,-0.0349,0,0,0,0,0,0.0349,0,0,0,0,0,0.0698,0,0,0,0,0,0,0,0,0,0,0")
+        private fun k(h: NivarisShape.Head, jaw: Float = 0.04f, wing: Float = 0f, flap: Float = 0f, fore: Float = 0.15f, swipe: Float = 0f,
+                      sweep: Float = 0f, tight: Float = 0f, hind: Float = 0.2f, rear: Float = 0f, slack: Float = 0f): NivarisKey {
+            val v = FloatArray(COUNT)
+            v[FWD] = h.fwd.toFloat(); v[UP] = h.up.toFloat(); v[PITCH] = h.pitch.toFloat(); v[YAW] = 0f; v[JAW] = jaw
+            v[WING] = wing; v[FLAP] = flap; v[FORE] = fore; v[SWIPE] = swipe; v[SWEEP] = sweep; v[TIGHT] = tight
+            v[HIND] = hind; v[REAR] = rear; v[SLACK] = slack
+            return NivarisKey(v)
+        }
+        private fun g(pose: Int) = NivarisShape.head(pose, false)
+        private fun a(pose: Int) = NivarisShape.head(pose, true)
+        private fun h(fwd: Double, up: Double, pitch: Double) = NivarisShape.Head(fwd, up, pitch)
+
+        // Boden
+        val IDLE = k(g(NivarisPose.IDLE))
+        val INHALE = k(g(NivarisPose.INHALE), jaw = 0.3f, wing = 0.3f, flap = 0.5f, rear = 1.0f, tight = 0.3f)
+        val BREATH = k(g(NivarisPose.BREATH), jaw = 0.85f, wing = 0.35f, flap = -0.2f, rear = 0.4f)
+        val LAND_WINDUP = k(a(NivarisPose.LAND), wing = 1f, flap = 0.9f, fore = -0.6f, hind = -0.3f)
+        val LAND_HIT = k(h(3.6, 3.4, 0.45), jaw = 0.3f, wing = 0.9f, flap = -1f, fore = 0.6f, rear = -0.4f)
+        val CLAW_WINDUP = k(h(1.8, 6.0, -0.1), jaw = 0.2f, fore = -1.2f, rear = 1.4f)
+        val CLAW_HIT = k(h(5.2, 3.0, 0.6), jaw = 0.5f, fore = 0.9f, swipe = 1f, rear = 0.3f)
+        val TAIL_WINDUP = k(h(2.4, 5.0, 0.2), sweep = -0.22f, tight = 0.6f)
+        val TAIL_HIT = k(h(3.0, 4.6, 0.25), sweep = 0.8f, tight = 0.15f)
+        val TAIL_FOLLOW = k(h(2.8, 5.0, 0.2), sweep = 0.95f, tight = 0.2f)
+
+        /** Eine volle Umdrehung = gleiche Lage wie vorher; [NivarisBody] rechnet die Windung modulo 1. */
+        val TAIL_END = k(g(NivarisPose.TAIL), sweep = 1f)
+        val GUST_WINDUP = k(h(1.8, 6.6, -0.3), wing = 1f, flap = 1f, rear = 2.2f)
+        val GUST_HIT = k(h(3.4, 5.6, 0.1), wing = 1f, flap = -1f, rear = 1.2f)
+        val GRAB_REACH = k(h(4.6, 1.8, 1.0), jaw = 0.7f, fore = 0.8f)
+        val GRAB_HOLD = k(g(NivarisPose.GRAB), jaw = 0.1f, fore = 0.6f)
+        val THROW_WINDUP = k(h(1.2, 6.4, -0.6), jaw = 0.1f, rear = 1.5f)
+        val THROW_HIT = k(h(4.4, 5.0, 0.5), jaw = 0.6f, rear = 0.5f)
+        val ROAR = k(g(NivarisPose.ROAR), jaw = 1f, wing = 0.8f, flap = 0.6f, rear = 1.6f)
+        val DOWNED = k(g(NivarisPose.DOWNED), jaw = 0.15f, wing = 0.25f, flap = -0.7f, fore = 0.9f, rear = -0.7f, slack = 1f)
+        val EXHAUSTED = k(g(NivarisPose.EXHAUSTED), jaw = 0.25f, wing = 0.1f, flap = -0.4f, rear = -0.4f, slack = 0.6f)
+        val TAKEOFF_CROUCH = k(h(3.0, 4.0, 0.2), wing = 1f, flap = 1f, fore = 0.4f, rear = -0.5f)
+        val TAKEOFF_BEAT = k(h(3.6, 6.0, 0.0), wing = 1f, flap = -1f, rear = 1.5f)
+        val RESONANCE = k(g(NivarisPose.RESONANCE), jaw = 0.3f, wing = 1f, flap = 1.2f, rear = 2.0f)
+        val LIE_DOWN = k(g(NivarisPose.LIE_DOWN), jaw = 0f, tight = 1f, rear = -0.6f, slack = 0.3f)
+        val FREEZE_WINDUP = k(h(1.8, 6.6, -0.4), jaw = 0.3f, wing = 0.5f, rear = 1.4f)
+        val FREEZE = k(g(NivarisPose.FREEZE_FIELD), jaw = 0.9f, wing = 0.5f, rear = 0.6f)
+
+        // Luft
+        val HOVER = k(a(NivarisPose.HOVER), wing = 1f, fore = 1f, hind = 1.1f)
+        val GLIDE = k(a(NivarisPose.GLIDE), wing = 1f, flap = 0.1f, fore = 1.1f, hind = 1.2f)
+        val INHALE_AIR = k(a(NivarisPose.INHALE), jaw = 0.3f, wing = 1f, flap = 0.6f, fore = 0.6f, hind = 1f)
+        val BREATH_AIR = k(a(NivarisPose.BREATH), jaw = 0.85f, wing = 1f, flap = -0.2f, fore = 1f, hind = 1f)
+        val DIVE_WINDUP = k(h(4.6, 3.4, -0.2), wing = 1f, flap = 1f, fore = 0.6f, hind = 1f)
+        val DIVE = k(a(NivarisPose.DIVE), jaw = 0.4f, wing = 0.15f, flap = -0.3f, fore = 1.2f, hind = 1.2f)
+        val CRASH_WINDUP = k(h(4.0, 3.0, -0.3), wing = 1f, flap = 1f, fore = 0.8f, hind = 1f)
+        val CRASH = k(a(NivarisPose.CRASH_DIVE), wing = 0.1f, fore = 1.2f, hind = 1.2f)
+        val ROAR_AIR = k(a(NivarisPose.ROAR), jaw = 1f, wing = 1f, flap = 0.8f, fore = 0.8f, hind = 1f)
+        val DOWNED_AIR = k(a(NivarisPose.DOWNED), jaw = 0.3f, wing = 0.5f, flap = 1f, fore = 0.4f, hind = 0.6f, slack = 1f)
+        val RESONANCE_AIR = k(a(NivarisPose.RESONANCE), jaw = 0.3f, wing = 1f, flap = 1.2f, fore = 0.8f, hind = 1f)
+        val FREEZE_AIR = k(a(NivarisPose.FREEZE_FIELD), jaw = 0.9f, wing = 1f, flap = 0.2f, fore = 1f, hind = 1f)
     }
-    // </keys>
+
+    companion object {
+        /** Kopfgelenk vor dem Entity-Punkt (Blöcke, entlang der Blickrichtung). */
+        const val FWD = 0
+
+        /** Kopfgelenk über dem Entity-Punkt (Blöcke). */
+        const val UP = 1
+
+        /** Kopfneigung (+ = Nase runter). */
+        const val PITCH = 2
+
+        /** Kopfdrehung gegen die Blickrichtung der Entity. */
+        const val YAW = 3
+
+        /** Kiefer offen (rad). */
+        const val JAW = 4
+
+        /** Schwingen: 0 = angelegt, 1 = gespannt. */
+        const val WING = 5
+
+        /** Schwingen: −1 = Abschlag unten … +1 = hoch. */
+        const val FLAP = 6
+
+        /** Vorderläufe: − = nach vorn gereckt, + = nach hinten angezogen (rad). */
+        const val FORE = 7
+
+        /** Rechte Klaue: Hieb quer (0..1). */
+        const val SWIPE = 8
+
+        /** Windungen am Boden: Drehung um sie herum (Umdrehungen, Schwanzfeger). */
+        const val SWEEP = 9
+
+        /** Windungen am Boden: 0 = weit, 1 = eng zusammengerollt. */
+        const val TIGHT = 10
+
+        /** Hinterläufe angezogen (rad). */
+        const val HIND = 11
+
+        /** Rumpf vorn angehoben (Blöcke, Aufbäumen; − = flach an den Boden gedrückt). */
+        const val REAR = 12
+
+        /** Schlaff (zu Boden gebracht, erschöpft): Windungen locker, Körper flach. */
+        const val SLACK = 13
+
+        /** Atmen −1..1 (Brust weitet sich). */
+        const val BREATHE = 14
+
+        const val COUNT = 15
+
+        /** Platzhalter mit denselben Namen, solange das Modell (noch) nicht alle Teile hat. */
+        fun placeholderData(): TexturedModelData {
+            val data = ModelData()
+            val root = data.root
+            val d = Dilation.NONE
+            fun box(x: Float, y: Float, z: Float, w: Float, h: Float, l: Float) = ModelPartBuilder.create().uv(0, 0).cuboid(x, y, z, w, h, l, d)
+            val head = root.addChild("head", box(-6f, -6f, -12f, 12f, 10f, 15f), ModelTransform.NONE)
+            head.addChild("jaw", box(-4f, 0f, -16f, 8f, 2.5f, 12f), ModelTransform.origin(0f, 1f, -4f))
+            root.addChild("neck", box(-5f, -5f, -0.5f, 10f, 10f, 17f), ModelTransform.NONE)
+            root.addChild("segment", box(-6f, -6f, -0.5f, 12f, 12f, 17f), ModelTransform.NONE)
+            root.addChild("segment_dorsal", box(-6f, -6f, -0.5f, 12f, 12f, 17f).uv(0, 0).cuboid(-1f, -10f, 4f, 2f, 4f, 8f, d), ModelTransform.NONE)
+            root.addChild("segment_heart", box(-6f, -6f, -0.5f, 12f, 12f, 17f), ModelTransform.NONE)
+            root.addChild("foreleg_l", box(-1.5f, -3f, -3f, 6f, 11f, 6f), ModelTransform.NONE)
+            root.addChild("foreleg_r", box(-4.5f, -3f, -3f, 6f, 11f, 6f), ModelTransform.NONE)
+            root.addChild("hindleg_l", box(-2f, -4f, -3.5f, 7f, 12f, 7f), ModelTransform.NONE)
+            root.addChild("hindleg_r", box(-5f, -4f, -3.5f, 7f, 12f, 7f), ModelTransform.NONE)
+            root.addChild("wing_l", box(0f, -1f, -1f, 60f, 1f, 24f), ModelTransform.NONE)
+            root.addChild("wing_r", box(-60f, -1f, -1f, 60f, 1f, 24f), ModelTransform.NONE)
+            root.addChild("tail_fan", box(-1f, -6f, 0f, 2f, 12f, 24f), ModelTransform.NONE)
+            return TexturedModelData.of(data, 64, 64)
+        }
+    }
 }
+
+/**
+ * Der Körper eines Nivaris-Exemplars auf dem Client: rechnet je Frame die 41 Punkte des Rückgrats und die Gliedrahmen.
+ *
+ * * **Flug:** Die Rumpfmitte (Entity-Punkt + [NivarisShape.SPINE_UP]) wird alle 0,5 Blöcke Weg in eine Spur
+ *   geschrieben; das Kopfgelenk sitzt je Pose vor dem Rumpf ([NivarisModel.FWD]/[NivarisModel.UP]), ein weicher Bogen
+ *   verbindet beide, dahinter folgen die Glieder der Spur in festem Bogenabstand (2,4). Darüber eine Welle, die nach
+ *   hinten läuft, Rollen und Schräglage in Kurven.
+ * * **Boden:** Der Körper liegt in Bögen hinter und um sie herum (Spirale, Schwanz innen). Die Spirale wird gedreht,
+ *   bis sie in die Arena passt (Herzgewölbe R 28, Plateau R 40), und dreht sich beim Schwanzfeger einmal um sie.
+ *   Zwischen Boden und Flug wird je Glied überblendet (Kopf zuerst).
+ * * **An der Nadel ([NivarisModeC.COIL]):** Hals vom Kopf (ruhend oder über dem Gipfel) zur Helix
+ *   [ArenaLayout.coil], der Körper liegt auf ihrem oberen Teil.
+ * * **Lösen ([NivarisModeC.UNCOIL]):** Der Kopf folgt [EntrancePathC]; der Körper ist der zurückgelegte Weg, dahinter
+ *   Hals und Helix – so gleitet er Glied für Glied vom Fels in die Flugbahn.
+ * * **Keine Sprünge:** Wechselt die Darstellung oder springt die Entity (Teleport), blendet der Körper in 10 Ticks vom
+ *   alten zum neuen Verlauf über; beim Übergang in den Kampf wird die Spur aus dem letzten Körper gesät.
+ */
+class NivarisBody {
+
+    private class Poly {
+        val pts = ArrayList<Vec>(320)
+        val ups = ArrayList<Vec>(320)
+        fun add(p: Vec, up: Vec) {
+            if (pts.isNotEmpty() && pts.last().squaredDistanceTo(p) < 1e-6) return
+            pts.add(p)
+            ups.add(up)
+        }
+    }
+
+    private val trail = ArrayDeque<Vec>()
+    private var last: Array<Vec>? = null
+    private var fadeFrom: Array<Vec>? = null
+    private var fadeAt = 0f
+    private var lastMode = -1
+    private var lastE: Vec? = null
+    private var lastAge = Float.NaN
+    private var groundY = Double.NaN
+    private var ground = -1f
+    private var coilYaw = 0.0
+    private var raise = -1f
+
+    fun update(e: dev.henny.hha_arius.boss.NivarisEntity, s: NivarisRenderState, tickDelta: Float) {
+        val now = s.age
+        val dt = if (lastAge.isNaN()) 1f else MathHelper.clamp(now - lastAge, 0f, 5f)
+        lastAge = now
+        val p = s.p
+        val mode = e.mode
+        val world = e.entityWorld
+        val base = Vec(s.x, s.y, s.z)
+        val slot = Math.floorDiv(Math.round(s.x).toInt() + ArenaLayout.SLOT_SPACING / 2, ArenaLayout.SLOT_SPACING)
+        val origin = ArenaLayout.origin(slot)
+        val o = Vec(origin.x.toDouble(), origin.y.toDouble(), origin.z.toDouble())
+        val eirholm = world.registryKey == dev.henny.hha_arius.arena.ArenaDimension.WORLD
+
+        // Wechsel der Darstellung: weich überblenden, beim Übergang in den Kampf die Spur aus dem letzten Körper säen.
+        if (lastMode != -1 && mode != lastMode) {
+            startFade(now)
+            lastE = null
+            if (mode == NivarisModeC.NORMAL) last?.let { l ->
+                trail.clear()
+                for (k in 3 until l.size) trail.addLast(l[k])
+            }
+        }
+        lastMode = mode
+
+        val pts = Array(POINTS) { Vec.ZERO }
+        val ups = Array(POINTS) { UP_V }
+        val air = FloatArray(POINTS)
+        val headFwd: Vec
+        when (mode) {
+            NivarisModeC.COIL, NivarisModeC.UNCOIL -> {
+                lastE = null
+                val target = if (mode == NivarisModeC.UNCOIL) 1f else MathHelper.clamp((p[NivarisModel.UP] - 1.3f) / 3.8f, 0f, 1f)
+                raise = if (raise < 0f) target else approach(raise, target, dt / 45f)
+                val r = smooth(raise)
+                val poly = Poly()
+                var u = 0.0
+                if (mode == NivarisModeC.UNCOIL) {
+                    u = MathHelper.lerp(tickDelta, e.lastUncoil, e.uncoil).toDouble() * EntrancePathC.LENGTH
+                    var d = u
+                    while (d > 0.0) {
+                        poly.add(o.add(EntrancePathC.at(d)), UP_V)
+                        d -= 0.5
+                    }
+                }
+                coilPoly(poly, o, r.toDouble(), now)
+                sample(poly, pts, ups)
+                headFwd = if (mode == NivarisModeC.UNCOIL && u > 0.5) {
+                    EntrancePathC.tangent(u).add(0.0, -0.12, 0.0).normalize()
+                } else {
+                    // Blick nach Norden auf das Plateau, die Neigung aus der Pose (ruhend: auf der Windung).
+                    yawPitch(Math.PI.toFloat() + p[NivarisModel.YAW], p[NivarisModel.PITCH] + 0.15f * (1f - r))
+                }
+                for (i in 0 until POINTS) air[i] = if (mode == NivarisModeC.UNCOIL && i * NivarisShape.SEGMENT < u) {
+                    MathHelper.clamp(((u - i * NivarisShape.SEGMENT) / 20.0).toFloat(), 0f, 1f)
+                } else 0f
+            }
+            else -> {
+                val yaw = Math.toRadians(s.bodyYaw.toDouble())
+                val f = Vec(-kotlin.math.sin(yaw), 0.0, kotlin.math.cos(yaw))
+                val spine = base.add(0.0, NivarisShape.SPINE_UP + p[NivarisModel.REAR] * 0.5, 0.0)
+                val h = base.add(f.multiply(p[NivarisModel.FWD].toDouble())).add(0.0, p[NivarisModel.UP].toDouble(), 0.0)
+                headFwd = yawPitch(s.bodyYaw * MathHelper.RADIANS_PER_DEGREE + p[NivarisModel.YAW], p[NivarisModel.PITCH])
+
+                // Sprung der Entity (Teleport, Neu-Spawn an anderer Stelle): Körper mitnehmen und überblenden.
+                lastE?.let { prev ->
+                    if (prev.squaredDistanceTo(spine) > 12.0 * 12.0) {
+                        val delta = spine.subtract(prev)
+                        val moved = trail.map { it.add(delta) }
+                        trail.clear()
+                        trail.addAll(moved)
+                        startFade(now)
+                    }
+                }
+                lastE = spine
+                if (!e.flying) groundY = s.y
+                if (groundY.isNaN()) groundY = s.y - (if (e.flying) 8.0 else 0.0)
+                val target = if (e.flying) 0f else 1f
+                ground = if (ground < 0f) target else approach(ground, target, dt / 34f)
+
+                // Spur: Rumpfmitte alle 0,5 Blöcke. Neu gespawnt im Flug: eine sanfte S-Kurve nach hinten.
+                if (trail.isEmpty()) {
+                    for (k in 1..60) trail.addLast(spine.subtract(f.multiply(k * 2.0)).add(f.crossUp().multiply(kotlin.math.sin(k * 0.15) * 2.0)))
+                }
+                if (spine.squaredDistanceTo(trail.first()) >= 0.25) trail.addFirst(spine)
+                trimTrail()
+
+                // A: Flugbahn.
+                val a = Poly()
+                run {
+                    val d = h.distanceTo(spine).coerceAtLeast(1.0)
+                    val motion = trail.firstOrNull { it.squaredDistanceTo(spine) > 0.04 }?.let { spine.subtract(it).normalize() } ?: f
+                    bezier(a, h, h.subtract(headFwd.multiply(0.35 * d)), spine.add(motion.multiply(0.35 * d)), spine, UP_V, 10)
+                    for (q in trail) a.add(q, UP_V)
+                }
+                // B: am Boden in Bögen.
+                val b = Poly()
+                val afterE = restCurve(b, h, headFwd, spine, f, groundY, p, o, eirholm, base.y < o.y - 20.0, dt)
+
+                val ap = Array(POINTS) { Vec.ZERO }
+                val au = Array(POINTS) { UP_V }
+                sample(a, ap, au)
+                val bp = Array(POINTS) { Vec.ZERO }
+                val bu = Array(POINTS) { UP_V }
+                sample(b, bp, bu)
+                for (i in 0 until POINTS) {
+                    val g = smooth(MathHelper.clamp(ground * 1.5f - i / POINTS.toFloat() * 0.5f, 0f, 1f))
+                    pts[i] = ap[i].lerp(bp[i], g.toDouble())
+                    ups[i] = au[i].lerp(bu[i], g.toDouble())
+                    air[i] = 1f - g
+                }
+                // Ganz am Boden: Die Spur ist der liegende Körper (beim Abflug wickelt er sich daraus ab).
+                if (ground >= 0.999f) {
+                    trail.clear()
+                    for (k in afterE until b.pts.size) trail.addLast(b.pts[k])
+                    trimTrail()
+                }
+            }
+        }
+
+        // Schräglage in Kurven (Flug) und Rückenseite am Hals nach hinten (aufgerichteter Hals zeigt den Kamm).
+        for (i in 0 until POINTS) {
+            var up = ups[i]
+            if (air[i] > 0.01f && i in 1 until POINTS - 1) {
+                val k = pts[i - 1].add(pts[i + 1]).subtract(pts[i].multiply(2.0))
+                up = up.add(Vec(k.x, 0.0, k.z).multiply(2.0 * air[i]))
+            }
+            val back = max(0f, 1f - i / 6f) * 0.5
+            ups[i] = up.subtract(headFwd.multiply(back)).normalizeOr(UP_V)
+        }
+
+        // Welle und Rollen: erst Rahmen, dann seitlich/aufwärts versetzen.
+        val frames0 = frames(pts, ups, now, air)
+        val walk = s.walk
+        for (i in 1 until POINTS) {
+            val k = i / POINTS.toDouble()
+            val front = smooth(MathHelper.clamp(i / 5f, 0f, 1f)).toDouble()
+            val amp = (0.2 + 0.9 * k) * front
+            var lat = air[i] * amp * kotlin.math.sin(now * 0.16 - i * 0.42)
+            var ver = air[i] * amp * 0.35 * kotlin.math.sin(now * 0.11 - i * 0.31 + 1.3)
+            if (mode == NivarisModeC.NORMAL) lat += (1f - air[i]) * walk * 0.5 * front * kotlin.math.sin(s.walkPhase * 0.6 - i * 0.5)
+            else if (air[i] < 0.01f) ver += 0.1 * kotlin.math.sin(now * 0.05 - i * 0.35)
+            val j = (i - 1) * 9
+            val l = Vec(frames0[j].toDouble(), frames0[j + 1].toDouble(), frames0[j + 2].toDouble())
+            val u = Vec(-frames0[j + 3].toDouble(), -frames0[j + 4].toDouble(), -frames0[j + 5].toDouble())
+            pts[i] = pts[i].add(l.multiply(lat)).add(u.multiply(ver))
+        }
+
+        // Herzgewölbe: eng winden, nicht durch Wand oder Decke (Teile dürfen in den Boden tauchen).
+        if (eirholm && mode == NivarisModeC.NORMAL && base.y < o.y - 20.0) {
+            val vc = o.add(ArenaLayout.VAULT.x + 0.5, ArenaLayout.VAULT.y.toDouble(), ArenaLayout.VAULT.z + 0.5)
+            val ceil = o.y + ArenaLayout.VAULT_CEIL
+            for (i in 0 until POINTS) {
+                val rad = radius(i)
+                val q = pts[i]
+                val dx = q.x - vc.x
+                val dz = q.z - vc.z
+                val d = kotlin.math.sqrt(dx * dx + dz * dz)
+                val maxR = ArenaLayout.VAULT_R - 1.2 - rad
+                var x = q.x
+                var z = q.z
+                if (d > maxR && d > 1e-6) {
+                    x = vc.x + dx / d * maxR
+                    z = vc.z + dz / d * maxR
+                }
+                val y = q.y.coerceIn(vc.y - 0.6, ceil - 0.6 - rad)
+                pts[i] = Vec(x, y, z)
+            }
+        }
+
+        // Überblendung nach Wechsel/Sprung.
+        fadeFrom?.let { from ->
+            val k = (now - fadeAt) / 10f
+            if (k >= 1f || from.size != POINTS) {
+                fadeFrom = null
+            } else {
+                val far = (0 until POINTS).maxOf { from[it].squaredDistanceTo(pts[it]) }
+                if (far > 60.0 * 60.0) {
+                    fadeFrom = null // Überspringen/Neustart: kein Geisterstreifen quer durchs Bild
+                } else {
+                    val t = smooth(k).toDouble()
+                    for (i in 0 until POINTS) pts[i] = from[i].lerp(pts[i], t)
+                }
+            }
+        }
+        last = pts
+
+        // Endgültige Rahmen und Werte für den Renderer.
+        val fr = frames(pts, ups, now, air)
+        System.arraycopy(fr, 0, s.frame, 0, fr.size)
+        for (i in 0 until POINTS) {
+            s.px[i] = (pts[i].x - s.x).toFloat()
+            s.py[i] = (pts[i].y - s.y).toFloat()
+            s.pz[i] = (pts[i].z - s.z).toFloat()
+            val light = WorldRenderer.getLightmapCoordinates(world, BlockPos.ofFloored(pts[i]))
+            val sky = max(LightmapTextureManager.getSkyLightCoordinates(light), 9)
+            s.lights[i] = LightmapTextureManager.pack(LightmapTextureManager.getBlockLightCoordinates(light), sky)
+        }
+        for (i in 0 until NivarisShape.SEGMENTS) {
+            val breathe = if (i in 1..6) 1f + 0.025f * p[NivarisModel.BREATHE] else 1f
+            s.girth[i] = NivarisShape.taper(i) * breathe
+            s.stretch[i] = MathHelper.clamp((pts[i].distanceTo(pts[i + 1]) / NivarisShape.SEGMENT).toFloat(), 0.5f, 1.8f)
+        }
+        // Kopf: Blick headFwd, oben = Weltoben ohne Blickanteil.
+        val hu = UP_V.subtract(headFwd.multiply(headFwd.dotProduct(UP_V))).normalizeOr(Vec(0.0, 0.0, 1.0))
+        val hl = headFwd.negate().crossProduct(hu)
+        put(s.headFrame, 0, hl, hu.negate(), headFwd.negate())
+        s.bodyReady = true
+    }
+
+    private fun startFade(now: Float) {
+        val l = last ?: return
+        fadeFrom = l.copyOf()
+        fadeAt = now
+    }
+
+    private fun trimTrail() {
+        var len = 0.0
+        var prev: Vec? = null
+        var keep = 0
+        for (q in trail) {
+            if (prev != null) len += prev.distanceTo(q)
+            prev = q
+            keep++
+            if (len > NivarisShape.SEGMENT * POINTS + 40.0) break
+        }
+        while (trail.size > keep) trail.removeLast()
+    }
+
+    /**
+     * Liegender Körper: vom Kopfgelenk weich zur Rumpfmitte, dann eine Brücke zur äußeren Windung und eine Spirale
+     * nach innen (Schwanz in der Mitte). Gibt den Index des ersten Punkts hinter der Rumpfmitte zurück.
+     */
+    private fun restCurve(
+        poly: Poly, h: Vec, headFwd: Vec, e: Vec, f: Vec, groundY: Double, p: FloatArray, o: Vec, eirholm: Boolean,
+        vault: Boolean, dt: Float,
+    ): Int {
+        val d = h.distanceTo(e).coerceAtLeast(1.0)
+        val hf = Vec(headFwd.x, 0.0, headFwd.z).normalizeOr(f)
+        bezier(poly, h, h.add(0.0, -0.55 * d, 0.0).subtract(hf.multiply(0.1 * d)), e.add(f.multiply(0.45 * d)), e, UP_V, 10)
+        val afterE = poly.pts.size
+        val tight = p[NivarisModel.TIGHT].toDouble()
+        val slack = p[NivarisModel.SLACK].toDouble()
+        val r1 = 7.6 - tight * 1.4 + slack * 1.6
+        val r0 = 2.0
+        // Abstand der Windungen je Umlauf (eng = Körper an Körper) und Abstand der Spiralmitte hinter ihr: so weit, dass
+        // die erste Windung hinter der Rumpfmitte vorbeiläuft und die Brücke nicht kreuzt.
+        val pitch = 2.6 - tight * 0.4
+        val dc = r1 + 3.2
+        val ground = Vec(e.x, groundY, e.z)
+        val sweep = p[NivarisModel.SWEEP].toDouble() * 2.0 * Math.PI
+        val back0 = f.negate()
+
+        // In die Arena drehen (die Drehung folgt weich, damit nichts springt).
+        var want = 0.0
+        if (eirholm) {
+            val center = if (vault) o.add(ArenaLayout.VAULT.x + 0.5, 0.0, ArenaLayout.VAULT.z + 0.5) else o.add(0.5, 0.0, 0.5)
+            val limit = (if (vault) ArenaLayout.VAULT_R else ArenaLayout.PLATEAU_R) - 1.5
+            fun excess(off: Double): Double {
+                val bb = rotY(back0, sweep + off)
+                val c = ground.add(bb.multiply(dc))
+                return kotlin.math.hypot(c.x - center.x, c.z - center.z) + r1 - limit
+            }
+            val tries = doubleArrayOf(0.0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6, 2.3, -2.3, Math.PI)
+            want = tries.firstOrNull { excess(it) <= 0.0 } ?: tries.minBy { excess(it) }
+        }
+        coilYaw += (want - coilYaw) * MathHelper.clamp(dt * 0.05f, 0f, 1f)
+        val b = rotY(back0, sweep + coilYaw)
+        val side = Vec(b.z, 0.0, -b.x)
+        val c = ground.add(b.multiply(dc))
+        val g = c.add(side.multiply(r1)).add(0.0, 1.0, 0.0)
+        val l = g.distanceTo(e)
+        bezier(poly, e, e.subtract(f.multiply(0.4 * l)).add(0.0, -0.3, 0.0), g.subtract(b.multiply(0.4 * l)), g, UP_V, 12)
+        // Spirale nach innen (Schwanz zur Mitte); bleibt Länge übrig, läuft sie als zweite Lage obenauf wieder hinaus.
+        val inward = (r1 - r0) / pitch * 2.0 * Math.PI
+        var phi = 0.0
+        while (true) {
+            val outward = (phi - inward).coerceAtLeast(0.0)
+            val r = if (phi <= inward) r1 - pitch * phi / (2.0 * Math.PI) else r0 + pitch * outward / (2.0 * Math.PI)
+            if (phi > inward && r > r1) break
+            val k = (phi / inward).coerceAtMost(1.0)
+            val lift = 1.7 * smooth((outward / Math.PI).toFloat().coerceAtMost(1f))
+            val pos = c.add(side.multiply(kotlin.math.cos(phi) * r)).add(b.multiply(kotlin.math.sin(phi) * r))
+            poly.add(Vec(pos.x, groundY + 1.0 - 0.4 * k - slack * 0.2 + lift, pos.z), UP_V)
+            phi += 0.5 / r
+        }
+        return afterE
+    }
+
+    /** Hals vom Kopfgelenk (ruhend → aufgerichtet nach [raise]) zur Spitze der Helix, dann die Helix hinab. */
+    private fun coilPoly(poly: Poly, o: Vec, raise: Double, now: Float) {
+        val axis = o.add(ArenaLayout.SPIRE.x + 0.5, 0.0, ArenaLayout.SPIRE.z + 0.5)
+        val h = o.add(EntrancePathC.HEAD_REST.lerp(EntrancePathC.HEAD_RAISED, raise)).add(0.0, kotlin.math.sin(now * 0.05) * 0.25, 0.0)
+        val c1 = o.add(ArenaLayout.coil(1.0))
+        val t1 = c1.subtract(o.add(ArenaLayout.coil(0.995))).normalize()
+        val d = h.distanceTo(c1).coerceAtLeast(2.0)
+        val neckUp = Vec(0.0, 1.0, 0.6).normalize()
+        bezier(poly, h, h.add(0.0, -0.45 * d, 0.12 * d), c1.add(t1.multiply(0.4 * d)), c1, neckUp, 14)
+        var sCoil = 1.0
+        while (sCoil >= 0.0) {
+            val q = o.add(ArenaLayout.coil(sCoil))
+            val radial = Vec(q.x - axis.x, 0.0, q.z - axis.z).normalizeOr(UP_V)
+            val pos = q.add(radial.multiply(0.15 * kotlin.math.sin(now * 0.05 + sCoil * 9.0)))
+            poly.add(pos, radial.multiply(0.9).add(0.0, 0.45, 0.0).normalize())
+            sCoil -= 0.002
+        }
+    }
+
+    /** Punkte im Bogenabstand 2,4 ab dem Anfang der Linie; zu kurze Linien laufen geradeaus weiter. */
+    private fun sample(poly: Poly, outP: Array<Vec>, outU: Array<Vec>) {
+        val pts = poly.pts
+        if (pts.isEmpty()) return
+        outP[0] = pts[0]
+        outU[0] = poly.ups[0]
+        var seg = 0
+        var acc = 0.0
+        for (i in 1 until outP.size) {
+            val target = i * NivarisShape.SEGMENT
+            var done = false
+            while (seg < pts.size - 1) {
+                val len = pts[seg].distanceTo(pts[seg + 1])
+                if (acc + len >= target && len > 1e-9) {
+                    val k = (target - acc) / len
+                    outP[i] = pts[seg].lerp(pts[seg + 1], k)
+                    outU[i] = poly.ups[seg].lerp(poly.ups[seg + 1], k)
+                    done = true
+                    break
+                }
+                acc += len
+                seg++
+            }
+            if (!done) {
+                val lastP = pts.last()
+                val dir = if (pts.size >= 2) lastP.subtract(pts[pts.size - 2]).normalizeOr(Vec(0.0, 0.0, 1.0)) else Vec(0.0, 0.0, 1.0)
+                outP[i] = lastP.add(dir.multiply(target - acc))
+                outU[i] = poly.ups.last()
+            }
+        }
+    }
+
+    /** Rahmen je Glied (9 Werte: Modell-x = links, Modell-y = −oben, Modell-z = nach hinten) mit leichtem Rollen. */
+    private fun frames(pts: Array<Vec>, ups: Array<Vec>, now: Float, air: FloatArray): FloatArray {
+        val out = FloatArray(NivarisShape.SEGMENTS * 9)
+        var prevU = ups[0]
+        var prevB = Vec(0.0, 0.0, 1.0)
+        for (i in 0 until NivarisShape.SEGMENTS) {
+            val b = pts[i + 1].subtract(pts[i]).normalizeOr(prevB)
+            val hint = ups[i].add(ups[i + 1])
+            var u = hint.subtract(b.multiply(hint.dotProduct(b)))
+            if (u.lengthSquared() < 0.04) u = prevU.subtract(b.multiply(prevU.dotProduct(b)))
+            u = u.normalizeOr(Vec(1.0, 0.0, 0.0))
+            var l = b.crossProduct(u)
+            val roll = (0.02 + 0.05 * air[i]) * kotlin.math.sin(now * 0.05 - i * 0.2)
+            val cr = kotlin.math.cos(roll)
+            val sr = kotlin.math.sin(roll)
+            val u2 = u.multiply(cr).add(l.multiply(sr))
+            l = l.multiply(cr).subtract(u.multiply(sr))
+            u = u2
+            put(out, i * 9, l, u.negate(), b)
+            prevU = u
+            prevB = b
+        }
+        return out
+    }
+
+    private fun put(out: FloatArray, at: Int, x: Vec, y: Vec, z: Vec) {
+        out[at] = x.x.toFloat(); out[at + 1] = x.y.toFloat(); out[at + 2] = x.z.toFloat()
+        out[at + 3] = y.x.toFloat(); out[at + 4] = y.y.toFloat(); out[at + 5] = y.z.toFloat()
+        out[at + 6] = z.x.toFloat(); out[at + 7] = z.y.toFloat(); out[at + 8] = z.z.toFloat()
+    }
+
+    private fun bezier(poly: Poly, p0: Vec, c1: Vec, c2: Vec, p3: Vec, up: Vec, steps: Int) {
+        for (k in 0..steps) {
+            val t = k / steps.toDouble()
+            val m = 1 - t
+            val q = p0.multiply(m * m * m).add(c1.multiply(3 * m * m * t)).add(c2.multiply(3 * m * t * t)).add(p3.multiply(t * t * t))
+            poly.add(q, up)
+        }
+    }
+
+    private fun radius(i: Int): Double = NivarisShape.taper(i.coerceAtMost(NivarisShape.SEGMENTS - 1)) * 6.0 * NivarisShape.SCALE / 16.0
+
+    /** Blickrichtung aus Gier (rad, Minecraft-Konvention) und Neigung (+ = nach unten). */
+    private fun yawPitch(yawRad: Float, pitch: Float): Vec {
+        val cp = kotlin.math.cos(pitch.toDouble())
+        return Vec(-kotlin.math.sin(yawRad.toDouble()) * cp, -kotlin.math.sin(pitch.toDouble()), kotlin.math.cos(yawRad.toDouble()) * cp)
+    }
+
+    private fun rotY(v: Vec, a: Double): Vec {
+        val c = kotlin.math.cos(a)
+        val s = kotlin.math.sin(a)
+        return Vec(v.x * c - v.z * s, v.y, v.x * s + v.z * c)
+    }
+
+    private fun approach(v: Float, target: Float, step: Float) = if (v < target) minOf(target, v + step) else maxOf(target, v - step)
+
+    private fun smooth(t: Float) = t * t * (3f - 2f * t)
+
+    private fun Vec.normalizeOr(fallback: Vec): Vec = if (lengthSquared() < 1e-10) fallback else normalize()
+
+    private fun Vec.crossUp(): Vec = Vec(-z, 0.0, x)
+
+    private companion object {
+        const val POINTS = NivarisRenderState.POINTS
+        val UP_V = Vec(0.0, 1.0, 0.0)
+    }
+}
+
+private typealias Vec = net.minecraft.util.math.Vec3d
+private typealias ArenaLayout = dev.henny.hha_arius.arena.ArenaLayout
+private typealias EntrancePathC = dev.henny.hha_arius.boss.EntrancePath
+private typealias NivarisModeC = dev.henny.hha_arius.boss.NivarisMode
