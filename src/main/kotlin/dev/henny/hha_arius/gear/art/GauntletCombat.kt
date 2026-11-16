@@ -21,7 +21,6 @@ import net.minecraft.registry.tag.DamageTypeTags
 import net.minecraft.server.network.ServerPlayerEntity
 import net.minecraft.sound.SoundEvents
 import net.minecraft.util.hit.HitResult
-import net.minecraft.util.math.Box
 import net.minecraft.util.math.MathHelper
 import net.minecraft.util.math.Vec3d
 import net.minecraft.world.RaycastContext
@@ -299,7 +298,4 @@ object GauntletCombat {
     private fun removeSlow(player: ServerPlayerEntity) {
         player.getAttributeInstance(EntityAttributes.MOVEMENT_SPEED)?.removeModifier(SLOW_ID)
     }
-
-    @Suppress("unused")
-    private fun box(center: Vec3d, r: Double) = Box.of(center, r * 2, r * 2, r * 2)
 }

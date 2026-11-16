@@ -15,7 +15,6 @@ import dev.henny.hha_arius.gear.art.CastKind
 import dev.henny.hha_arius.gear.art.GauntletMode
 import dev.henny.hha_arius.gear.art.GauntletsItem
 import dev.henny.hha_arius.gear.art.Placement
-import dev.henny.hha_arius.gear.art.School
 import dev.henny.hha_arius.gear.art.Spell
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper
@@ -310,7 +309,4 @@ object ArtClient {
         }
         for (cell in target.cells) d.box(VfxLayers.GLOW_ADD, Vec3d.ofCenter(cell), x, y, z, withAlpha(color, pulse))
     }
-
-    @Suppress("unused")
-    private val SCHOOLS = School.entries
 }

@@ -179,19 +179,17 @@ def wind_pull():
 
 
 def frost_shards():
-    """Frostsplitter: drei schlanke Eissplitter, fächerförmig nach rechts oben."""
+    """Frostsplitter: drei schlanke Eissplitter (lange Rauten), parallel nach rechts oben fliegend."""
     c = Canvas()
-    for ang, ln, w in ((-18, 12.0, 1.7), (-45, 14.5, 2.0), (-72, 12.0, 1.7)):
+    for cx, cy, ang, ln, w in ((5.2, 6.6, -45, 8.0, 1.4), (7.8, 8.6, -45, 12.0, 1.7), (10.6, 11.0, -45, 7.5, 1.3)):
         a = math.radians(ang)
         ux, uy = math.cos(a), math.sin(a)
         nx, ny = -uy, ux
-        bx, by = 1.5, 14.5
-        tip = (bx + ux * ln, by + uy * ln)
-        mid = (bx + ux * ln * 0.5, by + uy * ln * 0.5)
-        root = (bx + ux * ln * 0.12, by + uy * ln * 0.12)
-        c.poly([(mid[0] + nx * w, mid[1] + ny * w), tip, (mid[0] - nx * w, mid[1] - ny * w), root],
-               lambda x, y, nx=nx, ny=ny, mx=mid[0], my=mid[1]: I1 if (x - mx) * nx + (y - my) * ny < 0 else I2)
-        c.line(mid[0] - ux * 2, mid[1] - uy * 2, tip[0] - ux * 1.2, tip[1] - uy * 1.2, 0.3, I0)
+        head = (cx + ux * ln * 0.55, cy + uy * ln * 0.55)
+        tail = (cx - ux * ln * 0.45, cy - uy * ln * 0.45)
+        c.poly([head, (cx + nx * w, cy + ny * w), tail, (cx - nx * w, cy - ny * w)],
+               lambda x, y, nx=nx, ny=ny, cx=cx, cy=cy: I1 if (x - cx) * nx + (y - cy) * ny < 0 else I2)
+        c.line(cx, cy, head[0] - ux * 1.0, head[1] - uy * 1.0, 0.28, I0)
     return c.done()
 
 
@@ -211,10 +209,10 @@ def ice_wall():
 def frost_field():
     """Frostfeld: Frostkreis flach am Boden (Ellipse), in ihm Eiszacken."""
     c = Canvas()
-    c.ring(8, 11, 5.0, 7.4, lambda x, y: I1 if y < 11 else I2, ry=3.6)
-    c.shape(lambda x, y: ((x - 8) / 5.0) ** 2 + ((y - 11) / 2.4) ** 2 <= 1, I3)
-    for x0, h in ((4.8, 5.0), (8.0, 8.5), (11.2, 5.0)):
-        c.poly([(x0 - 1.4, 11.6), (x0, 11.6 - h), (x0 + 1.4, 11.6)], lambda x, y, x0=x0: I0 if x < x0 else I1)
+    c.ring(8, 11.5, 5.6, 7.4, lambda x, y: I1 if y < 11.5 else I2, ry=3.0)
+    c.shape(lambda x, y: ((x - 8) / 5.6) ** 2 + ((y - 11.5) / 2.2) ** 2 <= 1, I3)
+    for x0, h in ((4.6, 4.5), (8.0, 8.0), (11.4, 4.5)):
+        c.poly([(x0 - 1.0, 12.0), (x0, 12.0 - h), (x0 + 1.0, 12.0)], lambda x, y, x0=x0: I0 if x < x0 else I1)
     return c.done()
 
 
@@ -451,14 +449,14 @@ def yang_construct():
     """Warmweißes Licht mit feinem goldenem Wabenmuster und hellerem Rand; die Mittelwabe ist eine kleine Sonne."""
     t = Tex(16, 16)
     light = hexc('#fff3d8')
-    centers = [(7.5 + i * 6 + (j % 2) * 3, 7.5 + j * 5.2) for i in range(-2, 3) for j in range(-2, 3)]
+    centers = [(7.5 + i * 5 + (j % 2) * 2.5, 7.5 + j * 4.33) for i in range(-3, 4) for j in range(-3, 4)]
     for y in range(16):
         for x in range(16):
             ds = sorted((math.hypot(x - cx, y - cy), k) for k, (cx, cy) in enumerate(centers))
             (d1, k1), (d2, _) = ds[0], ds[1]
             col, a = light, 0.42 + 0.1 * math.exp(-((x - 7.5) ** 2 + (y - 7.5) ** 2) / 26.0)
-            if d2 - d1 < 0.75:
-                col, a = hexc('#eec062'), 0.68                               # goldene Wabenkante
+            if d2 - d1 < 0.9:
+                col, a = hexc('#eec062'), 0.66                               # goldene Wabenkante
             elif centers[k1] == (7.5, 7.5) and d1 < 1.6:
                 col, a = hexc('#fffaee'), 0.66                               # Sonnenkern
             if x in (0, 15) or y in (0, 15):

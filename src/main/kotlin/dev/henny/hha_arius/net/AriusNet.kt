@@ -22,6 +22,7 @@ object AriusNet {
         PayloadTypeRegistry.playS2C().register(FxS2C.ID, FxS2C.CODEC)
         PayloadTypeRegistry.playS2C().register(LineS2C.ID, LineS2C.CODEC)
         PayloadTypeRegistry.playS2C().register(MusicS2C.ID, MusicS2C.CODEC)
+        PayloadTypeRegistry.playS2C().register(AtmosS2C.ID, AtmosS2C.CODEC)
     }
 
     private const val RANGE = 192.0
@@ -33,6 +34,40 @@ object AriusNet {
     /** An alle Spieler der Welt im Umkreis von [RANGE] um [at]. */
     fun near(world: ServerWorld, at: Vec3d, payload: CustomPayload) {
         for (player in world.players) if (player.squaredDistanceTo(at) <= RANGE * RANGE) send(player, payload)
+    }
+}
+
+/** Stimmungen von Wetter und Licht in Eirholm (Client blendet über [AtmosS2C.ticks] über). */
+object AtmosMode {
+    /** Tempel: klare, kalte Luft, weite Sicht. */
+    const val CLEAR = 0
+
+    /** Gletscherkampf: Schneetreiben, Wind. */
+    const val SNOW = 1
+
+    /** Schneesturm/Whiteout: Sicht wenige Blöcke (Spannungsaufbau vor dem Auftritt, Gletschersturz). */
+    const val BLIZZARD = 2
+
+    /** Wolken reißen auf: tiefblauer Himmel, maximale Sichtweite (Enthüllung der Nadel). */
+    const val REVEAL = 3
+
+    /** Unter dem Eis: Herzgewölbe, blau und gedämpft. */
+    const val VAULT = 4
+
+    /** Weißes Licht (Verwandlung, weißes Loch, Finale). */
+    const val WHITE = 5
+}
+
+/** Wetter-/Lichtstimmung [mode] (siehe [AtmosMode]), Überblendung in [ticks]; mode < 0 = zurück auf Standard. */
+data class AtmosS2C(val mode: Int, val ticks: Int) : CustomPayload {
+    override fun getId(): CustomPayload.Id<out CustomPayload> = ID
+
+    companion object {
+        val ID = CustomPayload.Id<AtmosS2C>(HhaArius.id("atmos"))
+        val CODEC: PacketCodec<RegistryByteBuf, AtmosS2C> = PacketCodec.of(
+            { v, buf -> buf.writeVarInt(v.mode + 1); buf.writeVarInt(v.ticks) },
+            { buf -> AtmosS2C(buf.readVarInt() - 1, buf.readVarInt()) },
+        )
     }
 }
 

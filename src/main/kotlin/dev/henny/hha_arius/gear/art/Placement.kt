@@ -10,8 +10,6 @@ import net.minecraft.util.math.Direction
 import net.minecraft.util.math.Vec3d
 import net.minecraft.world.RaycastContext
 import net.minecraft.world.World
-import kotlin.math.abs
-import kotlin.math.roundToInt
 
 /**
  * Wo ein Bauwerk entsteht. Server (setzen) und Client (Vorschau) rechnen mit derselben Funktion und denselben festen
@@ -117,7 +115,4 @@ object Placement {
         }
         return if (cells.size >= MIN_BRIDGE) Target(cells, Vec3d.ofCenter(start)) else null
     }
-
-    @Suppress("unused")
-    private fun snap(v: Double): Int = (if (abs(v) < 0.5) 0.0 else v).roundToInt()
 }

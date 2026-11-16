@@ -129,6 +129,12 @@ class EirholmFight(
     var ended = false
         private set
     private var build: ArenaBuild? = null
+
+    /** Fernlandschaft (Nadel, Schlucht, Gletscher): baut im Hintergrund weiter, bis sie steht. */
+    private var far: dev.henny.hha_arius.arena.FarBuild? = null
+
+    /** Steht die Fernlandschaft (für den Auftritt von Nivaris an der Nadel)? */
+    val farReady: Boolean get() = far == null
     private var noPlayers = 0
 
     val calls: Telegraph.Fight = Telegraph.open(world, "arius", Vfx.Style.HEAVEN) { players() }
@@ -259,6 +265,12 @@ class EirholmFight(
     fun begin() {
         forceChunks(true)
         build = if (buildMode > 0) ArenaBuild(world, origin, buildMode == 2) else null
+        run {
+            val st = AriusState.get(server)
+            @Suppress("SENSELESS_COMPARISON")
+            if (st.data.farBuilt == null) st.data.farBuilt = HashMap()
+            if (st.data.farBuilt[slot.toString()] != dev.henny.hha_arius.arena.FarPlan.VERSION) far = dev.henny.hha_arius.arena.FarBuild(world, origin)
+        }
         for (p in invitedPlayers()) {
             p.sendMessage(Text.translatable("hha_arius.msg.forming").formatted(Formatting.AQUA), true)
         }
@@ -320,6 +332,14 @@ class EirholmFight(
     }
 
     fun setPhase(next: Int) {
+        // Grundstimmung je Abschnitt; Szenen können danach eigene Stimmungen setzen.
+        val mood = when (next) {
+            Phase.INTRO, Phase.TEMPLE, Phase.CUT -> dev.henny.hha_arius.net.AtmosMode.CLEAR
+            Phase.GLACIER -> dev.henny.hha_arius.net.AtmosMode.SNOW
+            Phase.VAULT, Phase.FINALE -> dev.henny.hha_arius.net.AtmosMode.VAULT
+            else -> -2
+        }
+        if (mood >= 0 && mood != currentAtmos) atmos(mood, 80)
         phase = next
         phaseAge = 0
         calls.reset()
@@ -408,6 +428,14 @@ class EirholmFight(
                 enter()
             }
             return
+        }
+        far?.let { fb ->
+            if (fb.step(BossConfig.buildBudget() / 3)) {
+                far = null
+                val st = AriusState.get(server)
+                st.data.farBuilt[slot.toString()] = dev.henny.hha_arius.arena.FarPlan.VERSION
+                st.save()
+            }
         }
         ensureEntities()
         pruneFighters()
@@ -764,6 +792,16 @@ class EirholmFight(
     /** Laufende Kampfmusik (für Wiedereinsteiger). */
     private var currentMusic = ""
 
+    /** Laufende Wetter-/Lichtstimmung (für Wiedereinsteiger), siehe [dev.henny.hha_arius.net.AtmosMode]. */
+    private var currentAtmos = dev.henny.hha_arius.net.AtmosMode.CLEAR
+
+    /** Wetter und Licht für alle Teilnehmer überblenden. */
+    fun atmos(mode: Int, ticks: Int = 60) {
+        currentAtmos = mode
+        val payload = dev.henny.hha_arius.net.AtmosS2C(mode, ticks)
+        for (p in audience()) AriusNet.send(p, payload)
+    }
+
     fun music(id: String?, fade: Int = 20) {
         currentMusic = id?.let { HhaArius.id(it).toString() } ?: ""
         val payload = MusicS2C(currentMusic, fade)
@@ -846,11 +884,13 @@ class EirholmFight(
         player.teleport(world, watch.x, watch.y, watch.z, emptySet(), player.yaw, player.pitch, false)
         player.sendMessage(Text.translatable("hha_arius.msg.latejoin").formatted(Formatting.AQUA), false)
         if (currentMusic.isNotEmpty()) AriusNet.send(player, MusicS2C(currentMusic, 20))
+        AriusNet.send(player, dev.henny.hha_arius.net.AtmosS2C(currentAtmos, 1))
     }
 
     fun onLeave(player: ServerPlayerEntity) {
         Hold.drop(player)
         AriusNet.send(player, MusicS2C("", 20))
+        AriusNet.send(player, dev.henny.hha_arius.net.AtmosS2C(-1, 1))
         ariusBar.removePlayer(player)
         dragonBar.removePlayer(player)
         if (players().isEmpty() && phase != Phase.BUILD && !ended) {

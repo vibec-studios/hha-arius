@@ -57,6 +57,8 @@ class AriusState(var data: Data = Data()) : PersistentState() {
         var dirtySlots: MutableSet<Int> = HashSet(),
         /** Gewonnene Begegnungen (IDs, neueste zuletzt): ein dort eingesetztes Siegel ist verbraucht. */
         var wonEncounters: MutableList<String> = ArrayList(),
+        /** Fernlandschaft je Instanz-Slot gebaut (Slot → FarPlan.VERSION). */
+        var farBuilt: MutableMap<String, Int> = HashMap(),
     )
 
     fun player(id: UUID): PlayerData = data.players.getOrPut(id.toString()) { PlayerData() }.also {

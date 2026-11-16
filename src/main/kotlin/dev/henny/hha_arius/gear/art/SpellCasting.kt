@@ -8,7 +8,6 @@ import dev.henny.hha_arius.HhaArius
 import dev.henny.hha_arius.arena.ArenaDimension
 import dev.henny.hha_arius.boss.Encounters
 import dev.henny.hha_arius.gear.FrostIce
-import dev.henny.hha_arius.gear.Gear
 import dev.henny.hha_arius.gear.GearCombat
 import dev.henny.hha_arius.gear.GearConfig
 import dev.henny.hha_arius.gear.GearItems
@@ -23,7 +22,6 @@ import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking
 import net.minecraft.block.Block
-import net.minecraft.block.Blocks
 import net.minecraft.entity.ExperienceOrbEntity
 import net.minecraft.entity.ItemEntity
 import net.minecraft.entity.LivingEntity
@@ -601,7 +599,4 @@ object SpellCasting {
     }
 
     fun spellName(spell: Spell): net.minecraft.text.Text = net.minecraft.text.Text.translatable("hha_arius.spell.${spell.key}")
-
-    @Suppress("unused")
-    private val UNUSED = Blocks.AIR
 }

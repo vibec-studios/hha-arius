@@ -11,7 +11,11 @@
     "gear.client.EquipmentRendererGlowMixin",
     "client.HoldKeyboardInputMixin",
     "client.HoldActionsMixin",
-    "gear.client.MinecraftClientArtMixin"
+    "gear.client.MinecraftClientArtMixin",
+    "gear.client.ArtPlayerModelMixin",
+    "gear.client.ArtPlayerRendererMixin",
+    "gear.client.GauntletHeldItemRendererMixin",
+    "client.AtmosEnvironmentMixin"
   ],
   "injectors": {
     "defaultRequire": 1

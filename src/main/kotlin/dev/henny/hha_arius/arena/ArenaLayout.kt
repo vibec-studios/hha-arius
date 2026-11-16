@@ -130,6 +130,43 @@ object ArenaLayout {
     val VAULT_LANDING: List<Vec3d> = listOf(Vec3d(0.5, -36.0, 9.5), Vec3d(-6.5, -36.0, 8.5), Vec3d(7.5, -36.0, 8.5),
         Vec3d(-3.5, -36.0, 13.5), Vec3d(4.5, -36.0, 13.5), Vec3d(0.5, -36.0, 16.5))
 
+    // --- Fernlandschaft und die Nadel (Auftritt von Nivaris) --------------------------------------------------------
+
+    /**
+     * Die Nadel: riesiger, steil aufragender, spitzer Eisberg im Süden hinter der Schlucht. Fußpunkt (Mitte) auf
+     * Schluchtgrund-Höhe, Spitze [SPIRE_TOP] Blöcke über der Lauffläche (absolut ≈ 345, Dimension bis 383).
+     * Blickachse: vom Plateau (z ≈ −20) genau nach Süden über die Kluft im Südwall.
+     */
+    val SPIRE = BlockPos(0, -40, 150)
+    const val SPIRE_TOP = 185
+    const val SPIRE_BASE_R = 38.0
+
+    /** Radius der Nadel auf Höhe y (relativ zur Lauffläche), steil und spitz zulaufend. */
+    fun spireRadius(y: Double): Double {
+        val t = ((y - SPIRE.y) / (SPIRE_TOP - SPIRE.y)).coerceIn(0.0, 1.0)
+        return (SPIRE_BASE_R * Math.pow(1.0 - t, 1.35)).coerceAtLeast(0.0)
+    }
+
+    /** Schlucht zwischen Plateau und Nadel: von z [CANYON_Z_FROM] bis [CANYON_Z_TO], Grund bei y [CANYON_FLOOR]. */
+    const val CANYON_Z_FROM = 62
+    const val CANYON_Z_TO = 112
+    const val CANYON_FLOOR = -70
+
+    /** Länge des Drachenkörpers (Kopf bis Schwanzspitze) in Blöcken und Zahl der Glieder (Vertrag Modell/Renderer). */
+    const val NIVARIS_LENGTH = 96.0
+    const val NIVARIS_SEGMENTS = 40
+
+    /**
+     * Windung um die Nadel (Auftritt): Punkt auf der Helix bei s = 0 (Schwanzspitze, unten) … 1 (Hals unter dem Gipfel),
+     * 2,25 Umläufe zwischen y 70 und y 168, Abstand zur Felswand 2,5 Blöcke (+ Körperradius). Der Kopf ragt darüber auf.
+     */
+    fun coil(s: Double): Vec3d {
+        val y = 70.0 + (168.0 - 70.0) * s
+        val r = spireRadius(y) + 2.5 + 2.2
+        val a = s * 2.25 * 2 * PI
+        return Vec3d(SPIRE.x + 0.5 + sin(a) * r, y, SPIRE.z + 0.5 + cos(a) * r)
+    }
+
     // --- Sonstiges ----------------------------------------------------------------------------------------------------
 
     /** Zuschauerpunkt (k. o., Nachzügler) in Abschnitt I/II: kleine Galerie auf der Westmauer des Tempels. */
@@ -146,6 +183,11 @@ object ArenaLayout {
     const val BOUND_Z_MIN = -80
     const val BOUND_Y_MIN = -40
     const val BOUND_Y_MAX = 30
+
+    /** Fernlandschaft (Nadel, Schlucht, Gletscherzüge) reicht weiter: bis z [FAR_Z_MAX], x ±[FAR_X], y [FAR_Y_MIN]..[SPIRE_TOP]. */
+    const val FAR_X = 140
+    const val FAR_Z_MAX = 200
+    const val FAR_Y_MIN = -80
 
     fun at(origin: BlockPos, rel: BlockPos): BlockPos = origin.add(rel)
     fun at(origin: BlockPos, rel: Vec3d): Vec3d = Vec3d(origin.x + rel.x, origin.y + rel.y, origin.z + rel.z)
