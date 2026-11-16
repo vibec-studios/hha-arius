@@ -1,0 +1,152 @@
+package dev.henny.hha_arius.arena
+
+import net.minecraft.util.math.BlockPos
+import net.minecraft.util.math.Vec3d
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
+
+/**
+ * Feste Geometrie des Heiligtums von Eirholm, **relativ zum Instanz-Ursprung** `O` (siehe [origin]). Kampf und
+ * Arena-Bau ([ArenaBuilder]) lesen dieselben Werte. y = 0 ist die **Lauffläche** (Oberkante des Bodens; die
+ * Bodenblöcke liegen bei y = −1). +z = Süden, −z = Norden.
+ *
+ * ```
+ *                 N (−z)
+ *        ┌───── Tempel (Mitte T, R 18) ─────┐   Altarstufen im Norden, Tor im Süden (z = −32)
+ *        └──────────────┬───────────────────┘
+ *                       │  Landeplätze (z ≈ −24)
+ *        ( Gletscherplateau, Mitte P = (0,0,0), R 40 )
+ *                       │  Gletscherwand/Rand R 40–48, im Süden höher
+ *                 S (+z)
+ *   36 Blöcke darunter: Herzgewölbe (Mitte V = (0,−36,0), R 28, Decke bei y = −16)
+ * ```
+ */
+object ArenaLayout {
+
+    /** Abstand der Instanzen auf der X-Achse. */
+    const val SLOT_SPACING = 4096
+
+    /** Höhe der Lauffläche in der Arena-Dimension. */
+    const val BASE_Y = 160
+
+    /** Instanz-Ursprung (Lauffläche über der Plateaumitte). */
+    fun origin(slot: Int): BlockPos = BlockPos(slot * SLOT_SPACING, BASE_Y, 0)
+
+    // --- Tempel ---------------------------------------------------------------------------------------------------
+
+    /** Tempelmitte (Lauffläche). */
+    val TEMPLE = BlockPos(0, 0, -50)
+
+    /** Innenradius der Halle. Mauer: R 18..20, Höhe 12, darüber Kuppel bis y ≈ 24. */
+    const val TEMPLE_R = 18
+    const val TEMPLE_WALL_H = 12
+    const val TEMPLE_TOP = 25
+
+    /** Altarstufen: Nordteil der Halle (z = −68 .. −62), zwei Stufen hoch. */
+    val DAIS = BlockPos(0, 2, -65)
+
+    /** Sitzplatz von Arius auf den Altarstufen (Intro). Blick nach Süden. */
+    val SEAT = Vec3d(0.5, 2.0, -64.5)
+
+    /** Tor im Süden: Mitte, Breite 7, Höhe 9. */
+    val GATE = BlockPos(0, 0, -32)
+    const val GATE_HALF_WIDTH = 3
+    const val GATE_HEIGHT = 9
+
+    /** Ankunftspunkt der Spieler im Tempel (innen vor dem Tor, Blick nach Norden). */
+    val ARRIVAL = Vec3d(0.5, 0.0, -36.5)
+
+    /** Eissäulen der Halle (zerbrechliche Deckung), Mittelpunkte auf Laufhöhe. Mittelgang |x| ≤ 3 bleibt frei. */
+    val TEMPLE_PILLARS: List<BlockPos> = (0 until 10).map { i ->
+        val a = (i + 0.5) / 10.0 * 2.0 * PI
+        BlockPos(TEMPLE.x + Math.round(sin(a) * 12.0).toInt(), 0, TEMPLE.z + Math.round(cos(a) * 12.0).toInt())
+    }
+
+    /** Säulen: Radius (im Quadrat ±1 → 3 × 3) und Höhe bis unter die Decke. */
+    const val PILLAR_HALF = 1
+    const val PILLAR_H = 11
+
+    /**
+     * Der Schnitt: senkrechte Ebene **x = [CUT_X]** (relativ). Alles im Tempel mit x ≥ [CUT_X] + 0,5 (Blöcke mit
+     * x ≥ 2) und y ≥ 0 gehört zur Osthälfte, die abrutscht. Die Ansage-Linie läuft von [CUT_FROM] nach [CUT_TO].
+     */
+    const val CUT_X = 1.5
+    val CUT_FROM = Vec3d(CUT_X, 0.0, -66.0)
+    val CUT_TO = Vec3d(CUT_X, 0.0, 52.0)
+    const val CUT_WIDTH = 3.0
+
+    /** Arius steht für den Schnitt auf der Altarstufe. */
+    val CUT_STAND = Vec3d(1.5, 2.0, -63.5)
+
+    /** Arius' Platz als Zuschauer in Abschnitt II: auf der stehengebliebenen Westhälfte der Altarstufen. */
+    val WATCH_SEAT = Vec3d(-6.5, 2.0, -64.5)
+
+    /** Landeplätze nach dem Tritt durchs Tor (frei von Eiskämmen, außerhalb jeder Startansage). */
+    val LANDING: List<Vec3d> = listOf(Vec3d(0.5, 0.0, -22.5), Vec3d(-5.5, 0.0, -20.5), Vec3d(6.5, 0.0, -20.5),
+        Vec3d(-2.5, 0.0, -17.5), Vec3d(3.5, 0.0, -17.5), Vec3d(0.5, 0.0, -14.5))
+
+    // --- Plateau ----------------------------------------------------------------------------------------------------
+
+    /** Plateaumitte = Ursprung. Begehbar bis [PLATEAU_R]; dahinter Rand/Gletscherwand bis [RIM_R]. */
+    val PLATEAU = BlockPos(0, 0, 0)
+    const val PLATEAU_R = 40
+    const val RIM_R = 48
+    const val RIM_H = 12
+
+    /** Im Süden (Winkel um +z, ±50°) ist die Gletscherwand höher; der Schnitt öffnet dort eine Kluft bei x ≈ [CUT_X]. */
+    const val SOUTH_WALL_H = 26
+
+    /** Eisdicke des Plateaus (Lauffläche bis zur Gewölbedecke). */
+    const val ICE_BOTTOM = -16
+
+    /** Landepunkte für Nivaris in Abschnitt II (zufällige Auswahl, mindestens 8 Blöcke vom Ziel). */
+    val DRAGON_SPOTS: List<Vec3d> = (0 until 8).map { i ->
+        val a = i / 8.0 * 2.0 * PI
+        Vec3d(sin(a) * 22.0 + 0.5, 0.0, cos(a) * 22.0 + 0.5)
+    }
+
+    /** Einsturz: Scheibe um die Plateaumitte, in drei Ringen (innen → außen). */
+    const val COLLAPSE_R = 14
+    val COLLAPSE_RINGS = doubleArrayOf(6.0, 10.0, 14.0)
+
+    // --- Herzgewölbe -------------------------------------------------------------------------------------------------
+
+    /** Gewölbemitte (Lauffläche). */
+    val VAULT = BlockPos(0, -36, 0)
+    const val VAULT_R = 28
+    const val VAULT_CEIL = -16
+
+    /** Kristallsäulen im Gewölbe (Deckung gegen Nivaris, nicht gegen den Null-Schnitt). */
+    val VAULT_PILLARS: List<BlockPos> = (0 until 8).map { i ->
+        val a = (i + 0.5) / 8.0 * 2.0 * PI
+        BlockPos(Math.round(sin(a) * 17.0).toInt(), -36, Math.round(cos(a) * 17.0).toInt())
+    }
+
+    /** Nivaris' Liegeplatz im Finale (Nordwand). */
+    val VAULT_REST = Vec3d(0.5, -36.0, -22.5)
+
+    /** Landepunkte nach dem Sturz ins Gewölbe. */
+    val VAULT_LANDING: List<Vec3d> = listOf(Vec3d(0.5, -36.0, 9.5), Vec3d(-6.5, -36.0, 8.5), Vec3d(7.5, -36.0, 8.5),
+        Vec3d(-3.5, -36.0, 13.5), Vec3d(4.5, -36.0, 13.5), Vec3d(0.5, -36.0, 16.5))
+
+    // --- Sonstiges ----------------------------------------------------------------------------------------------------
+
+    /** Zuschauerpunkt (k. o., Nachzügler) in Abschnitt I/II: kleine Galerie auf der Westmauer des Tempels. */
+    val WATCH_UPPER = Vec3d(-21.5, 13.0, -50.5)
+
+    /** Zuschauerpunkt in Abschnitt III: Nische in der Gewölbewand (Westen, erhöht). */
+    val WATCH_VAULT = Vec3d(-29.5, -30.0, 0.5)
+
+    /**
+     * Begrenzung des gesamten Bauvolumens (für Neubau/Aufräumen), relativ. Der Tempel liegt am Nordrand des Plateaus
+     * (z −70..−30); dort entfällt der Plateaurand, stattdessen steht hinter dem Tempel eine Gletscherklippe bis z −78.
+     */
+    const val BOUND_XZ = 52
+    const val BOUND_Z_MIN = -80
+    const val BOUND_Y_MIN = -40
+    const val BOUND_Y_MAX = 30
+
+    fun at(origin: BlockPos, rel: BlockPos): BlockPos = origin.add(rel)
+    fun at(origin: BlockPos, rel: Vec3d): Vec3d = Vec3d(origin.x + rel.x, origin.y + rel.y, origin.z + rel.z)
+}

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "hha_arius",
+  "version": "${version}",
+  "name": "HHA Arius - The White Blade",
+  "description": "Endgame addon for H&H Armors: the duel against Arius and the old white dragon Nivaris in the frozen sanctum of Eirholm, plus the Eirholm armor, Solvane and Nivaris' Wingscale.",
+  "authors": ["Henny"],
+  "contact": {
+    "homepage": "https://github.com/vibec-studios/hha-arius",
+    "sources": "https://github.com/vibec-studios/hha-arius"
+  },
+  "license": "MIT",
+  "icon": "assets/hha_arius/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["dev.henny.hha_arius.HhaArius"],
+    "client": ["dev.henny.hha_arius.client.HhaAriusClient"],
+    "hha": ["dev.henny.hha_arius.AriusAddon"],
+    "hha_client": ["dev.henny.hha_arius.client.AriusAddonClient"]
+  },
+  "mixins": ["hha_arius.mixins.json"],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-language-kotlin": ">=${kotlin_loader_version}",
+    "fabric-api": "*",
+    "minecraft": "${minecraft_version}",
+    "hha": ">=0.8.0"
+  }
+}
