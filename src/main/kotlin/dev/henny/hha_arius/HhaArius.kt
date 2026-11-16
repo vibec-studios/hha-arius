@@ -34,6 +34,7 @@ object HhaArius : ModInitializer {
         checkHhaBuild()
         AriusSounds.init()
         AriusEntities.init()
+        dev.henny.hha_arius.boss.Ledgers.init()
         dev.henny.hha_arius.net.AriusNet.init()
         dev.henny.hha_arius.boss.Encounters.init()
         dev.henny.hha_arius.boss.AriusCommands.init()

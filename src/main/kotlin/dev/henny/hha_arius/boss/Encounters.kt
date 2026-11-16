@@ -75,7 +75,7 @@ object Encounters {
             }
         }
         ServerEntityWorldChangeEvents.AFTER_PLAYER_CHANGE_WORLD.register { player, origin, destination ->
-            if (origin.registryKey == WORLD) fights[slotOf(player.lastX)]?.takeIf { it.isParticipant(player) }?.onLeave(player)
+            if (origin.registryKey == WORLD) fights.values.firstOrNull { it.world === origin && it.isParticipant(player) && !it.ended }?.onLeave(player)
             if (destination.registryKey == WORLD && player.uuid !in arriving) onArrive(player, origin)
         }
         // Die Arena ist kein Bauplatz: kein Abbauen, kein Platzieren, keine Eimer (außer im Kreativmodus).
@@ -90,7 +90,6 @@ object Encounters {
             val item = player.getStackInHand(hand).item
             if (world.registryKey == WORLD && !player.isCreative && item is BucketItem) ActionResult.FAIL else ActionResult.PASS
         }
-        ServerLifecycleEvents.SERVER_STARTED.register { server -> AriusState.get(server).refundOrphanStakes() }
         // Während eines Halte-Moments keine aktiven Fähigkeiten (HHA-Tasten schicken sonst trotz Eingabesperre Pakete).
         HhaEvents.ABILITY_CAST.register { player, _ -> !Hold.isHeld(player) }
         ServerLifecycleEvents.SERVER_STOPPING.register { _ ->
@@ -131,22 +130,41 @@ object Encounters {
     fun requestTraining(player: ServerPlayerEntity, stage: Int): Boolean = start(player, stage.coerceIn(1, 4), ItemStack.EMPTY)
 
     /**
-     * Zahlt aus, was noch aussteht: zurückerstattete Siegel und gewonnene Beute. Nur außerhalb der Arena; jeder Anspruch
-     * wird vor der Auszahlung aus dem Speicher entfernt, also genau einmal ausgezahlt.
+     * Gleicht Einsatz und Ansprüche ab und zahlt aus (nur außerhalb der Arena):
+     * - Einsatzvermerk in der Spielerdatei ohne laufenden Kampf: gewonnen → verbraucht, sonst Siegel zurück. Vermerk
+     *   und Inventar liegen in derselben Datei, sie können nicht auseinanderlaufen.
+     * - Ansprüche im Weltzustand: ausgezahlt nur, wenn ihre ID noch nicht im [Ledger] quittiert ist. Aus dem Weltzustand
+     *   entfernt wird ein Anspruch erst, wenn seine Quittung aus einer früheren Sitzung stammt, also nachweislich mit
+     *   der Spielerdatei gespeichert wurde. So gibt es nach einem Absturz weder doppelte noch verlorene Beute.
      */
     fun deliverPending(player: ServerPlayerEntity) {
         if (player.entityWorld.registryKey == WORLD || player.isDisconnected) return
-        val state = AriusState.get(player.entityWorld.server ?: return)
-        val data = state.player(player.uuid)
-        if (data.pendingSeals <= 0 && data.pendingRewards.isEmpty()) return
-        val seals = data.pendingSeals
-        val claims = data.pendingRewards.toList()
-        data.pendingSeals = 0
-        data.pendingRewards.clear()
-        state.save()
+        val server = player.entityWorld.server ?: return
+        val state = AriusState.get(server)
+        val ledger = Ledgers.of(player)
         val seal = Registries.ITEM.get(HhaArius.id("eirholm_seal"))
-        repeat(seals) { player.giveOrDropStack(ItemStack(seal)) }
-        for (claim in claims) GearRewards.grant(player, claim.firstWin, claim.flawless)
+        if (ledger.stake.isNotEmpty() && fights.values.none { it.encounterId == ledger.stake && !it.ended }) {
+            val won = state.isWon(ledger.stake)
+            ledger.stake = ""
+            if (!won) player.giveOrDropStack(ItemStack(seal))
+        }
+        val data = state.player(player.uuid)
+        if (data.pendingRewards.isEmpty()) return
+        var changed = false
+        for (claim in data.pendingRewards.toList()) {
+            if (claim.id in ledger.paid) {
+                if (claim.id !in ledger.sessionPaid) {
+                    data.pendingRewards.remove(claim)
+                    changed = true
+                }
+                continue
+            }
+            ledger.paid.add(claim.id)
+            ledger.sessionPaid.add(claim.id)
+            while (ledger.paid.size > 300) ledger.paid.removeAt(0)
+            if (claim.kind == "seal") player.giveOrDropStack(ItemStack(seal)) else GearRewards.grant(player, claim.firstWin, claim.flawless)
+        }
+        if (changed) state.save()
     }
 
     private fun start(player: ServerPlayerEntity, training: Int, seal: ItemStack): Boolean {
@@ -179,6 +197,8 @@ object Encounters {
         // Das Siegel ist der Einsatz: Es wird jetzt entnommen und bei Niederlage/Abbruch zurückgegeben.
         val stake = if (training == 0 && !seal.isEmpty) seal.copyWithCount(1).also { seal.decrement(1) } else ItemStack.EMPTY
         val fight = EirholmFight(world, slot, player, invited, training, mode, stake)
+        // Entnahme und Einsatzvermerk landen in derselben Spielerdatei.
+        if (!stake.isEmpty) Ledgers.of(player).stake = fight.encounterId
         fights[slot] = fight
         fight.begin()
         if (training == 0) for (p in listOf(player) + invited) Advancements.grant(p, "seal")

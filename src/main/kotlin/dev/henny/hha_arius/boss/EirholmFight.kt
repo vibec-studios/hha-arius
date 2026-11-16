@@ -257,11 +257,6 @@ class EirholmFight(
     // --- Start ---------------------------------------------------------------------------------------------------------
 
     fun begin() {
-        if (!sealStake.isEmpty) {
-            val state = AriusState.get(server)
-            state.data.stakes[encounterId] = AriusState.Stake(summonerId.toString())
-            state.save()
-        }
         forceChunks(true)
         build = if (buildMode > 0) ArenaBuild(world, origin, buildMode == 2) else null
         for (p in invitedPlayers()) {
@@ -890,10 +885,18 @@ class EirholmFight(
         }
         // Das Siegel ist verbraucht. Jeder Teilnehmer bekommt jetzt einen gespeicherten Beuteanspruch; ausgezahlt wird
         // erst am Heimatort (oder beim nächsten Einloggen), damit nichts im Aufräumen der Arena verloren geht.
-        sealStake = net.minecraft.item.ItemStack.EMPTY
         val flawless = !anyKo
         val state = AriusState.get(server)
-        state.data.stakes.remove(encounterId)
+        if (!sealStake.isEmpty) {
+            // Verbraucht: Ist der Beschwörer online, wird der Einsatzvermerk in seiner Spielerdatei gelöscht; sonst
+            // erkennt das Einloggen die Begegnung als gewonnen.
+            state.markWon(encounterId)
+            server.playerManager.getPlayer(summonerId)?.let { owner ->
+                val ledger = Ledgers.of(owner)
+                if (ledger.stake == encounterId) ledger.stake = ""
+            }
+            sealStake = net.minecraft.item.ItemStack.EMPTY
+        }
         for (id in fighters.keys) {
             val data = state.player(id)
             data.pendingRewards.add(AriusState.Claim(firstWin = data.wins == 0, flawless = flawless))
@@ -942,12 +945,21 @@ class EirholmFight(
             val state = AriusState.get(server)
             state.data.dirtySlots.remove(slot)
             // Niederlage oder Abbruch: Einsatz zurück (online ins Inventar, sonst beim nächsten Einloggen).
+            // Niederlage oder Abbruch: Einsatz zurück. Online: Siegel ins Inventar und Vermerk löschen, beides in der
+            // Spielerdatei (also gemeinsam gespeichert). Offline: Der Vermerk bleibt, das Einloggen erstattet.
             if (!win && !sealStake.isEmpty) {
                 val owner = server.playerManager.getPlayer(summonerId)
-                if (owner == null || !owner.inventory.insertStack(sealStake.copy())) state.player(summonerId).pendingSeals++
+                if (owner != null) {
+                    val ledger = Ledgers.of(owner)
+                    if (ledger.stake == encounterId) {
+                        ledger.stake = ""
+                        if (!owner.inventory.insertStack(sealStake.copy())) {
+                            state.player(summonerId).pendingRewards.add(AriusState.Claim(kind = "seal"))
+                        }
+                    }
+                }
                 sealStake = net.minecraft.item.ItemStack.EMPTY
             }
-            state.data.stakes.remove(encounterId)
             state.save()
         }
         Encounters.onFinished(this)

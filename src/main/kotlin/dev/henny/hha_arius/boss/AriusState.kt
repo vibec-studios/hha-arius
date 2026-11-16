@@ -34,23 +34,27 @@ class AriusState(var data: Data = Data()) : PersistentState() {
         var sendHome: Boolean = false,
         var againIndex: Int = 0,
         var rumorIndex: Int = 0,
-        /** Eingesetzte Siegel, die nicht zurückgegeben werden konnten (offline, volles Inventar, Absturz). */
-        var pendingSeals: Int = 0,
-        /** Gewonnene, noch nicht ausgezahlte Beute (je Sieg ein Eintrag). */
+        /**
+         * Ansprüche (Beute eines Siegs, nicht zustellbares Siegel), je mit eindeutiger ID. Ausgezahlt wird nur, wenn die
+         * ID nicht schon im [Ledger] des Spielers quittiert ist; entfernt wird ein Anspruch erst, wenn die Quittung
+         * nachweislich mit der Spielerdatei gespeichert war (siehe [dev.henny.hha_arius.boss.Encounters.deliverPending]).
+         */
         var pendingRewards: MutableList<Claim> = ArrayList(),
     )
 
-    /** Ein Beuteanspruch, beim Sieg festgelegt und genau einmal ausgezahlt. */
-    class Claim(var firstWin: Boolean = false, var flawless: Boolean = false)
-
-    /** Ein eingesetztes Siegel: wem es gehört. Bleibt bis Sieg (verbraucht) oder Rückgabe gespeichert. */
-    class Stake(var owner: String = "")
+    /** Ein Anspruch: [kind] `loot` (Beute eines Siegs) oder `seal` (zurückzugebendes Siegel). */
+    class Claim(
+        var id: String = UUID.randomUUID().toString(),
+        var kind: String = "loot",
+        var firstWin: Boolean = false,
+        var flawless: Boolean = false,
+    )
 
     class Data(
         var players: MutableMap<String, PlayerData> = HashMap(),
         var dirtySlots: MutableSet<Int> = HashSet(),
-        /** Laufende Einsätze je Begegnung (Kennung → Besitzer). Übrig nach einem Absturz = zurückerstatten. */
-        var stakes: MutableMap<String, Stake> = HashMap(),
+        /** Gewonnene Begegnungen (IDs, neueste zuletzt): ein dort eingesetztes Siegel ist verbraucht. */
+        var wonEncounters: MutableList<String> = ArrayList(),
     )
 
     fun player(id: UUID): PlayerData = data.players.getOrPut(id.toString()) { PlayerData() }.also {
@@ -63,15 +67,16 @@ class AriusState(var data: Data = Data()) : PersistentState() {
 
     fun save() = markDirty()
 
-    /** Nach einem Absturz übrig gebliebene Einsätze gehen an ihre Besitzer zurück (beim nächsten Einloggen). */
-    fun refundOrphanStakes() {
+    fun isWon(encounter: String): Boolean {
         @Suppress("SENSELESS_COMPARISON")
-        if (data.stakes == null) data.stakes = HashMap()
-        if (data.stakes.isEmpty()) return
-        for (stake in data.stakes.values) {
-            runCatching { UUID.fromString(stake.owner) }.getOrNull()?.let { player(it).pendingSeals++ }
-        }
-        data.stakes.clear()
+        if (data.wonEncounters == null) data.wonEncounters = ArrayList()
+        return encounter in data.wonEncounters
+    }
+
+    fun markWon(encounter: String) {
+        isWon(encounter)
+        data.wonEncounters.add(encounter)
+        while (data.wonEncounters.size > 500) data.wonEncounters.removeAt(0)
         save()
     }
 
