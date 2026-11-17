@@ -15,9 +15,9 @@ import kotlin.math.roundToInt
  *
  * * Im Kampf steigt sie durch Können (volle Treffer, Schlagfolgen, Konter, perfekte Blöcke, erlittene Treffer) und
  *   nur an lohnenden Zielen ([GearCombat.worthy]): Tiere, Rüstungsständer und Verbündete bringen nichts.
- * * Außerhalb des Kampfs strebt sie langsam zum Ruhepunkt (30, mit vollem Set 50), von unten wie von oben. So gehen
- *   Nutzzauber auch ohne Kampf, aber große Techniken (ab 50) brauchen Kampf, und Horten ist unmöglich.
- * * Volles Set: Ruhepunkt 50 und +25 % auf alle Gewinne.
+ * * Träger laden sich passiv auf: immer langsam, außerhalb des Kampfs deutlich schneller, bis zum Maximum.
+ * * Volles Set: schnelleres Aufladen außerhalb des Kampfs und +25 % auf alle Gewinne.
+ * * Testmodus ([dev.henny.hha_arius.gear.art.ArtTest]): immer voll, Ausgaben kosten nichts.
  */
 object Resonance {
 
@@ -43,7 +43,8 @@ object Resonance {
 
     fun max(): Float = GearConfig.float("resonance_max").coerceAtLeast(1f)
 
-    fun get(player: ServerPlayerEntity): Float = states[player.uuid]?.value ?: 0f
+    fun get(player: ServerPlayerEntity): Float =
+        if (dev.henny.hha_arius.gear.art.ArtTest.on(player)) max() else states[player.uuid]?.value ?: 0f
 
     /** Kampfkontakt: hält den Zerfall an, auch ohne Gewinn. */
     fun markCombat(player: ServerPlayerEntity) {
@@ -66,12 +67,11 @@ object Resonance {
         net.minecraft.entity.EquipmentSlot.LEGS, net.minecraft.entity.EquipmentSlot.FEET,
     )
 
-    /** Ruhepunkt (Ziel außerhalb des Kampfs). */
-    fun rest(player: ServerPlayerEntity): Float = when {
-        Gear.hasFullSet(player) -> GearConfig.float("resonance_rest_set")
-        isBearer(player) -> GearConfig.float("resonance_rest")
-        else -> 0f
-    }
+    /** Ziel des passiven Aufladens (für die Anzeige): Träger bis zum Maximum, sonst 0. */
+    fun rest(player: ServerPlayerEntity): Float = if (isBearer(player)) max() else 0f
+
+    fun inCombat(player: ServerPlayerEntity): Boolean =
+        GearTasks.now - (states[player.uuid]?.lastCombat ?: -100000L) <= GearConfig.ticks("resonance_decay_delay")
 
     /** Gewinn (nur für Träger, mit vollem Set +25 %). Klingt beim Erreichen der Frosthauch-Schwelle einmal leise an. */
     fun gain(player: ServerPlayerEntity, amount: Double) {
@@ -90,6 +90,10 @@ object Resonance {
 
     /** Zieht genau [amount] ab, wenn genug da ist. */
     fun spend(player: ServerPlayerEntity, amount: Float): Boolean {
+        if (dev.henny.hha_arius.gear.art.ArtTest.on(player)) {
+            markCombat(player)
+            return true
+        }
         val s = state(player)
         if (s.value < amount) return false
         s.value -= amount
@@ -100,6 +104,10 @@ object Resonance {
 
     /** Gibt alles aus, was da ist, und liefert die Menge zurück. */
     fun spendAll(player: ServerPlayerEntity): Float {
+        if (dev.henny.hha_arius.gear.art.ArtTest.on(player)) {
+            markCombat(player)
+            return max()
+        }
         val s = state(player)
         val spent = s.value
         s.value = 0f
@@ -116,11 +124,14 @@ object Resonance {
     private fun tick(world: ServerWorld, player: ServerPlayerEntity) {
         val bearer = isBearer(player)
         val s = if (bearer) state(player) else states[player.uuid] ?: return
-        if (GearTasks.now - s.lastCombat > GearConfig.ticks("resonance_decay_delay")) {
-            val rest = rest(player)
-            val step = GearConfig.float(if (bearer) "resonance_rest_per_second" else "resonance_decay_per_second") / 20f
-            if (s.value > rest) s.value = (s.value - step).coerceAtLeast(rest)
-            else if (s.value < rest) s.value = (s.value + step).coerceAtMost(rest)
+        val calm = GearTasks.now - s.lastCombat > GearConfig.ticks("resonance_decay_delay")
+        if (bearer) {
+            // Passiv aufladen: immer ein wenig, außerhalb des Kampfs schneller (volles Set noch schneller).
+            var perSecond = GearConfig.float("resonance_passive_per_second")
+            if (calm) perSecond += GearConfig.float(if (Gear.hasFullSet(player)) "resonance_regen_set_per_second" else "resonance_regen_per_second")
+            if (s.value < max()) s.value = (s.value + perSecond / 20f).coerceAtMost(max())
+        } else if (calm && s.value > 0f) {
+            s.value = (s.value - GearConfig.float("resonance_decay_per_second") / 20f).coerceAtLeast(0f)
         }
         // Bei voller Resonanz zieht nur gelegentlich ein Frosthauch von den Schultern (keine Partikelwolke).
         if (GearConfig.on("resonance_frost_breath") && s.value >= GearConfig.float("resonance_frost_breath_threshold") &&
@@ -140,7 +151,7 @@ object Resonance {
     /** Schickt Wert, Ruhepunkt und Kostenmarke nur, wenn sich etwas Sichtbares geändert hat. */
     fun sync(player: ServerPlayerEntity, force: Boolean = false) {
         val s = state(player)
-        val shown = s.value.roundToInt()
+        val shown = get(player).roundToInt()
         val max = max().roundToInt()
         val rest = rest(player).roundToInt()
         val mark = dev.henny.hha_arius.gear.art.SpellCasting.costMark(player)

@@ -25,7 +25,7 @@
   "item.hha_arius.eirholm_leggings.lore1": "Ability 2 – Frost Step: %s resonance, %s blocks · Cooldown %s s",
   "item.hha_arius.eirholm_leggings.lore2": "Briefly untouchable in melee, brittle ice over water",
   "item.hha_arius.eirholm_boots.lore1": "Passive: powder snow holds you, small falls are caught",
-  "item.hha_arius.eirholm_boots.lore2": "Frost resonance rests at %s (full set: %s) and rises in combat",
+  "item.hha_arius.eirholm_boots.lore2": "Recharges passively: %s/s, out of combat +%s/s (full set +%s/s)",
   "item.hha_arius.solvane.lore1": "Clear Edge: only full charge counts, +%s frost damage",
   "item.hha_arius.solvane.lore2": "Every %s. full hit on the same target shatters (+%s)",
   "item.hha_arius.solvane.lore3": "Right-click – Counter Stance: %s s · Cooldown %s s / %s s",
@@ -61,5 +61,7 @@
   "advancements.hha_arius.no_storm.description": "Defeat Arius without anyone in the group being knocked out",
   "item.hha_arius.eirholm_helmet.lore3": "Pulls light enemies, bosses stay put · Cooldown %s s",
   "item.hha_arius.eirholm_chestplate.lore3": "Passive – Frost Plate: whoever hits you in melee is briefly slowed",
-  "item.hha_arius.solvane.lore0": "Replica of the blade forged from the heart of an ancient white dragon."
+  "item.hha_arius.solvane.lore0": "Replica of the blade forged from the heart of an ancient white dragon.",
+  "hha_arius.msg.test_on": "Test mode on: infinite Frost Resonance, minimal cooldowns, every technique usable anywhere.",
+  "hha_arius.msg.test_off": "Test mode off."
 }

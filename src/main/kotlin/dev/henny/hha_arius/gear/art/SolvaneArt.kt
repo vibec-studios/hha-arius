@@ -122,9 +122,10 @@ object SolvaneArt {
         val recover = GearConfig.ticks("clear_cut_recover")
         Focus.begin(player, Focus.Busy.ART, GearTasks.now + ArtTimings.ART_HIT + recover) { removeSlow(player) }
         applySlow(player, -0.5)
-        cooldownUntil[player.uuid] = GearTasks.now + GearConfig.ticks("clear_cut_cooldown")
+        val cd = ArtTest.cd(player, GearConfig.ticks("clear_cut_cooldown"))
+        cooldownUntil[player.uuid] = GearTasks.now + cd
         SpellCasting.markDirty(player)
-        player.itemCooldownManager.set(GearItems.CLEAR_CUT_GROUP, GearConfig.ticks("clear_cut_cooldown"))
+        player.itemCooldownManager.set(GearItems.CLEAR_CUT_GROUP, cd)
         ArtNet.anim(player, Anim.ART_RELEASE, ArtTimings.ART_RELEASE, ArtParam.art(horizontal, charge))
         // Ebene im Moment des Loslassens festhalten; der Treffer kommt mit dem Schwung (ART_HIT).
         val plane = CutPlane.of(player, ArtTimings.artLength(charge), ArtTimings.artHalf(charge), horizontal)

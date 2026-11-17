@@ -55,8 +55,9 @@ object WhiteHole {
         }
         Resonance.spendAll(player)
         val world = player.entityWorld
-        cooldownUntil[player.uuid] = GearTasks.now + GearConfig.ticks("white_hole_cooldown")
-        player.itemCooldownManager.set(GearItems.WHITE_HOLE_GROUP, GearConfig.ticks("white_hole_cooldown"))
+        val cd = ArtTest.cd(player, GearConfig.ticks("white_hole_cooldown"))
+        cooldownUntil[player.uuid] = GearTasks.now + cd
+        player.itemCooldownManager.set(GearItems.WHITE_HOLE_GROUP, cd)
         SpellCasting.markDirty(player)
         val castTicks = ArtTimings.WHITE_HOLE_CAST
         Focus.begin(player, Focus.Busy.ABILITY, GearTasks.now + ArtTimings.WHITE_HOLE)

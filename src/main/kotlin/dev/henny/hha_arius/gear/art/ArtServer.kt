@@ -20,6 +20,7 @@ object ArtServer {
         if (initialized) return
         initialized = true
         Focus.init()
+        ArtTest.init()
         Bolts.init()
         GauntletCombat.init()
         SpellCasting.init()

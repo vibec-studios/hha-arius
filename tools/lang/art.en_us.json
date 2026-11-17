@@ -66,5 +66,9 @@
   "hha_arius.spell.yang_glide": "Light Glider",
   "hha_arius.spell.yang_glide.desc": "Glide on a disc of light; sneak to step off",
   "hha_arius.client.shake_on": "Camera jolt on heavy hits: on",
-  "hha_arius.client.shake_off": "Camera jolt on heavy hits: off"
+  "hha_arius.client.shake_off": "Camera jolt on heavy hits: off",
+  "hha_arius.keys.gauntlets_melee": "Melee: left-click strikes · right-click kick · sneak + right-click parry · [%s] magic · [%s] spell wheel",
+  "hha_arius.keys.gauntlets_magic": "Magic: [%s] cast · [%s] spell wheel (hold) · [%s] melee",
+  "hha_arius.keys.solvane": "Solvane: hold [%s] to charge Clear Cut, release to cut (sneak: horizontal)",
+  "hha_arius.keys.conflict": "Arius: the key %s is bound to \"%s\" and also to \"%s\". Rebind one of them under Options → Controls, otherwise the press may not arrive."
 }

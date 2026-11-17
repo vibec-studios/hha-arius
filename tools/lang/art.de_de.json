@@ -66,5 +66,9 @@
   "hha_arius.spell.yang_glide": "Lichtgleiter",
   "hha_arius.spell.yang_glide.desc": "Auf einer Lichtscheibe gleiten; Schleichen steigt ab",
   "hha_arius.client.shake_on": "Kamerarucken bei schweren Treffern: an",
-  "hha_arius.client.shake_off": "Kamerarucken bei schweren Treffern: aus"
+  "hha_arius.client.shake_off": "Kamerarucken bei schweren Treffern: aus",
+  "hha_arius.keys.gauntlets_melee": "Nahkampf: Linksklick Schläge · Rechtsklick Tritt · Schleichen + Rechtsklick Parade · [%s] Magie · [%s] Zauberrad",
+  "hha_arius.keys.gauntlets_magic": "Magie: [%s] wirken · [%s] Zauberrad (halten) · [%s] Nahkampf",
+  "hha_arius.keys.solvane": "Solvane: [%s] halten = Klarer Schnitt laden, loslassen = schneiden (Schleichen: waagrecht)",
+  "hha_arius.keys.conflict": "Arius: Die Taste %s ist für „%s“ und zugleich für „%s“ belegt. Belege eine davon unter Optionen → Steuerung neu, sonst kommt der Druck evtl. nicht an."
 }

@@ -30,7 +30,7 @@ object GearLore {
         context.registerLore(GearItems.EIRHOLM_BOOTS) {
             line("$P.eirholm.lore.set")
             line("$P.eirholm_boots.lore1")
-            line("$P.eirholm_boots.lore2", num(k("resonance_rest")), num(k("resonance_rest_set")))
+            line("$P.eirholm_boots.lore2", num(k("resonance_passive_per_second")), num(k("resonance_regen_per_second")), num(k("resonance_regen_set_per_second")))
         }
         context.registerLore(GearItems.SOLVANE) {
             line("$P.solvane.lore0")

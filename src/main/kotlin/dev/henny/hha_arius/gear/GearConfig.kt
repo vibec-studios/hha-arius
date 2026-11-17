@@ -26,11 +26,10 @@ object GearConfig {
         "resonance_decay_per_second" to 2.0,
         "resonance_perfect_block_ticks" to 10.0,
         "resonance_frost_breath_threshold" to 80.0,
-        // Ruhepunkt: Außerhalb des Kampfs strebt die Resonanz zu diesem Wert (hoch oder runter), so lässt sie sich
-        // nicht horten und Nutzzauber gehen auch ohne Kampf.
-        "resonance_rest" to 30.0,
-        "resonance_rest_set" to 50.0,
-        "resonance_rest_per_second" to 4.0,
+        // Passives Aufladen (je Sekunde): immer ein Grundwert, außerhalb des Kampfs deutlich mehr. Bis zum Maximum.
+        "resonance_passive_per_second" to 2.0,
+        "resonance_regen_per_second" to 6.0,
+        "resonance_regen_set_per_second" to 9.0,
         "resonance_set_gain_mult" to 1.25,
         // Nahkampf der Handschuhe (Grundschaden × Faktor aus Move)
         "melee_base_damage" to 6.0,

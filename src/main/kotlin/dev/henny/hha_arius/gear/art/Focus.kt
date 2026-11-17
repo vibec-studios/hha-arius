@@ -97,7 +97,8 @@ object Focus {
         st(player).reverbUntil = GearTasks.now + GearConfig.ticks("art_reverb_ticks")
     }
 
-    fun inReverb(player: ServerPlayerEntity): Boolean = (states[player.uuid]?.reverbUntil ?: 0L) > GearTasks.now
+    fun inReverb(player: ServerPlayerEntity): Boolean =
+        !ArtTest.on(player) && (states[player.uuid]?.reverbUntil ?: 0L) > GearTasks.now
 
     fun drawing(player: ServerPlayerEntity): Boolean = (states[player.uuid]?.drawUntil ?: 0L) > GearTasks.now
 

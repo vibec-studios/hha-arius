@@ -9,7 +9,8 @@ import net.minecraft.text.Text
 
 /**
  * Admin-Befehle (OP 2): `/hhaarius start` (echter Kampf ohne Siegel), `/hhaarius stage <1-4>` (Training eines
- * Abschnitts), `/hhaarius stop`, `/hhaarius info`, `/hhaarius skip` (aktuellen Abschnitt beenden).
+ * Abschnitts), `/hhaarius stop`, `/hhaarius info`, `/hhaarius skip` (aktuellen Abschnitt beenden),
+ * `/hhaarius test [on|off]` (Testmodus der Ausrüstung: unendliche Resonanz, kaum Abklingzeit).
  */
 object AriusCommands {
 
@@ -32,6 +33,10 @@ object AriusCommands {
                         1
                     })
                     .then(CommandManager.literal("skip").executes { ctx -> skip(ctx.source) })
+                    .then(CommandManager.literal("test")
+                        .executes { ctx -> test(ctx.source, null) }
+                        .then(CommandManager.literal("on").executes { ctx -> test(ctx.source, true) })
+                        .then(CommandManager.literal("off").executes { ctx -> test(ctx.source, false) }))
                     .then(CommandManager.literal("info").executes { ctx ->
                         val list = Encounters.all()
                         if (list.isEmpty()) ctx.source.sendFeedback({ Text.literal("Eirholm: keine Begegnung.") }, false)
@@ -48,6 +53,14 @@ object AriusCommands {
                     }),
             )
         }
+    }
+
+    private fun test(source: ServerCommandSource, on: Boolean?): Int {
+        val p = source.playerOrThrow
+        val now = on ?: !dev.henny.hha_arius.gear.art.ArtTest.on(p)
+        dev.henny.hha_arius.gear.art.ArtTest.set(p, now)
+        source.sendFeedback({ Text.translatable(if (now) "hha_arius.msg.test_on" else "hha_arius.msg.test_off") }, false)
+        return 1
     }
 
     private fun skip(source: ServerCommandSource): Int {

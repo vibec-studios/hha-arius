@@ -131,7 +131,7 @@ object SpellCasting {
 
     private fun setCooldown(player: ServerPlayerEntity, spell: Spell, ticks: Int) {
         val s = st(player)
-        s.cooldownUntil[spell.ordinal] = GearTasks.now + ticks
+        s.cooldownUntil[spell.ordinal] = GearTasks.now + ArtTest.cd(player, ticks)
         s.dirty = true
     }
 
@@ -142,7 +142,7 @@ object SpellCasting {
 
     /** Bauwerke und Gleiter sind im Eirholm-Kampf aus (Config `art_constructs_in_arena`). */
     private fun constructsAllowed(player: ServerPlayerEntity): Boolean {
-        if (GearConfig.on("art_constructs_in_arena")) return true
+        if (GearConfig.on("art_constructs_in_arena") || ArtTest.on(player)) return true
         return player.entityWorld.registryKey != ArenaDimension.WORLD && !Encounters.isParticipant(player)
     }
 

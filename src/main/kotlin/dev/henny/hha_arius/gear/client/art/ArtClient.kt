@@ -71,6 +71,10 @@ object ArtClient {
     val lastOfSchool = intArrayOf(Spell.WIND_BLADE.ordinal, Spell.FROST_SHARDS.ordinal, Spell.YANG_ORB.ordinal)
 
     private var useHeld = false
+
+    /** Was zuletzt in der Haupthand lag (0 nichts, 1 Handschuhe, 2 Solvane): beim Ziehen einmal die Tasten zeigen. */
+    private var lastHeld = 0
+    private var conflictsWarned = false
     private var castHeld = false
     private var artHeld = false
 
@@ -194,6 +198,11 @@ object ArtClient {
         val gauntlets = holdsGauntlets(player)
         val solvane = player.mainHandStack.isOf(GearItems.SOLVANE)
         val inGame = client.currentScreen == null
+        val held = if (gauntlets) 1 else if (solvane) 2 else 0
+        if (held != lastHeld) {
+            lastHeld = held
+            if (held != 0) showKeys(client, player, gauntlets)
+        }
 
         // Rechtsklick-Flanken
         val pressed = inGame && client.options.useKey.isPressed
@@ -224,6 +233,35 @@ object ArtClient {
         if (artHeld && (!keyTechnique.isPressed || !solvane)) {
             if (solvane) send(ArtAction.ART_RELEASE, if (player.isSneaking) 1 else 0)
             artHeld = false
+        }
+    }
+
+    /**
+     * Beim Ziehen: die tatsächlich belegten Tasten in der Aktionsleiste (Text.keybind zeigt die eigene Belegung). Liegt
+     * eine Arius-Taste auf derselben Taste wie eine andere Belegung (etwa V bei Sprach-Chat-Mods), einmal je Sitzung ein
+     * Hinweis im Chat, weil die andere Belegung den Druck sonst schluckt.
+     */
+    private fun showKeys(client: MinecraftClient, player: PlayerEntity, gauntlets: Boolean) {
+        val tech = Text.keybind(keyTechnique.id)
+        val mode = Text.keybind(keyMode.id)
+        val use = Text.keybind("key.use")
+        val msg = if (gauntlets) {
+            if (mode(player) == GauntletMode.MAGIC) Text.translatable("hha_arius.keys.gauntlets_magic", use, tech, mode)
+            else Text.translatable("hha_arius.keys.gauntlets_melee", mode, tech)
+        } else {
+            Text.translatable("hha_arius.keys.solvane", tech)
+        }
+        player.sendMessage(msg, true)
+        if (conflictsWarned) return
+        for (own in arrayOf(keyTechnique, keyMode)) {
+            if (own.isUnbound) continue
+            val other = client.options.allKeys.firstOrNull { it !== own && !it.isUnbound && it.equals(own) } ?: continue
+            conflictsWarned = true
+            player.sendMessage(
+                Text.translatable("hha_arius.keys.conflict", own.boundKeyLocalizedText, Text.translatable(own.id), Text.translatable(other.id))
+                    .formatted(net.minecraft.util.Formatting.GOLD),
+                false,
+            )
         }
     }
 
