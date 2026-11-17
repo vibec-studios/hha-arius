@@ -77,5 +77,13 @@ fabricApi {
 loom {
     runs.matching { it.name == "clientGameTest" }.configureEach {
         vmArg("-Dfabric.client.gametest.disableNetworkSynchronizer=true")
+        // Trailer-Aufnahme (src/gametest/.../TrailerCapture.kt): nur mit -Darius.trailer=true, sonst läuft nur der Starttest.
+        if (System.getProperty("arius.trailer") == "true") {
+            vmArg("-Darius.trailer=true")
+            vmArg("-Xmx6G")
+            for (key in listOf("arius.trailer.out", "arius.trailer.parts", "arius.trailer.sub", "arius.trailer.ffmpeg", "arius.trailer.skip", "arius.trailer.subtitles")) {
+                System.getProperty(key)?.let { vmArg("-D$key=$it") }
+            }
+        }
     }
 }

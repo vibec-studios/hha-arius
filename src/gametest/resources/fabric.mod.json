@@ -5,7 +5,10 @@
   "name": "HHA Arius Startup Test",
   "environment": "client",
   "entrypoints": {
-    "fabric-client-gametest": ["dev.henny.hha_arius.gametest.StartupTest"]
+    "fabric-client-gametest": [
+      "dev.henny.hha_arius.gametest.StartupTest",
+      "dev.henny.hha_arius.gametest.TrailerCapture"
+    ]
   },
   "depends": {"hha_arius": "*"}
 }
