@@ -1,4 +1,4 @@
-# Was im Spiel geprüft werden muss (Stand 1.2.2)
+# Was im Spiel geprüft werden muss (Stand 1.3.0)
 
 Gebaut und statisch geprüft (6 Review-Runden, Berichte in `docs/review/`). Seit 1.0.1 besteht zusätzlich ein echter
 Client-Starttest (`./gradlew runClientGameTest`): Haupt- und Client-Entrypoints laden, eine Einzelspielerwelt startet,
@@ -25,7 +25,7 @@ Client-Welt und Spieler sind vorhanden. Geprüft mit Minecraft 1.21.11, Fabric L
 - [ ] Kopftreffer am Boden (unsichtbare Kopf-Trefferbox)
 
 ## Gletschersturz und Abschnitt III
-- [ ] Einsturz, sanftes Fallen ins Gewölbe, Verwandlung (Splitter, weiße Form, Druckwelle), Resonanzfaden
+- [ ] Einsturz, Aufstieg im Lichtstrom auf den Himmelsbalkon (seit 1.3.0), Verwandlung (Splitter, weiße Form, Druckwelle), Resonanzfaden
 - [ ] Takt: Taktgeber-Anzeige, Begleitangriffe, Taktbruch
 - [ ] Resonanzangriffe (Korridor, Kristallsturm, Eisfeld spalten) mit goldenen Wegen
 - [ ] Weißes Loch: Kern, Korridore, Druckfronten, Lücke + Durchbruch, Doppelfenster
@@ -87,6 +87,16 @@ Client-Welt und Spieler sind vorhanden. Geprüft mit Minecraft 1.21.11, Fabric L
 - [ ] Texte: überall „Solvane“ statt „Nivaris“ (Bossleiste, Hinweise, Untertitel, Items)
 - [ ] Rüstung „Drachenherz-Wacht“: an Spieler, Rüstungsständer, Mannequin, Zombie; Leuchten Tag/Nacht, Verzauberungsglanz, Umhang, Federn beim Laufen/Springen, schmale Arme, mit und ohne Handschuhe
 - [ ] Solvane-Item: länger, Lichtfluss in der Hohlkehle, Sitz in erster und dritter Person
+
+## 1.3.0
+- [ ] Schneesturm: Flockenstreifen mit Bewegungsunschärfe, Böen mit kurzem Whiteout, Bodentreiben, Frostrand; im Tempel unter dem Dach kaum Schnee; `/ariusc fx` skaliert
+- [ ] Gletschersturz: Plateau bricht, Kamera fährt an der Nadel hinauf, alle landen auf dem Himmelsbalkon (hoch über der Schlucht); Training III/IV wartet, bis die Fernlandschaft fertig ist
+- [ ] Himmelsbalkon: Kristallsäulen, Rand zerklüftet, Absturz setzt zurück, Zuschauervorsprung im Westen; Solvanes Körper bleibt im Rund und geht nicht durch die Nadel
+- [ ] Plateau: Obelisken, Ruinenbögen, Dornenkristalle; Blick zur Nadel frei; Landungen und Drachenplätze frei
+- [ ] Arius: Klingenflug (Schwert wirbelt allein auf angesagten Bahnen, er tritt dabei), Frostdornen (Dornenreihe, weiße Form mit Dornenkranz), neue Hiebspuren
+- [ ] Finale: letzter Austausch als Klingenbindung mit QTE (9× Angriff in 3 s), Erfolg gewinnt, Fehlschlag wirft zurück
+- [ ] Handschuhe: neues Modell (Schwingen, Dorne, Eisband), neues Item-Icon; alle Item-Icons neu
+- [ ] Weißer Kern und Frostschritt: neue Effekte; Beschreibungen in Tooltip und Zauberrad stimmen mit dem Spiel überein
 
 ## 1.2.2
 - [ ] Tasten: Steuerung → HHA, Ability 4 = Technik (Zauberrad / Klarer Schnitt halten), Ability 5 = Modus; neu installiert einmal mit R/V vorbelegt; unbelegt → Chat-Hinweis

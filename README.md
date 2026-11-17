@@ -71,6 +71,11 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.3.0
+A permanent cinematic snowstorm, a new final stage high on the spire (the Sky Balcony) instead of the glacier vault,
+Arius' flying blade and frost thorns, a blade-lock quick-time event in the finale, a redesigned plateau, new gauntlet
+model and item icons, stronger armour ability effects and precise ability descriptions.
+
 ## Requirements
 
 | Dependency | Note |
