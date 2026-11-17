@@ -132,7 +132,7 @@ object GearConfig {
         "white_hole_cost" to 100.0,
         "white_hole_range" to 16.0,
         "white_hole_radius" to 6.0,
-        "white_hole_damage" to 12.0,
+        "white_hole_damage" to 16.0,
         "white_hole_pull" to 0.12,
         "white_hole_cooldown" to 2400.0,
         // Solvane (10.2)
@@ -162,7 +162,7 @@ object GearConfig {
         "breath_cost" to 35.0,
         "breath_ticks" to 30.0,
         "breath_range" to 8.0,
-        "breath_damage" to 2.0,
+        "breath_damage" to 1.8,
         "breath_slow_ticks" to 50.0,
         "breath_cooldown" to 300.0,
         "wing_leap_cost" to 20.0,

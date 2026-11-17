@@ -106,7 +106,7 @@ enum class Move(
     UPPERCUT(4, 9, 1.15f, 2.9, 40.0, 1, 0.15, 0.75, "melee_gain_uppercut", 0.55, Anim.UPPERCUT),
 
     /** Axttritt (Tritt nach dem Aufwärtshaken): Sprung, Ferse kracht herab, Frost-Schockwelle trifft im Halbkreis vorn. */
-    AXE_KICK(9, 14, 2.0f, 3.6, 80.0, 4, 0.7, 0.0, "melee_gain_axe", 0.3, Anim.AXE_KICK);
+    AXE_KICK(9, 14, 1.7f, 3.6, 80.0, 3, 0.7, 0.0, "melee_gain_axe", 0.3, Anim.AXE_KICK);
 
     val total: Int get() = windup + recover
 }

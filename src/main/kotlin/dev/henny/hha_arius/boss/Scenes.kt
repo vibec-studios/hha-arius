@@ -1352,7 +1352,7 @@ class Scenes(private val f: EirholmFight) {
             Vfx.crescent(f.world, Vfx.Style.HEAVEN, at, dir, 7f, 1.6f, 6)
             for (p in f.players()) {
                 if (p.squaredDistanceTo(at) < 12.0 * 12.0) {
-                    f.hurt(p, 8f, Damage.Kind.NULL_CUT)
+                    f.hurt(p, 6f, Damage.Kind.NULL_CUT)
                     dev.henny.hha.logic.Fx.launchPlayer(p, flatDir(a.entityPos, p.entityPos).multiply(1.0).add(0.0, 0.4, 0.0))
                 }
                 p.sendMessage(net.minecraft.text.Text.translatable("hha_arius.qte.clash_lost").formatted(net.minecraft.util.Formatting.RED), true)

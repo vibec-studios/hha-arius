@@ -290,7 +290,7 @@ class AriusMoves(private val f: EirholmFight) {
                         blade.refreshPositionAndAngles(pos.x, pos.y, pos.z, 0f, 0f)
                         spinBlade(blade, spin)
                         if (i == steps / 2) for (p in line.hits(f.players())) {
-                            f.hurt(p, if (white) 13f else 11f)
+                            f.hurt(p, if (white) 11f else 9f)
                             dev.henny.hha.logic.Fx.launchPlayer(p, flatDir(start, end).multiply(0.6).add(0.0, 0.3, 0.0))
                         }
                         yield(Unit)
@@ -323,7 +323,7 @@ class AriusMoves(private val f: EirholmFight) {
                 wait(cone.ticks)
                 f.sound("arius.kick", a.entityPos, 2f, if (front) 0.85f else 1.05f)
                 for (p in cone.hits(f.players())) {
-                    f.hurt(p, if (front) 12f else 9f)
+                    f.hurt(p, if (front) 10f else 8f)
                     dev.henny.hha.logic.Fx.launchPlayer(p, dir.multiply(if (front) 1.25 else 0.8).add(0.0, if (front) 0.45 else 0.3, 0.0))
                 }
                 shown0 { Vfx.shockwave(f.world, style, a.entityPos.add(dir.multiply(1.6)), if (front) 2.6f else 2.0f, 10, 0.8f) }
@@ -373,7 +373,7 @@ class AriusMoves(private val f: EirholmFight) {
             if (!struck && i >= steps / 2) {
                 struck = true
                 for (pl in line.hits(f.players())) {
-                    f.hurt(pl, if (white) 14f else 12f)
+                    f.hurt(pl, if (white) 12f else 10f)
                     dev.henny.hha.logic.Fx.launchPlayer(pl, dir.multiply(0.25).add(0.0, 0.85, 0.0))
                 }
             }
@@ -389,7 +389,7 @@ class AriusMoves(private val f: EirholmFight) {
                 placed += spike(a.entityPos.add(cos(ang) * 3.2, 0.0, sin(ang) * 3.2), 3)
             }
             for (pl in ring.hits(f.players())) {
-                f.hurt(pl, 10f)
+                f.hurt(pl, 8f)
                 dev.henny.hha.logic.Fx.launchPlayer(pl, flatDir(a.entityPos, pl.entityPos).multiply(0.6).add(0.0, 0.7, 0.0))
             }
         }
