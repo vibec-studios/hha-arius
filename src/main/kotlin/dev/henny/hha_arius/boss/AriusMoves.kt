@@ -26,6 +26,7 @@ class AriusMoves(private val f: EirholmFight) {
     private var nextNull = 0L
     private var nextSidestep = 0L
     private var nextBlade = 0L
+    private var nextThorns = 0L
 
     /** Die gerade allein fliegende Klinge (Item-Anzeige), falls ein Klingenflug läuft. */
     private var flyingBlade: net.minecraft.entity.decoration.DisplayEntity.ItemDisplayEntity? = null
@@ -114,6 +115,10 @@ class AriusMoves(private val f: EirholmFight) {
                     nextGuard = now + 400
                     yieldAll(guard(false, serious))
                 }
+                serious && now >= nextThorns && d in 4.0..20.0 && rnd.nextFloat() < 0.4f -> {
+                    nextThorns = now + 400
+                    yieldAll(frostThorns(false))
+                }
                 unlocked && now >= nextBlade && d in 5.0..18.0 && rnd.nextFloat() < 0.35f -> {
                     nextBlade = now + 560
                     yieldAll(flyingBladeAttack(false))
@@ -155,6 +160,10 @@ class AriusMoves(private val f: EirholmFight) {
                 now >= nextBlade && rnd.nextFloat() < 0.4f -> {
                     nextBlade = now + 420
                     yieldAll(flyingBladeAttack(true))
+                }
+                now >= nextThorns && rnd.nextFloat() < 0.45f -> {
+                    nextThorns = now + 320
+                    yieldAll(frostThorns(true))
                 }
                 now >= nextGuard && d < 6 && rnd.nextFloat() < 0.3f -> {
                     nextGuard = now + 360
@@ -322,6 +331,82 @@ class AriusMoves(private val f: EirholmFight) {
     }
 
     private inline fun shown0(block: () -> Unit) = block()
+
+    // --- Frostdornen (seit 1.2.2, angelehnt an Dornenmagie eines Ritters aus Elden Ring) -----------------------------
+
+    /**
+     * Frostdornen: Arius reißt die Klinge über den Boden, eine Reihe Eisdornen bricht in schneller Folge von ihm bis
+     * hinter das Ziel aus dem Boden (angesagte Linie). Wer getroffen wird, wird aufgespießt hochgeschleudert. In der
+     * weißen Form folgt ein Dornenkranz um ihn selbst (angesagter Ring). Die Dornen stehen kurz und zersplittern dann.
+     */
+    fun frostThorns(white: Boolean): Script = script {
+        val a = f.arius ?: return@script
+        val t = f.target() ?: return@script
+        f.face(a, t.entityPos)
+        val from = a.entityPos
+        val dir = flatDir(from, t.entityPos)
+        val dist = sqrt(from.squaredDistanceTo(t.entityPos))
+        val to = f.clampToArena(from.add(dir.multiply(dist + 5.0)), 1.0)
+        val line = f.calls.line(from, to, 2.4f, if (white) 14 else 18, Telegraph.Pace.HEAVY)
+        a.play(AriusPose.STRIP_SLASH, line.ticks)
+        wait(line.ticks)
+        f.sound("arius.frost_strip", from, 2.5f, 0.7f)
+        val placed = ArrayList<net.minecraft.util.math.BlockPos>()
+        val len = sqrt(from.squaredDistanceTo(to))
+        val steps = (len / 1.5).toInt().coerceAtLeast(3)
+        var struck = false
+        for (i in 1..steps) {
+            val p = from.lerp(to, i / steps.toDouble())
+            placed += spike(p.add(dir.multiply(0.0)), 2 + rnd.nextInt(2))
+            placed += spike(p.add(Vec3d(-dir.z, 0.0, dir.x).multiply(if (i % 2 == 0) 0.9 else -0.9)), 1 + rnd.nextInt(2))
+            if (i % 2 == 0) f.sound("arius.ice_wall", p, 1.3f, 1.3f + i * 0.02f)
+            if (!struck && i >= steps / 2) {
+                struck = true
+                for (pl in line.hits(f.players())) {
+                    f.hurt(pl, if (white) 14f else 12f)
+                    dev.henny.hha.logic.Fx.launchPlayer(pl, dir.multiply(0.25).add(0.0, 0.85, 0.0))
+                }
+            }
+            yield(Unit)
+        }
+        if (white) {
+            val ring = f.calls.ring(a.entityPos, 4.8f, 12, pace = Telegraph.Pace.FOLLOW_UP)
+            a.play(AriusPose.STAB_GROUND, ring.ticks)
+            wait(ring.ticks)
+            f.sound("arius.stab_ground", a.entityPos, 2.5f, 0.9f)
+            for (k in 0 until 14) {
+                val ang = k / 14.0 * 2 * Math.PI
+                placed += spike(a.entityPos.add(cos(ang) * 3.2, 0.0, sin(ang) * 3.2), 3)
+            }
+            for (pl in ring.hits(f.players())) {
+                f.hurt(pl, 10f)
+                dev.henny.hha.logic.Fx.launchPlayer(pl, flatDir(a.entityPos, pl.entityPos).multiply(0.6).add(0.0, 0.7, 0.0))
+            }
+        }
+        wait(26)
+        for (pos in placed) {
+            if (rnd.nextInt(2) == 0) f.world.spawnParticles(net.minecraft.particle.BlockStateParticleEffect(net.minecraft.particle.ParticleTypes.BLOCK, net.minecraft.block.Blocks.PACKED_ICE.defaultState), pos.x + 0.5, pos.y + 0.5, pos.z + 0.5, 6, 0.3, 0.3, 0.3, 0.1)
+        }
+        if (placed.isNotEmpty()) f.sound("transform.shatter", a.entityPos, 1.5f, 1.6f)
+        f.edits.revert(placed)
+        wait(8)
+    }
+
+    /** Ein Eisdorn (h Blöcke, blaue Spitze) auf der Lauffläche, nur auf freiem Boden und nie in einem Spieler. */
+    private fun spike(at: Vec3d, h: Int): List<net.minecraft.util.math.BlockPos> {
+        val ground = Vec3d(at.x, f.floorY, at.z)
+        if (!f.passable(ground)) return emptyList()
+        if (f.players().any { it.squaredDistanceTo(ground.add(0.0, 1.0, 0.0)) < 1.2 }) return emptyList()
+        val base = net.minecraft.util.math.BlockPos.ofFloored(ground)
+        if (f.world.getBlockState(base.down()).isAir) return emptyList()
+        val list = ArrayList<Pair<net.minecraft.util.math.BlockPos, net.minecraft.block.BlockState>>()
+        for (y in 0 until h) {
+            val pos = base.up(y)
+            if (!f.world.getBlockState(pos).isAir) break
+            list += pos to (if (y == h - 1) net.minecraft.block.Blocks.BLUE_ICE else net.minecraft.block.Blocks.PACKED_ICE).defaultState
+        }
+        return f.edits.fill(list)
+    }
 
     /** Klinge flach gelegt (Spitze nach vorn) und um die Hochachse gedreht: wirbelt wie ein Rotor. */
     private fun spinBlade(blade: net.minecraft.entity.decoration.DisplayEntity.ItemDisplayEntity, deg: Float) {
