@@ -30,6 +30,9 @@ object AriusFxClient {
         ArtPipelines.init()
         Impacts.init()
         CutLens.init()
+        net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback.EVENT.register { ctx, _ ->
+            if (!MinecraftClient.getInstance().options.hudHidden) Atmos.renderHud(ctx)
+        }
         ClientPlayNetworking.registerGlobalReceiver(HoldS2C.ID) { p, _ -> HoldClient.set(p.on, p.ticks) }
         ClientPlayNetworking.registerGlobalReceiver(SliceS2C.ID) { p, _ -> SliceRender.handle(p) }
         ClientPlayNetworking.registerGlobalReceiver(dev.henny.hha_arius.gear.art.ArtCutS2C.ID) { p, _ -> CutHalves.handle(p) }

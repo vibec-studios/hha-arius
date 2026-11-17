@@ -10,7 +10,6 @@ import dev.henny.hha_arius.net.AtmosS2C
 import net.minecraft.block.Blocks
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.world.ClientWorld
-import net.minecraft.particle.ParticleTypes
 import net.minecraft.util.math.BlockPos
 import net.minecraft.util.math.Vec3d
 import net.minecraft.world.attribute.EnvironmentAttribute
@@ -35,12 +34,13 @@ object Atmos {
     )
 
     private val MOODS = arrayOf(
-        Mood(48f, 340f, 0xFFD6E2EF.toInt(), 0xFFAFC8E6.toInt(), 1.0f, 0.15f, 0.25f, 0.0f), // CLEAR
-        Mood(20f, 210f, 0xFFC9D7E7.toInt(), 0xFF9FB8D6.toInt(), 0.9f, 0.7f, 0.7f, 0.25f), // SNOW
-        Mood(1f, 30f, 0xFFE6EDF5.toInt(), 0xFFCAD7E6.toInt(), 0.72f, 1.7f, 1.6f, 1.0f), // BLIZZARD
-        Mood(64f, 420f, 0xFFCADAEC.toInt(), 0xFF6F9BD6.toInt(), 1.08f, 0.25f, 0.55f, 0.1f), // REVEAL
+        // Seit 1.2.2: draußen immer Sturm (Crix: „die ganze Zeit ein Schneesturm“), je Stimmung stärker oder lichter.
+        Mood(22f, 230f, 0xFFD3DFEC.toInt(), 0xFFA9C2E0.toInt(), 0.95f, 0.75f, 0.8f, 0.35f), // CLEAR
+        Mood(12f, 160f, 0xFFC9D7E7.toInt(), 0xFF9FB8D6.toInt(), 0.88f, 1.1f, 1.05f, 0.5f), // SNOW
+        Mood(1f, 30f, 0xFFE6EDF5.toInt(), 0xFFCAD7E6.toInt(), 0.72f, 1.8f, 1.7f, 1.0f), // BLIZZARD
+        Mood(34f, 300f, 0xFFCADAEC.toInt(), 0xFF6F9BD6.toInt(), 1.05f, 0.6f, 0.8f, 0.25f), // REVEAL
         Mood(4f, 80f, 0xFF1C3352.toInt(), 0xFF12223A.toInt(), 0.55f, 0.08f, 0.05f, 0.15f), // VAULT
-        Mood(8f, 150f, 0xFFF5F9FF.toInt(), 0xFFE8F1FF.toInt(), 1.2f, 0.3f, 0.3f, 0.2f), // WHITE
+        Mood(8f, 150f, 0xFFF5F9FF.toInt(), 0xFFE8F1FF.toInt(), 1.2f, 0.55f, 0.6f, 0.3f), // WHITE
     )
 
     private var from: Mood = MOODS[AtmosMode.CLEAR]
@@ -80,6 +80,7 @@ object Atmos {
 
     fun reset() {
         active = false
+        SnowStorm.reset()
         veils.clear()
         glints.clear()
     }
@@ -105,8 +106,9 @@ object Atmos {
         if (!active || !inEirholm()) return value
         val m = current()
         return when (attribute) {
-            EnvironmentAttributes.FOG_START_DISTANCE_VISUAL -> if (value is Float) m.fogStart else value
-            EnvironmentAttributes.FOG_END_DISTANCE_VISUAL -> if (value is Float) m.fogEnd else value
+            // Sturmböe: Nebel zieht kurz zu (Whiteout).
+            EnvironmentAttributes.FOG_START_DISTANCE_VISUAL -> if (value is Float) m.fogStart * (1f - 0.8f * SnowStorm.whiteout) else value
+            EnvironmentAttributes.FOG_END_DISTANCE_VISUAL -> if (value is Float) m.fogEnd * (1f - 0.65f * SnowStorm.whiteout) else value
             EnvironmentAttributes.FOG_COLOR_VISUAL -> if (value is Int) m.fog else value
             EnvironmentAttributes.SKY_COLOR_VISUAL -> if (value is Int) m.sky else value
             EnvironmentAttributes.SKY_LIGHT_FACTOR_VISUAL -> if (value is Float) (value * m.light).coerceIn(0f, 1.25f) else value
@@ -130,12 +132,8 @@ object Atmos {
         val gust = 0.7 + 0.3 * sin(age * 0.05) + 0.2 * sin(age * 0.13)
         val wx = cos(windAngle) * m.wind * gust
         val wz = sin(windAngle) * m.wind * gust
-        // Schneetreiben
-        val count = (m.snow * fx * 14).toInt()
-        repeat(count) {
-            val p = cam.add((r.nextDouble() - 0.5) * 28, (r.nextDouble() - 0.3) * 14, (r.nextDouble() - 0.5) * 28)
-            world.addParticleClient(ParticleTypes.SNOWFLAKE, p.x, p.y, p.z, wx * 0.5, -0.05 - 0.05 * r.nextDouble(), wz * 0.5)
-        }
+        // Schneesturm (eigenes Flockenfeld mit Bewegungsunschärfe, Böen, Bodentreiben)
+        SnowStorm.tick(world, m.snow, m.wind * 0.55f, windAngle)
         // Schneeschleier
         if (m.veil > 0.05f && veils.size < (14 * fx).toInt() && r.nextFloat() < m.veil * 0.4f) {
             val a = r.nextDouble() * 2 * PI
@@ -155,9 +153,16 @@ object Atmos {
         }
     }
 
+    /** Frostrand im HUD (nur im Heiligtum). */
+    fun renderHud(ctx: net.minecraft.client.gui.DrawContext) {
+        if (!active || !inEirholm()) return
+        SnowStorm.renderVignette(ctx)
+    }
+
     fun render(d: VfxDraw) {
         if (!active || !inEirholm()) return
         val m = current()
+        SnowStorm.render(d, m.snow)
         for (v in veils) {
             val t = (v.age + d.tickDelta) / v.life
             val k = (sin(t * PI) * m.veil * 0.22).toFloat().coerceIn(0f, 0.3f)
