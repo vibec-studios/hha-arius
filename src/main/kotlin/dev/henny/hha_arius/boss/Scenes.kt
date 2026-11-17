@@ -581,6 +581,8 @@ class Scenes(private val f: EirholmFight) {
         wait(30)
         a.form = AriusForm.WHITE
         a.eyeGlow = 100
+        f.updateBars()
+        scene?.once { dev.henny.hha.logic.boss.Cine.title(it, "hha_arius.cine.heir", "hha_arius.cine.heir.sub", 70) }
         // Solvane ist der Drache: in seiner Hand verdichtet sich eine Klinge aus weißem Eislicht (V5).
         Entrance.storyFx(f, FxKind.BLADE_FORM, a.entityPos.add(0.0, 1.0, 0.0), life = 24, e1 = a)
         cue("core.form", vault, 2f, 1.5f)

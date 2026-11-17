@@ -542,7 +542,7 @@ class EirholmFight(
         ariusBar.percent = if (phase == Phase.FINALE) (1f - exchangesWon / 3f).coerceIn(0f, 1f) else (ariusHp / ariusMax).coerceIn(0f, 1f)
         dragonBar.percent = (dragonHp / dragonMax).coerceIn(0f, 1f)
         val lead = phase == Phase.VAULT && !dragonDowned
-        ariusBar.name = Text.literal(if (lead && ariusLeads) "▶ " else "").append(Text.translatable("hha_arius.bar.arius"))
+        ariusBar.name = Text.literal(if (lead && ariusLeads) "▶ " else "").append(Text.translatable(if (arius?.form == AriusForm.WHITE) "hha_arius.bar.arius_heir" else "hha_arius.bar.arius"))
         dragonBar.name = Text.literal(if (lead && !ariusLeads) "▶ " else "").append(Text.translatable("hha_arius.bar.nivaris"))
         ariusBar.color = if (arius?.form == AriusForm.WHITE) BossBar.Color.WHITE else BossBar.Color.BLUE
     }
