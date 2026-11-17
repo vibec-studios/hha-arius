@@ -45,6 +45,24 @@ import kotlin.math.sin
  */
 class WhiteHoleFx(val center: Vec3d, private val radius: Double, private var pullTicks: Int, life: Int) : AriusFx(life) {
 
+    // --- Seit 1.3.1 nach dem Vorbild des schwarzen Lochs aus HHA Void, aber umgekehrt (weißes Loch stößt aus) ---------
+    // Echte Blöcke werden aus dem Boden gerissen, steigen auf und umkreisen den Kern; beim Kollaps fliegen sie nach
+    // außen und zerschellen. Eiskristalle kreisen in der Scheibe, drei Lichtarme strömen spiralig nach außen, entlang
+    // der Achse schießen Licht-Jets, Lichtfesseln greifen nach Wesen in der Nähe, am Boden glimmt ein Frostrunenkreis.
+
+    private class Piece(val state: net.minecraft.block.BlockState, var pos: Vec3d, var vel: Vec3d, val axis: org.joml.Vector3f, val size: Float) {
+        var prev = pos
+        var thrown = false
+        var landed = false
+    }
+
+    private val rng = java.util.Random(center.hashCode().toLong())
+    private val pieces = ArrayList<Piece>()
+    private var ground: Vec3d? = null
+    private val crystals = List(8) { i ->
+        floatArrayOf(2.6f + rng.nextFloat() * 3.2f, rng.nextFloat() * 6.283f, 0.05f + rng.nextFloat() * 0.04f, (rng.nextFloat() - 0.5f) * 0.9f, 0.3f + rng.nextFloat() * 0.25f, i.toFloat())
+    }
+
     /** Der Server meldet den Kollaps (Bosskampf): ab jetzt fällt der Kern zusammen. */
     fun collapseNow() {
         if (pullTicks > age) pullTicks = age
@@ -98,6 +116,7 @@ class WhiteHoleFx(val center: Vec3d, private val radius: Double, private var pul
     }
 
     override fun tick(world: ClientWorld) {
+        tickPieces(world)
         if (age > pullTicks) return
         val r = random()
         // Schnee und Licht werden eingesogen.
@@ -111,9 +130,129 @@ class WhiteHoleFx(val center: Vec3d, private val radius: Double, private var pul
         }
     }
 
+    /** Trümmer: aus dem Boden reißen, aufsteigen und kreisen lassen; beim Kollaps nach außen schleudern. */
+    private fun tickPieces(world: ClientWorld) {
+        if (ground == null) {
+            var y = net.minecraft.util.math.BlockPos.ofFloored(center)
+            repeat(16) { if (world.getBlockState(y.down()).isAir) y = y.down() }
+            ground = Vec3d(center.x, y.y.toDouble(), center.z)
+        }
+        val g = ground ?: return
+        val fx = particlesAllowed()
+        if (age in 4 until pullTicks && age % 2 == 0 && pieces.size < (26 * fx).toInt()) {
+            val a = rng.nextDouble() * 2 * PI
+            val dist = 2.0 + kotlin.math.sqrt(rng.nextDouble()) * radius
+            val bx = net.minecraft.util.math.BlockPos.ofFloored(g.x + cos(a) * dist, g.y - 1, g.z + sin(a) * dist)
+            val st = world.getBlockState(bx)
+            if (!st.isAir && st.fluidState.isEmpty && st.renderType == net.minecraft.block.BlockRenderType.MODEL) {
+                val start = Vec3d(bx.x + 0.5, bx.y + 1.1, bx.z + 0.5)
+                pieces += Piece(st, start, Vec3d((rng.nextDouble() - 0.5) * 0.1, 0.22 + rng.nextDouble() * 0.2, (rng.nextDouble() - 0.5) * 0.1),
+                    org.joml.Vector3f(rng.nextFloat() - 0.5f, rng.nextFloat() - 0.5f, rng.nextFloat() - 0.5f).normalize(), 0.3f + rng.nextFloat() * 0.35f)
+                world.addParticleClient(net.minecraft.particle.BlockStateParticleEffect(ParticleTypes.BLOCK, st), start.x, start.y, start.z, 0.0, 0.1, 0.0)
+            }
+        }
+        val collapse = age >= pullTicks
+        for (p in pieces) {
+            p.prev = p.pos
+            if (p.landed) continue
+            if (collapse && !p.thrown) {
+                p.thrown = true
+                val away = p.pos.subtract(center).let { if (it.lengthSquared() < 1e-4) Vec3d(1.0, 0.0, 0.0) else it.normalize() }
+                p.vel = away.multiply(0.55 + rng.nextDouble() * 0.45).add(0.0, 0.25 + rng.nextDouble() * 0.3, 0.0)
+            }
+            if (p.thrown) {
+                p.vel = p.vel.multiply(0.98).add(0.0, -0.06, 0.0)
+                p.pos = p.pos.add(p.vel)
+                val bp = net.minecraft.util.math.BlockPos.ofFloored(p.pos)
+                if (p.vel.y < 0 && !world.getBlockState(bp).isAir) {
+                    p.landed = true
+                    repeat(6) { world.addParticleClient(net.minecraft.particle.BlockStateParticleEffect(ParticleTypes.BLOCK, p.state), p.pos.x, p.pos.y + 0.3, p.pos.z, (rng.nextDouble() - 0.5) * 0.2, 0.15, (rng.nextDouble() - 0.5) * 0.2) }
+                }
+                continue
+            }
+            // Zum Ring um den Kern ziehen und darum kreisen (weißes Loch hält sie in der Schwebe)
+            val to = center.subtract(p.pos)
+            val dist = to.length().coerceAtLeast(0.1)
+            val pull = to.multiply(1.0 / dist)
+            val swirl = Vec3d(-pull.z, 0.0, pull.x)
+            val want = 3.2
+            p.vel = p.vel.multiply(0.92).add(pull.multiply((dist - want) * 0.02)).add(swirl.multiply(0.06)).add(0.0, if (p.pos.y < center.y - 0.5) 0.02 else -0.005, 0.0)
+            p.pos = p.pos.add(p.vel)
+        }
+        pieces.removeIf { it.landed && age % 20 == 0 }
+    }
+
+    private fun drawBlock(d: VfxDraw, state: net.minecraft.block.BlockState, pos: Vec3d, axis: org.joml.Vector3f, angle: Float, size: Float) {
+        val client = MinecraftClient.getInstance()
+        val world = client.world ?: return
+        val ms = MatrixStack()
+        ms.translate(pos.x - d.cam.x, pos.y - d.cam.y, pos.z - d.cam.z)
+        ms.multiply(net.minecraft.util.math.RotationAxis.of(axis).rotation(angle))
+        ms.scale(size, size, size)
+        ms.translate(-0.5f, -0.5f, -0.5f)
+        val light = net.minecraft.client.render.WorldRenderer.getLightmapCoordinates(world, net.minecraft.util.math.BlockPos.ofFloored(pos))
+        client.blockRenderManager.renderBlockAsEntity(state, ms, d.consumers, light, net.minecraft.client.render.OverlayTexture.DEFAULT_UV)
+    }
+
     override fun render(d: VfxDraw, matrices: MatrixStack, t: Float) {
         val k = intensity(d.tickDelta)
         val core = coreRadius(d.tickDelta).toDouble()
+        val time = age + d.tickDelta
+        // Trümmer (echte Blockmodelle)
+        for (p in pieces) {
+            if (p.landed) continue
+            val pos = p.prev.lerp(p.pos, d.tickDelta.toDouble())
+            drawBlock(d, p.state, pos, p.axis, time * 0.25f, p.size)
+        }
+        val n0 = diskNormal(d.tickDelta)
+        val nrm = Vec3d(n0.x.toDouble(), n0.y.toDouble(), n0.z.toDouble())
+        val u = nrm.crossProduct(Vec3d(0.0, 0.0, 1.0)).let { if (it.lengthSquared() < 1e-4) Vec3d(1.0, 0.0, 0.0) else it.normalize() }
+        val v = nrm.crossProduct(u).normalize()
+        if (core > 0.05) {
+            // Eiskristalle in der Scheibe
+            for (c in crystals) {
+                val ang = c[1] + time * c[2]
+                val pos = center.add(u.multiply((cos(ang) * c[0]).toDouble())).add(v.multiply((sin(ang) * c[0]).toDouble())).add(nrm.multiply(c[3].toDouble()))
+                drawBlock(d, if (c[5].toInt() % 3 == 0) net.minecraft.block.Blocks.BLUE_ICE.defaultState else net.minecraft.block.Blocks.PACKED_ICE.defaultState,
+                    pos, org.joml.Vector3f(0.3f, 1f, 0.2f).normalize(), time * 0.08f + c[1], c[4] * (core / coreMax).toFloat())
+            }
+            // Drei Lichtarme strömen spiralig nach außen (weißes Loch: Strom vom Kern weg)
+            for (arm in 0 until 3) {
+                for (i in 0 until 26) {
+                    val f = i / 26.0
+                    val rr = core * 1.3 + f * radius * 0.9
+                    val ang = arm * 2.094 + f * 3.4 - time * 0.09
+                    val pos = center.add(u.multiply(cos(ang) * rr)).add(v.multiply(sin(ang) * rr))
+                    val a = (1.0 - f).toFloat() * 0.55f * k
+                    d.billboard(VfxLayers.GLOW_ADD, pos, 0.32 * (1.0 - f * 0.5), withAlpha(if (i % 4 == 0) 0xFFFFE7B0.toInt() else 0xFFE8F6FF.toInt(), a))
+                }
+            }
+            // Licht-Jets entlang der Achse mit wandernden Funken
+            val len = radius * 2.2 * pull(d.tickDelta)
+            for (sg in intArrayOf(-1, 1)) {
+                val end = center.add(nrm.multiply(len * sg))
+                d.band(VfxLayers.GLOW_ADD, center, end, d.camRight, core * 0.45, withAlpha(0xFFFFFFFF.toInt(), 0.85f * k), withAlpha(AriusFx.ICE, 0f))
+                for (j in 0 until 6) {
+                    val f = ((time * 0.06 + j / 6.0) % 1.0)
+                    d.billboard(VfxLayers.FLARE_ADD, center.add(nrm.multiply(len * sg * f)), 0.35 * (1 - f), withAlpha(0xFFFFFFFF.toInt(), (1 - f).toFloat() * 0.7f * k))
+                }
+            }
+            // Lichtfesseln zu Wesen in der Nähe (nicht zum eigenen Spieler)
+            val world = MinecraftClient.getInstance().world
+            if (world != null && age < pullTicks) {
+                val me = MinecraftClient.getInstance().player
+                val box = net.minecraft.util.math.Box.of(center, radius * 2.0, radius * 2.0, radius * 2.0)
+                for (e in world.getOtherEntities(me, box) { it is net.minecraft.entity.LivingEntity }.take(6)) {
+                    val to = e.getLerpedPos(d.tickDelta).add(0.0, e.height * 0.55, 0.0)
+                    val pulse = 0.5f + 0.5f * sin(time * 0.4f + e.id)
+                    d.band(VfxLayers.GLOW_ADD, center, to, d.camRight, 0.08 + 0.05 * pulse, withAlpha(0xFFFFF4D6.toInt(), 0.7f * k), withAlpha(AriusFx.ICE, 0.35f * k))
+                }
+            }
+            // Frostrunenkreis am Boden
+            ground?.let { g ->
+                d.disc(VfxLayers.RUNE_ADD, g.add(0.0, 0.06, 0.0), X, Z, radius * 0.9, withAlpha(AriusFx.ICE, 0.55f * k), time * 0.01)
+            }
+        }
         if (core > 0.05) {
             // Lichtsäulen entlang der Scheibenachse
             val n = diskNormal(d.tickDelta)
