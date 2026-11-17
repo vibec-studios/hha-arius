@@ -296,6 +296,43 @@ def wing_leap(f):
     return im.outline()
 
 
+
+def tornado(f):
+    """Wirbelsturm: Trichter aus Windstreifen (oben breit, unten eng), Striche laufen um, der Fuß pendelt."""
+    im = Img()
+    for row in range(6):
+        y = 2 + row * 2
+        half = 6.5 - row * 1.05
+        wob = int(round(math.sin((f + row) * 1.0) * (row / 5.0)))
+        for x in range(16):
+            dx = x + 0.5 - 8.0 - wob
+            if abs(dx) <= half:
+                lit = (x + f * 2 + row) % 4 < 2
+                im.set(x, y, ICE[5] if lit else ICE[3])
+                if abs(dx) > half - 1.2:
+                    im.set(x, y + 1, ICE[2])
+    im.set(8, 14, ICE[4]); im.set(7, 14, ICE[2]); im.set(9, 14, ICE[2])
+    return im.outline()
+
+
+def glacier_lance(f):
+    """Gletscherlanze: riesiger diagonaler Eisspeer, ein Glanz läuft die Spitze hinauf."""
+    im = Img()
+    for i in range(13):
+        x, y = 2 + i, 13 - i
+        w = 1 if i > 9 else 2
+        for k in range(-w, w + 1):
+            c = ICE[4] if k < 0 else ICE[3] if k == 0 else ICE[2]
+            im.set(x + k, y, c)
+            im.set(x, y + k, c)
+    im.set(15, 0, ICE[5]); im.set(14, 1, ICE[5])
+    g = 2 + (f * 2) % 12
+    im.set(g, 15 - g, ICE[5]); im.set(g + 1, 14 - g, GOLD[3])
+    for x, y in ((1, 13), (2, 14), (1, 14), (0, 15)):
+        im.set(x, y, GOLD[2])
+    return im.outline()
+
+
 ICONS = {
     'white_core': dragon_breath,
     'frost_step': wing_leap,
@@ -305,6 +342,8 @@ ICONS = {
     'art/frost_step': wing_leap,
     'art/clear_cut': clear_cut,
     'art/white_hole': white_hole,
+    'art/tornado': tornado,
+    'art/glacier_lance': glacier_lance,
 }
 
 # Namen, die gear_art.py (hud/) und spell_art.py (hud/art/) nicht mehr selbst schreiben.

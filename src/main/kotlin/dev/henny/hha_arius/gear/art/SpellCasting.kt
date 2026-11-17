@@ -268,6 +268,7 @@ object SpellCasting {
         when (spell) {
             Spell.GALE -> gale(player, world, charge)
             Spell.YANG_ORB -> yangOrb(player, world, charge)
+            Spell.GLACIER_LANCE -> glacierLance(player, world, charge)
             else -> {}
         }
     }
@@ -299,7 +300,31 @@ object SpellCasting {
                 list.addLast(allowed)
                 while (list.size > num(spell, "max").toInt().coerceAtLeast(1)) clear(world, list.removeFirst())
             }
-            Spell.YANG_BRIDGE -> build(world, allowed!!, Constructs.YANG, num(spell, "ticks").toInt()) { p -> allowed.indexOf(p) / 2 }
+            Spell.YANG_BRIDGE -> {
+                // Seit 1.3.1 eine richtige Brücke: Mittelbahn plus Seitenbahnen, Geländerpfosten alle 2 Blöcke, dazu
+                // ein leuchtender Bogen darunter und Licht-Geländer (Client-Effekt BRIDGE).
+                val path = allowed!!
+                val ticks = num(spell, "ticks").toInt()
+                val dir = if (path.size >= 2) Vec3d.of(path[1].subtract(path[0])) else Vec3d(0.0, 0.0, 1.0)
+                val side = BlockPos.ofFloored(-dir.z, 0.0, dir.x)
+                val deck = ArrayList<BlockPos>(path)
+                val posts = ArrayList<BlockPos>()
+                for ((i, c) in path.withIndex()) {
+                    for (sg in intArrayOf(1, -1)) {
+                        val sp = c.add(side.x * sg, 0, side.z * sg)
+                        if (canBuild(player, world, sp)) deck.add(sp)
+                        if (i % 2 == 0) {
+                            val post = sp.up()
+                            if (canBuild(player, world, post)) posts.add(post)
+                        }
+                    }
+                }
+                build(world, deck, Constructs.YANG, ticks) { p -> (path.indexOfFirst { it.x == p.x && it.z == p.z || it.add(side).let { q -> q.x == p.x && q.z == p.z } || it.subtract(side).let { q -> q.x == p.x && q.z == p.z } }).coerceAtLeast(0) / 2 }
+                build(world, posts, Constructs.YANG, ticks) { p -> path.size / 2 }
+                val a0 = Vec3d.ofCenter(path.first()).add(0.0, 0.5, 0.0)
+                val a1 = Vec3d.ofCenter(path.last()).add(0.0, 0.5, 0.0)
+                ArtFx.send(world, FxKind.BRIDGE, a0, a1.subtract(a0), a = 3f, life = ticks)
+            }
             Spell.FROST_FIELD -> frostField(player, world, target.center)
             else -> {}
         }
@@ -421,6 +446,7 @@ object SpellCasting {
                     }))
                 GearSounds.play(world, player.entityPos, "art.wind_blade", SoundEvents.ENTITY_BREEZE_SHOOT, 0.7f, 1.4f)
             }
+            Spell.TORNADO -> tornado(player, world)
             Spell.WIND_LEAP -> {
                 val s = st(player)
                 if (s.leapAirborne && !player.isOnGround) return false
@@ -523,6 +549,74 @@ object SpellCasting {
         ArtFx.send(world, FxKind.GALE, eye.add(look.multiply(0.6)).add(0.0, -0.3, 0.0), look.multiply(range), a = charge, life = 12)
         world.spawnParticles(ParticleTypes.GUST, eye.x + look.x * 2, eye.y + look.y * 2, eye.z + look.z * 2, 3, 0.6, 0.4, 0.6, 0.0)
         GearSounds.play(world, player.entityPos, "art.gale", SoundEvents.ENTITY_WIND_CHARGE_WIND_BURST.value(), 0.9f, 1.0f)
+    }
+
+    /**
+     * Wirbelsturm: zieht aus der Hand geradeaus über den Boden (0,22 Blöcke je Tick), saugt Wesen im Radius an, hebt sie
+     * hoch und dreht sie, kleiner Schaden alle 10 Ticks; Geschosse im Wirbel werden zerrissen.
+     */
+    private fun tornado(player: ServerPlayerEntity, world: ServerWorld) {
+        val spell = Spell.TORNADO
+        val ticks = num(spell, "ticks").toInt()
+        val r = num(spell, "radius")
+        val dmg = num(spell, "damage").toFloat()
+        val look = player.rotationVector.let { Vec3d(it.x, 0.0, it.z) }.let { if (it.lengthSquared() < 1e-6) Vec3d(0.0, 0.0, 1.0) else it.normalize() }
+        var pos = player.entityPos.add(look.multiply(2.5))
+        ArtFx.send(world, FxKind.TORNADO, pos, look.multiply(0.22), a = r.toFloat(), life = ticks)
+        GearSounds.play(world, pos, "art.gale", SoundEvents.ENTITY_BREEZE_CHARGE, 1f, 0.7f)
+        for (t in 1..ticks) {
+            GearTasks.later(t) {
+                if (!GearCombat.stillThere(player, world)) return@later
+                // Bodenhöhe folgen
+                var ground = BlockPos.ofFloored(pos.x, pos.y + 1.0, pos.z)
+                repeat(4) { if (world.getBlockState(ground.down()).isAir) ground = ground.down() }
+                repeat(4) { if (!world.getBlockState(ground).isAir) ground = ground.up() }
+                pos = Vec3d(pos.x + look.x * 0.22, ground.y.toDouble(), pos.z + look.z * 0.22)
+                for (e in world.getOtherEntities(player, Box.of(pos.add(0.0, 2.0, 0.0), r * 2, 5.0, r * 2))) {
+                    if (e is ProjectileEntity && GearCombat.isHostileProjectile(player, e)) { GearCombat.discardProjectile(world, e); continue }
+                    if (!GearCombat.canHit(player, e)) continue
+                    val target = e as LivingEntity
+                    val to = pos.subtract(target.entityPos).let { Vec3d(it.x, 0.0, it.z) }
+                    val d = to.length()
+                    if (d > r) continue
+                    if (!GearCombat.isHeavy(target)) {
+                        val swirl = Vec3d(-to.z, 0.0, to.x).normalize()
+                        target.velocity = target.velocity.multiply(0.6).add(to.normalize().multiply(0.12)).add(swirl.multiply(0.25)).add(0.0, 0.16, 0.0)
+                        target.velocityDirty = true
+                        if (target is ServerPlayerEntity) Fx.launchPlayer(target, target.velocity)
+                    }
+                    if (t % 10 == 0) damage(player, target, dmg)
+                }
+                if (t % 20 == 0) GearSounds.play(world, pos, "art.gale", SoundEvents.ENTITY_BREEZE_IDLE_GROUND, 0.7f, 0.8f)
+            }
+        }
+    }
+
+    /**
+     * Gletscherlanze: ein riesiger, aufgeladener Eisspeer, durchschlägt alle Ziele auf der Bahn; am Ende zerbirst er in
+     * eine Frostexplosion (Radius 3–5, halber Schaden) und streut Eissplitter.
+     */
+    private fun glacierLance(player: ServerPlayerEntity, world: ServerWorld, charge: Float) {
+        val spell = Spell.GLACIER_LANCE
+        val dmg = (num(spell, "damage") + (num(spell, "damage_full") - num(spell, "damage")) * charge).toFloat()
+        val burst = 3.0 + 2.0 * charge
+        Bolts.launch(Bolts.Bolt(player.uuid, world, eyeStart(player), player.rotationVector.multiply(1.9), num(spell, "range"), 0.7 + 0.35 * charge, 99, School.ICE,
+            onHit = { p, t, _ ->
+                if (damage(p, t, dmg)) t.addStatusEffect(StatusEffectInstance(StatusEffects.SLOWNESS, 60, 2, false, true, true), p)
+            },
+            onEnd = { p, at ->
+                if (p != null) {
+                    for (e in world.getOtherEntities(p, Box.of(at, burst * 2, burst * 2, burst * 2))) {
+                        if (e.squaredDistanceTo(at) > burst * burst || !GearCombat.canHit(p, e)) continue
+                        damage(p, e as LivingEntity, dmg * 0.5f)
+                    }
+                }
+                GearVfx.nova(world, Vfx.Style.STORM, at, burst.toFloat(), 12)
+                GearVfx.shockwave(world, Vfx.Style.STORM, at, burst.toFloat() + 1f, 12, 1f)
+                world.spawnParticles(net.minecraft.particle.BlockStateParticleEffect(ParticleTypes.BLOCK, net.minecraft.block.Blocks.PACKED_ICE.defaultState), at.x, at.y, at.z, 40, burst * 0.3, 0.6, burst * 0.3, 0.2)
+                GearSounds.play(world, at, "art.yang_burst", SoundEvents.BLOCK_GLASS_BREAK, 1.2f, 0.7f)
+            }))
+        GearSounds.play(world, player.entityPos, "art.wind_blade", SoundEvents.ITEM_TRIDENT_THROW.value(), 1f, 0.6f)
     }
 
     private fun yangOrb(player: ServerPlayerEntity, world: ServerWorld, charge: Float) {

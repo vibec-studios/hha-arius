@@ -58,7 +58,13 @@ enum class Spell(val school: School, val kind: CastKind, val role: Role, val key
     YANG_SHIELD(School.YANG, CastKind.CHANNEL, Role.DEFENSE, "yang_shield"),
     YANG_PLATFORM(School.YANG, CastKind.PLACE, Role.CONSTRUCT, "yang_platform"),
     YANG_BRIDGE(School.YANG, CastKind.PLACE, Role.CONSTRUCT, "yang_bridge"),
-    YANG_GLIDE(School.YANG, CastKind.TOGGLE, Role.TRANSPORT, "yang_glide");
+    YANG_GLIDE(School.YANG, CastKind.TOGGLE, Role.TRANSPORT, "yang_glide"),
+
+    /** Seit 1.3.1: wandernder Wirbelsturm, saugt Gegner ein und hebt sie hoch. */
+    TORNADO(School.WIND, CastKind.TAP, Role.CONTROL, "tornado"),
+
+    /** Seit 1.3.1: aufgeladener riesiger Eisspeer, durchschlägt alles, zerbirst am Ende in eine Frostexplosion. */
+    GLACIER_LANCE(School.ICE, CastKind.CHARGE, Role.ATTACK, "glacier_lance");
 
     companion object {
         fun of(raw: Int): Spell? = entries.getOrNull(raw)

@@ -90,7 +90,7 @@ object ArtClient {
     private var artHeld = false
 
     /** Ladezeiten für die Anzeige (Standardwerte des Servers). */
-    private val CHARGE = mapOf(Spell.GALE to (6 to 24), Spell.YANG_ORB to (4 to 30))
+    private val CHARGE = mapOf(Spell.GALE to (6 to 24), Spell.YANG_ORB to (4 to 30), Spell.GLACIER_LANCE to (8 to 36))
 
     private const val GLIDE_SPEED = 0.55
 

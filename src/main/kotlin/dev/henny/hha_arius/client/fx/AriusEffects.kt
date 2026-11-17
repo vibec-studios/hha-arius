@@ -74,6 +74,8 @@ abstract class AriusFx(val life: Int) {
                 FxKind.BOLT -> ArtBolt(p.e1, pos, dir, p.a.toDouble(), p.b.toInt(), p.life).also { ArtBolts.register(it) }
                 FxKind.BOLT_END -> ArtBolts.end(p.e1, pos, p.b.toInt(), p.a.toDouble())
                 FxKind.FIELD -> FieldFx(pos, p.a.toDouble(), p.life)
+                FxKind.BRIDGE -> BridgeFx(pos, Vec3d(p.dx, p.dy, p.dz), p.a.toDouble(), p.life)
+                FxKind.TORNADO -> TornadoFx(pos, Vec3d(p.dx, p.dy, p.dz), p.a.toDouble(), p.life)
                 FxKind.CUT_PLANE -> CutPlaneFx(pos, dir, p.a.toDouble(), p.b >= 0.5f, p.life)
                 FxKind.PULL -> e1?.let { PullFx(it, p.a.toDouble(), p.life) }
                 FxKind.GALE -> GaleFx(pos, dir, p.a, p.life)
@@ -392,5 +394,87 @@ object ScreenFlash {
         if (left <= 0) return
         val alpha = (strength * left / total * 255).toInt().coerceIn(0, 255)
         context.fill(0, 0, context.scaledWindowWidth, context.scaledWindowHeight, (alpha shl 24) or 0xF4FAFF)
+    }
+}
+
+
+/**
+ * Yang-Brücke als Bauwerk aus Licht (seit 1.3.1): unter der Bahn ein leuchtender Bogen (Parabel) mit Rippen, an beiden
+ * Seiten Geländer aus Lichtbändern, an den Enden Lichtsäulen, über die Bahn wandern Lichtfunken.
+ */
+class BridgeFx(private val start: Vec3d, private val span: Vec3d, private val width: Double, life: Int) : AriusFx(life) {
+    override fun tick(world: ClientWorld) {}
+
+    override fun render(d: VfxDraw, matrices: MatrixStack, t: Float) {
+        val k = fadeInOut(t, 10f, 20f)
+        val len = span.length().coerceAtLeast(1.0)
+        val fwd = span.multiply(1.0 / len)
+        var side = fwd.crossProduct(UP)
+        if (side.lengthSquared() < 1e-4) side = X
+        side = side.normalize()
+        val grow = (t / 12f).coerceIn(0f, 1f)
+        val n = (len * 2).toInt().coerceAtLeast(4)
+        val gold = 0xFFFFE7B0.toInt()
+        // Bogen unter der Bahn
+        var prev: Vec3d? = null
+        for (i in 0..n) {
+            val f = i / n.toDouble()
+            if (f > grow) break
+            val dip = 1.0 + 2.6 * kotlin.math.sin(f * PI)
+            val p = start.add(fwd.multiply(f * len)).add(0.0, -dip, 0.0)
+            prev?.let { d.band(VfxLayers.GLOW_ADD, it, p, side, 0.18, withAlpha(gold, 0.75f * k), withAlpha(gold, 0.75f * k)) }
+            // Rippen vom Bogen zur Bahn
+            if (i % 3 == 0) d.band(VfxLayers.GLOW_ADD, p, start.add(fwd.multiply(f * len)).add(0.0, -0.5, 0.0), side, 0.06, withAlpha(0xFFFFFFFF.toInt(), 0.45f * k), withAlpha(gold, 0.1f * k))
+            prev = p
+        }
+        // Geländer aus Licht
+        for (sg in doubleArrayOf(1.0, -1.0)) {
+            val off = side.multiply(sg * (width * 0.5 + 0.1)).add(0.0, 1.0, 0.0)
+            val a = start.add(off)
+            val b = start.add(fwd.multiply(len * grow)).add(off)
+            d.band(VfxLayers.GLOW_ADD, a, b, UP, 0.07, withAlpha(0xFFFFFFFF.toInt(), 0.8f * k), withAlpha(0xFFFFFFFF.toInt(), 0.8f * k))
+        }
+        // Lichtsäulen an den Enden
+        for (e in arrayOf(start, start.add(span))) {
+            d.band(VfxLayers.GLOW_ADD, e.add(0.0, -0.5, 0.0), e.add(0.0, 2.5, 0.0), d.camRight, 0.25, withAlpha(gold, 0.6f * k), withAlpha(gold, 0f))
+        }
+        // Wandernde Funken
+        for (j in 0 until 6) {
+            val f = ((t * 0.02 + j / 6.0) % 1.0).coerceAtMost(grow.toDouble())
+            d.billboard(VfxLayers.FLARE_ADD, start.add(fwd.multiply(f * len)).add(0.0, 0.6, 0.0), 0.25, withAlpha(0xFFFFFFFF.toInt(), 0.6f * k))
+        }
+    }
+}
+
+/**
+ * Wirbelsturm (seit 1.3.1): wandert mit (dx,dy,dz) je Tick über den Boden; ein Trichter aus übereinander gelegten,
+ * gegeneinander drehenden Windringen (unten eng, oben weit), Staub und Schnee am Fuß, Funken im Sog.
+ */
+class TornadoFx(private val origin: Vec3d, private val vel: Vec3d, private val radius: Double, life: Int) : AriusFx(life) {
+    private fun at(t: Float): Vec3d = origin.add(vel.multiply(t.toDouble()))
+
+    override fun tick(world: ClientWorld) {
+        val r = random()
+        val c = at(age.toFloat())
+        repeat((8 * particlesAllowed()).toInt()) {
+            val h = r.nextDouble() * 6.0
+            val rr = 0.4 + h / 6.0 * radius
+            val a = r.nextDouble() * PI * 2
+            val p = c.add(cos(a) * rr, h, sin(a) * rr)
+            val v = Vec3d(-sin(a), 0.25, cos(a)).multiply(0.35)
+            world.addParticleClient(if (h < 1.0) ParticleTypes.CLOUD else ParticleTypes.SNOWFLAKE, p.x, p.y, p.z, v.x, v.y, v.z)
+        }
+    }
+
+    override fun render(d: VfxDraw, matrices: MatrixStack, t: Float) {
+        val k = fadeInOut(t, 6f, 14f)
+        val c = at(t)
+        for (i in 0 until 9) {
+            val h = i * 0.7
+            val rr = 0.5 + i / 8.0 * radius
+            val spin = t * (0.35 + i * 0.03) * (if (i % 2 == 0) 1 else -1)
+            d.ring(VfxLayers.FLOW_ADD, c.add(0.0, h, 0.0), X, Z, rr * 0.75, rr, withAlpha(0xFFE8F6FF.toInt(), 0f), withAlpha(0xFFE8F6FF.toInt(), 0.35f * k), segments = 40)
+            d.arc(VfxLayers.GLOW_ADD, c.add(0.0, h + 0.2, 0.0), X, Z, rr - 0.12, rr, spin.toDouble(), (spin + 2.4).toDouble(), withAlpha(0xFFFFFFFF.toInt(), 0f), withAlpha(0xFFFFFFFF.toInt(), 0.5f * k), segments = 16)
+        }
     }
 }

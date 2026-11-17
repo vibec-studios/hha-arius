@@ -235,6 +235,12 @@ enum class FxKind {
 
     /** Der Drache löst sich in Licht auf: Kopf pos, Rumpf (dx,dy,dz), a = Größe. */
     DRAGON_DISSOLVE,
+
+    /** Yang-Brücke (seit 1.3.1): Anfang pos, Ende (dx,dy,dz), a = Breite, life = Dauer. Leuchtbogen, Geländer aus Licht. */
+    BRIDGE,
+
+    /** Wirbelsturm (seit 1.3.1): Mitte pos, a = Radius, e1 = Wirker (folgt nicht), life = Dauer. */
+    TORNADO,
 }
 
 /**
