@@ -312,6 +312,55 @@ internal object ArenaPlan {
 
         // 3) Tempel
         if (dt < 24.5 || (x in -24..-21 && z in -54..-48)) temple(x, z, dt, at, col)
+
+        // 4) Plateau-Gestaltung (seit 1.2.2): Eis-Obelisken am Rand, Ruinenbögen, Dornenkristalle (Deckung und Bild)
+        if (ground && dt >= 25.0 && r in 24.0..40.0 && !gatePath(x, z)) dressing(x, z, r, col)
+    }
+
+    /** Obelisken (r 35), Ruinenbögen (r 31, Ost/West) und Kristallbüschel; die Sichtachse zur Nadel (Süden) bleibt frei. */
+    private fun dressing(x: Int, z: Int, r: Double, col: ByteArray) {
+        fun put(y: Int, b: Byte) { if (y - Y_MIN in col.indices) col[y - Y_MIN] = b }
+        val a = deg(x.toDouble(), z.toDouble())                    // 0° = Süden (+z)
+        if (abs(a) < 55.0) return                                   // Blick zur Nadel frei
+        // Obelisken: 9 Stück auf r 35, 3 × 3 unten, spitz zulaufend, blauer Kern
+        for (i in 0 until 9) {
+            val ang = Math.toRadians(70.0 + i * 25.0)
+            if (abs(Math.toDegrees(ang) - 180.0) < 22.0) continue   // nicht direkt vor dem Tempel
+            for (sgn in intArrayOf(1, -1)) {
+                val ox = kround(kotlin.math.sin(ang) * 35.0) * sgn
+                val oz = kround(kotlin.math.cos(ang) * 35.0)
+                val dx = abs(x - ox)
+                val dzz = abs(z - oz)
+                if (dx > 1 || dzz > 1) continue
+                val h = 9 + (h32(ox, 0, oz, 91) * 6).toInt()
+                for (y in 0 until h) {
+                    val half = if (y < h * 0.45) 1 else if (y < h - 2) (if (dx + dzz <= 1) 1 else -1) else 0
+                    if (half < 0) continue
+                    if (dx > half || dzz > half) continue
+                    val core = dx == 0 && dzz == 0
+                    put(y, if (y == h - 1) BLUE else if (core) BLUE else if (y == 0) PDEEP else PACKED)
+                }
+            }
+        }
+        // Ruinenbögen: je einer im Osten und Westen auf r 31 (zwei Pfeiler, halb eingestürzter Sturz)
+        for (sgn in intArrayOf(1, -1)) {
+            val cx = 31 * sgn
+            val cz = -4
+            val inPillarA = abs(x - cx) <= 1 && abs(z - (cz - 3)) <= 0
+            val inPillarB = abs(x - cx) <= 1 && abs(z - (cz + 3)) <= 0
+            if (inPillarA || inPillarB) {
+                val h = if (inPillarA) 7 else 5
+                for (y in 0 until h) put(y, if (y == 0) PDEEP else if (y == h - 1) CQUARTZ else QBRICK)
+            }
+            if (abs(x - cx) <= 1 && z in (cz - 3)..(cz + 0)) put(7, if (z == cz) CQUARTZ else QBRICK)
+            if (x == cx && z == cz + 1 && h32(x, 7, z, 93) < 0.5) put(6, QBRICK)
+        }
+        // Dornenkristalle: verstreute blaue Spitzen (1–3 hoch), dichter zum Rand
+        val n = h32(x, 0, z, 95)
+        if (n < 0.012 + (r - 24.0) / 16.0 * 0.03) {
+            val h = 1 + (h32(x, 1, z, 97) * 3).toInt()
+            for (y in 0 until h) put(y, if (y == h - 1) BLUE else PACKED)
+        }
     }
 
     private fun vaultBlock(x: Int, y: Int, z: Int, r: Double): Byte {
