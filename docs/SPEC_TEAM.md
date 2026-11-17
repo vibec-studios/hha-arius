@@ -1,5 +1,8 @@
 # Arbeitsvorlage für alle Teilaufgaben (verbindlich)
 
+> **Stand 1.2.0:** Die Rüstung ist keine Equipment-Textur mehr, sondern eine eigene 3D-Rüstung (`docs/ARMOR_3D.md`). Der Drache heißt Solvane (Code: `nivaris`).
+
+
 Projekt: `C:\Users\henny\Desktop\HHA_Arius`, Fabric-Addon (Kotlin, Minecraft 1.21.11, Yarn build.6) für H&H Armors.
 HHA selbst liegt unter `C:\Users\henny\Desktop\HHA` und ist **nur Referenz**: nie ändern, nie dort bauen.
 

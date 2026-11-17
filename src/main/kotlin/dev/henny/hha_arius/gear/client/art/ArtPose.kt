@@ -201,11 +201,13 @@ internal object ArtPose {
      * Solvane im Armraum der Hand (rechter Arm, px): Mitte des Griffs, Klingenrichtung, Klingenansatz/-spitze, Flachseite.
      * Abgeleitet aus HeldItemFeatureRenderer + display.thirdperson_righthand des **aufrechten** solvane_3d.json (Klinge
      * steht 80° zum Unterarm, leicht zur Hand geneigt; vorher diagonal 110°). Griff im Modell y −4,5..1,5, Knauf −6,15.
+     * V6: Klinge 25 statt 18,5 lang (Spitze y 28), Anzeigegröße 0,9 statt 0,95 (gear_art.SOLVANE_TP_SCALE); GRIP liegt
+     * wie bisher eine Modelleinheit unter dem Griffpunkt (y −1,5), Ansatz/Spitze = (3 bzw. 28 + 1,5) × 0,9.
      */
-    val GRIP = Vector3f(-1f, 8.30f, 0.80f)
+    val GRIP = Vector3f(-1f, 8.31f, 0.75f)
     val BLADE = Vector3f(0f, 0.174f, -0.985f)
-    const val BLADE_FROM = 4.27f
-    const val BLADE_TO = 21.85f
+    const val BLADE_FROM = 4.05f
+    const val BLADE_TO = 26.55f
     private val POMMEL = Vector3f(GRIP).fma(-3.6f, BLADE)
 
     class Ctx {

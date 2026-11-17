@@ -1,4 +1,4 @@
-# Was im Spiel geprüft werden muss (Stand 1.1.0)
+# Was im Spiel geprüft werden muss (Stand 1.2.0)
 
 Gebaut und statisch geprüft (6 Review-Runden, Berichte in `docs/review/`). Seit 1.0.1 besteht zusätzlich ein echter
 Client-Starttest (`./gradlew runClientGameTest`): Haupt- und Client-Entrypoints laden, eine Einzelspielerwelt startet,
@@ -79,6 +79,14 @@ Client-Welt und Spieler sind vorhanden. Geprüft mit Minecraft 1.21.11, Fabric L
 - [ ] Weißes Loch (Boss und Set): Linse, weißer Kern, Ausfluss-Scheibe, Kollaps mit Schockwelle; Leistung ok
 - [ ] Musik „Auftritt“ und „Verwandlung“
 - [ ] Arius' neue Animationen (Ausholen, Treffer-Stoß, Nachschwingen, Mantel und Haar)
+
+## Solvane, Drachenherz-Wacht (1.2.0)
+- [ ] Tritt durchs Tor: Arius hebt Solvane, „Solvane. Zeig ihnen, was du warst.“, Lichtstrom zur Nadel, der Drache entsteht Glied für Glied
+- [ ] Abschnitt II: Arius sitzt ohne Schwert, Scheide leer; Abschnitt III: Klinge aus Eislicht
+- [ ] Finale: „Komm zurück.“, Drache zerfällt Glied für Glied zu Licht, Strom in die Scheide, Austausche wie gewohnt
+- [ ] Texte: überall „Solvane“ statt „Nivaris“ (Bossleiste, Hinweise, Untertitel, Items)
+- [ ] Rüstung „Drachenherz-Wacht“: an Spieler, Rüstungsständer, Mannequin, Zombie; Leuchten Tag/Nacht, Verzauberungsglanz, Umhang, Federn beim Laufen/Springen, schmale Arme, mit und ohne Handschuhe
+- [ ] Solvane-Item: länger, Lichtfluss in der Hohlkehle, Sitz in erster und dritter Person
 
 ## Bekannte Grenzen
 - Keine Voicelines (nur Untertitel), bewusst.

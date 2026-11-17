@@ -1,4 +1,4 @@
-# Arius' Ausrüstung: Rüstung, Kampfhandschuhe und Solvane (Stand 1.1.0)
+# Arius' Ausrüstung: Rüstung, Kampfhandschuhe und Solvane (Stand 1.2.0)
 
 Dieses Dokument ersetzt die Abschnitte 10.1 und 10.2 aus `KONZEPT.md` (Fähigkeiten der Rüstung, Solvane). Bosskampf,
 Landschaften, Cutscenes, die Optik der Rüstung (10), die Schwingenschuppe (10.3) und die anderen Mods bleiben, wie sie
@@ -68,8 +68,17 @@ Eine Energie für alles, damit Entscheidungen entstehen („Schild halten oder g
 ## 3. Rüstung (nach der Konvention der anderen Sets)
 
 Anzeigenamen: **Arius' Helm, Arius' Brustpanzer, Arius' Beinschienen, Arius' Stiefel**. Die Item-IDs bleiben
-`eirholm_*`, damit bestehende Welten ihre Rüstung behalten. Optik und Werte wie in KONZEPT.md 10 (Netherite-Silhouette,
-3/8/6/3, Härte 3,5).
+`eirholm_*`, damit bestehende Welten ihre Rüstung behalten. Werte wie Netherite (3/8/6/3, Härte 3,5).
+
+**Optik seit 1.2.0: „Drachenherz-Wacht“**, eine eigene 3D-Rüstung statt umgefärbtem Netherite (`docs/ARMOR_3D.md`).
+- **Farben:** perlweiße Drachenschuppen mit eisblauen Schatten, Gold nur als Kante, Navy-Leder darunter.
+- **Helm:** Krone aus Eishörnern wie bei Solvanes Drachenform; ein Horn ist abgebrochen.
+- **Brust:** Herz-Juwel in der Mitte, Schulterstücke als gefaltete Schwingenplatten.
+- **Beine:** Schuppen-Tassetten und Kniekacheln mit goldenen Krallen.
+- **Stiefel:** mit Klauenspitzen.
+- **Bewegung:** Tassetten und Schwingenplatten federn nach.
+- **Leuchten:** Das Herz-Juwel pulsiert.
+- **Trim:** Das Muster „Weiße Klinge“ ist auf dieser Rüstung nicht sichtbar, auf anderen Rüstungen schon.
 
 | Teil | Aktiv | Passiv |
 |---|---|---|
@@ -220,8 +229,12 @@ Kleine Zauber haben keine erzwungenen langen Animationen.
 
 ## 5. Solvane
 
-Solvane ist jetzt ein **mittellanges Bastardschwert**: anderthalb Hand langer, dunkel umwickelter Griff, schlanke weiße
-Klinge mit goldener Hohlkehle, symmetrische Parierstange mit Rautenstern, Rautenknauf. Werte wie bisher (9 Schaden,
+Solvane wurde aus dem **Herzen eines uralten weißen Drachen** geschmiedet. Im Bosskampf zeigt die Klinge diese Drachenform;
+der Spieler trägt ein Abbild davon.
+- **Form:** ein **Langschwert** mit anderthalb Hand langem, dunkel umwickeltem Griff und langer, weißer Klinge.
+- **Klinge:** Hohlkehle mit Lichtfluss, Schuppengravur an der Wurzel, Eisglanz an den Schneiden.
+- **Parierstange:** symmetrisch, mit Rautenstern und Herz-Juwel.
+- **Knauf:** Rautenknauf. Werte wie bisher (9 Schaden,
 1,6 Angriffe/s). Die bisherigen Mechaniken bleiben:
 - **Klare Schneide:** Nur volle Treffer zählen. Sie geben +2 Frostschaden, und jeder 3. volle Treffer am selben Ziel
   zerspringt.

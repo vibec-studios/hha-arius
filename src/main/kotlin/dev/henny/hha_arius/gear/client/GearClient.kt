@@ -19,7 +19,7 @@ import net.minecraft.item.ItemStack
 import net.minecraft.util.Identifier
 import kotlin.math.sin
 
-/** Ausrüstung im Client: HUD-Cooldowns in HHAs Leiste, Resonanzbalken darüber, Leuchtebene der Rüstung (Mixin). */
+/** Ausrüstung im Client: HUD-Cooldowns in HHAs Leiste, Resonanzbalken darüber. Die Rüstung zeichnet client/model/armor. */
 object GearClient {
 
     private const val ICE = 0x9FE6FF
@@ -141,42 +141,5 @@ object GearClient {
             return (x + (y - x) * tt).toInt() and 0xFF
         }
         return (ch(16) shl 16) or (ch(8) shl 8) or ch(0)
-    }
-}
-
-/** Für den Java-Mixin der Rüstung: Leuchtnähte `eirholm_glow.png`, lichtunabhängig, sanfter Puls 70–100 % in 3 s. */
-object EirholmGlow {
-
-    private val ASSET = HhaArius.id("eirholm")
-    private val textures = HashMap<String, Identifier>()
-    private val present = HashMap<String, Boolean>()
-    private var checkedAt = 0L
-
-    @JvmStatic
-    fun isEirholm(asset: Identifier): Boolean = asset == ASSET
-
-    /** Textur der Leuchtebene für den Layer-Typ (`humanoid` / `humanoid_leggings`) oder null, wenn sie (noch) fehlt. */
-    @JvmStatic
-    fun texture(layerType: String): Identifier? {
-        if (layerType != "humanoid" && layerType != "humanoid_leggings") return null
-        val id = textures.getOrPut(layerType) { HhaArius.id("textures/entity/equipment/$layerType/eirholm_glow.png") }
-        val now = System.currentTimeMillis()
-        if (now - checkedAt > 5000L) {
-            present.clear()
-            checkedAt = now
-        }
-        val exists = present.getOrPut(layerType) {
-            MinecraftClient.getInstance().resourceManager.getResource(id).isPresent
-        }
-        return if (exists) id else null
-    }
-
-    /** ARGB-Tönung (Weiß, Helligkeit 70–100 %, 3-s-Zyklus). */
-    @JvmStatic
-    fun tint(): Int {
-        val t = (System.currentTimeMillis() % 3000L) / 3000.0
-        val f = 0.85 + 0.15 * sin(t * Math.PI * 2)
-        val v = (255 * f).toInt().coerceIn(0, 255)
-        return (0xFF shl 24) or (v shl 16) or (v shl 8) or v
     }
 }

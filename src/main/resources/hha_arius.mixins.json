@@ -8,7 +8,7 @@
     "gear.PowderSnowBlockMixin"
   ],
   "client": [
-    "gear.client.EquipmentRendererGlowMixin",
+    "gear.client.CapeFeatureArmorMixin",
     "client.HoldKeyboardInputMixin",
     "client.HoldActionsMixin",
     "gear.client.MinecraftClientArtMixin",

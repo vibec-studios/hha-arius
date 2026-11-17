@@ -4,13 +4,14 @@ Aufruf (aus dem Projektordner):
     python tools/assets/gear_art.py            # alles erzeugen (Texturen per mctex batch, JSON direkt) + Vorschauen
     python tools/assets/gear_art.py --preview  # nur Vorschauen nach tmp/preview/gear/ (schreibt keine Assets)
 
-Grundlage sind die Vanilla-Netherite-Texturen aus dem Loom-Cache (werden nach tmp/vanilla/ entpackt). Alles andere
-wird hier in Python gerechnet. Kein PIL: PNGs werden mit zlib gelesen und für Vorschauen geschrieben.
+Vanilla-Texturen (für Vorschauen und Trim-Paletten) kommen aus dem Loom-Cache (werden nach tmp/vanilla/ entpackt).
+Alles andere wird hier in Python gerechnet. Kein PIL: PNGs werden mit zlib gelesen und für Vorschauen geschrieben.
 
 Inhalt:
-  * Eirholm-Rüstung (humanoid / humanoid_leggings) + Leuchtnähte (*_glow.png, nur Nahtpixel #9fe6ff)
   * Trim-Muster „Weiße Klinge“ (Graustufen nach Vanilla-trim_palette) + Atlas-Ergänzung armor_trims.json
-  * Item-Icons, Solvane-Handmodell (3D), HUD-Sprites, Mod-Icon
+  * Item-Icons (die vier Rüstungsicons rendert armor_preview.py aus dem 3D-Modell, siehe docs/ARMOR_3D.md),
+    Solvane-Handmodell (3D, Hohlkehle animiert in item/solvane_fuller.png), HUD-Sprites, Mod-Icon
+  * Die Rüstung selbst ist seit V6 ein eigenes 3D-Modell: tools/assets/armor_model.py (keine Equipment-Ebenen mehr)
 """
 import json
 import math
@@ -211,108 +212,9 @@ def gold(level):
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-# Rüstung
+# Rüstung: seit V6 ein eigenes 3D-Modell (tools/assets/armor_model.py, Vorschau armor_preview.py). Die frühere
+# umgefärbte Netherite-Ebene samt Leuchtnähten und equipment/eirholm.json gibt es nicht mehr.
 # ---------------------------------------------------------------------------------------------------------------------
-
-
-def recolor_netherite(tex):
-    """Bildet die 9 Netherite-Töne (nach Helligkeit sortiert) auf die Eirholm-Rampe ab."""
-    cols = sorted({c for c in tex.px if c[3] > 0}, key=lum)
-    lo, hi = lum(cols[0]), lum(cols[-1])
-    out = tex.copy()
-    for i, c in enumerate(tex.px):
-        if c[3] == 0:
-            continue
-        t = (lum(c) - lo) / max(1.0, hi - lo)
-        out.px[i] = eirholm_metal(0.08 + 0.92 * t)
-    return out
-
-
-def paint(tex, pts, color_fn):
-    """pts: Liste (x, y, level); color_fn(level) → Farbe. Nur auf deckende Pixel (Form bleibt Netherite)."""
-    for x, y, lv in pts:
-        if tex.get(x, y)[3] > 0:
-            tex.set(x, y, color_fn(lv))
-
-
-# Verzierung (Altgold) im Layout humanoid (64 x 32). Stufen 0..4 wie gold().
-HELMET_GOLD = [
-    # Stirnstern: lange senkrechte Strahlen (über den Scheitel und den Nasenschutz), kurze Querstrahlen.
-    (11, 5, 1), (12, 5, 1), (11, 6, 2), (12, 6, 2), (11, 7, 3), (12, 7, 2),          # Scheitel (Oberseite)
-    (11, 8, 3), (12, 8, 3),
-    (10, 9, 2), (11, 9, 4), (12, 9, 4), (13, 9, 2),
-    (11, 10, 3), (12, 10, 3),
-    (11, 11, 3), (12, 11, 2), (11, 12, 2), (12, 12, 1),                                # Nasenschutz
-    # Wangenlinien an den Wangenschützern
-    (8, 13, 3), (8, 14, 3), (8, 15, 2), (15, 13, 3), (15, 14, 3), (15, 15, 2),
-]
-CHEST_GOLD = [
-    # Kragenlinien am V-Ausschnitt
-    (21, 20, 3), (21, 21, 3), (22, 22, 3), (26, 20, 3), (26, 21, 3), (25, 22, 3),
-    # Vierstern: oberer Strahl, Mitte mit Querstrahlen, unterer langer Strahl bis zum Herzstein
-    (23, 23, 3), (24, 23, 3),
-    (21, 24, 1), (22, 24, 3), (23, 24, 4), (24, 24, 4), (25, 24, 3), (26, 24, 1),
-    (23, 25, 3), (24, 25, 3),
-    (23, 26, 2), (24, 26, 2),
-    # Herzstein (Raute) mit blauem Kern
-    (23, 27, 4), (24, 27, 3),
-    (22, 28, 3), (25, 28, 2),
-    (23, 29, 3), (24, 29, 2),
-    (23, 30, 1), (24, 30, 1),
-    # Rücken: kleiner Vierstern zwischen den Schulterblättern
-    (35, 22, 2), (36, 22, 2), (34, 23, 1), (35, 23, 3), (36, 23, 3), (37, 23, 1), (35, 24, 2), (36, 24, 2),
-    (35, 25, 1), (36, 25, 1),
-    # Schulteremblem (Außenseite des Arms, wird für den linken Arm gespiegelt)
-    (41, 20, 1), (42, 20, 1), (41, 21, 3), (42, 21, 2), (40, 22, 2), (41, 22, 4), (42, 22, 4), (43, 22, 2),
-    (41, 23, 3), (42, 23, 2), (41, 24, 1), (42, 24, 1),
-]
-CHEST_CORE = [(23, 28, CORE_HI), (24, 28, CORE_LO)]
-BOOTS_GOLD = [
-    # Spornlinie um die Ferse, Sporn hinten
-    (0, 29, 3), (1, 29, 3), (2, 29, 2), (3, 29, 2),
-    (12, 29, 3), (13, 29, 4), (14, 29, 4), (15, 29, 3), (13, 30, 3), (14, 30, 2),
-]
-LEGS_GOLD = [
-    # Rautenfolge an der Außennaht (Außenseite x 0..3): drei kleine Rauten an einer feinen Linie
-    (1, 20, 2), (2, 20, 1), (0, 21, 1), (1, 21, 4), (2, 21, 3), (3, 21, 1), (1, 22, 2), (2, 22, 1),
-    (1, 23, 2), (2, 23, 1), (0, 24, 1), (1, 24, 4), (2, 24, 3), (3, 24, 1), (1, 25, 2), (2, 25, 1),
-    (1, 26, 2), (2, 26, 1), (0, 27, 1), (1, 27, 4), (2, 27, 3), (3, 27, 1), (1, 28, 1), (2, 28, 0),
-    # Gürtelschnalle vorn: kleine Raute
-    (23, 28, 4), (24, 28, 3), (22, 29, 3), (25, 29, 2), (23, 30, 3), (24, 30, 2),
-]
-LEGS_CORE = [(23, 29, CORE_HI), (24, 29, CORE_LO)]
-
-# Leuchtnähte (Eisblau). Liegen in Fugen; darunter wird die Grundtextur zur dunklen Fuge.
-HUMANOID_GLOW = (
-    # Helm: der Sehschlitz läuft als feine Naht um die Seiten weiter
-    [(5, 11), (6, 11), (7, 11), (16, 11), (17, 11), (18, 11)]
-    # Brust: untere Plattenfuge links und rechts vom Herzstein (das Licht des Kerns läuft in die Fuge)
-    + [(20, 28), (21, 28), (26, 28), (27, 28)]
-    # Schulterstück: Fuge unter dem Schulteremblem
-    + [(41, 25), (42, 25)]
-)
-LEGGINGS_GLOW = (
-    [(5, 23), (6, 23)]                       # Kniefuge vorn (Mitte)
-)
-
-
-def build_armor():
-    hum = recolor_netherite(Tex.load('entity/equipment/humanoid/netherite.png'))
-    leg = recolor_netherite(Tex.load('entity/equipment/humanoid_leggings/netherite.png'))
-    glow_h = Tex(64, 32)
-    glow_l = Tex(64, 32)
-    for tex, glow, pts in ((hum, glow_h, HUMANOID_GLOW), (leg, glow_l, LEGGINGS_GLOW)):
-        for x, y in pts:
-            if tex.get(x, y)[3] > 0:
-                tex.set(x, y, SEAM)
-                glow.set(x, y, ICE)
-    paint(hum, HELMET_GOLD + CHEST_GOLD + BOOTS_GOLD, gold)
-    paint(leg, LEGS_GOLD, gold)
-    for x, y, c in CHEST_CORE:
-        hum.set(x, y, c)
-    for x, y, c in LEGS_CORE:
-        leg.set(x, y, c)
-    return hum, leg, glow_h, glow_l
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -552,34 +454,21 @@ def upscale(tex, s, checker=True):
     return w, h, px
 
 
-def preview_armor(hum, leg, glow_h, glow_l, trims):
+def preview_trims(trims):
+    """Trim „Weiße Klinge“ auf Vanilla-Rüstung (die Eirholm-Rüstung selbst zeigt keine Trims mehr, siehe ARMOR_3D.md)."""
     _, _, skin_px = vanilla('entity/player/wide/steve.png')
     skin = Tex(64, 64, skin_px)
-    boxes = player_boxes(skin, hum, leg, glow_h, glow_l)
-    big = [(360, 360, render_boxes(boxes, 360, yaw)) for yaw in (0, 35, 90, 180, 215)]
-    sheet(big, 5, os.path.join(PREVIEW, 'armor_views.png'))
-    # Spielentfernung: klein rendern und pixelig vergrößern (so wirkt es auf ~8-12 Blöcke).
-    small = []
-    for yaw in (0, 35, 180):
-        p = render_boxes(boxes, 72, yaw, scale=72 / 40.0)
-        t = Tex(72, 72, [c + (255,) for c in p])
-        small.append(upscale(t, 3, checker=False))
-    dark = render_boxes(boxes, 120, 20, scale=3, bg=((200, 210, 225), (235, 240, 248)))
-    small.append(upscale(Tex(120, 120, [c + (255,) for c in dark]), 2, checker=False))
-    sheet(small, 4, os.path.join(PREVIEW, 'armor_distance.png'))
-    # Trim „Weiße Klinge“ auf Eisen- und Netherite-Rüstung (Gold, Diamant, Amethyst) und auf Eirholm (Quarz)
+    # Trim „Weiße Klinge“ auf Netherite- und Eisenrüstung
     panels = []
-    for base_h, base_l, mat in ((Tex.load('entity/equipment/humanoid/netherite.png'), Tex.load('entity/equipment/humanoid_leggings/netherite.png'), 'gold'),
-                                (Tex.load('entity/equipment/humanoid/netherite.png'), Tex.load('entity/equipment/humanoid_leggings/netherite.png'), 'diamond'),
-                                (hum, leg, 'quartz'), (hum, leg, 'redstone')):
+    neth = (Tex.load('entity/equipment/humanoid/netherite.png'), Tex.load('entity/equipment/humanoid_leggings/netherite.png'))
+    iron = (Tex.load('entity/equipment/humanoid/iron.png'), Tex.load('entity/equipment/humanoid_leggings/iron.png'))
+    for (base_h, base_l), mat in ((neth, 'gold'), (neth, 'diamond'), (iron, 'quartz'), (iron, 'redstone')):
         th = apply_trim(base_h, trims[0], mat)
         tl = apply_trim(base_l, trims[1], mat)
         b = player_boxes(skin, th, tl)
         panels.append((300, 300, render_boxes(b, 300, 25, scale=300 / 40.0)))
     sheet(panels, 4, os.path.join(PREVIEW, 'trim_white_blade.png'))
-    # Texturen flach
-    flat = [upscale(t, 8) for t in (hum, leg, glow_h, glow_l)] + [upscale(t, 8) for t in trims]
-    sheet(flat, 2, os.path.join(PREVIEW, 'armor_flat.png'))
+    sheet([upscale(t, 8) for t in trims], 2, os.path.join(PREVIEW, 'trim_flat.png'))
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -610,62 +499,10 @@ def outline(t, color=OUTLINE, diagonal=False):
     return t
 
 
-def recolor_icon(rel, extra=()):
-    """Netherite-Icon → Eirholm-Rampe. extra: (x, y, Farbe)."""
-    t = Tex.load(rel)
-    cols = sorted({c for c in t.px if c[3] > 0}, key=lum)
-    lo, hi = lum(cols[0]), lum(cols[-1])
-    for i, c in enumerate(t.px):
-        if c[3]:
-            k = (lum(c) - lo) / max(1.0, hi - lo)
-            t.px[i] = eirholm_metal(0.05 + 0.95 * k) if k > 0.02 else hexc('#0c0d13')
-    for x, y, c in extra:
-        t.set(x, y, c)
-    return t
-
-
 G0, G1, G2, G3, G4 = GOLD
 WHITE = hexc('#ffffff')
 BLADE_L, BLADE_S = hexc('#dfe6ef'), hexc('#a9b6c8')
 GRIP_D, GRIP_H = hexc('#141419'), hexc('#3a3b48')
-
-
-def icon_helmet():
-    return recolor_icon('item/netherite_helmet.png', [
-        (7, 3, G2), (8, 3, G1), (7, 4, G3), (8, 4, G2), (6, 5, G2), (7, 5, G4), (8, 5, G3), (9, 5, G1),
-        (7, 6, G3), (8, 6, G2), (7, 7, G2), (8, 7, G1), (7, 8, G1), (8, 8, G0),
-        (5, 9, G3), (5, 10, G2), (10, 9, G2), (10, 10, G1),
-    ])
-
-
-def icon_chestplate():
-    return recolor_icon('item/netherite_chestplate.png', [
-        (5, 4, G3), (6, 5, G3), (10, 4, G2), (9, 5, G2),
-        (3, 3, G2), (12, 3, G1),
-        (7, 6, G3), (8, 6, G2),
-        (6, 7, G2), (7, 7, G4), (8, 7, G3), (9, 7, G1),
-        (7, 8, G3), (8, 8, G2),
-        (7, 9, G4), (8, 9, G3), (6, 10, G3), (7, 10, CORE_HI), (8, 10, CORE_LO), (9, 10, G2), (7, 11, G3), (8, 11, G2),
-        (7, 12, G1), (8, 12, G1),
-        (5, 10, ICE), (10, 10, ICE),
-    ])
-
-
-def icon_leggings():
-    return recolor_icon('item/netherite_leggings.png', [
-        (7, 2, G3), (8, 2, G2), (7, 3, CORE_HI), (8, 3, CORE_LO), (6, 3, G2), (9, 3, G1), (7, 4, G2), (8, 4, G1),
-        (4, 5, G1), (4, 6, G3), (4, 7, G1), (4, 8, G1), (4, 9, G3), (4, 10, G1),
-        (11, 5, G1), (11, 6, G2), (11, 7, G1), (11, 8, G1), (11, 9, G2), (11, 10, G1),
-        (5, 8, ICE), (10, 8, ICE),
-    ])
-
-
-def icon_boots():
-    return recolor_icon('item/netherite_boots.png', [
-        (3, 4, G3), (3, 5, G2), (12, 4, G2), (12, 5, G1),
-        (2, 10, G3), (3, 10, G2), (1, 11, G4), (2, 11, G2),
-        (13, 10, G2), (12, 10, G1), (14, 11, G3), (13, 11, G2),
-    ])
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -679,19 +516,28 @@ def icon_boots():
 #
 # Designblatt „Solvane – Final Design“: weiße Klinge mit Goldakzenten in der Hohlkehle, symmetrische Parierstange mit
 # Rautenstern und Rautenenden, langer dunkel umwickelter Anderthalbhand-Griff mit Goldzwingen, geometrischer
-# Rautenknauf. Maße: Knauf -7,6 … Spitze 21,5 (≈ 29 Einheiten), Griff 6, Parierstange 10,5 breit, Klinge 18,5.
+# Rautenknauf. V6 (Rückmeldung „noch tot“, Lore: Klinge aus dem Herzen eines uralten weißen Drachen): Klinge ~35 %
+# länger (Langschwert), leuchtende Hohlkehle mit langsamem Lichtfluss (animierte Textur, light_emission),
+# Eisglanz an den Schneiden, Drachenschuppen-Gravur an der breiteren Klingenwurzel, Herz-Juwel im Rautenstern.
+# Maße: Knauf -7,6 … Spitze 28 (≈ 35,6 Einheiten), Griff 6, Parierstange 10,5 breit, Klinge 25.
 GRIP_Y = -0.5            # Griffpunkt (Mitte der Hand): obere Griffhälfte, direkt unter Zwinge und Parierstange
 BLADE_Y0 = 3.0           # Klingenwurzel (über der Parierstange)
+BLADE_TIP = 28.0         # Spitze
+FULLER_Y0 = 5.5          # Hohlkehle beginnt (unter der Zunge des Sterns)
 FULLER_GOLD = 9.0        # bis hier ist die Hohlkehle mit Gold ausgelegt
-FULLER_END = 15.5        # hier läuft die Hohlkehle aus
+FULLER_END = 22.0        # hier läuft die Hohlkehle aus
+ENGRAVE_END = 7.5        # Schuppengravur an der Klingenwurzel bis hier
+SOLVANE_FRAMES = 16      # Lichtfluss in der Hohlkehle
+SOLVANE_FRAMETIME = 4
 
 # (y0, y1, halbe Breite des Klingenkörpers, Breite einer Schneide)
 BLADE_SECTIONS = [
-    (BLADE_Y0, 9.0, 0.75, 0.5),
-    (9.0, 16.0, 0.75, 0.5),
-    (16.0, 18.0, 0.5, 0.5),
-    (18.0, 19.5, 0.5, 0.25),
-    (19.5, 20.5, 0.25, 0.25),
+    (BLADE_Y0, 6.5, 1.0, 0.5),
+    (6.5, 7.5, 0.875, 0.5),
+    (7.5, 20.5, 0.75, 0.5),
+    (20.5, 24.0, 0.5, 0.5),
+    (24.0, 26.0, 0.5, 0.25),
+    (26.0, 27.0, 0.25, 0.25),
 ]
 
 
@@ -720,12 +566,19 @@ def solvane_parts():
         box('blade', (8 - hb, y0, 7.55), (8 + hb, y1, 8.45))
         box('edge', (8 - hb - e, y0, 7.75), (8 - hb, y1, 8.25))
         box('edge', (8 + hb, y0, 7.75), (8 + hb + e, y1, 8.25))
-    box('point', (7.75, 20.5, 7.75), (8.25, 21.5, 8.25))
+    box('point', (7.75, 27.0, 7.75), (8.25, BLADE_TIP, 8.25))
+    # Leuchtende Hohlkehle: hauchdünn vor beiden Flachseiten, eigene Lichtstufe (siehe LIGHT_EMISSION)
+    box('fuller', (7.75, FULLER_Y0, 7.5), (8.25, FULLER_END, 8.5))
+    # Herz-Juwel im Rautenstern: goldener Kern, blauer Rand, steht vorn und hinten knapp vor dem Stern
+    diamond('heart', 8, 2.5, 1.25, 2.3)
     return parts
 
 
-TEX3D = 64           # Texturgröße (wird bei Bedarf verdoppelt)
-PX = 2               # Texel je Modelleinheit
+LIGHT_EMISSION = {'fuller': 10, 'heart': 13}
+
+
+TEX3D = 128          # Texturgröße (wird bei Bedarf verdoppelt)
+PX = 4               # Texel je Modelleinheit (V6: doppelt so fein, für Gravur, Juwel und Lichtfluss)
 
 # Paletten (dunkel -> hell)
 BLADE_STEEL = [hexc('#5f6b80'), hexc('#8693a8'), hexc('#adb9cb'), hexc('#cfd8e5'), hexc('#e7edf5'), hexc('#f7f9fc'),
@@ -778,39 +631,82 @@ def _bevel(i, j, pw, ph, face):
     return b
 
 
+FRAME = [0]          # aktueller Frame des Lichtflusses (build_solvane_3d malt alle Frames nacheinander)
+FLOW_ICE = [hexc('#4f78ac'), hexc('#7fb2e2'), hexc('#bfe4fa'), hexc('#eefaff'), hexc('#ffffff')]
+HEART_RIM_C = [hexc('#143f8f'), hexc('#2f7be0'), hexc('#7cc0ff')]
+HEART_CORE_C = [hexc('#c98a22'), hexc('#f6cf6e'), hexc('#fff3cf')]
+ICE_SHEEN = hexc('#d4f2ff')
+
+
+def _flow(y):
+    """Helligkeit 0..1 des Lichtbands in der Hohlkehle im aktuellen Frame: ein weiches Band wandert die Klinge hinauf."""
+    span = FULLER_END - FULLER_Y0 + 6.0
+    c = FULLER_Y0 - 3.0 + span * FRAME[0] / SOLVANE_FRAMES
+    return math.exp(-((y - c) / 1.9) ** 2)
+
+
 def paint_solvane(name, face, p, i, j, pw, ph):
     """Farbe eines Texels. p = 3D-Lage (Modellraum des Elements), i/j = Texel auf der Fläche, pw/ph = Flächengröße."""
     x, y, z = p
     n = _hash(_q(x), _q(y), _q(z) + len(face) * 31)
     flat = face in ('north', 'south')
     top = {'up': 0.9, 'down': -1.1}.get(face, 0.0)
+    if name == 'fuller':
+        f = _flow(y)
+        if y < FULLER_GOLD:                                                  # Goldauslage am Ansatz
+            if y > FULLER_GOLD - 0.3:
+                return AUR[2]
+            g = 3.5 + (0.7 if _q(y) % 5 == 0 else 0) + (n - 0.5) * 0.5
+            return mix(ramp(AUR, g / 5.0), hexc('#fff4d6'), 0.75 * f)
+        fade = (y - FULLER_GOLD) / (FULLER_END - FULLER_GOLD)              # oben kühler und heller
+        c = ramp(FLOW_ICE, 0.3 + 0.22 * fade + (n - 0.5) * 0.08)
+        if y > FULLER_END - 0.5:
+            c = mix(c, ramp(BLADE_STEEL, 0.6), 0.5)                          # läuft weich aus
+        return mix(c, hexc('#ffffff'), 0.85 * f)
+    if name == 'heart':
+        if not flat:
+            return HEART_RIM_C[0]
+        cx, cy = (pw - 1) / 2.0, (ph - 1) / 2.0
+        r = max(abs(i - cx), abs(j - cy)) / max(cx, 0.5)
+        if r < 0.3:
+            return HEART_CORE_C[2]
+        if r < 0.62:
+            return HEART_CORE_C[1] if (i - cx) + (j - cy) < 0 else HEART_CORE_C[0]
+        return HEART_RIM_C[2] if (i - cx) + (j - cy) < 0 else HEART_RIM_C[1]
     if name in ('blade', 'edge', 'point'):
-        along = (y - BLADE_Y0) / (21.5 - BLADE_Y0)                          # 0 Wurzel … 1 Spitze
+        along = (y - BLADE_Y0) / (BLADE_TIP - BLADE_Y0)                     # 0 Wurzel … 1 Spitze
         if name == 'edge' or name == 'point':
             k = 4.9 + (n - 0.5) * 0.5 + along * 0.4 + top * 0.5
+            c = None
             if flat:
-                outer = abs(x - 8) > 1.0 if name == 'edge' else True
+                hb = next((sec[2] for sec in BLADE_SECTIONS if sec[0] <= y < sec[1]), 0.25)
+                outer = abs(x - 8) > hb + 0.25 if name == 'edge' else True
                 k += 0.6 if outer else 0.0                                   # helle Schneidkante
-            return ramp(BLADE_STEEL, k / 6.0)
+                c = ramp(BLADE_STEEL, k / 6.0)
+                if outer:
+                    c = mix(c, ICE_SHEEN, 0.32 + 0.25 * along)                # Eisglanz an der Schneide
+                if n > 0.94:
+                    c = mix(c, hexc('#ffffff'), 0.8)                         # Frostfunke
+            return c or ramp(BLADE_STEEL, k / 6.0)
         if not flat:
             return ramp(BLADE_STEEL, (3.6 + top) / 6.0)
         d = x - 8.0                                                          # Abstand zur Mittellinie
-        if abs(d) < 0.25 and y < FULLER_END:                                 # Hohlkehle
-            if y < FULLER_GOLD:
-                if y < BLADE_Y0 + 0.5:
-                    return AUR[3]
-                g = 3.4 + (0.9 if _q(y) % 3 == 0 else 0) + (n - 0.5) * 0.6   # Goldauslage mit feinen Lichtpunkten
-                return ramp(AUR, g / 5.0)
-            fade = (y - FULLER_GOLD) / (FULLER_END - FULLER_GOLD)
-            if y < FULLER_GOLD + 0.5:
-                return AUR[2]
-            return ramp(GROOVE, 0.25 + fade * 0.7 + (n - 0.5) * 0.15)
-        # Flachseite: Licht von links oben, sanfter Längsverlauf, ganz feines Korn
+        # Flachseite: Licht von links oben, sanfter Längsverlauf, ganz feines Korn, kühler Widerschein zur Spitze
         side = 0.55 if d < 0 else -0.65
         if face == 'north':
             side = -side
-        k = 4.0 + side + (n - 0.5) * 0.35 - along * 0.2
-        return ramp(BLADE_STEEL, k / 6.0)
+        k = 4.0 + side + (n - 0.5) * 0.3 - along * 0.15
+        c = ramp(BLADE_STEEL, k / 6.0)
+        if y < ENGRAVE_END and abs(d) >= 0.25:
+            # Drachenschuppen-Gravur an der Klingenwurzel: versetzte Reihen kleiner Bögen (3 Texel hoch)
+            v = int(math.floor((y - BLADE_Y0) * PX + 1e-6))
+            u = int(math.floor((abs(d) - 0.25) * PX + 1e-6))
+            row, rr = v // 3, v % 3
+            cu = (u + (row % 2)) % 2
+            if rr == 2 or (rr == 1 and cu == 1):
+                fade = max(0.0, (ENGRAVE_END - y) / (ENGRAVE_END - BLADE_Y0))
+                return mix(c, ramp(BLADE_STEEL, (k - 1.6) / 6.0), 0.4 + 0.5 * fade)
+        return mix(c, ICE_SHEEN, 0.12 * along)
     if name in ('guard', 'collar', 'ferrule', 'langet'):
         k = 2.9 + (n - 0.5) * 0.9 + top + _bevel(i, j, pw, ph, face)
         if name == 'guard' and flat and ph > 2 and j == ph // 2 and 2 < i < pw - 3:
@@ -846,7 +742,7 @@ def paint_solvane(name, face, p, i, j, pw, ph):
             return WRAP[1]
         # Schräg gewickelte Lederbänder: Band 2 Texel, Fuge 1 Texel, versetzt über die Seiten (wie eine Spirale).
         around = {'south': x - 7.25, 'east': 1.5 + (8.75 - z), 'north': 3.0 + (8.75 - x), 'west': 4.5 + (z - 7.25)}[face]
-        s = int(math.floor((y + around * 0.5) * PX + 1e-6)) % 3
+        s = int(math.floor((y + around * 0.5) * 2 + 1e-6)) % 3
         if s == 2:
             return WRAP[0]                                                    # Fuge
         k = (3.2 if s == 0 else 2.2) + (n - 0.5) * 0.6
@@ -855,11 +751,19 @@ def paint_solvane(name, face, p, i, j, pw, ph):
     return hexc('#ff00ff')
 
 
-def _pack_solvane(size):
+ANIMATED = ('fuller',)    # Elemente mit eigener, animierter Textur #1 (solvane_fuller.png)
+FULLER_TEX = 72           # Kantenlänge eines Frames der Hohlkehlen-Textur
+
+
+def _pack_solvane(size, animated=False):
+    """animated=False: alle statischen Elemente in Textur #0; animated=True: nur die Hohlkehle in Textur #1."""
     tex = Tex(size, size)
     elements = []
     cx = cy = row_h = 0
+    key = '#1' if animated else '#0'
     for name, fr, to, rot in solvane_parts():
+        if (name in ANIMATED) != animated:
+            continue
         faces = {}
         for face in ('north', 'east', 'south', 'west', 'up', 'down'):
             fw, fh = face_dims(fr, to, face)
@@ -876,10 +780,12 @@ def _pack_solvane(size):
                     tex.set(cx + i, cy + j, paint_solvane(name, face, p, i, j, pw, ph))
             s = 16.0 / size
             faces[face] = {'uv': [round(cx * s, 4), round(cy * s, 4), round((cx + fw * PX) * s, 4), round((cy + fh * PX) * s, 4)],
-                           'texture': '#0'}
+                           'texture': key}
             cx += pw
             row_h = max(row_h, ph)
         el = {'name': name, 'from': [round(v, 4) for v in fr], 'to': [round(v, 4) for v in to], 'faces': faces}
+        if name in LIGHT_EMISSION:
+            el['light_emission'] = LIGHT_EMISSION[name]
         if rot:
             el['rotation'] = {'angle': rot, 'axis': 'z',
                               'origin': [round((fr[k] + to[k]) / 2, 4) for k in range(3)]}
@@ -963,34 +869,50 @@ def _entry(d):
 
 
 SOLVANE_GRIP = (8, GRIP_Y, 8)
-# 3rd Person wie Void-Schwert (Vanilla-Griff [8, 1, 8], z-Rotation 55-45 = 10), Größe 0,95.
-SOLVANE_TP = _held(55, (0, 4, 0.5), 0.85, (8, 1, 8), (0, -90, 10), 0.95, SOLVANE_GRIP)
-# Ego-Sicht wie Void (Klinge zeigt vom Spieler weg nach vorn, steigt ~30° an, Flachseite zum Spieler gedreht); etwas
-# kleiner als Void (1,3), weil Parierstange und Klinge breiter sind.
-SOLVANE_FP = _pose(6, 58, 38, (4.2, -3.6, 0.5), 1.15, SOLVANE_GRIP)
+# 3rd Person wie Void-Schwert (Vanilla-Griff [8, 1, 8], z-Rotation 55-45 = 10). V6: Größe 0,95 -> 0,9, weil die Klinge
+# 35 % länger ist (Spitze bei hängendem Arm ~1,6 Blöcke vor dem Körper, nie unter Fußhöhe; Griffpunkt unverändert).
+# Ändert sich diese Zeile, müssen ArtPose.GRIP/BLADE_FROM/BLADE_TO (Schwertspur) nachgezogen werden.
+SOLVANE_TP_SCALE = 0.9
+SOLVANE_TP = _held(55, (0, 4, 0.5), 0.85, (8, 1, 8), (0, -90, 10), SOLVANE_TP_SCALE, SOLVANE_GRIP)
+# Ego-Sicht wie Void (Klinge zeigt vom Spieler weg nach vorn, steigt ~30° an, Flachseite zum Spieler gedreht). V6: 1,15
+# -> 1,02, damit das längere Schwert im Bild kaum mehr Raum nimmt als vorher (Klinge wirkt länger, Griff etwas kleiner).
+SOLVANE_FP = _pose(6, 58, 38, (4.2, -3.6, 0.5), 1.02, SOLVANE_GRIP)
 
 
 def build_solvane_3d():
-    """Liefert (Tex, Modell-JSON). Die Textur wächst, bis alle Flächen hineinpassen."""
+    """Liefert (Texturen, Modell-JSON). Texturen: {'#0': statische Textur (wächst, bis alles passt), '#1': Hohlkehle im
+    ersten Frame, 'strip': alle SOLVANE_FRAMES Frames der Hohlkehle untereinander (Lichtfluss, animiert per mcmeta)}."""
+    FRAME[0] = 0
     size = TEX3D
     packed = _pack_solvane(size)
     while packed is None:
         size *= 2
         packed = _pack_solvane(size)
     tex, elements = packed
+    fs = FULLER_TEX
+    strip = Tex(fs, fs * SOLVANE_FRAMES)
+    fuller_elements = None
+    for f in range(SOLVANE_FRAMES):
+        FRAME[0] = f
+        ft, fel = _pack_solvane(fs, animated=True)
+        fuller_elements = fuller_elements or fel
+        strip.px[f * fs * fs:(f + 1) * fs * fs] = ft.px
+    FRAME[0] = 0
+    elements = elements + fuller_elements
+    texs = {'#0': tex, '#1': Tex(fs, fs, strip.px[:fs * fs]), 'strip': strip}
     model = {
-        'textures': {'0': 'hha_arius:item/solvane_3d', 'particle': 'hha_arius:item/solvane'},
+        'textures': {'0': 'hha_arius:item/solvane_3d', '1': 'hha_arius:item/solvane_fuller', 'particle': 'hha_arius:item/solvane'},
         'elements': elements,
         'display': {
             'thirdperson_righthand': _entry(SOLVANE_TP),
             'thirdperson_lefthand': _entry(_left_of(SOLVANE_TP)),
             'firstperson_righthand': _entry(SOLVANE_FP),
             'firstperson_lefthand': _entry(_left_of(SOLVANE_FP)),
-            'ground': {'rotation': [0, 0, 0], 'translation': [0, 3, 0], 'scale': [0.42, 0.42, 0.42]},
+            'ground': {'rotation': [0, 0, 0], 'translation': [0, 3, 0], 'scale': [0.36, 0.36, 0.36]},
             'head': {'rotation': [0, 180, 0], 'translation': [0, 13, 7], 'scale': [1, 1, 1]},
         },
     }
-    return tex, model
+    return texs, model
 
 
 # --- Rasterer für Vorschau und Icon ------------------------------------------------------------------------------
@@ -1004,7 +926,7 @@ def _el_rot(el):
 def raster(model, tex, size, view, scale, center, light=(-0.45, 0.7, 0.55), ambient=0.58):
     """Orthografischer Render. view: 3x3 (Modell -> Kamera, x rechts, y oben, z zur Kamera). Liefert pro Pixel
     (Farbe, Name, y im Schwert-Rahmen) oder None."""
-    tsize = tex.w
+    texs = tex if isinstance(tex, dict) else {'#0': tex}
     ln = math.sqrt(sum(c * c for c in light))
     light = [c / ln for c in light]
     depth = [-1e9] * (size * size)
@@ -1013,6 +935,8 @@ def raster(model, tex, size, view, scale, center, light=(-0.45, 0.7, 0.55), ambi
         fr, to = el['from'], el['to']
         rot = _el_rot(el)
         for face, f in el['faces'].items():
+            ftex = texs.get(f.get('texture', '#0'), texs['#0'])
+            tsize = ftex.w
             u0, v0, u1, v1 = (c * tsize / 16.0 for c in f['uv'])
             fw, fh = face_dims(fr, to, face)
             o, du, dv, nrm = face_spec(fr, to, face)
@@ -1022,6 +946,8 @@ def raster(model, tex, size, view, scale, center, light=(-0.45, 0.7, 0.55), ambi
             if nv[2] <= 0:
                 continue                                                      # Rückseite
             shade = ambient + (1 - ambient) * max(0.0, sum(a * b for a, b in zip(nv, light)))
+            if el.get('light_emission'):
+                shade = 1.0                                                   # leuchtet unabhängig vom Licht
             steps = max(2.0, scale * 1.7)
             for jj in range(int(math.ceil(fh * steps))):
                 fv = (jj + 0.5) / steps
@@ -1031,7 +957,7 @@ def raster(model, tex, size, view, scale, center, light=(-0.45, 0.7, 0.55), ambi
                     fu = (ii + 0.5) / steps
                     if fu > fw:
                         continue
-                    c = tex.get(int(u0 + fu * (u1 - u0) / fw), int(v0 + fv * (v1 - v0) / fh))
+                    c = ftex.get(int(u0 + fu * (u1 - u0) / fw), int(v0 + fv * (v1 - v0) / fh))
                     if not c[3]:
                         continue
                     p = [o[k] + du[k] * fu + dv[k] * fv for k in range(3)]
@@ -1069,9 +995,9 @@ def _icon_frames(model, tex, n=32, ss=8):
     """Rendert das Icon (n x n) und liefert (Tex, Klingen-Lage je Pixel für den Schimmer)."""
     view = _mm(_rz(-45), _mm(_rx(ICON_TILT), _ry(ICON_TURN)))
     big = n * ss
-    # Länge -7,6 … 21,5 auf die Diagonale mit 1 px Rand je Seite (Umriss)
-    scale = (n - 3) * math.sqrt(2) / 29.6 * ss
-    buf = raster(model, tex, big, view, scale, (8, 6.95, 8), ambient=0.82)
+    # Länge -7,6 … 28 auf die Diagonale mit 1 px Rand je Seite (Umriss)
+    scale = (n - 3) * math.sqrt(2) / (BLADE_TIP + 7.6 + 0.5) * ss
+    buf = raster(model, tex, big, view, scale, (8, (BLADE_TIP - 7.6) / 2, 8), ambient=0.82)
     icon = Tex(n, n)
     blade_y = {}
     for y in range(n):
@@ -1085,7 +1011,7 @@ def _icon_frames(model, tex, n=32, ss=8):
                     hits += 1
                     key = tuple(v // 6 * 6 for v in c[0][:3])
                     counts.setdefault(key, []).append(c[0])
-                    if c[1] in ('blade', 'edge', 'point'):
+                    if c[1] in ('blade', 'edge', 'point', 'fuller'):
                         ys.append(c[2])
             if hits * 3 < ss * ss:
                 continue
@@ -1109,7 +1035,7 @@ def solvane_shimmer(base, blade_y):
     frames = [base]
     for k in range(7):
         f = base.copy()
-        y0 = BLADE_Y0 + k * 3.1
+        y0 = BLADE_Y0 + k * (BLADE_TIP - BLADE_Y0) / 7
         for (x, y), by in blade_y.items():
             d = abs(by - y0)
             c = base.get(x, y)
@@ -1129,10 +1055,22 @@ def solvane_shimmer(base, blade_y):
 
 
 def preview_solvane(model, tex, icon):
-    panels = [(300, 300, render_model(model, tex, 300, yaw, 8, scale=300 / 32.0)) for yaw in (0, 35, 90, 180)]
-    panels.append(upscale(tex, 300 // tex.w))
+    mid = (8, (BLADE_TIP - 7.6) / 2, 8)
+    panels = [(300, 300, render_model(model, tex, 300, yaw, 8, scale=300 / 38.0, center=mid)) for yaw in (0, 35, 90, 180)]
+    panels.append(upscale(tex['#0'], max(1, 300 // tex['#0'].w)))
     panels.append(upscale(icon, 300 // icon.w))
     sheet(panels, 3, os.path.join(PREVIEW, 'solvane_3d.png'))
+    # Lichtfluss: Klinge frontal, jeder zweite Frame nebeneinander
+    flow = []
+    fs = FULLER_TEX
+    for f in range(0, SOLVANE_FRAMES, 2):
+        ft = dict(tex, **{'#1': Tex(fs, fs, tex['strip'].px[f * fs * fs:(f + 1) * fs * fs])})
+        flow.append((120, 420, _crop(render_model(model, ft, 420, 0, 0, scale=420 / 34.0, center=(8, 12.5, 8)), 420, 150, 0, 120, 420)))
+    sheet(flow, len(flow), os.path.join(PREVIEW, 'solvane_flow.png'))
+
+
+def _crop(px, w, x0, y0, cw, ch):
+    return [px[(y0 + y) * w + x0 + x] for y in range(ch) for x in range(cw)]
 
 
 def icon_heartfrost():
@@ -1315,11 +1253,18 @@ def icon_trim_template():
     return outline(t, hexc('#1f2633'))
 
 
+def _armor_icon(name):
+    def make():
+        import armor_preview                                         # rendert aus dem 3D-Modell (armor_model.py)
+        return armor_preview.icon(name)
+    return make
+
+
 ICONS = {
-    'eirholm_helmet': icon_helmet,
-    'eirholm_chestplate': icon_chestplate,
-    'eirholm_leggings': icon_leggings,
-    'eirholm_boots': icon_boots,
+    'eirholm_helmet': _armor_icon('eirholm_helmet'),
+    'eirholm_chestplate': _armor_icon('eirholm_chestplate'),
+    'eirholm_leggings': _armor_icon('eirholm_leggings'),
+    'eirholm_boots': _armor_icon('eirholm_boots'),
     'solvane': icon_solvane,
     'nivaris_wingscale': icon_wingscale,
     'eirholm_seal': icon_seal,
@@ -1566,18 +1511,15 @@ def write_json(rel, data, base=None):
 def write_item_jsons(solvane_model):
     for item in ICONS:
         if item in ARMOR_PIECES:
-            piece = ARMOR_PIECES[item]
+            # Eigenes 3D-Modell: der Trim ist auf dieser Rüstung nicht sichtbar, also auch keine Trim-Varianten im Icon
+            # (das 16er-Trim-Overlay passte ohnehin nicht auf das 32er-Icon). Alte Varianten werden entfernt.
             write_json(f'models/item/{item}.json', {'parent': 'minecraft:item/generated',
                                                      'textures': {'layer0': f'hha_arius:item/{item}'}})
             for m in TRIM_MATERIALS:
-                write_json(f'models/item/{item}_{m}_trim.json', {
-                    'parent': 'minecraft:item/generated',
-                    'textures': {'layer0': f'hha_arius:item/{item}', 'layer1': f'minecraft:trims/items/{piece}_trim_{m}'}})
-            write_json(f'items/{item}.json', {'model': {
-                'type': 'minecraft:select', 'property': 'minecraft:trim_material',
-                'cases': [{'when': f'minecraft:{m}', 'model': {'type': 'minecraft:model', 'model': f'hha_arius:item/{item}_{m}_trim'}}
-                          for m in TRIM_MATERIALS],
-                'fallback': {'type': 'minecraft:model', 'model': f'hha_arius:item/{item}'}}})
+                stale = os.path.join(ASSETS, f'models/item/{item}_{m}_trim.json')
+                if os.path.exists(stale):
+                    os.remove(stale)
+            write_json(f'items/{item}.json', {'model': {'type': 'minecraft:model', 'model': f'hha_arius:item/{item}'}})
         elif item == 'solvane':
             write_json('models/item/solvane.json', {'parent': 'minecraft:item/handheld',
                                                     'textures': {'layer0': 'hha_arius:item/solvane'}})
@@ -1591,9 +1533,14 @@ def write_item_jsons(solvane_model):
             write_json(f'models/item/{item}.json', {'parent': 'minecraft:item/generated',
                                                      'textures': {'layer0': f'hha_arius:item/{item}'}})
             write_json(f'items/{item}.json', {'model': {'type': 'minecraft:model', 'model': f'hha_arius:item/{item}'}})
-    write_json('equipment/eirholm.json', {'layers': {
-        'humanoid': [{'texture': 'hha_arius:eirholm'}],
-        'humanoid_leggings': [{'texture': 'hha_arius:eirholm'}]}})
+    # Keine equipment/eirholm.json: der Codec verlangt mindestens eine Ebene, und ohne Datei liefert Minecraft ein leeres
+    # Equipment-Modell (nichts Vanilla-Seitiges unter dem 3D-Modell, auch kein Trim). Alte Stände aufräumen.
+    for rel in ('equipment/eirholm.json', 'textures/entity/equipment/humanoid/eirholm.png',
+                'textures/entity/equipment/humanoid_leggings/eirholm.png',
+                'textures/entity/equipment/humanoid/eirholm_glow.png',
+                'textures/entity/equipment/humanoid_leggings/eirholm_glow.png'):
+        if os.path.exists(os.path.join(ASSETS, rel)):
+            os.remove(os.path.join(ASSETS, rel))
     write_json('atlases/armor_trims.json', TRIM_ATLAS, base=os.path.join(ROOT, 'src', 'main', 'resources', 'assets', 'minecraft'))
 
 
@@ -1620,9 +1567,8 @@ def save_textures(jobs):
 def main(argv):
     preview_only = '--preview' in argv
     os.makedirs(PREVIEW, exist_ok=True)
-    hum, leg, glow_h, glow_l = build_armor()
     trims = build_trims()
-    preview_armor(hum, leg, glow_h, glow_l, trims)
+    preview_trims(trims)
     icons = {name: fn() for name, fn in ICONS.items() if name != 'solvane'}
     solvane_icon, solvane_blade = icon_solvane(with_meta=True)
     icons['solvane'] = solvane_icon
@@ -1636,11 +1582,7 @@ def main(argv):
     if preview_only:
         return
 
-    jobs = [(hum, 'textures/entity/equipment/humanoid/eirholm.png'),
-            (leg, 'textures/entity/equipment/humanoid_leggings/eirholm.png'),
-            (glow_h, 'textures/entity/equipment/humanoid/eirholm_glow.png'),
-            (glow_l, 'textures/entity/equipment/humanoid_leggings/eirholm_glow.png'),
-            (trims[0], 'textures/trims/entity/humanoid/white_blade.png'),
+    jobs = [(trims[0], 'textures/trims/entity/humanoid/white_blade.png'),
             (trims[1], 'textures/trims/entity/humanoid_leggings/white_blade.png')]
     for name, tex in icons.items():
         if name == 'solvane':
@@ -1649,7 +1591,12 @@ def main(argv):
             write_json('textures/item/solvane.png.mcmeta', meta)
         else:
             jobs.append((tex, f'textures/item/{name}.png'))
-    jobs.append((tex3d, 'textures/item/solvane_3d.png'))
+    jobs.append((tex3d['#0'], 'textures/item/solvane_3d.png'))
+    jobs.append((tex3d['strip'], 'textures/item/solvane_fuller.png'))
+    write_json('textures/item/solvane_fuller.png.mcmeta', {'animation': {'frametime': SOLVANE_FRAMETIME, 'interpolate': True}})
+    stale = os.path.join(ASSETS, 'textures/item/solvane_3d.png.mcmeta')
+    if os.path.exists(stale):
+        os.remove(stale)
     jobs += [(tex, f'textures/gui/sprites/hud/{name}.png') for name, tex in hud.items()]
     jobs.append((icon, 'icon.png'))
     save_textures(jobs)

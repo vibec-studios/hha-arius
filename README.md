@@ -50,8 +50,9 @@ two new soundtracks. Effects scale with `/ariusc fx`; flashes and camera shake c
 | Echo of Eirholm (train single parts) | yes | – |
 | "White Blade" armour trim template | only if nobody was knocked out | same |
 
-**Arius armour** (item IDs `eirholm_*`): netherite + template + heartfrost at the smithing table. Netherite
-silhouette in anthracite and steel blue with old-gold four-point-star trims and ice-blue glowing seams. Following the
+**Arius armour** (item IDs `eirholm_*`): netherite + template + heartfrost at the smithing table. Since 1.2.0 it is a
+custom 3D armour, the *Dragonheart Watch*: pearl-white dragon scales with gold edging, a crown of ice horns, wing-plate
+pauldrons, a pulsing heart gem and swinging tassets. Following the
 other HHA sets: chestplate → *White Core* (Ability 1), leggings → *Frost Step* (Ability 2), full set → *White Hole*
 (Ability 3, replaces Ultra), plus passives on helmet, chestplate and boots. The kit is available via
 `/hha kit hha_arius.eirholm`.
@@ -61,7 +62,8 @@ kick, palm parry with counter – real animations in first and third person. *Ma
 (technique key, default R) with 13 techniques of Wind, Ice and Yang (attack, defence, movement, constructs such as
 platform, bridge and ice wall, and a light glider). Switch modes with the mode key (default V).
 
-**Solvane – Clear Cut**: hold the technique key to charge, aim the visible cutting plane (sneak = horizontal), release
+**Solvane** was forged from the heart of an ancient white dragon. In the boss fight the blade takes on that dragon
+form: the white dragon you fight *is* Solvane. **Clear Cut**: hold the technique key to charge, aim the visible cutting plane (sneak = horizontal), release
 for a limited planar cut that can also split wood and stone (configurable, never containers, protected areas or the
 arena).
 
