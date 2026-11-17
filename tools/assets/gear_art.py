@@ -1598,10 +1598,12 @@ def main(argv):
     stale = os.path.join(ASSETS, 'textures/item/solvane_3d.png.mcmeta')
     if os.path.exists(stale):
         os.remove(stale)
-    jobs += [(tex, f'textures/gui/sprites/hud/{name}.png') for name, tex in hud.items()]
+    import hud_icons  # animierte Abklingzeit-Icons (Blood-Stil) ersetzen die statischen gleichen Namens
+    jobs += [(tex, f'textures/gui/sprites/hud/{name}.png') for name, tex in hud.items() if name not in hud_icons.NAMES]
     jobs.append((icon, 'icon.png'))
     save_textures(jobs)
     write_item_jsons(model3d)
+    hud_icons.write_all()
 
 
 if __name__ == '__main__':

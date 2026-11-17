@@ -578,11 +578,13 @@ def main(argv):
     preview(hud, blocks, gicon)
     if '--preview' in argv:
         return
-    jobs = [(t, f'textures/gui/sprites/hud/art/{k}.png') for k, t in hud.items()]
+    import hud_icons  # animierte Abklingzeit-Icons (Blood-Stil) ersetzen die statischen gleichen Namens
+    jobs = [(t, f'textures/gui/sprites/hud/art/{k}.png') for k, t in hud.items() if k not in hud_icons.NAMES]
     jobs += [(t, f'textures/block/{k}.png') for k, t in blocks.items()]
     jobs.append((gicon, 'textures/item/arius_gauntlets.png'))
     G.save_textures(jobs)
     write_jsons()
+    hud_icons.write_all()
 
 
 if __name__ == '__main__':
