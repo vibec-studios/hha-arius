@@ -51,8 +51,9 @@ object EirholmAbilities {
     private val chillReady = HashMap<Int, Long>()
 
     fun register(context: HhaAddonContext) {
-        context.registerAbility(SimpleAbility(context.id("white_core"), AbilitySlot.ABILITY_1, { Gear.hasPiece(it, EquipmentSlot.CHEST) }, ::castWhiteCore, EquipmentSlot.CHEST))
-        context.registerAbility(SimpleAbility(context.id("frost_step"), AbilitySlot.ABILITY_2, { Gear.hasPiece(it, EquipmentSlot.LEGS) }, ::castFrostStep, EquipmentSlot.LEGS))
+        // Seit 1.3.1 (Crix: „die checke ich nicht“): Brust = Drachenatem, Beine = Schwingensprung. IDs bleiben.
+        context.registerAbility(SimpleAbility(context.id("white_core"), AbilitySlot.ABILITY_1, { Gear.hasPiece(it, EquipmentSlot.CHEST) }, ::castDragonBreath, EquipmentSlot.CHEST))
+        context.registerAbility(SimpleAbility(context.id("frost_step"), AbilitySlot.ABILITY_2, { Gear.hasPiece(it, EquipmentSlot.LEGS) }, ::castWingLeap, EquipmentSlot.LEGS))
         context.registerAbility(SimpleAbility(context.id("white_hole"), AbilitySlot.ABILITY_3, Gear::hasFullSet, { dev.henny.hha_arius.gear.art.WhiteHole.cast(it) }, EquipmentSlot.HEAD))
         // Die eingebaute Ultra-Ability ist mit isAvailable = { true } registriert und gewinnt den Dispatch; bei vollem
         // Arius-Set wird ihr Cast abgefangen und das Weiße Loch gewirkt (wie HHA Void).
@@ -111,7 +112,112 @@ object EirholmAbilities {
         return true
     }
 
-    // ---------------------------------------------------------------- Frostschritt (Beinschienen, Ability 2)
+    // ---------------------------------------------------------------- Drachenatem (Brustpanzer, Ability 1, seit 1.3.1)
+
+    /**
+     * Drachenatem: Die Rüstung atmet wie Solvane. 1,5 s lang strömt ein Frostkegel aus der Brust nach vorn (folgt dem
+     * Blick), alle 3 Ticks Schaden und starke Verlangsamung; der Spieler ist dabei verlangsamt. Ein Drachenkopf aus Licht
+     * erscheint über ihm (Flügel-Effekt als Rahmen), Raureif bleibt in der Luft.
+     */
+    private fun castDragonBreath(player: ServerPlayerEntity) {
+        if (!ready(player, EquipmentSlot.CHEST, "white_core")) return
+        val cost = GearConfig.float("breath_cost")
+        if (needResonance(player, cost)) return
+        if (!Resonance.spend(player, cost)) return
+        val world = player.entityWorld
+        Cooldowns.set(player, player.getEquippedStack(EquipmentSlot.CHEST), GearConfig.key("breath_cooldown"))
+        val ticks = GearConfig.ticks("breath_ticks")
+        dev.henny.hha_arius.gear.art.Focus.begin(player, dev.henny.hha_arius.gear.art.Focus.Busy.ABILITY, GearTasks.now + ticks)
+        player.addStatusEffect(StatusEffectInstance(StatusEffects.SLOWNESS, ticks, 1, false, false, false))
+        GearVfx.wings(world, Vfx.Style.STORM, player, ticks, 1.4f)
+        GearSounds.play(world, player.entityPos, "white_core", SoundEvents.ENTITY_ENDER_DRAGON_GROWL, 0.6f, 1.6f)
+        val range = GearConfig.num("breath_range")
+        val dmg = GearConfig.float("breath_damage")
+        for (t in 0 until ticks) {
+            GearTasks.later(t) {
+                if (!GearCombat.stillThere(player, world)) return@later
+                val look = player.rotationVector.normalize()
+                val mouth = player.eyePos.add(0.0, -0.35, 0.0).add(look.multiply(0.6))
+                // Strömender Frost: Partikel mit Geschwindigkeit entlang des Blicks, leicht gefächert
+                repeat(6) {
+                    val spread = Vec3d((Math.random() - 0.5) * 0.35, (Math.random() - 0.5) * 0.25, (Math.random() - 0.5) * 0.35)
+                    val v = look.add(spread).normalize().multiply(0.7 + Math.random() * 0.4)
+                    world.spawnParticles(if (it % 3 == 0) ParticleTypes.CLOUD else ParticleTypes.SNOWFLAKE, mouth.x, mouth.y, mouth.z, 0, v.x, v.y, v.z, 1.0)
+                }
+                if (t % 6 == 0) GearVfx.crescent(world, Vfx.Style.STORM, mouth, look, range.toFloat(), 1.6f, 6)
+                if (t % 3 != 0) return@later
+                for (e in world.getOtherEntities(player, Box.of(mouth.add(look.multiply(range / 2)), range * 2, range * 2, range * 2))) {
+                    if (!GearCombat.canHit(player, e)) continue
+                    val to = e.entityPos.add(0.0, e.height / 2.0, 0.0).subtract(mouth)
+                    val dist = to.length()
+                    if (dist > range || dist < 1e-3) continue
+                    if (to.multiply(1.0 / dist).dotProduct(look) < cos(Math.toRadians(28.0))) continue
+                    val target = e as LivingEntity
+                    target.timeUntilRegen = 0
+                    target.damage(world, world.damageSources.playerAttack(player), dmg)
+                    target.addStatusEffect(StatusEffectInstance(StatusEffects.SLOWNESS, GearConfig.ticks("breath_slow_ticks"), 2, false, true, true), player)
+                    target.frozenTicks = (target.frozenTicks + 12).coerceAtMost(target.minFreezeDamageTicks + 40)
+                    Resonance.markCombat(player)
+                }
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- Schwingensprung (Beinschienen, Ability 2, seit 1.3.1)
+
+    /**
+     * Schwingensprung: Lichtschwingen öffnen sich, der Spieler springt weit nach vorn (Laufrichtung) und schlägt mit einer
+     * Frost-Schockwelle auf: Schaden und Hochwerfen im Umkreis, Schockring, Eissichel. Während des Sprungs keine
+     * Nahkampftreffer und kein Fallschaden.
+     */
+    private fun castWingLeap(player: ServerPlayerEntity) {
+        if (!ready(player, EquipmentSlot.LEGS, "frost_step")) return
+        val cost = GearConfig.float("wing_leap_cost")
+        if (needResonance(player, cost)) return
+        if (!Resonance.spend(player, cost)) return
+        val world = player.entityWorld
+        Cooldowns.set(player, player.getEquippedStack(EquipmentSlot.LEGS), GearConfig.key("wing_leap_cooldown"))
+        val dir = moveDirection(player)
+        guardUntil[player.uuid] = GearTasks.now + 14
+        GearVfx.wings(world, Vfx.Style.HEAVEN, player, 24, 2.2f)
+        GearVfx.trail(world, Vfx.Style.STORM, player, 0.5f, 24)
+        GearSounds.play(world, player.entityPos, "frost_step", SoundEvents.ENTITY_ENDER_DRAGON_FLAP, 0.8f, 1.3f)
+        dev.henny.hha_arius.gear.art.ArtFx.send(world, dev.henny.hha_arius.net.FxKind.FRAGMENTS, player.entityPos, a = 0.35f, life = 16, e1 = player.id)
+        Fx.launchPlayer(player, Vec3d(dir.x * GearConfig.num("wing_leap_forward"), GearConfig.num("wing_leap_up"), dir.z * GearConfig.num("wing_leap_forward")))
+        player.fallDistance = 0.0
+        // Landung abwarten (höchstens 3 s), dann Schockwelle
+        var waited = 0
+        lateinit var check: () -> Unit
+        check = {
+            waited++
+            player.fallDistance = 0.0
+            if (GearCombat.stillThere(player, world)) {
+                if ((player.isOnGround && waited > 4) || waited > 60) slam(player, world) else GearTasks.later(1, check)
+            }
+        }
+        GearTasks.later(2, check)
+    }
+
+    private fun slam(player: ServerPlayerEntity, world: ServerWorld) {
+        val at = player.entityPos
+        val radius = GearConfig.num("wing_leap_radius")
+        val dmg = GearConfig.float("wing_leap_damage")
+        GearVfx.shockwave(world, Vfx.Style.HEAVEN, at, radius.toFloat(), 14, 1.2f)
+        GearVfx.nova(world, Vfx.Style.STORM, at.add(0.0, 0.5, 0.0), 1.8f, 10)
+        dev.henny.hha_arius.gear.art.ArtFx.send(world, dev.henny.hha_arius.net.FxKind.CLEAR_WAVE, at, a = radius.toFloat() + 1.5f, life = 16)
+        world.spawnParticles(ParticleTypes.SNOWFLAKE, at.x, at.y + 0.2, at.z, 30, radius * 0.4, 0.1, radius * 0.4, 0.15)
+        GearSounds.play(world, at, "white_core", SoundEvents.ENTITY_GENERIC_EXPLODE.value(), 0.5f, 1.5f)
+        for (e in world.getOtherEntities(player, Box.of(at, radius * 2, radius * 2, radius * 2))) {
+            if (!GearCombat.canHit(player, e) || e.squaredDistanceTo(at) > radius * radius) continue
+            val target = e as LivingEntity
+            target.damage(world, world.damageSources.playerAttack(player), dmg)
+            if (!GearCombat.isHeavy(target)) GearCombat.push(target, at, 0.6, 0.55)
+            target.addStatusEffect(StatusEffectInstance(StatusEffects.SLOWNESS, 40, 1, false, true, true), player)
+            Resonance.markCombat(player)
+        }
+    }
+
+    // ---------------------------------------------------------------- Frostschritt (frühere Beinschienen-Fähigkeit, ungenutzt)
 
     private fun castFrostStep(player: ServerPlayerEntity) {
         if (!ready(player, EquipmentSlot.LEGS, "frost_step")) return

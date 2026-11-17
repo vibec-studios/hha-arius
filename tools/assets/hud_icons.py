@@ -236,13 +236,73 @@ def wingscale(f):
     return im.outline()
 
 
+
+def dragon_breath(f):
+    """Drachenatem: kleiner Drachenkopf links, ein Frostkegel strömt nach rechts, Schneeflocken wandern hinaus."""
+    im = Img()
+    k = f / FRAMES
+    # Kegel
+    for x in range(5, 16):
+        half = (x - 5) * 0.55
+        for y in range(16):
+            dy = abs(y + 0.5 - 8.0)
+            if dy <= half + 0.5:
+                edge = dy > half - 0.8
+                im.set(x, y, ICE[2] if edge else ICE[3] if (x + y + f) % 3 else ICE[4])
+    # wandernde Flocken
+    for i in range(5):
+        x = 6 + int(((i * 2.3 + k * 10) % 10))
+        y = 8 + int(((i * 37) % 7) - 3) * (x - 5) // 8
+        im.set(x, y, ICE[5])
+    # Kopf
+    head = ['.kk..', 'k44k.', 'k4G4k', 'k443k', '.kkk.']
+    for yy, row in enumerate(head):
+        for xx, ch in enumerate(row):
+            c = {'k': OUT, '4': ICE[4], '3': ICE[3], 'G': GOLD[3]}.get(ch)
+            if c:
+                im.set(1 + xx, 6 + yy, c)
+    im.set(2, 5, ICE[5]); im.set(1, 4, ICE[4])   # Horn
+    return im.outline()
+
+
+def wing_leap(f):
+    """Schwingensprung: zwei Lichtschwingen, darunter ein gestrichelter Sprungbogen, am Ende ein wachsender Aufprallring."""
+    im = Img()
+    k = f / FRAMES
+    flap = 1 if f % 2 else 0
+    # Schwingen (V-Form), schlagen leicht
+    for i in range(6):
+        for side in (-1, 1):
+            x = 8 + side * (1 + i)
+            y = 6 - i // 2 - (flap if i > 2 else 0)
+            im.set(x, y, ICE[5] if i < 2 else ICE[4])
+            im.set(x, y + 1, ICE[3])
+            if i % 2 == 0:
+                im.set(x, y + 2, ICE[2])
+    im.set(8, 7, GOLD[3]); im.set(8, 8, GOLD[2])
+    # Sprungbogen
+    for i in range(12):
+        x = 2 + i
+        y = int(13 - 4 * math.sin(i / 11 * math.pi))
+        if (i + f) % 3 != 0:
+            im.set(x, y, ICE[3])
+    # Aufprallring rechts unten
+    rr = 0.8 + 2.2 * k
+    for y in range(16):
+        for x in range(16):
+            d = math.hypot((x + 0.5 - 13.5) * 0.8, (y + 0.5 - 13.5) * 1.6)
+            if abs(d - rr) < 0.45:
+                im.set(x, y, ICE[4] if k < 0.6 else ICE[3])
+    return im.outline()
+
+
 ICONS = {
-    'white_core': white_core,
-    'frost_step': frost_step,
+    'white_core': dragon_breath,
+    'frost_step': wing_leap,
     'counter': counter,
     'wingscale': wingscale,
-    'art/white_core': white_core,
-    'art/frost_step': frost_step,
+    'art/white_core': dragon_breath,
+    'art/frost_step': wing_leap,
     'art/clear_cut': clear_cut,
     'art/white_hole': white_hole,
 }
