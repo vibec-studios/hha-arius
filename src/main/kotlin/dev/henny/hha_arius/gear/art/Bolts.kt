@@ -6,7 +6,7 @@ import dev.henny.hha_arius.net.AriusNet
 import dev.henny.hha_arius.net.FxKind
 import dev.henny.hha_arius.net.FxS2C
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents
-import net.minecraft.entity.Entity
+import net.minecraft.block.ShapeContext
 import net.minecraft.entity.LivingEntity
 import net.minecraft.server.network.ServerPlayerEntity
 import net.minecraft.server.world.ServerWorld
@@ -54,7 +54,7 @@ object Bolts {
     fun launch(bolt: Bolt) {
         // Länge der freien Bahn vorab, damit der Client die richtige Lebensdauer kennt.
         val end = bolt.pos.add(bolt.velocity.normalize().multiply(bolt.maxDistance))
-        val ray = bolt.world.raycast(RaycastContext(bolt.pos, end, RaycastContext.ShapeType.COLLIDER, RaycastContext.FluidHandling.NONE, null as Entity?))
+        val ray = bolt.world.raycast(RaycastContext(bolt.pos, end, RaycastContext.ShapeType.COLLIDER, RaycastContext.FluidHandling.NONE, ShapeContext.absent()))
         val free = if (ray.type == HitResult.Type.BLOCK) ray.pos.distanceTo(bolt.pos) else bolt.maxDistance
         val life = (free / bolt.velocity.length()).toInt() + 1
         ArtFx.send(bolt.world, FxKind.BOLT, bolt.pos, bolt.velocity, bolt.radius.toFloat(), bolt.school.ordinal.toFloat(), life, bolt.id)
@@ -76,7 +76,7 @@ object Bolts {
         val owner = GearCombat.player(b.owner)
         val from = b.pos
         var to = from.add(b.velocity)
-        val ray = b.world.raycast(RaycastContext(from, to, RaycastContext.ShapeType.COLLIDER, RaycastContext.FluidHandling.NONE, null as Entity?))
+        val ray = b.world.raycast(RaycastContext(from, to, RaycastContext.ShapeType.COLLIDER, RaycastContext.FluidHandling.NONE, ShapeContext.absent()))
         val blocked = ray.type == HitResult.Type.BLOCK
         if (blocked) to = ray.pos
         if (owner != null) {
