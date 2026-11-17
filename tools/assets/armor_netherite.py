@@ -117,17 +117,37 @@ def preview(h, l, gh, gl):
 PIECES = ('helmet', 'chestplate', 'leggings', 'boots')
 
 
+# Vanilla-Netherite-Töne (Item-Icons) → Drachenherz-Töne. Jede Stufe behält ihre Rolle (Umriss, Schatten, Körper,
+# Licht, Kante); die hellste Kantenstufe wird Gold, damit die Icons Tiefe und Goldsaum haben statt flach weiß zu wirken.
+ICON_MAP = {
+    '171111': '#0f121c', '160814': '#0f121c',
+    '241f20': '#3e4e6e', '271c1d': '#3e4e6e', '231012': '#3e4e6e',
+    '312828': '#6a82a6', '352d2d': '#6a82a6', '373537': '#7890b2', '2f2122': '#6a82a6', '322727': '#6a82a6',
+    '473e3f': '#a4b8d4', '3b393b': '#8ea5c4',
+    '4d494d': '#d4e0ee', '4f3c3e': '#b4c6dd', '51444e': '#c3d2e6',
+    '5d565d': '#f6f9fd', '706770': '#f6f9fd',
+    '766a76': '#e6c06a', '867b86': '#f3dc9a',
+}
+
+
 def icons():
-    """Item-Icons: die Vanilla-Netherite-Icons im selben Verlauf, Umriss bleibt dunkel (unterste Stufe), dazu je ein
-    eisblauer Lichtpunkt (Juwel) wie auf der Rüstung."""
+    """Item-Icons: die Vanilla-Netherite-Icons Ton für Ton auf den Drachenherz-Verlauf gelegt (volle Schattierung,
+    goldene Kanten), dazu ein eisblaues Juwel mit Lichtpunkt."""
     out = {}
-    jewel = {'helmet': (7, 4), 'chestplate': (7, 5), 'leggings': (7, 3), 'boots': None}
+    jewel = {'helmet': [(7, 4), (8, 4)], 'chestplate': [(7, 5), (8, 5)], 'leggings': [(7, 3), (8, 3)], 'boots': []}
     for piece in PIECES:
         src = G.Tex.load('item/netherite_%s.png' % piece)
-        t = recolor(src, (0.0, 0.14, 0.34, 0.6, 0.86), outline=G.hexc('#121726'))
-        j = jewel[piece]
-        if j:
-            t.set(j[0], j[1], SEAM)
+        t = G.Tex(src.w, src.h)
+        for y in range(src.h):
+            for x in range(src.w):
+                c = src.get(x, y)
+                if c[3] == 0:
+                    continue
+                key = '%02x%02x%02x' % c[:3]
+                t.set(x, y, G.hexc(ICON_MAP.get(key, '#b4c6dd')))
+        for i, (x, y) in enumerate(jewel[piece]):
+            if t.get(x, y)[3]:
+                t.set(x, y, G.hexc('#bfeaff') if i == 0 else G.hexc('#3e8fd0'))
         out[piece] = t
     return out
 

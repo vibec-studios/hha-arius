@@ -1597,6 +1597,8 @@ def main(argv):
     save_textures(jobs)
     write_item_jsons(model3d)
     hud_icons.write_all()
+    import item_icons  # handgezeichnete 16er-Icons (Solvane, Schuppe, Handschuhe) ersetzen die alten
+    item_icons.write_all()
 
 
 if __name__ == '__main__':

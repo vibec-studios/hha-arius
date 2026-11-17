@@ -54,6 +54,73 @@ def gauntlet_icon():
     return im
 
 
+def solvane_icon():
+    """Solvane als kräftiges 16er-Schwert (Vanilla-Diagonale): perlweiße Klinge mit Eis-Hohlkehle, goldene Parierstange
+    mit Eisjuwel, dunkler Griff, goldener Knauf, dunkler Umriss."""
+    im = H.Img()
+    hi, light, mid, shade = H.hexc('#ffffff'), H.hexc('#e4ecf6'), H.hexc('#b2c3da'), H.hexc('#6f86a8')
+    ice, ice_hi = H.hexc('#4f95cc'), H.hexc('#bfeaff')
+    g1, g2, g3 = H.hexc('#8a6428'), H.hexc('#c99a3e'), H.hexc('#f1d58c')
+    grip, grip_hi = H.hexc('#2a2638'), H.hexc('#4a4560')
+    for i in range(10):                      # Klinge: (5,10) → (14,1)
+        cx, cy = 5 + i, 10 - i
+        im.set(cx, cy, light)
+        im.set(cx + 1, cy, shade if i < 9 else mid)
+        im.set(cx, cy - 1, hi if i < 9 else light)
+        if 1 <= i <= 6:
+            im.set(cx, cy, ice_hi if i % 2 else ice)    # Hohlkehle mit Lichtfluss
+    im.set(15, 0, light)
+    # Parierstange quer (Richtung +1,+1), Juwel in der Mitte
+    for x, y, c in ((1, 8, g2), (2, 9, g3), (3, 10, g3), (5, 12, g2), (6, 13, g1), (7, 14, g1)):
+        im.set(x, y, c)
+    im.set(4, 11, ice_hi)
+    # Griff und Knauf
+    for x, y, c in ((3, 12, grip_hi), (2, 13, grip)):
+        im.set(x, y, c)
+    for x, y, c in ((1, 14, g3), (0, 15, g1), (1, 15, g2), (0, 14, g2)):
+        im.set(x, y, c)
+    return im.outline()
+
+
+def scale_icon():
+    """Schuppe des weißen Drachen: perlweiße Spitzbogen-Schuppe mit Rippen, eisblauer Schatten unten rechts, Glanz oben links."""
+    import math
+    im = H.Img()
+    ramp = [H.hexc('#4a5d7d'), H.hexc('#7f95b6'), H.hexc('#b4c5dc'), H.hexc('#dfe8f4'), H.hexc('#ffffff')]
+    for y in range(16):
+        yy = y + 0.5
+        if yy < 1.5 or yy > 14.5:
+            continue
+        half = 6.0 * math.sqrt(max(0.0, (yy - 1.5) / 13.0)) * (1.0 if yy < 11.5 else 1.0 - (yy - 11.5) / 3.6)
+        for x in range(16):
+            cx = x + 0.5 - 8.0
+            if abs(cx) > half:
+                continue
+            # überlappende Bänder (Bögen nach unten), oben hell, unterer Bandrand dunkel
+            v = (yy - 2.0 + 0.18 * cx * cx) % 4.0
+            light = 0.66 - cx * 0.04
+            if v < 1.0:
+                light += 0.22
+            elif v >= 3.0:
+                light -= 0.38
+            i = max(0, min(4, int(light * 5)))
+            c = ramp[i]
+            if abs(cx) > half - 1.0 and cx > 0:
+                c = H.hexc('#7cc8f0')            # eisblauer Rand rechts
+            im.set(x, y, c)
+    im.set(6, 4, ramp[4]); im.set(6, 5, ramp[4]); im.set(5, 6, ramp[4])
+    return im.outline()
+
+
+def write_all():
+    H.png(os.path.join(OUT_ITEM, 'arius_gauntlets.png'), 16, 16, rows_of(gauntlet_icon()))
+    H.png(os.path.join(OUT_ITEM, 'solvane.png'), 16, 16, rows_of(solvane_icon()))
+    meta = os.path.join(OUT_ITEM, 'solvane.png.mcmeta')
+    if os.path.exists(meta):
+        os.remove(meta)
+    H.png(os.path.join(OUT_ITEM, 'nivaris_scale.png'), 16, 16, rows_of(scale_icon()))
+
+
 def rows_of(im):
     return [[c if c is not None else (0, 0, 0, 0) for c in im.px[y]] for y in range(H.S)]
 
@@ -79,7 +146,6 @@ def preview(icons):
 
 
 if __name__ == '__main__':
-    g = gauntlet_icon()
-    preview([g])
+    preview([gauntlet_icon(), solvane_icon(), scale_icon()])
     if '--preview' not in sys.argv:
-        H.png(os.path.join(OUT_ITEM, 'arius_gauntlets.png'), 16, 16, rows_of(g))
+        write_all()
