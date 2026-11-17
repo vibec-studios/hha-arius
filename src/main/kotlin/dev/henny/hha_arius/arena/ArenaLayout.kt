@@ -49,6 +49,9 @@ object ArenaLayout {
     /** Sitzplatz von Arius auf den Altarstufen (Intro). Blick nach Süden. */
     val SEAT = Vec3d(0.5, 2.0, -64.5)
 
+    /** Landepunkt vor den Altarstufen: Hier springt Arius zu Beginn von Abschnitt I vom Sitz auf den Hallenboden. */
+    val DAIS_FRONT = Vec3d(0.5, 0.0, -57.5)
+
     /** Tor im Süden: Mitte, Breite 7, Höhe 9. */
     val GATE = BlockPos(0, 0, -32)
     const val GATE_HALF_WIDTH = 3

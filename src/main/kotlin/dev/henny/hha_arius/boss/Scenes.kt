@@ -132,6 +132,9 @@ class Scenes(private val f: EirholmFight) {
 
     fun temple(): Script = script {
         val a = f.arius ?: return@script
+        // Vom Sitz auf den Altarstufen herunter: Die Laufschritte gehen nur auf Bodenhöhe, auf den Stufen gäbe es keinen
+        // freien Schritt (Arius blieb sonst am Sitz stehen).
+        if (a.y > f.floorY + 0.5) yieldAll(leapFromDais(a))
         f.setPhase(P.TEMPLE)
         f.reviveAll(listOf(ArenaLayout.ARRIVAL))
         f.ariusMax = BossConfig.health(520f, f.startCount)
@@ -159,6 +162,24 @@ class Scenes(private val f: EirholmFight) {
             return@script
         }
         yieldAll(theCut())
+    }
+
+    /** Sprung im Bogen vom Altar auf den Hallenboden vor den Stufen, mit Windschritt-Klang und Landestaub. */
+    private fun leapFromDais(a: AriusEntity): Script = script {
+        val start = a.entityPos
+        val land = f.abs(ArenaLayout.DAIS_FRONT)
+        f.face(a, land)
+        cue("arius.wind_step", start, 2f, 0.8f)
+        val steps = 12
+        for (i in 1..steps) {
+            val k = i / steps.toDouble()
+            f.place(a, start.lerp(land, k).add(0.0, sin(k * PI) * 2.5, 0.0))
+            yield(Unit)
+        }
+        f.place(a, land)
+        f.fx(FxKind.FRAGMENTS, land, a = 0.25f, life = 14)
+        cue("arius.stab_ground", land, 1.4f, 1.2f)
+        wait(6)
     }
 
     // --- Der Schnitt -------------------------------------------------------------------------------------------------------
