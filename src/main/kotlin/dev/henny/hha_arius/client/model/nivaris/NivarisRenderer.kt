@@ -5,6 +5,7 @@ import dev.henny.hha_arius.boss.AriusTimings
 import dev.henny.hha_arius.boss.NivarisEntity
 import dev.henny.hha_arius.boss.NivarisMode
 import dev.henny.hha_arius.boss.NivarisShape
+import dev.henny.hha_arius.client.fx.DragonVeil
 import net.minecraft.client.model.ModelPart
 import net.minecraft.client.render.Frustum
 import net.minecraft.client.render.RenderLayer
@@ -29,6 +30,10 @@ import kotlin.math.sin
  * ([NivarisEntity.eyeGlow], heller bei [NivarisEntity.lead]), Kehle + Maul + Herzkern ([NivarisEntity.throatGlow]) und
  * die Resonanzlinien (nur bei [NivarisEntity.resonance]).
  *
+ * Auflösen und Entstehen ([NivarisEntity.veil], Solvane als Licht): Teil für Teil schrumpft der Körper von der
+ * Schwanzspitze zum Kopf (beim Entstehen umgekehrt) und leuchtet dabei weiß auf; Lichtschein, Funken und Splitter an
+ * der Stelle jedes Teils zeichnet [DragonVeil]. Cutout kann nicht ausblenden, daher Schrumpfen + Leuchtüberzug.
+ *
  * Der Körper reicht bis zu 96 Blöcke von der Entity weg (an der Nadel noch weiter): Culling ist aus, gezeichnet wird
  * immer, solange der Client die Entity kennt.
  */
@@ -39,6 +44,9 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
     private val eyesLayer = RenderLayers.eyes(HhaArius.id("textures/entity/nivaris_glow_eyes.png"))
     private val heartLayer = RenderLayers.eyes(HhaArius.id("textures/entity/nivaris_glow_heart.png"))
     private val resonanceLayer = RenderLayers.eyes(HhaArius.id("textures/entity/nivaris_resonance.png"))
+
+    /** Leuchtüberzug beim Auflösen: dieselbe Farbtextur, selbstleuchtend und weiß-eisig getönt. */
+    private val sheenLayer = RenderLayers.eyes(texture)
 
     /** Weiche Überblendung Boden ↔ Flug je Entity (Flag wechselt sofort, das Modell nicht). */
     private val flyBlend = WeakHashMap<NivarisEntity, FloatArray>()
@@ -77,10 +85,19 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
         state.fly = blend[0]
         model.pose(state)
         bodies.getOrPut(entity) { NivarisBody() }.update(entity, state, tickDelta)
+        // Schleier: je Teil Maßstab und Leuchten; die Lage geht an DragonVeil (Lichtschein, Funken, Splitter).
+        val veil = entity.veilAt(tickDelta)
+        state.veil = veil
+        for (j in 0 until DragonVeil.PARTS) {
+            val l = DragonVeil.progress(veil, j)
+            state.shrink[j] = DragonVeil.shrink(l)
+            state.sheen[j] = DragonVeil.sheen(l)
+        }
+        if (state.bodyReady && (veil > 0f || DragonVeil.tracks(entity.id))) DragonVeil.update(entity.id, entity.entityWorld.time, state, veil)
     }
 
     override fun render(state: NivarisRenderState, matrices: MatrixStack, queue: OrderedRenderCommandQueue, cameraState: CameraRenderState) {
-        if (!state.bodyReady || state.invisible) return
+        if (!state.bodyReady || state.invisible || state.veil >= 1f) return
         val overlay = getOverlay(state, 0f)
         model.openJaw(state.p[NivarisModel.JAW])
         model.animateChildren(state)
@@ -94,6 +111,8 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
         val throat = state.throatGlow / 100f
         glow(batch, matrices, state, heartLayer, 0.1f + throat * 0.9f * (0.92f + 0.08f * sin(state.age * 0.9f)), FRONT)
         if (state.resonance) glow(batch, matrices, state, resonanceLayer, 0.8f + 0.2f * sin(state.age * 0.25f), ALL)
+        // Leuchtüberzug der Teile, die gerade zerfallen oder entstehen (Farbe je Teil aus state.sheen).
+        if (state.veil > 0f) draw(batch, matrices, state, sheenLayer, net.minecraft.client.render.OverlayTexture.DEFAULT_UV, SHEEN, ALL, false)
     }
 
     private fun glow(q: RenderCommandQueue, matrices: MatrixStack, state: NivarisRenderState, layer: RenderLayer, alpha: Float, which: Int) {
@@ -107,38 +126,51 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
         val m = model
         val scale = NivarisShape.SCALE
         fun light(i: Int) = if (lit) s.lights[i] else FULL
+        val sheenPass = color == SHEEN
+        // Teil j sichtbar? Im Überzug nur Teile im Übergang, mit eigener Helligkeit; sonst alle nicht ganz geschrumpften.
+        fun shown(j: Int) = if (sheenPass) s.sheen[j] > 0.01f && s.shrink[j] > 0.02f else s.shrink[j] > 0.02f
+        fun tint(j: Int) = if (sheenPass) ((MathHelper.clamp(s.sheen[j], 0f, 1f) * 255f).toInt() shl 24) or SHEEN_RGB else color
 
         // Kopf (mit Kiefer).
-        matrices.push()
-        matrices.translate(s.px[0], s.py[0], s.pz[0])
-        orient(matrices, s.headFrame, 0)
-        matrices.scale(scale, scale, scale)
-        q.submitModelPart(m.head, matrices, layer, light(0), overlay, null, color, null)
-        matrices.pop()
+        if (shown(0)) {
+            matrices.push()
+            matrices.translate(s.px[0], s.py[0], s.pz[0])
+            orient(matrices, s.headFrame, 0)
+            val k = scale * s.shrink[0]
+            matrices.scale(k, k, k)
+            q.submitModelPart(m.head, matrices, layer, light(0), overlay, null, tint(0), null)
+            matrices.pop()
+        }
         if (which == HEAD) return
 
         val count = if (which == FRONT) 6 else NivarisShape.SEGMENTS
         for (i in 0 until count) {
+            if (!shown(i + 1)) continue
             matrices.push()
             matrices.translate(s.px[i], s.py[i], s.pz[i])
             orient(matrices, s.frame, i * 9)
+            // Beim Auflösen schrumpft das Glied (mit Läufen und Schwingen) zu seinem vorderen Gelenk.
+            val k = s.shrink[i + 1]
+            if (k < 1f) matrices.scale(k, k, k)
             val g = scale * s.girth[i]
             val st = s.stretch[i]
             // Etwas länger als der Abstand, damit an Biegungen keine Fugen aufgehen.
             matrices.scale(g, g, scale * st * 1.03f)
-            q.submitModelPart(m.glied(i), matrices, layer, light(i), overlay, null, color, null)
-            if (which == ALL) attachments(q, matrices, s, i, layer, light(i), overlay, color, s.girth[i], st)
+            q.submitModelPart(m.glied(i), matrices, layer, light(i), overlay, null, tint(i + 1), null)
+            if (which == ALL) attachments(q, matrices, s, i, layer, light(i), overlay, tint(i + 1), s.girth[i], st)
             matrices.pop()
         }
         if (which != ALL) return
 
         // Schwanzfächer am letzten Punkt, unverjüngt (für den Endquerschnitt gebaut).
         val last = NivarisShape.SEGMENTS
+        if (!shown(DragonVeil.PARTS - 1)) return
         matrices.push()
         matrices.translate(s.px[last], s.py[last], s.pz[last])
         orient(matrices, s.frame, (last - 1) * 9)
-        matrices.scale(scale, scale, scale)
-        q.submitModelPart(m.tailFan, matrices, layer, light(last), overlay, null, color, null)
+        val k = scale * s.shrink[DragonVeil.PARTS - 1]
+        matrices.scale(k, k, k)
+        q.submitModelPart(m.tailFan, matrices, layer, light(last), overlay, null, tint(DragonVeil.PARTS - 1), null)
         matrices.pop()
     }
 
@@ -202,7 +234,8 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
         matrices.multiply(rot.setFromNormalized(m3))
     }
 
-    override fun getShadowRadius(state: NivarisRenderState): Float = if (state.mode != NivarisMode.NORMAL) 0f else super.getShadowRadius(state)
+    override fun getShadowRadius(state: NivarisRenderState): Float =
+        if (state.mode != NivarisMode.NORMAL) 0f else super.getShadowRadius(state) * (1f - state.veil)
 
     override fun shouldRender(entity: NivarisEntity, frustum: Frustum, x: Double, y: Double, z: Double): Boolean = true
 
@@ -215,5 +248,9 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
         const val HEAD = 1
         const val FRONT = 2
         const val FULL = 0xF000F0
+
+        /** Marker-Farbe für den Leuchtüberzug in [draw] (Farbe kommt dann je Teil aus state.sheen). */
+        const val SHEEN = 0x00E6F6FF
+        const val SHEEN_RGB = 0xE6F6FF
     }
 }

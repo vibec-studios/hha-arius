@@ -46,6 +46,7 @@ object AriusFxClient {
             val world = client.world ?: return@register
             if (!client.isPaused) {
                 effects.removeIf { !it.advance(world) || (it is WhiteHoleFx && it.finished) }
+                DragonVeil.tick(world)
                 SliceRender.tick()
                 CutHalves.tick()
                 Atmos.tick(world)
@@ -64,6 +65,7 @@ object AriusFxClient {
             CutHalves.render(matrices, consumers, camera.cameraPos, tickDelta)
             val draw = VfxDraw(consumers, camera, tickDelta)
             Atmos.render(draw)
+            DragonVeil.render(draw)
             if (effects.isEmpty()) return@register
             for (fx in effects) fx.render(draw, matrices, fx.age + tickDelta)
             for (fx in effects) if (fx is WhiteHoleFx) WhiteLens.render(fx, tickDelta)
@@ -105,6 +107,7 @@ object AriusFxClient {
 
     fun reset() {
         effects.clear()
+        DragonVeil.reset()
         SliceRender.clear()
         CutHalves.clear()
         Atmos.reset()

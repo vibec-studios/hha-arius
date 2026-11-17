@@ -191,6 +191,7 @@ internal object Entrance {
         d.mode = NivarisMode.NORMAL
         d.uncoil = 0f
         d.flying = false
+        d.showNow()
         f.place(d, spot)
         f.face(d, spot.add(0.0, 0.0, -10.0))
         if (d.pose == NivarisPose.LIE_DOWN || d.pose == NivarisPose.GLIDE) d.play(NivarisPose.IDLE)
@@ -212,6 +213,13 @@ internal object Entrance {
 
     /** Ticks nach Beginn von [release], bis der Lichtstrom am Ziel ankommt (nach dem Ende des Drehbuchs). */
     const val RELEASE_ARRIVAL = 94
+
+    /**
+     * Ticks, in denen der Körper nach der Ankunft des Stroms Glied für Glied vom Kopf aus entsteht ([NivarisEntity.fadeIn]);
+     * an der Nadel bis kurz nach dem Ende der Sturm-Einstellung, ohne Nadel bis vor die Landung.
+     */
+    private const val FORM_TICKS = 60
+    private const val FORM_TICKS_SHORT = 30
 
     /** Zeitpunkt des Loslassens in [release]. */
     private const val RELEASE_AT = 34
@@ -311,6 +319,7 @@ internal object Entrance {
         d.flying = false
         d.eyeGlow = 8
         d.throatGlow = 0
+        d.hideNow()
         d.play(NivarisPose.LIE_DOWN)
         return d
     }
@@ -351,9 +360,11 @@ internal object Entrance {
         sound(f, "nivaris.inhale", arrival, 2f, 0.45f)
         fx(f, FxKind.BLIZZARD, stormTo, 10f, 60)
         fxAll(f, FxKind.BLIZZARD, arrival, 14f, 60)
-        // Im Ankunftsblitz des Stroms legt sie sich um die Nadel (der Blitz verdeckt das Erscheinen).
+        // Im Ankunftsblitz des Stroms legt sie sich um die Nadel, zunächst unsichtbar (Schleier 1).
         wait(2)
         val d = coil(f) ?: return@script
+        // Sie entsteht vom Ankunftspunkt (Kopf) aus entlang der Windung, Glied für Glied aus Licht und Eis.
+        d.fadeIn(FORM_TICKS)
         wait(70 - 2 - (RELEASE_ARRIVAL - RELEASE_TICKS))
 
         // 3) Nah im Sturm an der Nadel: eine Windung gleitet vorbei (60 Ticks). Kamera kreist gegen die Laufrichtung.
@@ -453,6 +464,8 @@ internal object Entrance {
         d.mode = NivarisMode.NORMAL
         d.uncoil = 0f
         yieldAll(glideAndLand(f, d, end, spot, 30))
+        // Endzustand (auch nach Überspringen, das das Drehbuch in einem Tick vorspult): ganz da.
+        d.showNow()
         f.atmos(AtmosMode.SNOW, 80)
         // Rückweg zur Spielerkamera: von der Landung (laufende Einstellung) in die Augen der Spieler.
         scene.home(18)
@@ -471,10 +484,13 @@ internal object Entrance {
         val d = f.nivaris ?: return@script
         d.mode = NivarisMode.NORMAL
         d.flying = true
+        d.hideNow()
+        d.fadeIn(FORM_TICKS_SHORT)
         d.play(NivarisPose.GLIDE)
         scene.line(rel(f, -8.0, 5.0, -26.0), rel(f, -5.0, 4.0, -22.0), start.add(0.0, 2.0, 0.0), spot.add(0.0, 4.0, -2.0), 60, 72.0, 64.0)
         sound(f, "nivaris.wing", rel(f, -5.0, 6.0, -23.0), 3f, 0.7f)
         yieldAll(glideAndLand(f, d, start, spot, 40))
+        d.showNow()
         scene.home(18)
         wait(18)
     }

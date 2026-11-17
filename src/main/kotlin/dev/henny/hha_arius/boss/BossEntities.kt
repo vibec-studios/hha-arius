@@ -223,6 +223,7 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
         builder.add(LEAD, false)
         builder.add(MODE, NivarisMode.NORMAL)
         builder.add(UNCOIL, 0f)
+        builder.add(VEIL, 0f)
     }
 
     /** Darstellung des Schlangenkörpers, siehe [NivarisMode] (Windung um die Nadel im Auftritt). */
@@ -235,10 +236,43 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
         get() = dataTracker.get(UNCOIL)
         set(value) = dataTracker.set(UNCOIL, value.coerceIn(0f, 1f))
 
+    /**
+     * Schleier 0..1: wie weit sich der Körper in Licht und Eiskristalle aufgelöst hat (0 = ganz da, 1 = fort). Glied für
+     * Glied von der Schwanzspitze zum Kopf; beim Entstehen läuft derselbe Wert rückwärts, der Kopf erscheint also zuerst.
+     * Nur Darstellung (Trefferbox und Mechanik bleiben); der Server führt ihn mit [fadeIn]/[fadeOut] in eigenem Takt,
+     * Nachzügler bekommen den laufenden Wert über das TrackedData.
+     */
+    var veil: Float
+        get() = dataTracker.get(VEIL)
+        private set(value) = dataTracker.set(VEIL, value.coerceIn(0f, 1f))
+
+    /** Nur Server: Änderung des Schleiers je Tick (0 = steht). */
+    private var veilRate = 0f
+
+    /** Sofort ganz da (Überspringen, Abbruch, Training). */
+    fun showNow() { veilRate = 0f; veil = 0f }
+
+    /** Sofort fort (vor dem Entstehen). */
+    fun hideNow() { veilRate = 0f; veil = 1f }
+
+    /** Entsteht vom Kopf aus in [ticks] Ticks (vom aktuellen Schleier aus). */
+    fun fadeIn(ticks: Int) { veilRate = -1f / ticks.coerceAtLeast(1) }
+
+    /** Löst sich von der Schwanzspitze aus in [ticks] Ticks auf. */
+    fun fadeOut(ticks: Int) { veilRate = 1f / ticks.coerceAtLeast(1) }
+
     // --- nur Client: Fortschritt des Vor-Ticks für weiches Zeichnen zwischen den Ticks ---
     var lastUncoil = 0f
         private set
     private var seenUncoil = 0f
+    private var lastVeil = Float.NaN
+    private var seenVeil = Float.NaN
+
+    /** Schleier zwischen den Ticks (Client). Vor dem ersten Tick (frisch geladen) der Wert des Servers. */
+    fun veilAt(tickDelta: Float): Float {
+        if (seenVeil.isNaN()) return veil
+        return lastVeil + (seenVeil - lastVeil) * tickDelta
+    }
 
     override fun tick() {
         super.tick()
@@ -247,6 +281,14 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
             seenUncoil = uncoil
             // Sprung (Nachzügler, Überspringen): nicht über den ganzen Weg gleiten.
             if (kotlin.math.abs(seenUncoil - lastUncoil) > 0.05f) lastUncoil = seenUncoil
+            lastVeil = if (seenVeil.isNaN()) veil else seenVeil
+            seenVeil = veil
+            // Größter regulärer Schritt 1/20 je Tick; größere Sprünge (Überspringen) sofort.
+            if (kotlin.math.abs(seenVeil - lastVeil) > 0.12f) lastVeil = seenVeil
+        } else if (veilRate != 0f) {
+            val v = (veil + veilRate).coerceIn(0f, 1f)
+            veil = v
+            if (v <= 0f || v >= 1f) veilRate = 0f
         }
     }
 
@@ -286,6 +328,7 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
         private val LEAD: TrackedData<Boolean> = DataTracker.registerData(NivarisEntity::class.java, TrackedDataHandlerRegistry.BOOLEAN)
         private val MODE: TrackedData<Int> = DataTracker.registerData(NivarisEntity::class.java, TrackedDataHandlerRegistry.INTEGER)
         private val UNCOIL: TrackedData<Float> = DataTracker.registerData(NivarisEntity::class.java, TrackedDataHandlerRegistry.FLOAT)
+        private val VEIL: TrackedData<Float> = DataTracker.registerData(NivarisEntity::class.java, TrackedDataHandlerRegistry.FLOAT)
 
         /**
          * Trefferbox 4,5 × 3,6: der Rumpf vorn (Glieder 2–4). Der 96 Blöcke lange Körper ist nur Darstellung und

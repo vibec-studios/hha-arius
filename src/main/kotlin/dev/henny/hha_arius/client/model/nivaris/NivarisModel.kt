@@ -66,6 +66,13 @@ class NivarisRenderState : LivingEntityRenderState() {
     val lights = IntArray(POINTS)
     var bodyReady = false
 
+    /** Schleier (Auflösen/Entstehen, siehe [dev.henny.hha_arius.client.fx.DragonVeil]): 0 = ganz da. */
+    var veil = 0f
+
+    /** Je Teil (0 = Kopf, 1..40 = Glieder, 41 = Schwanzfächer): Maßstab 0..1 und Helligkeit des Leuchtüberzugs. */
+    val shrink = FloatArray(dev.henny.hha_arius.client.fx.DragonVeil.PARTS) { 1f }
+    val sheen = FloatArray(dev.henny.hha_arius.client.fx.DragonVeil.PARTS)
+
     companion object {
         const val POINTS = NivarisShape.SEGMENTS + 1
     }

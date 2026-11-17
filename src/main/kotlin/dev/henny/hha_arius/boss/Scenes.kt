@@ -1141,6 +1141,8 @@ class Scenes(private val f: EirholmFight) {
                 head.lerp(eye, 0.3), head, 34 + RETURN_PEAK, 56.0, 50.0)
             wait(8)
             shown { f.say("dragon.return", 50) }
+            // Von der Schwanzspitze zum Kopf löst sie sich auf; der Kopf ist auf dem Höhepunkt fort (vor dismissNivaris).
+            d.fadeOut(26 + RETURN_PEAK - 1)
             d.resonance = true
             d.eyeGlow = 100
             a.eyeGlow = 100
