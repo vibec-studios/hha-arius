@@ -979,6 +979,7 @@ class EirholmFight(
         for (p in audience()) Hold.drop(p)
         ariusBar.clearPlayers()
         dragonBar.clearPlayers()
+        moves.cleanup()
         arius?.discard()
         nivaris?.discard()
         nivarisHead?.discard()
@@ -989,7 +990,8 @@ class EirholmFight(
         // Liegengebliebene Items/Geschosse in der Arena entfernen.
         val box = Box(
             (origin.x - ArenaLayout.BOUND_XZ).toDouble(), (origin.y + ArenaLayout.BOUND_Y_MIN).toDouble(), (origin.z + ArenaLayout.BOUND_Z_MIN).toDouble(),
-            (origin.x + ArenaLayout.BOUND_XZ).toDouble(), (origin.y + ArenaLayout.BOUND_Y_MAX).toDouble(), (origin.z + ArenaLayout.BOUND_XZ).toDouble(),
+            // bis über den Himmelsbalkon (Abschnitt III spielt hoch an der Nadel)
+            (origin.x + ArenaLayout.BOUND_XZ).toDouble(), (origin.y + ArenaLayout.VAULT.y + 30).toDouble(), (origin.z + ArenaLayout.VAULT.z + ArenaLayout.VAULT_R + 8).toDouble(),
         )
         for (e in world.getOtherEntities(null, box) { it !is PlayerEntity }) e.discard()
         forceChunks(false)

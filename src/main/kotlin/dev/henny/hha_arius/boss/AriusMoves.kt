@@ -25,6 +25,10 @@ class AriusMoves(private val f: EirholmFight) {
     private var nextStab = 0L
     private var nextNull = 0L
     private var nextSidestep = 0L
+    private var nextBlade = 0L
+
+    /** Die gerade allein fliegende Klinge (Item-Anzeige), falls ein Klingenflug läuft. */
+    private var flyingBlade: net.minecraft.entity.decoration.DisplayEntity.ItemDisplayEntity? = null
 
     /** Läuft gerade eine Attacke (dann keine Seitschritte/Pfeilschnitt-Posen dazwischen)? */
     var acting = false
@@ -110,6 +114,10 @@ class AriusMoves(private val f: EirholmFight) {
                     nextGuard = now + 400
                     yieldAll(guard(false, serious))
                 }
+                unlocked && now >= nextBlade && d in 5.0..18.0 && rnd.nextFloat() < 0.35f -> {
+                    nextBlade = now + 560
+                    yieldAll(flyingBladeAttack(false))
+                }
                 unlocked && now >= nextWall && rnd.nextFloat() < 0.45f -> {
                     nextWall = now + 520
                     yieldAll(wallStrip(serious))
@@ -143,6 +151,10 @@ class AriusMoves(private val f: EirholmFight) {
                 now >= nextNull && rnd.nextFloat() < 0.35f -> {
                     nextNull = now + 300
                     yieldAll(nullCut(t))
+                }
+                now >= nextBlade && rnd.nextFloat() < 0.4f -> {
+                    nextBlade = now + 420
+                    yieldAll(flyingBladeAttack(true))
                 }
                 now >= nextGuard && d < 6 && rnd.nextFloat() < 0.3f -> {
                     nextGuard = now + 360
@@ -198,6 +210,132 @@ class AriusMoves(private val f: EirholmFight) {
         } finally {
             acting = false
         }
+    }
+
+    // --- Klingenflug (seit 1.2.2): Solvane fliegt allein, Arius tritt ----------------------------------------------------
+
+    /**
+     * Klingenflug: Arius lässt die Klinge los, sie wirbelt magisch durch die Luft (flach gelegt, dreht wie ein Rotor) und
+     * fliegt zwei bzw. drei angesagte Bahnen auf Spieler. Gleichzeitig rückt Arius selbst nach und tritt: Drehtritt,
+     * dann Fronttritt, der weit zurückwirft. Danach kehrt die Klinge in seine Hand zurück. Die Bahnen laufen als eigene
+     * Aufgabe neben seinen Tritten.
+     */
+    fun flyingBladeAttack(white: Boolean): Script = script {
+        val a = f.arius ?: return@script
+        val t0 = f.target() ?: return@script
+        val keep = a.bladeState
+        f.face(a, t0.entityPos)
+        a.play(AriusPose.ARROW_CUT, 8)
+        wait(6)
+        val blade = net.minecraft.entity.EntityType.ITEM_DISPLAY.create(f.world, net.minecraft.entity.SpawnReason.EVENT) ?: return@script
+        val hand = a.entityPos.add(0.0, 1.4, 0.0).add(f.facing(a).multiply(0.6))
+        blade.setItemStack(net.minecraft.item.ItemStack(dev.henny.hha_arius.gear.GearItems.SOLVANE))
+        blade.refreshPositionAndAngles(hand.x, hand.y, hand.z, 0f, 0f)
+        blade.setTeleportDuration(2)
+        spinBlade(blade, 0f)
+        f.world.spawnEntity(blade)
+        flyingBlade = blade
+        a.bladeState = AriusBlade.NONE
+        f.sound("arius.wind_step", hand, 1.8f, 1.6f)
+        Vfx.trail(f.world, style, blade, 0.5f, 60)
+        var done = false
+        val passes = if (white) 3 else 2
+        f.task(script {
+            try {
+                var spin = 0f
+                var pos = hand
+                for (k in 0 until passes) {
+                    val target = (if (k == 0) t0 else f.players().randomOrNull()) ?: break
+                    // Steigen und Ausrichten über dem Ziel-Rand, wirbelnd; dann Ansage und Flug quer durch das Ziel.
+                    val dir = flatDir(pos, target.entityPos)
+                    val start = f.clampToArena(target.entityPos.subtract(dir.multiply(7.0)), 2.0).let { Vec3d(it.x, f.floorY + 1.3, it.z) }
+                    val end = f.clampToArena(target.entityPos.add(dir.multiply(7.0)), 2.0).let { Vec3d(it.x, f.floorY + 1.3, it.z) }
+                    for (i in 1..10) {
+                        pos = pos.lerp(start.add(0.0, 1.5 * sin(i / 10.0 * Math.PI), 0.0), 0.35)
+                        spin += 55f
+                        blade.refreshPositionAndAngles(pos.x, pos.y, pos.z, 0f, 0f)
+                        spinBlade(blade, spin)
+                        yield(Unit)
+                    }
+                    val line = f.calls.line(Vec3d(start.x, f.floorY, start.z), Vec3d(end.x, f.floorY, end.z), 2.0f, if (white) 12 else 16, Telegraph.Pace.PROJECTILE)
+                    for (i in 0 until line.ticks) {
+                        spin += 70f
+                        spinBlade(blade, spin)
+                        yield(Unit)
+                    }
+                    f.sound("arius.slash", start, 2.2f, 1.5f)
+                    val steps = 7
+                    for (i in 1..steps) {
+                        pos = start.lerp(end, i / steps.toDouble())
+                        spin += 90f
+                        blade.refreshPositionAndAngles(pos.x, pos.y, pos.z, 0f, 0f)
+                        spinBlade(blade, spin)
+                        if (i == steps / 2) for (p in line.hits(f.players())) {
+                            f.hurt(p, if (white) 13f else 11f)
+                            dev.henny.hha.logic.Fx.launchPlayer(p, flatDir(start, end).multiply(0.6).add(0.0, 0.3, 0.0))
+                        }
+                        yield(Unit)
+                    }
+                }
+                // Zurück in die Hand
+                val back = f.arius ?: return@script
+                for (i in 1..8) {
+                    val h = back.entityPos.add(0.0, 1.3, 0.0)
+                    pos = pos.lerp(h, i / 8.0)
+                    spin += 60f
+                    blade.refreshPositionAndAngles(pos.x, pos.y, pos.z, 0f, 0f)
+                    spinBlade(blade, spin)
+                    yield(Unit)
+                }
+            } finally {
+                done = true
+            }
+        })
+        // Arius: nachrücken und treten, solange die Klinge fliegt.
+        try {
+            for (kick in 0 until 2) {
+                val t = f.target() ?: break
+                yieldAll(script { approach(t, 2.8, 26, white) })
+                f.face(a, t.entityPos)
+                val dir = f.facing(a)
+                val front = kick == 1
+                val cone = f.calls.cone(a.entityPos, dir, if (front) 3.8f else 3.4f, if (front) 40f else 70f, if (front) 12 else 10, Telegraph.Pace.FOLLOW_UP)
+                a.play(if (front) AriusPose.GATE_KICK else AriusPose.PARRY_KICK, cone.ticks)
+                wait(cone.ticks)
+                f.sound("arius.kick", a.entityPos, 2f, if (front) 0.85f else 1.05f)
+                for (p in cone.hits(f.players())) {
+                    f.hurt(p, if (front) 12f else 9f)
+                    dev.henny.hha.logic.Fx.launchPlayer(p, dir.multiply(if (front) 1.25 else 0.8).add(0.0, if (front) 0.45 else 0.3, 0.0))
+                }
+                shown0 { Vfx.shockwave(f.world, style, a.entityPos.add(dir.multiply(1.6)), if (front) 2.6f else 2.0f, 10, 0.8f) }
+                wait(if (front) 14 else 8)
+            }
+            waitUntil(120) { done }
+        } finally {
+            flyingBlade?.discard()
+            flyingBlade = null
+            f.arius?.bladeState = keep
+            f.sound("arius.guard", a.entityPos, 1.4f, 1.4f)
+        }
+        f.openArius(18)
+        wait(18)
+    }
+
+    private inline fun shown0(block: () -> Unit) = block()
+
+    /** Klinge flach gelegt (Spitze nach vorn) und um die Hochachse gedreht: wirbelt wie ein Rotor. */
+    private fun spinBlade(blade: net.minecraft.entity.decoration.DisplayEntity.ItemDisplayEntity, deg: Float) {
+        val spin = org.joml.Quaternionf().rotationY(Math.toRadians(deg.toDouble()).toFloat())
+        val lay = org.joml.Quaternionf().rotationX((Math.PI / 2).toFloat())
+        blade.setTransformation(net.minecraft.util.math.AffineTransformation(org.joml.Vector3f(), spin, org.joml.Vector3f(1.6f, 1.6f, 1.6f), lay))
+        blade.setInterpolationDuration(1)
+        blade.setStartInterpolation(0)
+    }
+
+    /** Aufräumen, falls der Kampf mitten im Klingenflug endet. */
+    fun cleanup() {
+        flyingBlade?.discard()
+        flyingBlade = null
     }
 
     private fun evading(t: ServerPlayerEntity): Boolean {
