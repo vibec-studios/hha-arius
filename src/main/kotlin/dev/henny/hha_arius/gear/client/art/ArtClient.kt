@@ -38,20 +38,31 @@ import org.lwjgl.glfw.GLFW
  * Client der Handschuhe und der Schwerttechnik: Tasten, Klick-Weiche, Zauberrad, HUD, Bauvorschau und das Steuern des
  * Lichtgleiters. Die Spiellogik entscheidet der Server; hier wird nur gesendet und angezeigt.
  *
- * Bedienung (alle Tasten frei belegbar, Kategorie „Arius“):
- * * Technik-Taste (Standard R): mit Handschuhen Rad öffnen (halten, Maus in Richtung, loslassen = wählen; kurz tippen =
- *   zur vorigen Technik wechseln); mit Solvane Klarer Schnitt (halten = Haltung, loslassen = Schnitt).
- * * Modus-Taste (Standard V): Nahkampf ↔ Magie (nicht mitten in einer Aktion).
+ * Bedienung über die HHA-Ability-Tasten für Addons (Steuerung → HHA, frei belegbar; beim ersten Start einmal mit R/V
+ * vorbelegt, wenn sie noch frei sind):
+ * * Ability 4 = Technik: mit Handschuhen Rad öffnen (halten, Maus in Richtung, loslassen = wählen; kurz tippen = zur
+ *   vorigen Technik wechseln); mit Solvane Klarer Schnitt (halten = Haltung, loslassen = Schnitt).
+ * * Ability 5 = Modus: Nahkampf ↔ Magie (nicht mitten in einer Aktion).
+ * HHA verbraucht die Tastendrücke selbst (Server-Abilities), deshalb wertet Arius die Flanken über `isPressed` aus.
  * * Nahkampf: Linksklick Schlagfolge, Rechtsklick Tritt, Schleichen + Rechtsklick Parade. Auf einen Block in Reichweite
  *   gehen Links- und Rechtsklick normal durch (abbauen, Türen/Truhen öffnen).
  * * Magie: Rechtsklick wirkt die gewählte Technik (tippen, laden, zielen/setzen, halten), Linksklick bricht ab.
  */
 object ArtClient {
 
-    lateinit var keyTechnique: KeyBinding
-        private set
-    lateinit var keyMode: KeyBinding
-        private set
+    /** HHA „Ability 4“ (Technik) und „Ability 5“ (Modus), gesucht über ihre Steuerungs-ID. */
+    private const val TECH_ID = "key.hha.ability_4"
+    private const val MODE_ID = "key.hha.ability_5"
+    private var techKey: KeyBinding? = null
+    private var modeKey: KeyBinding? = null
+    private var techDown = false
+    private var modeDown = false
+    private var defaultsChecked = false
+
+    private fun key(client: MinecraftClient, id: String): KeyBinding? = client.options.allKeys.firstOrNull { it.id == id }
+
+    /** Technik-Taste (für Rad und Hinweise); null, solange die Optionen noch nicht geladen sind. */
+    fun techKey(): KeyBinding? = techKey ?: MinecraftClient.getInstance().options?.let { key(MinecraftClient.getInstance(), TECH_ID) }?.also { techKey = it }
 
     // Eigener Zustand vom Server
     var selected = Spell.WIND_BLADE
@@ -87,9 +98,6 @@ object ArtClient {
         // Bau-Blöcke der Zauber sind durchscheinend.
         net.fabricmc.fabric.api.client.rendering.v1.BlockRenderLayerMap.putBlock(dev.henny.hha_arius.gear.art.Constructs.FROST, net.minecraft.client.render.BlockRenderLayer.TRANSLUCENT)
         net.fabricmc.fabric.api.client.rendering.v1.BlockRenderLayerMap.putBlock(dev.henny.hha_arius.gear.art.Constructs.YANG, net.minecraft.client.render.BlockRenderLayer.TRANSLUCENT)
-        val category = KeyBinding.Category.create(HhaArius.id("arius"))
-        keyTechnique = KeyBindingHelper.registerKeyBinding(KeyBinding("key.hha_arius.technique", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_R, category))
-        keyMode = KeyBindingHelper.registerKeyBinding(KeyBinding("key.hha_arius.mode", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_V, category))
 
         ClientPlayNetworking.registerGlobalReceiver(ArtSelfS2C.ID) { p, _ ->
             val now = ArtAnims.ticks
@@ -195,8 +203,39 @@ object ArtClient {
         return holdsGauntlets(player) && castingLocally()
     }
 
+    /**
+     * Einmalig: Sind HHA Ability 4/5 noch unbelegt, R bzw. V vorbelegen (Merker in config/hha_arius/keys_v1, damit eine
+     * später bewusst gelöschte Belegung gelöscht bleibt).
+     */
+    private fun checkDefaults(client: MinecraftClient) {
+        if (defaultsChecked) return
+        defaultsChecked = true
+        val marker = net.fabricmc.loader.api.FabricLoader.getInstance().configDir.resolve("hha_arius").resolve("keys_v1")
+        try {
+            if (java.nio.file.Files.exists(marker)) return
+            var changed = false
+            for ((id, code) in listOf(TECH_ID to GLFW.GLFW_KEY_R, MODE_ID to GLFW.GLFW_KEY_V)) {
+                val k = key(client, id) ?: continue
+                if (k.isUnbound) {
+                    k.setBoundKey(InputUtil.Type.KEYSYM.createFromCode(code))
+                    changed = true
+                }
+            }
+            if (changed) {
+                KeyBinding.updateKeysByCode()
+                client.options.write()
+            }
+            java.nio.file.Files.createDirectories(marker.parent)
+            java.nio.file.Files.writeString(marker, "HHA Ability 4/5 einmal mit R/V vorbelegt\n")
+        } catch (_: Exception) {
+        }
+    }
+
     private fun tickInput(client: MinecraftClient) {
         val player = client.player ?: return
+        checkDefaults(client)
+        val tech = techKey ?: key(client, TECH_ID)?.also { techKey = it } ?: return
+        val modeK = modeKey ?: key(client, MODE_ID)?.also { modeKey = it } ?: return
         val gauntlets = holdsGauntlets(player)
         val solvane = player.mainHandStack.isOf(GearItems.SOLVANE)
         val inGame = client.currentScreen == null
@@ -223,16 +262,19 @@ object ArtClient {
         useHeld = pressed
         if (!gauntlets) castHeld = false
 
-        while (keyMode.wasPressed()) if (gauntlets && inGame) send(ArtAction.MODE_TOGGLE)
-        while (keyTechnique.wasPressed()) {
-            if (!inGame) continue
-            if (gauntlets) client.setScreen(SpellWheelScreen(keyTechnique))
+        val modeNow = modeK.isPressed
+        if (modeNow && !modeDown && gauntlets && inGame) send(ArtAction.MODE_TOGGLE)
+        modeDown = modeNow
+        val techNow = tech.isPressed
+        if (techNow && !techDown && inGame) {
+            if (gauntlets) client.setScreen(SpellWheelScreen(tech))
             else if (solvane && !artHeld) {
                 send(ArtAction.ART_PRESS, if (player.isSneaking) 1 else 0)
                 artHeld = true
             }
         }
-        if (artHeld && (!keyTechnique.isPressed || !solvane)) {
+        techDown = techNow && inGame
+        if (artHeld && (!tech.isPressed || !solvane)) {
             if (solvane) send(ArtAction.ART_RELEASE, if (player.isSneaking) 1 else 0)
             artHeld = false
         }
@@ -244,8 +286,10 @@ object ArtClient {
      * Hinweis im Chat, weil die andere Belegung den Druck sonst schluckt.
      */
     private fun showKeys(client: MinecraftClient, player: PlayerEntity, gauntlets: Boolean) {
-        val tech = Text.keybind(keyTechnique.id)
-        val mode = Text.keybind(keyMode.id)
+        val techK = techKey ?: return
+        val modeK = modeKey ?: return
+        val tech = Text.keybind(TECH_ID)
+        val mode = Text.keybind(MODE_ID)
         val use = Text.keybind("key.use")
         val msg = if (gauntlets) {
             if (mode(player) == GauntletMode.MAGIC) Text.translatable("hha_arius.keys.gauntlets_magic", use, tech, mode)
@@ -255,8 +299,13 @@ object ArtClient {
         }
         player.sendMessage(msg, true)
         if (conflictsWarned) return
-        for (own in arrayOf(keyTechnique, keyMode)) {
+        for (own in arrayOf(techK, modeK)) {
             if (own.isUnbound) continue
+            if (own.isUnbound) {
+                conflictsWarned = true
+                player.sendMessage(Text.translatable("hha_arius.keys.unbound", Text.translatable(own.id)).formatted(net.minecraft.util.Formatting.GOLD), false)
+                continue
+            }
             val other = client.options.allKeys.firstOrNull { it !== own && !it.isUnbound && it.equals(own) } ?: continue
             conflictsWarned = true
             player.sendMessage(

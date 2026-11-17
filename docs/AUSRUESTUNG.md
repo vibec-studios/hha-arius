@@ -25,9 +25,19 @@ Zahlen hier = Standardwerte im Code (`gear/GearConfig.kt`).
   Gleiter. Solvane hat den Schnitt. Die frühere „Weiße Linie“ der Brustplatte ist entfallen, weil sie mit Solvanes
   Schnitt doppelt gewesen wäre.
 
-### Tasten (alle frei belegbar, Steuerung → Kategorie „Arius“ bzw. HHA)
+### Tasten (seit 1.2.2 die HHA-Ability-Tasten für Addons, Steuerung → HHA)
 | Taste | Standard | Mit Handschuhen | Mit Solvane |
 |---|---|---|---|
+| HHA Ability 4 (Technik) | R (beim ersten Start vorbelegt, wenn frei) | Zauberrad (halten, zeigen, loslassen); kurz tippen = vorige Technik | Klarer Schnitt (halten = laden, loslassen = Schnitt) |
+| HHA Ability 5 (Modus) | V (ebenso) | Nahkampf ↔ Magie | – |
+| HHA Ability 1 / 2 / 3 | G / H / U | Rüstung: Weißer Kern / Frostschritt / Weißes Loch | dasselbe |
+
+Arius hat keine eigenen Tasten mehr. HHA lässt Ability 4–6 für Addons frei und ab Werk unbelegt; Arius belegt 4 und 5
+beim ersten Start einmal mit R und V, falls sie frei sind (Merker `config/hha_arius/keys_v1`). Andere Addons (z. B.
+Blood) können dieselben Tasten nutzen; was passiert, hängt vom gehaltenen Item ab. Beim Ziehen von Handschuhen oder
+Solvane zeigt die Aktionsleiste die Belegung; ist eine Taste unbelegt oder doppelt belegt, kommt einmal ein Chat-Hinweis.
+
+---|---|---|---|
 | Technik | R | Zauberrad (halten, zeigen, loslassen); kurz tippen = vorige Technik | Klarer Schnitt (halten = laden, loslassen = Schnitt) |
 | Modus | V | Nahkampf ↔ Magie | – |
 | HHA Ability 1 / 2 / 3 | G / H / U | Rüstung: Weißer Kern / Frostschritt / Weißes Loch | dasselbe |

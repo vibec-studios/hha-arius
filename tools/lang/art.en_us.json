@@ -8,9 +8,6 @@
   "item.hha_arius.solvane.lore5": "Hold to charge, sneak = horizontal · cuts up to hardness %s (max %s blocks)",
   "block.hha_arius.frost_construct": "Crystal Ice (spell)",
   "block.hha_arius.yang_construct": "Yang Light (spell)",
-  "key.category.hha_arius.arius": "Arius",
-  "key.hha_arius.technique": "Technique / spell wheel",
-  "key.hha_arius.mode": "Switch gauntlet mode",
   "hha_arius.wheel.title": "Spell wheel",
   "hha_arius.wheel.hint": "Choose a school",
   "hha_arius.wheel.current": "Ready: %s",
@@ -70,5 +67,6 @@
   "hha_arius.keys.gauntlets_melee": "Melee: left-click strikes · right-click kick · sneak + right-click parry · [%s] magic · [%s] spell wheel",
   "hha_arius.keys.gauntlets_magic": "Magic: [%s] cast · [%s] spell wheel (hold) · [%s] melee",
   "hha_arius.keys.solvane": "Solvane: hold [%s] to charge Clear Cut, release to cut (sneak: horizontal)",
-  "hha_arius.keys.conflict": "Arius: the key %s is bound to \"%s\" and also to \"%s\". Rebind one of them under Options → Controls, otherwise the press may not arrive."
+  "hha_arius.keys.conflict": "Arius: the key %s is bound to \"%s\" and also to \"%s\". Rebind one of them under Options → Controls, otherwise the press may not arrive.",
+  "hha_arius.keys.unbound": "Arius: \"%s\" is not bound. Bind it under Options → Controls → HHA, otherwise the spell wheel, mode switch or Clear Cut are missing."
 }

@@ -8,9 +8,6 @@
   "item.hha_arius.solvane.lore5": "Halten = laden, Schleichen = waagerecht · spaltet bis Härte %s (max. %s Blöcke)",
   "block.hha_arius.frost_construct": "Kristalleis (Zauber)",
   "block.hha_arius.yang_construct": "Yang-Licht (Zauber)",
-  "key.category.hha_arius.arius": "Arius",
-  "key.hha_arius.technique": "Technik / Zauberrad",
-  "key.hha_arius.mode": "Handschuhmodus wechseln",
   "hha_arius.wheel.title": "Zauberrad",
   "hha_arius.wheel.hint": "Schule wählen",
   "hha_arius.wheel.current": "Bereit: %s",
@@ -70,5 +67,6 @@
   "hha_arius.keys.gauntlets_melee": "Nahkampf: Linksklick Schläge · Rechtsklick Tritt · Schleichen + Rechtsklick Parade · [%s] Magie · [%s] Zauberrad",
   "hha_arius.keys.gauntlets_magic": "Magie: [%s] wirken · [%s] Zauberrad (halten) · [%s] Nahkampf",
   "hha_arius.keys.solvane": "Solvane: [%s] halten = Klarer Schnitt laden, loslassen = schneiden (Schleichen: waagrecht)",
-  "hha_arius.keys.conflict": "Arius: Die Taste %s ist für „%s“ und zugleich für „%s“ belegt. Belege eine davon unter Optionen → Steuerung neu, sonst kommt der Druck evtl. nicht an."
+  "hha_arius.keys.conflict": "Arius: Die Taste %s ist für „%s“ und zugleich für „%s“ belegt. Belege eine davon unter Optionen → Steuerung neu, sonst kommt der Druck evtl. nicht an.",
+  "hha_arius.keys.unbound": "Arius: „%s“ ist nicht belegt. Belege die Taste unter Optionen → Steuerung → HHA, sonst fehlen Zauberrad, Moduswechsel bzw. Klarer Schnitt."
 }
