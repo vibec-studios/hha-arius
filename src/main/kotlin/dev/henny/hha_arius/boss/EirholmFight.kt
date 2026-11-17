@@ -247,7 +247,7 @@ class EirholmFight(
     val arenaRadius: Double
         get() = when {
             phase <= Phase.CUT -> ArenaLayout.TEMPLE_R - 1.5
-            phase <= Phase.COLLAPSE -> ArenaLayout.PLATEAU_R - 2.0
+            phase <= Phase.COLLAPSE -> 100.0 // offenes Hochland ab dem Drachenkampf (seit 1.3.1)
             else -> ArenaLayout.VAULT_R - 2.0
         }
 

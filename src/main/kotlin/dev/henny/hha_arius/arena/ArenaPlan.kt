@@ -275,11 +275,21 @@ internal object ArenaPlan {
                 if (n > 0.74) col[-Y_MIN] = SNOW2 else if (n > 0.6) col[-Y_MIN] = SNOW1
             }
         } else {
-            val top = wallHeight(x, z)
-            if (top != Int.MIN_VALUE) {
-                val d = outsideDist(x, z)
-                val cliff = d[2] < d[1] && z < -56
-                for (y in ICE_BOTTOM until top) col[y - Y_MIN] = glacierBlock(x, y, z, top, cliff)
+            val d = outsideDist(x, z)
+            if (d[2] < d[1]) {
+                // Hinter und neben dem Tempel bleibt die Gletscherklippe.
+                val top = wallHeight(x, z)
+                if (top != Int.MIN_VALUE) {
+                    val cliff = z < -56
+                    for (y in ICE_BOTTOM until top) col[y - Y_MIN] = glacierBlock(x, y, z, top, cliff)
+                }
+            } else if (z <= 54) {
+                // Seit 1.3.1 offen (Crix: Arena ab dem Drachen „unendlich groß“): weites Schneehochland auf Plateauhöhe,
+                // das draußen in die Fernlandschaft übergeht.
+                for (y in ICE_BOTTOM until -1) col[y - Y_MIN] = iceBody(x, y, z)
+                col[-1 - Y_MIN] = plateauSurface(x, z, r)
+                val n = vnoise(x, z, 5, 6)
+                if (n > 0.72) col[-Y_MIN] = SNOW2 else if (n > 0.58) col[-Y_MIN] = SNOW1
             }
         }
 

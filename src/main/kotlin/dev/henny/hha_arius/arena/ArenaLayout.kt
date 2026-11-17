@@ -122,7 +122,7 @@ object ArenaLayout {
      * Der Name `VAULT` bleibt im Code (früher das Herzgewölbe unter dem Plateau).
      */
     val VAULT = BlockPos(0, 100, 94)
-    const val VAULT_R = 28
+    const val VAULT_R = 40
 
     /** Kein Deckengewölbe mehr: Obergrenze nur für den Drachenkörper. */
     const val VAULT_CEIL = 170

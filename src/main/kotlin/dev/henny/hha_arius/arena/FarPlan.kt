@@ -26,7 +26,7 @@ import kotlin.math.sin
  */
 internal object FarPlan {
 
-    const val VERSION = 2 // 2: Himmelsbalkon an der Nadel
+    const val VERSION = 3 // 2: Himmelsbalkon an der Nadel; 3: Alpen (Felshorn, Fels/Schnee, offenes Hochland)
 
     const val X_MIN = -ArenaLayout.FAR_X
     const val X_MAX = ArenaLayout.FAR_X
@@ -99,15 +99,23 @@ internal object FarPlan {
         return 14.0 + 22.0 * sin(PI * t)
     }
 
-    /** Oberkante der Nadel über (x, z) oder [Int.MIN_VALUE]. Kannelierte Flanken, leicht gedreht. */
+    /**
+     * Oberkante des Horns über (x, z) oder [Int.MIN_VALUE]. Seit 1.3.1 ein alpines Felshorn (wie das Matterhorn):
+     * Pyramide mit vier Graten (Superellipse-Abstand, p 1,3), Flanken dazwischen eingezogen. Der Abstand ist nie kleiner
+     * als der Kreisabstand, das Horn bleibt also innerhalb von [ArenaLayout.spireRadius] (Windung im Auftritt passt).
+     */
     fun spireTop(x: Int, z: Int): Int {
         val dx = x + 0.5 - (ArenaLayout.SPIRE.x + 0.5)
         val dz = z + 0.5 - (ArenaLayout.SPIRE.z + 0.5)
         val d = hypot(dx, dz)
         if (d > ArenaLayout.SPIRE_BASE_R * 1.25) return Int.MIN_VALUE
-        val a = atan2(dx, dz)
-        val flute = 1.0 + 0.13 * sin(5 * a + d * 0.08) + 0.06 * sin(11 * a - 1.3)
-        val r = d / (ArenaLayout.SPIRE_BASE_R * flute)
+        val ca = 0.866
+        val sa = 0.5
+        val u = abs(dx * ca - dz * sa)
+        val v = abs(dx * sa + dz * ca)
+        val m = Math.pow(Math.pow(u, 1.3) + Math.pow(v, 1.3), 1.0 / 1.3)
+        val rough = 1.0 + 0.05 * (vnoise(x, z, 7, 93) - 0.5)
+        val r = m / (ArenaLayout.SPIRE_BASE_R * rough)
         if (r >= 1.0) return Int.MIN_VALUE
         var h = ArenaLayout.SPIRE.y + (ArenaLayout.SPIRE_TOP - ArenaLayout.SPIRE.y) * Math.pow(1.0 - r, 1.35)
         h += (vnoise(x, z, 6, 91) - 0.5) * 4.0 * (1.0 - r)
@@ -118,8 +126,9 @@ internal object FarPlan {
     fun ground(x: Int, z: Int): Int {
         val ax = abs(x).toDouble()
         val zd = z.toDouble()
-        val base = -14.0 + (fbm(x, z, 32, 3) - 0.5) * 8.0
-        val rise = smooth(54.0, 118.0, ax)
+        // Seit 1.3.1: weites Hochland auf Plateauhöhe, die Alpenketten beginnen erst weit draußen.
+        val base = -1.0 + (fbm(x, z, 40, 3) - 0.5) * 7.0
+        val rise = smooth(92.0, 136.0, ax)
         val ridge = ridged(x + 400, z, 48, 7)
         var h = base + rise * (70.0 + 55.0 * ridge) + rise * (vnoise(x, z, 5, 13) - 0.5) * 7.0
         val north = smooth(-92.0, -128.0, zd)
@@ -158,23 +167,35 @@ internal object FarPlan {
     const val PACKED = 1
     const val BLUE = 2
     const val SNOW = 3
+    const val STONE = 4
+    const val ANDESITE = 5
+    const val CALCITE = 6
     const val DEEP = 11
     const val TUFF = 12
 
+    /**
+     * Seit 1.3.1 alpin (Crix: „ein Berg wie in den Alpen, nicht aus Eis“): Fels in Schichten (Stein, Andesit, Tuff,
+     * dunkler Tiefenschiefer), Schnee auf flachen Stellen und oberhalb der Schneegrenze, Gletschereis nur noch in Rinnen
+     * und auf der Schluchtsohle.
+     */
     fun material(x: Int, y: Int, z: Int, top: Int, slope: Int, spire: Boolean): Int {
         val depth = top - y
-        if (spire) {
-            if (depth == 0 && slope <= 2) return SNOW
-            val band = Math.floorMod(y + (6 * vnoise(x, z, 7, 41)).toInt(), 9)
-            return if (band < 2 || h32(x, y, z, 43) < 0.08) BLUE else PACKED
-        }
         if (y < ArenaLayout.CANYON_FLOOR + 6 && depth > 0) return if (h32(x, y, z, 51) < 0.6) DEEP else TUFF
-        if (depth == 0 && slope <= 2) return SNOW
+        val snowLine = 70 + (vnoise(x, z, 13, 65) * 20).toInt()
+        // Schnee: flache Oberflächen immer, steilere oberhalb der Schneegrenze teilweise
+        if (depth == 0 && (slope <= 2 || (y > snowLine && slope <= 5 && h32(x, y, z, 67) < 0.75))) return SNOW
         if (depth <= 1 && slope <= 1) return SNOW
-        val band = Math.floorMod(y + (5 * vnoise(x, z, 11, 61)).toInt(), 7)
-        if (band == 0) return BLUE
-        if (slope >= 6 && h32(x, y, z, 63) < 0.2) return BLUE
-        return PACKED
+        // Eisrinnen (Couloirs) in steilen Flanken
+        if (slope >= 4 && vnoise(x, z, 6, 69) > 0.78) return if (h32(x, y, z, 71) < 0.3) BLUE else PACKED
+        // Felsschichten, leicht geneigt
+        val strata = Math.floorMod(y + (6 * vnoise(x, z, 17, 73)).toInt() + (x + z) / 9, 11)
+        return when {
+            strata <= 1 -> DEEP
+            strata <= 3 -> ANDESITE
+            strata == 7 -> TUFF
+            strata == 9 && spire -> CALCITE
+            else -> STONE
+        }
     }
 
     // --- Himmelsbalkon --------------------------------------------------------------------------------------------
@@ -214,9 +235,12 @@ internal object FarPlan {
         if (y >= VY) return -1
         if (y == VY - 1) {
             val vein = vnoise(x, z, 3, 709)
-            return if (r > balconyEdge(x, z) - 1.2) PACKED else if (vein > 0.72) BLUE else SNOW
+            return if (r > balconyEdge(x, z) - 1.2) STONE else if (vein > 0.8) PACKED else SNOW
         }
-        if (y >= VY - th) return if (h32(x, y, z, 711) > 0.8) BLUE else PACKED
+        if (y >= VY - th) {
+            val k = h32(x, y, z, 711)
+            return if (k < 0.45) STONE else if (k < 0.75) ANDESITE else if (k < 0.9) TUFF else DEEP
+        }
         // Eiszapfen unter dem Schelf
         val icicle = h32(x, 0, z, 713)
         if (icicle < 0.2) {
@@ -231,6 +255,9 @@ internal object FarPlan {
         SNOW -> Blocks.SNOW_BLOCK.defaultState
         DEEP -> Blocks.DEEPSLATE.defaultState
         TUFF -> Blocks.TUFF.defaultState
+        STONE -> Blocks.STONE.defaultState
+        ANDESITE -> Blocks.ANDESITE.defaultState
+        CALCITE -> Blocks.CALCITE.defaultState
         else -> Blocks.PACKED_ICE.defaultState
     }
 }
