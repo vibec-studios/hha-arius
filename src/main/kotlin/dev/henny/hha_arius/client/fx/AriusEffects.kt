@@ -81,6 +81,10 @@ abstract class AriusFx(val life: Int) {
                     AriusFxClient.collapseWhiteHole(pos)
                     null
                 }
+                FxKind.BLADE_STREAM -> BladeStream(pos, dir, p.a.toInt(), p.b >= 0.5f, e1, p.life)
+                FxKind.BLADE_SHATTER -> BladeShatter(e1, pos, p.life)
+                FxKind.BLADE_FORM -> BladeForm(e1, pos, p.life)
+                FxKind.DRAGON_DISSOLVE -> DragonDissolve(pos, dir, p.a.toDouble().coerceAtLeast(1.0), p.life)
                 FxKind.FLASH -> {
                     if (AriusClientConfig.flash) ScreenFlash.start(p.a, p.life)
                     null

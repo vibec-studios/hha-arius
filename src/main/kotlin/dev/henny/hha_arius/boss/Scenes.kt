@@ -321,12 +321,13 @@ class Scenes(private val f: EirholmFight) {
             val h = if (dist < 1e-3) Vec3d.ZERO else d.normalize().multiply(dist / 9.25)
             Hold.switchToLaunch(p, Vec3d(h.x, 0.85, h.z), 40, landing, landing)
         }
-        // Arius setzt sich auf die stehengebliebene Tempelhälfte.
+        // Arius tritt auf die stehengebliebene Tempelhälfte; er bleibt stehen, Solvane in der Hand. Setzen wird er sich
+        // erst, wenn er sie im Auftritt entlassen hat (Entrance.release).
         wait(6)
         val seat = f.abs(ArenaLayout.WATCH_SEAT)
         f.place(a, seat)
         a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
-        a.play(AriusPose.SEATED)
+        a.play(AriusPose.IDLE)
         // Weiter Schwenk über die Landeplätze, bis alle gelandet sind; danach übernimmt der Auftritt.
         val landing = f.abs(ArenaLayout.LANDING[0])
         scene.line(gate.add(7.0, 3.0, 11.0), rel(-12.0, 9.0, -6.0), gate.add(0.5, 4.0, 3.0), landing.add(0.0, 1.0, 0.0), 34, 72.0, 64.0)
@@ -559,6 +560,9 @@ class Scenes(private val f: EirholmFight) {
         wait(30)
         a.form = AriusForm.WHITE
         a.eyeGlow = 100
+        // Solvane ist der Drache: in seiner Hand verdichtet sich eine Klinge aus weißem Eislicht (V5).
+        Entrance.storyFx(f, FxKind.BLADE_FORM, a.entityPos.add(0.0, 1.0, 0.0), life = 24, e1 = a)
+        cue("core.form", vault, 2f, 1.5f)
         // 6b) Seitenschwenk: die Kamera weicht zurück und dreht um ihn, Nivaris richtet sich hinter ihm auf.
         val baseAng = Math.toDegrees(kotlin.math.atan2(front.z, front.x))
         scene?.orbit(vault, 3.2, 1.0, baseAng + 18.0, baseAng + 62.0, 40, 52.0, 66.0, lookAt = a, lookOffset = 1.3, radiusTo = 9.5, heightTo = 3.2)
@@ -574,7 +578,9 @@ class Scenes(private val f: EirholmFight) {
         f.face(d, vault)
         shown { f.fx(FxKind.THREAD, vault, life = 40, e1 = a, e2 = d) }
         cue("resonance.chime", vault, 4f, 0.9f)
-        wait(30)
+        wait(18)
+        a.bladeState = AriusBlade.ICE
+        wait(12)
         a.play(AriusPose.IDLE)
         d.play(NivarisPose.IDLE)
         // Rückweg zur Spielerkamera, bevor das Herzgewölbe beginnt.
@@ -597,6 +603,9 @@ class Scenes(private val f: EirholmFight) {
         f.ariusVulnerable = true
         f.dragonVulnerable = true
         a.form = AriusForm.WHITE
+        // Er kämpft mit der Eisklinge; die echte Solvane ist der Drache (auch nach Überspringen, Abbruch, Training).
+        a.bladeState = AriusBlade.ICE
+        a.sheathed = false
         f.music("music.heart", 20)
         var whiteHoleDone = false
         var nextResonance = f.now + 300
@@ -1042,6 +1051,8 @@ class Scenes(private val f: EirholmFight) {
             d.play(NivarisPose.LIE_DOWN)
         }
         a.lead = false
+        // Solvane kehrt zurück: der Drache wird wieder zur Klinge in der Scheide (V5). Danach gibt es keinen Drachen mehr.
+        yieldAll(bladeReturn(a))
         Vfx.skyMood(f.world, Vfx.Style.GOLD, f.arenaCenter, 0.25f, 400, 60f)
         a.sheathed = true
         a.play(AriusPose.IAI_STANCE)
@@ -1102,6 +1113,81 @@ class Scenes(private val f: EirholmFight) {
         yieldAll(ending())
     }
 
+    /**
+     * Auftakt des Finales (V5): Solvane kehrt zurück. Er ruft sie („Komm zurück.“), der Drache löst sich in Licht auf und
+     * zieht als Strom über ihn hinweg in die Scheide auf seinem Rücken, die Eisklinge in seiner Hand zerfällt. Kurze,
+     * überspringbare Kamera (≈ 5 s, zwei Einstellungen), kein Schaden, keine Ansage. Endzustand: kein Drache,
+     * [AriusBlade.HELD], Solvane in der Scheide ([settleReturn]). Im Training ohne Kamera.
+     */
+    private fun bladeReturn(a: AriusEntity): Script = script {
+        val d = f.nivaris
+        if (d == null || f.training != 0) {
+            settleReturn(a)
+            return@script
+        }
+        val scene = CineScene(f) { settleReturn(a) }
+        yieldAll(scene.play(script {
+            val head = f.dragon.anchorPos(NivarisMoves.Zone.HEAD)
+            val body = d.entityPos.add(0.0, 1.2, 0.0)
+            f.face(a, head)
+            a.sheathed = false
+            a.play(AriusPose.IDLE)
+            val toDragon = flatDir(a.entityPos, head)
+            val side = Vec3d(-toDragon.z, 0.0, toDragon.x)
+            val eye = a.entityPos.add(0.0, 1.7, 0.0)
+            // A) Über seine Schulter zum Drachen; er ruft sie, der Faden zwischen Träger und Klinge leuchtet (34 Ticks).
+            scene.line(f.clampToArena(eye.add(toDragon.multiply(-2.6)).add(side.multiply(1.1)).add(0.0, 0.3, 0.0), 2.0),
+                f.clampToArena(eye.add(toDragon.multiply(-2.0)).add(side.multiply(0.9)).add(0.0, 0.4, 0.0), 2.0),
+                head.lerp(eye, 0.3), head, 34 + RETURN_PEAK, 56.0, 50.0)
+            wait(8)
+            shown { f.say("dragon.return", 50) }
+            d.resonance = true
+            d.eyeGlow = 100
+            a.eyeGlow = 100
+            Entrance.storyFx(f, FxKind.THREAD, a.entityPos, life = 26 + RETURN_PEAK, e1 = a, e2 = d)
+            cue("resonance.chime", a.entityPos, 3f, 0.8f)
+            wait(26)
+            // Sie löst sich in Licht auf; auf dem Höhepunkt ist sie fort.
+            Entrance.storyFx(f, FxKind.DRAGON_DISSOLVE, head, body, a = 5f, life = RETURN_PEAK + 30)
+            cue("transform.pulse", head, 4f, 0.7f)
+            cue("seal.blizzard", head, 2f, 1.4f)
+            wait(RETURN_PEAK)
+            f.dismissNivaris()
+            // B) Seitlich auf Brusthöhe: der Strom kommt in hohem Bogen über ihn in die Scheide, die Eisklinge zerfällt.
+            val chest = a.entityPos.add(0.0, 1.4, 0.0)
+            scene.line(f.clampToArena(chest.add(side.multiply(3.4)).add(toDragon.multiply(0.8)).add(0.0, 0.2, 0.0), 2.0),
+                f.clampToArena(chest.add(side.multiply(2.8)).add(toDragon.multiply(0.1)).add(0.0, 0.4, 0.0), 2.0),
+                chest.add(toDragon.multiply(1.6)).add(0.0, 0.8, 0.0), chest.add(toDragon.multiply(-0.2)), 56, 58.0, 50.0)
+            val sheath = a.entityPos.add(0.0, 1.55, 0.0).subtract(toDragon.multiply(0.25))
+            Entrance.storyFx(f, FxKind.BLADE_STREAM, head.add(0.0, 1.5, 0.0), sheath, a = RETURN_TRAVEL.toFloat(), b = 1f, life = RETURN_TRAVEL + 14, e1 = a)
+            cue("nivaris.wing", head, 2f, 1.6f)
+            wait(4)
+            Entrance.storyFx(f, FxKind.BLADE_SHATTER, a.entityPos.add(0.0, 1.0, 0.0), life = 24, e1 = a)
+            a.bladeState = AriusBlade.NONE
+            cue("transform.shatter", a.entityPos, 2f, 1.5f)
+            wait(RETURN_TRAVEL - 4)
+            // Die Scheide ist wieder gefüllt; die Hand geht an den Griff.
+            a.bladeState = AriusBlade.HELD
+            a.sheathed = true
+            cue("iai.glint", a.entityPos, 2.5f, 0.9f)
+            cue("resonance.chime", a.entityPos, 2f, 1.3f)
+            wait(6)
+            a.play(AriusPose.IAI_STANCE)
+            wait(56 - RETURN_TRAVEL - 6 - 18)
+            scene.home(18)
+            wait(18)
+        }))
+        settleReturn(a)
+    }
+
+    /** Endzustand der Rückkehr (auch nach Überspringen, Abbruch oder im Training). */
+    private fun settleReturn(a: AriusEntity) {
+        f.dismissNivaris()
+        a.bladeState = AriusBlade.HELD
+        a.sheathed = true
+        a.eyeGlow = 60
+    }
+
     /** Perfekter Block: Schild höchstens [AriusTimings.PERFECT_BLOCK] Ticks vor dem Treffer erhoben. */
     private fun perfectBlock(p: ServerPlayerEntity): Boolean =
         p.isBlocking && p.itemUseTime in 0..(AriusTimings.PERFECT_BLOCK + 5)
@@ -1121,8 +1207,8 @@ class Scenes(private val f: EirholmFight) {
 
     /**
      * Das Ende mit Kamera (überspringbar, kein Kampf mehr): Detail, wie er niederkniet; langsamer Halbkreis um ihn, während
-     * er von der Waffe spricht; die weite Einstellung des Gewölbes mit Nivaris im Hintergrund, als er aufsteht; Rückweg
-     * zur Spielerkamera. Die persönlichen Zeilen danach laufen ohne Kamera.
+     * er von der Waffe spricht; die weite Einstellung des (seit [bladeReturn] drachenlosen) Gewölbes, als er aufsteht;
+     * Rückweg zur Spielerkamera. Die persönlichen Zeilen danach laufen ohne Kamera.
      */
     private fun ending(): Script = script {
         val a = f.arius ?: return@script
@@ -1145,8 +1231,8 @@ class Scenes(private val f: EirholmFight) {
             scene.orbit(base, 3.4, 1.1, ang - 25.0, ang + 35.0, 96, 50.0, 46.0, lookAt = a, lookOffset = 1.0, radiusTo = 3.0, heightTo = 1.3)
             shown { f.say("end.weapon", 90) }
             wait(95)
-            // Weite Einstellung: das Gewölbe, er steht auf, Nivaris liegt im Hintergrund.
-            val rest = f.abs(ArenaLayout.VAULT_REST)
+            // Weite Einstellung: das leere Gewölbe, er steht auf; Solvane ist wieder Klinge (kein Drache mehr, V5).
+            val rest = f.arenaCenter
             val focus = base.lerp(rest, 0.35).add(0.0, 1.5, 0.0)
             val away = flatDir(rest, base).let { if (it.lengthSquared() < 0.5) front else it }
             scene.line(f.clampToArena(base.add(away.multiply(9.0)).add(3.0, 3.0, 0.0), 2.0), f.clampToArena(base.add(away.multiply(12.0)).add(4.0, 6.5, 0.0), 2.0),
@@ -1190,6 +1276,9 @@ class Scenes(private val f: EirholmFight) {
         val a = f.arius ?: return@script
         f.place(a, f.abs(ArenaLayout.WATCH_SEAT))
         a.play(AriusPose.SEATED)
+        // Abschnitt II: Solvane ist der Drache, er sitzt ohne Schwert.
+        a.bladeState = AriusBlade.NONE
+        a.sheathed = false
         for ((i, p) in f.players().withIndex()) {
             val s = f.abs(ArenaLayout.LANDING[i % ArenaLayout.LANDING.size])
             p.teleport(f.world, s.x, s.y, s.z, emptySet(), 180f, 0f, false)
@@ -1208,6 +1297,8 @@ class Scenes(private val f: EirholmFight) {
         val vault = f.abs(Vec3d.of(ArenaLayout.VAULT)).add(0.5, 0.0, 0.5)
         f.place(a, vault)
         a.form = AriusForm.WHITE
+        a.bladeState = AriusBlade.ICE
+        a.sheathed = false
         a.play(AriusPose.IDLE)
         f.spawnNivaris(f.abs(ArenaLayout.VAULT_REST), 180f)
         f.nivaris?.resonance = true
@@ -1230,6 +1321,14 @@ class Scenes(private val f: EirholmFight) {
         f.say("echo", 60)
         wait(60)
         yieldAll(finale())
+    }
+
+    private companion object {
+        /** Ticks von der Auflösung des Drachen bis zu seinem Verschwinden (Höhepunkt des Lichts, wie DragonDissolve.PEAK). */
+        const val RETURN_PEAK = 14
+
+        /** Flugzeit des Lichtstroms vom Drachen in die Scheide. */
+        const val RETURN_TRAVEL = 28
     }
 
     private fun flatDir(from: Vec3d, to: Vec3d): Vec3d {

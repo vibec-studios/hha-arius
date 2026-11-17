@@ -130,6 +130,7 @@ class AriusEntity(type: EntityType<out AriusEntity>, world: World) : EirholmPupp
         builder.add(SIDE, 1)
         builder.add(LEAD, false)
         builder.add(OPEN, false)
+        builder.add(BLADE, AriusBlade.HELD)
     }
 
     /** [AriusForm]. */
@@ -162,6 +163,15 @@ class AriusEntity(type: EntityType<out AriusEntity>, world: World) : EirholmPupp
         get() = dataTracker.get(OPEN)
         set(value) = dataTracker.set(OPEN, value)
 
+    /**
+     * Wo Solvane gerade ist, siehe [AriusBlade]: in Hand bzw. Scheide (wie bisher), als Drache unterwegs (keine Klinge,
+     * leere Scheide) oder ersetzt durch eine Klinge aus weißem Eislicht. Läuft über den DataTracker, Nachzügler und alle
+     * Mitspieler sehen also denselben Stand.
+     */
+    var bladeState: Int
+        get() = dataTracker.get(BLADE)
+        set(value) = dataTracker.set(BLADE, value.coerceIn(AriusBlade.HELD, AriusBlade.ICE))
+
     companion object {
         private val POSE: TrackedData<Int> = DataTracker.registerData(AriusEntity::class.java, TrackedDataHandlerRegistry.INTEGER)
         private val WINDUP: TrackedData<Int> = DataTracker.registerData(AriusEntity::class.java, TrackedDataHandlerRegistry.INTEGER)
@@ -172,6 +182,7 @@ class AriusEntity(type: EntityType<out AriusEntity>, world: World) : EirholmPupp
         private val SIDE: TrackedData<Int> = DataTracker.registerData(AriusEntity::class.java, TrackedDataHandlerRegistry.INTEGER)
         private val LEAD: TrackedData<Boolean> = DataTracker.registerData(AriusEntity::class.java, TrackedDataHandlerRegistry.BOOLEAN)
         private val OPEN: TrackedData<Boolean> = DataTracker.registerData(AriusEntity::class.java, TrackedDataHandlerRegistry.BOOLEAN)
+        private val BLADE: TrackedData<Int> = DataTracker.registerData(AriusEntity::class.java, TrackedDataHandlerRegistry.INTEGER)
 
         /** Trefferbox 0,7 × 1,95 (185 cm). Leben verwaltet der Kampf; das Attribut ist nur für die Anzeige. */
         fun attributes(): DefaultAttributeContainer.Builder = MobEntity.createMobAttributes()
@@ -179,6 +190,21 @@ class AriusEntity(type: EntityType<out AriusEntity>, world: World) : EirholmPupp
             .add(EntityAttributes.KNOCKBACK_RESISTANCE, 1.0)
             .add(EntityAttributes.FOLLOW_RANGE, 128.0)
     }
+}
+
+/**
+ * Zustand von Arius' Schwert ([AriusEntity.bladeState]). Solvane wurde aus dem Herzen eines uralten weißen Drachen
+ * geschmiedet und kann dessen Gestalt annehmen: Der Drache des Kampfes *ist* die Klinge.
+ */
+object AriusBlade {
+    /** Solvane in der Hand oder in der Scheide ([AriusEntity.sheathed]), wie bisher. */
+    const val HELD = 0
+
+    /** Solvane ist als Drache unterwegs: keine Klinge, die Scheide ist leer (Abschnitt II). */
+    const val NONE = 1
+
+    /** Eine Klinge aus weißem Eislicht in der Hand, die Scheide ist leer (Abschnitt III). */
+    const val ICE = 2
 }
 
 /** Nivaris, die Alte vom Eirgletscher. Siehe [NivarisPose]. */

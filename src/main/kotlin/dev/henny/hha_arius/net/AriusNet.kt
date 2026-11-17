@@ -219,6 +219,22 @@ enum class FxKind {
 
     /** Sturmstoss: Ursprung pos, Richtung x Reichweite (dx,dy,dz), a = Ladung 0..1. */
     GALE,
+
+    /**
+     * Solvane als Lichtstrom aus Licht und Eiskristallen von pos nach (dx,dy,dz), a = Flugzeit in Ticks. b = 0: verlässt
+     * die Klinge von e1 (Start an der echten Klinge, falls sichtbar); b = 1: kehrt in die Scheide von e1 zurück (Ziel folgt
+     * der Scheide). pos/(dx,dy,dz) sind der Ersatz, falls e1 beim Client nicht geladen ist.
+     */
+    BLADE_STREAM,
+
+    /** Die Eisklinge von e1 zerfällt in Splitter und Licht; pos = Ersatzpunkt (Hand). */
+    BLADE_SHATTER,
+
+    /** Eiskristalle ziehen sich zur Eisklinge von e1 zusammen; pos = Ersatzpunkt (Hand). */
+    BLADE_FORM,
+
+    /** Der Drache löst sich in Licht auf: Kopf pos, Rumpf (dx,dy,dz), a = Größe. */
+    DRAGON_DISSOLVE,
 }
 
 /**

@@ -1,5 +1,6 @@
 package dev.henny.hha_arius.client.model.arius
 
+import dev.henny.hha_arius.boss.AriusBlade
 import dev.henny.hha_arius.boss.AriusForm
 import dev.henny.hha_arius.boss.AriusPose
 import dev.henny.hha_arius.boss.AriusTimings
@@ -30,6 +31,9 @@ class AriusRenderState : LivingEntityRenderState() {
     var windup = 0
     var form = AriusForm.DARK
     var sheathed = false
+
+    /** [dev.henny.hha_arius.boss.AriusBlade]: Solvane, keine Klinge oder Eisklinge. */
+    var blade = AriusBlade.HELD
     var eyeGlow = 40
     var lead = false
     var open = false
@@ -151,7 +155,7 @@ private val SPRING_C = floatArrayOf(0.42f, 0.45f, 0.5f, 0.3f, 0.55f, 0.55f, 0.6f
  * Die Überblendung startet bei einem Posenwechsel aus der Haltung, die das Modell im Bild davor tatsächlich hatte
  * (je Entity gemerkt), auch mitten in einem Schlag; ohne Merkwert aus der Endhaltung von previousPose.
  */
-class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
+class AriusModel(root: ModelPart, private val bladeOnly: Boolean = false) : EntityModel<AriusRenderState>(root) {
 
     private fun path(p: String): ModelPart = p.split('/').fold(root) { m, n -> m.getChild(n) }
     private val parts: Array<ModelPart> = Array(Keys.COUNT) { path(Keys.BONES[it]) }
@@ -164,6 +168,8 @@ class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
     )
     private val formAll: Array<ModelPart> = formParts.flatten().distinct().toTypedArray()
     private val solvane = path(Keys.SOLVANE)
+    private val solvaneTree: List<ModelPart> = solvane.traverse()
+    private val allParts: List<ModelPart> = root.traverse()
     private val sheathHilt = path(Keys.SHEATH_HILT)
     private val scabbard = path(Keys.SHEATH_HILT.substringBeforeLast('/'))
 
@@ -270,11 +276,10 @@ class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
         var springReady = false
     }
 
-    private val memory = HashMap<Int, Memory>()
-
+    /** Gemeinsam für alle Instanzen (Hauptmodell und Eisklingen-Ebene zeichnen dieselbe Haltung). */
     private fun memoryOf(id: Int): Memory {
-        if (memory.size > 64) memory.clear()
-        return memory.getOrPut(id) { Memory() }
+        if (MEMORY.size > 64) MEMORY.clear()
+        return MEMORY.getOrPut(id) { Memory() }
     }
 
     private fun mix(a: FloatArray, b: FloatArray, t: Float): FloatArray = FloatArray(a.size) { a[it] + (b[it] - a[it]) * t }
@@ -741,7 +746,9 @@ class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
         val dt = if (m.time.isNaN()) 100f else MathHelper.clamp(now - m.time, 0f, 100f)
         m.time = now
         val k = 1f - exp(-min(dt, 5f) * 0.3f)
-        m.sheath += ((if (state.sheathed) 1f else 0f) - m.sheath) * k
+        // Ohne Klinge (Solvane ist der Drache) hält er die Hände wie mit leerer Hand.
+        val emptyHanded = state.sheathed || state.blade == AriusBlade.NONE
+        m.sheath += ((if (emptyHanded) 1f else 0f) - m.sheath) * k
         m.open += ((if (state.open) 1f else 0f) - m.open) * k
 
         // Posenwechsel: Startwert ist die zuletzt gezeigte Haltung.
@@ -800,8 +807,19 @@ class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
         for (p in formAll) p.visible = true
         for (p in formParts[MathHelper.clamp(state.form, 0, 2)]) p.visible = false
         val hand = inHand(pose, t, w, state.sheathed, m)
-        solvane.visible = hand
-        sheathHilt.visible = !hand
+        // Solvane: in der Hand, in der Scheide (nur als echte Klinge), oder gar nicht (Drache). Die Eisklinge hat dieselbe
+        // Geometrie am selben Knochen, wird aber von einer eigenen Instanz ([bladeOnly]) durchscheinend gezeichnet; hier
+        // bleibt der Knochen sichtbar (Schwertspur, Anker), nur seine Quader entfallen.
+        solvane.visible = hand && state.blade != AriusBlade.NONE
+        sheathHilt.visible = !hand && state.blade == AriusBlade.HELD
+        val ice = state.blade == AriusBlade.ICE
+        if (bladeOnly) {
+            for (p in allParts) p.hidden = true
+            for (p in solvaneTree) p.hidden = false
+            solvane.visible = solvane.visible && ice
+        } else {
+            for (p in solvaneTree) p.hidden = ice
+        }
 
         springs(m, v, dt)
         // Hand am Heft der Scheide: die Scheide darf dann nicht schwingen.
@@ -953,6 +971,8 @@ class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
     }
 
     private companion object {
+        private val MEMORY = HashMap<Int, Memory>()
+
         /** Sohle tiefer als das (Modell: +y unten, Boden bei 24) gilt als am Boden, auch auf den Zehen. */
         const val GROUNDED = 23f
 

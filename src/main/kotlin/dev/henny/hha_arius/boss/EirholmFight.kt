@@ -379,6 +379,17 @@ class EirholmFight(
         nivarisHead = head
     }
 
+    /**
+     * Der Drache ist fort (Finale: Solvane kehrt als Klinge in die Scheide zurück). Entfernt Körper und Kopf-Trefferbox
+     * ohne Ersatz durch [ensureEntities].
+     */
+    fun dismissNivaris() {
+        nivaris?.discard()
+        nivaris = null
+        nivarisHead?.discard()
+        nivarisHead = null
+    }
+
     /** Kopf-Trefferbox an den Kopf setzen. */
     private fun followHead() {
         val d = nivaris ?: return
@@ -394,7 +405,12 @@ class EirholmFight(
 
     /** Verwaiste oder zerstörte Darsteller ersetzen (z. B. nach /kill). */
     private fun ensureEntities() {
-        arius?.let { if (it.isRemoved) { val pos = it.entityPos; val pose = it.pose; val form = it.form; spawnArius(pos, it.yaw); arius?.form = form; arius?.play(pose) } }
+        arius?.let {
+            if (it.isRemoved) {
+                val pos = it.entityPos; val pose = it.pose; val form = it.form; val blade = it.bladeState; val sheathed = it.sheathed
+                spawnArius(pos, it.yaw); arius?.form = form; arius?.bladeState = blade; arius?.sheathed = sheathed; arius?.play(pose)
+            }
+        }
         nivaris?.let { if (it.isRemoved) { val pos = it.entityPos; val fly = it.flying; spawnNivaris(pos, it.yaw); nivaris?.flying = fly } }
         arius?.let { it.health = it.maxHealth }
         nivaris?.let { it.health = it.maxHealth }

@@ -24,17 +24,19 @@ import kotlin.math.sqrt
  * [Scenes.glacier] abgespielt; Ende: Nivaris ist auf dem Plateau gelandet (Entity bei (0,5 | 0 | −4,5), Blick nach
  * Norden), die Kamera gehört wieder den Spielern. Brüllen und Arius' Zeilen danach bleiben in [Scenes.gateKick].
  *
- * Ablauf (≈ 34 s, überspringbar, keine Ansagen und kein Schaden):
- * 1. Arius hebt den Blick, eine Zeile – der Schneesturm verdichtet sich, die Musik setzt fast aus.
- * 2. Im Sturm an der Nadel: einzelne Windungen gleiten vorbei, dann der Kristallkamm von oben. Nie das Ganze.
+ * Ablauf (≈ 38 s, überspringbar, keine Ansagen und kein Schaden):
+ * 1. Arius steht noch und hebt den Blick, eine Zeile. Dann hebt er Solvane in den Himmel und lässt los
+ *    ([Entrance.release], Paket V5): Die Klinge löst sich in einen Strom aus weißem Licht und Eiskristallen auf, der zur
+ *    Nadel zieht – Solvane *ist* der Drache. Er setzt sich ohne Schwert auf [ArenaLayout.WATCH_SEAT].
+ * 2. Erst mit der Ankunft des Stroms verdichtet sich der Schneesturm, die Windungen erscheinen an der Nadel. Im Sturm: einzelne Windungen gleiten vorbei, dann der Kristallkamm von oben. Nie das Ganze.
  * 3. Die Wolken reißen auf: weite Einstellung vom Rand der Schlucht, Nadel und Körper, der Kopf hebt sich über den
  *    Gipfel. Nah am Kopf: Brüllen, die Augen glühen, Name als Titelkarte.
  * 4. Sie löst sich vom Fels ([NivarisMode.UNCOIL]): Kopf voran, der Körper gleitet Glied für Glied von der Helix in die
  *    Flugbahn ([EntrancePath]); zwei Seitenfahrten zeigen die Länge über der Schlucht.
  * 5. Gleitflug über das Plateau, schwere Landung vor den Spielern.
  *
- * Ohne fertige Fernlandschaft ([EirholmFight.farReady]) gleitet sie nur kurz heran (ohne Nadel), im Training
- * erscheint sie sofort gelandet.
+ * Ohne fertige Fernlandschaft ([EirholmFight.farReady]) lässt er Solvane ebenso los, der Strom zieht über das
+ * Plateau, und wo er ankommt, gleitet sie heran (ohne Nadel). Im Training erscheint sie sofort gelandet.
  */
 fun entrance(f: EirholmFight): Script = script {
     val spot = f.abs(Vec3d(0.5, 0.0, -4.5))
@@ -179,8 +181,9 @@ internal object Entrance {
     private fun spire(f: EirholmFight, dx: Double, y: Double, dz: Double) =
         f.abs(Vec3d(ArenaLayout.SPIRE.x + 0.5 + dx, y, ArenaLayout.SPIRE.z + 0.5 + dz))
 
-    /** Endzustand (Training, Überspringen ohne Nadel, Abbruch): gelandet am Kampfplatz. */
+    /** Endzustand (Training, Überspringen ohne Nadel, Abbruch): gelandet am Kampfplatz, Arius sitzt ohne Klinge. */
     fun landed(f: EirholmFight, spot: Vec3d) {
+        seatWithoutBlade(f)
         val d = f.nivaris ?: run {
             f.spawnNivaris(spot, 180f)
             f.nivaris
@@ -191,6 +194,71 @@ internal object Entrance {
         f.place(d, spot)
         f.face(d, spot.add(0.0, 0.0, -10.0))
         if (d.pose == NivarisPose.LIE_DOWN || d.pose == NivarisPose.GLIDE) d.play(NivarisPose.IDLE)
+    }
+
+    /** Arius sitzt ohne Schwert auf [ArenaLayout.WATCH_SEAT] (Solvane ist der Drache), Blick nach Süden. */
+    fun seatWithoutBlade(f: EirholmFight) {
+        val a = f.arius ?: return
+        a.bladeState = AriusBlade.NONE
+        a.sheathed = false
+        if (a.pose == AriusPose.SEATED) return
+        f.place(a, f.abs(ArenaLayout.WATCH_SEAT))
+        a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
+        a.play(AriusPose.SEATED)
+    }
+
+    /** Dauer von [release] in Ticks. */
+    const val RELEASE_TICKS = 84
+
+    /** Ticks nach Beginn von [release], bis der Lichtstrom am Ziel ankommt (nach dem Ende des Drehbuchs). */
+    const val RELEASE_ARRIVAL = 94
+
+    /** Zeitpunkt des Loslassens in [release]. */
+    private const val RELEASE_AT = 34
+
+    /**
+     * Arius entlässt Solvane (≈ 4 s, zwei Einstellungen): Er hebt die Klinge senkrecht in den Himmel, Licht sammelt sich
+     * an der Schneide, die Zeile; dann löst sich die Klinge in einen Strom aus Licht und Eiskristallen auf, der steil
+     * aufsteigt und in weitem Bogen zu [target] zieht (Ankunft nach [RELEASE_ARRIVAL] Ticks). Er senkt den Arm und setzt
+     * sich ohne Schwert. Endzustand: [AriusBlade.NONE], SEATED. Kein Schaden, nur Darstellung.
+     */
+    fun release(f: EirholmFight, scene: CineScene, target: Vec3d): Script = script {
+        val a = f.arius ?: return@script
+        val seat = f.abs(ArenaLayout.WATCH_SEAT)
+        if (a.entityPos.squaredDistanceTo(seat) > 4.0) f.place(a, seat)
+        a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
+        a.sheathed = false
+        a.bladeState = AriusBlade.HELD
+        val base = a.entityPos
+        // Blick nach Süden. Kamerapunkte für WATCH_SEAT geprüft: vor ihm (z ≥ −62) über der unteren Stufe frei, die Säule
+        // bei (−4 | −61) bleibt rechts außen; östlich über den Altarstufen ist bis zur Schnittkante Platz.
+        val east = Vec3d(1.0, 0.0, 0.0)
+        val south = Vec3d(0.0, 0.0, 1.0)
+        // A) Von vorn, tief: er hebt Solvane in den Himmel (34 Ticks).
+        scene.line(base.add(east.multiply(0.9)).add(south.multiply(3.4)).add(0.0, 0.7, 0.0), base.add(east.multiply(0.7)).add(south.multiply(2.9)).add(0.0, 0.5, 0.0),
+            base.add(0.0, 1.3, 0.0), base.add(0.0, 2.6, 0.0), RELEASE_AT, 60.0, 54.0)
+        a.play(AriusPose.CORE_RAISE)
+        wait(10)
+        if (!Cine.muted) f.say("dragon.release", 70)
+        wait(2)
+        storyFx(f, FxKind.EDGE, base, life = RELEASE_AT - 12 + 4, e1 = a)
+        sound(f, "core.form", base, 1.6f, 1.35f)
+        wait(RELEASE_AT - 12)
+
+        // B) Loslassen: die Klinge wird zum Lichtstrom. Seitlich, etwas höher; der Blick folgt dem Strom in den Himmel.
+        a.bladeState = AriusBlade.NONE
+        val tip = base.add(0.0, 2.9, 0.0).add(east.multiply(-0.4))
+        val travel = RELEASE_ARRIVAL - RELEASE_AT
+        storyFx(f, FxKind.BLADE_STREAM, tip, target, a = travel.toFloat(), b = 0f, life = travel + 20, e1 = a)
+        sound(f, "transform.pulse", base, 2.2f, 1.5f)
+        sound(f, "resonance.chime", base, 2f, 1.15f)
+        val skyward = tip.add(0.0, 18.0, 0.0).lerp(target, 0.12)
+        scene.line(base.add(east.multiply(3.6)).add(0.0, 1.7, -0.2), base.add(east.multiply(4.6)).add(south.multiply(1.2)).add(0.0, 2.6, 0.0),
+            tip, skyward, RELEASE_TICKS - RELEASE_AT, 62.0, 72.0)
+        wait(14)
+        // Er senkt den Arm und setzt sich.
+        a.play(AriusPose.SEATED)
+        wait(RELEASE_TICKS - RELEASE_AT - 14)
     }
 
     /** Zuschauer-Klang: laut genug, dass er die Spieler (am Plateau) erreicht, gehört wird er an der Kamera. */
@@ -207,9 +275,18 @@ internal object Entrance {
     }
 
     /** Spieler, die einen Effekt nahe der Kamera sehen sollen, bekommen ihn unabhängig von der Entfernung. */
-    private fun fxAll(f: EirholmFight, kind: FxKind, pos: Vec3d, a: Float, life: Int) {
+    private fun fxAll(f: EirholmFight, kind: FxKind, pos: Vec3d, a: Float, life: Int) = storyFx(f, kind, pos, a = a, life = life)
+
+    /**
+     * Szenen-Effekt an alle Zuschauer, unabhängig von der Entfernung (die Kamera kann weit weg sein); beim Überspringen
+     * ([Cine.muted]) still.
+     */
+    fun storyFx(
+        f: EirholmFight, kind: FxKind, pos: Vec3d, dir: Vec3d = Vec3d.ZERO, a: Float = 0f, b: Float = 0f, life: Int = 20,
+        e1: net.minecraft.entity.Entity? = null, e2: net.minecraft.entity.Entity? = null,
+    ) {
         if (Cine.muted) return
-        val payload = dev.henny.hha_arius.net.FxS2C(kind.ordinal, pos.x, pos.y, pos.z, 0.0, 0.0, 0.0, a, 0f, life, -1, -1)
+        val payload = dev.henny.hha_arius.net.FxS2C(kind.ordinal, pos.x, pos.y, pos.z, dir.x, dir.y, dir.z, a, b, life, e1?.id ?: -1, e2?.id ?: -1)
         for (p in f.audience()) dev.henny.hha_arius.net.AriusNet.send(p, payload)
     }
 
@@ -239,16 +316,16 @@ internal object Entrance {
     }
 
     fun full(f: EirholmFight, scene: CineScene, spot: Vec3d): Script = script {
-        val d = coil(f) ?: return@script
         val a = f.arius
-        f.atmos(AtmosMode.BLIZZARD, 50)
+        // Noch kein Sturm: leichter Schnee, die Nadel steht leer im Dunst (Solvane ist noch Klinge).
+        f.atmos(AtmosMode.SNOW, 40)
         f.music("music.entrance", 40)
-        // Aus dem Weiß des Sturms in die erste Einstellung.
+        // Aus dem Weiß des Schnees in die erste Einstellung.
         scene.once { Cine.fade(it, 0xF2F6FA, 0.7, 0.0, 24) }
 
-        // 1) Arius hebt den Blick (50 Ticks).
+        // 1) Arius steht und hebt den Blick (50 Ticks).
         if (a != null) {
-            val face = a.entityPos.add(0.0, 1.35, 0.0)
+            val face = a.entityPos.add(0.0, 1.65, 0.0)
             val front = f.facing(a)
             scene.shot {
                 Cine.camera(it, face.add(front.multiply(2.6)).add(0.35, -0.15, 0.0), face.add(front.multiply(1.9)).add(0.25, -0.1, 0.0),
@@ -259,13 +336,25 @@ internal object Entrance {
         if (!Cine.muted) f.say("dragon.wake", 64)
         wait(36)
 
-        // 2) Sturm: Blick vom Südrand des Plateaus in das Weiß, langsame Fahrt nach vorn (70 Ticks).
+        // 1b) Er lässt Solvane los: der Lichtstrom zieht zur Nadel (84 Ticks, Ankunft 10 Ticks danach).
+        val arrival = f.abs(EntrancePath.HEAD_REST)
+        yieldAll(release(f, scene, arrival))
+
+        // 2) Sturm: Blick vom Südrand des Plateaus in das Weiß, langsame Fahrt nach vorn (70 Ticks). Der Strom kommt an,
+        //    erst dann verdichtet sich der Sturm, und im Weiß legen sich die Windungen um die Nadel.
         val stormFrom = rel(f, 1.5, 8.0, 18.0)
         val stormTo = rel(f, 1.0, 11.0, 34.0)
         scene.shot { Cine.camera(it, stormFrom, stormTo, spire(f, 0.0, 60.0, 0.0), spire(f, 0.0, 110.0, 0.0), 70, 70.0, 56.0) }
+        wait(RELEASE_ARRIVAL - RELEASE_TICKS)
+        f.atmos(AtmosMode.BLIZZARD, 36)
         sound(f, "seal.blizzard", stormTo, 2.5f, 0.7f)
-        fx(f, FxKind.BLIZZARD, stormTo, 10f, 70)
-        wait(70)
+        sound(f, "nivaris.inhale", arrival, 2f, 0.45f)
+        fx(f, FxKind.BLIZZARD, stormTo, 10f, 60)
+        fxAll(f, FxKind.BLIZZARD, arrival, 14f, 60)
+        // Im Ankunftsblitz des Stroms legt sie sich um die Nadel (der Blitz verdeckt das Erscheinen).
+        wait(2)
+        val d = coil(f) ?: return@script
+        wait(70 - 2 - (RELEASE_ARRIVAL - RELEASE_TICKS))
 
         // 3) Nah im Sturm an der Nadel: eine Windung gleitet vorbei (60 Ticks). Kamera kreist gegen die Laufrichtung.
         val axis = f.abs(Vec3d.of(ArenaLayout.SPIRE)).add(0.5, 0.0, 0.5)
@@ -373,12 +462,16 @@ internal object Entrance {
     /** Ohne Fernlandschaft: Gleitflug von Süden heran (wie früher), mit Kamera. */
     fun short(f: EirholmFight, scene: CineScene, spot: Vec3d): Script = script {
         val start = spot.add(0.0, 18.0, 30.0)
+        f.music("music.entrance", 30)
+        // Er lässt Solvane los; wo der Strom ankommt, nimmt sie Gestalt an.
+        yieldAll(release(f, scene, start.add(0.0, 2.0, 0.0)))
+        wait(RELEASE_ARRIVAL - RELEASE_TICKS)
+        fxAll(f, FxKind.BLIZZARD, start, 8f, 40)
         f.spawnNivaris(start, 180f)
         val d = f.nivaris ?: return@script
         d.mode = NivarisMode.NORMAL
         d.flying = true
         d.play(NivarisPose.GLIDE)
-        f.music("music.entrance", 30)
         scene.line(rel(f, -8.0, 5.0, -26.0), rel(f, -5.0, 4.0, -22.0), start.add(0.0, 2.0, 0.0), spot.add(0.0, 4.0, -2.0), 60, 72.0, 64.0)
         sound(f, "nivaris.wing", rel(f, -5.0, 6.0, -23.0), 3f, 0.7f)
         yieldAll(glideAndLand(f, d, start, spot, 40))
