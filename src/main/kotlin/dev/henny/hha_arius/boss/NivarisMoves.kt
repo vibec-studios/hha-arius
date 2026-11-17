@@ -10,6 +10,7 @@ import net.minecraft.util.math.BlockPos
 import net.minecraft.util.math.Vec3d
 import net.minecraft.world.RaycastContext
 import kotlin.math.max
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
@@ -85,23 +86,63 @@ class NivarisMoves(private val f: EirholmFight) {
         return if (d.lengthSquared() < 1e-6) Vec3d(0.0, 0.0, 1.0) else d.normalize()
     }
 
-    /** Fliegt geradlinig zu [to] (inkl. Höhe), höchstens [maxTicks]. */
+    /** Flugrichtung und -tempo (Blöcke je Tick) aus dem letzten Flug, damit Kurven ohne Knick ineinander übergehen. */
+    private var vel: Vec3d? = null
+
+    /**
+     * Fliegt **gelenkt** zu [to] (wie die Drachen in Black Myth: Wukong): Die Richtung dreht je Tick höchstens um einen
+     * Winkel (nah am Ziel mehr, damit es sicher ankommt), das Tempo gleitet zu [speed]. So entstehen weite Bögen statt
+     * gerader Linien, und der Körper (Spur auf dem Client) fließt als Kurve. Höchstens [maxTicks]; nicht angekommen
+     * wird am Ende das letzte Stück eingezogen, damit Ansagen und Treffer am geplanten Ort bleiben.
+     */
     private suspend fun SequenceScope<Unit>.flyTo(to: Vec3d, speed: Double, maxTicks: Int, faceTarget: Vec3d? = null) {
         val d = f.nivaris ?: return
         d.flying = true
+        var v = vel?.takeIf { it.lengthSquared() > 1e-6 } ?: f.facing(d).multiply(speed * 0.6)
         var n = 0
+        var arrived = false
+        // Höhe im Band zwischen Start und Ziel (+3), damit gelenkte Kurven nicht hoch hinaus schießen.
+        val ceil = maxOf(d.y, to.y) + 3.0
+        val floorLimit = minOf(d.y, to.y, f.floorY + 1.0)
         while (n++ < maxTicks) {
-            val delta = to.subtract(d.entityPos)
+            val pos = d.entityPos
+            val delta = to.subtract(pos)
             val len = delta.length()
-            if (len <= speed) {
+            val sp = v.length() + (speed - v.length()).coerceIn(-0.08, 0.06)
+            if (len <= maxOf(sp, 0.3) * 1.1) {
                 f.place(d, to)
+                arrived = true
                 break
             }
-            f.place(d, d.entityPos.add(delta.multiply(speed / len)))
-            f.face(d, faceTarget ?: to)
+            val want = delta.multiply(1.0 / len)
+            val left = (maxTicks - n + 1).coerceAtLeast(1)
+            // Drehrate: 6° je Tick, nah am Ziel bzw. knapp an Zeit bis zu 40°.
+            val urgency = maxOf(0.0, 1.0 - len / (sp * 14.0)) + maxOf(0.0, 1.0 - left / 8.0)
+            val dir = turnToward(v.normalize(), want, Math.toRadians(6.0 + 34.0 * urgency.coerceAtMost(1.0)))
+            v = dir.multiply(maxOf(sp, len / left))
+            var next = pos.add(v)
+            if (next.y > ceil || next.y < floorLimit) {
+                next = Vec3d(next.x, next.y.coerceIn(floorLimit, ceil), next.z)
+                v = Vec3d(v.x, next.y - pos.y, v.z)
+            }
+            val clamped = f.clampToArena(next, 2.0)
+            f.place(d, Vec3d(clamped.x, next.y, clamped.z))
+            f.face(d, faceTarget ?: next.add(v))
             yield(Unit)
         }
-        f.face(d, faceTarget ?: to)
+        if (!arrived) f.place(d, to)
+        vel = v
+        f.face(d, faceTarget ?: to.add(v))
+    }
+
+    /** Dreht die Einheitsrichtung [a] höchstens um [maxAngle] (Bogenmaß) zu [b]. */
+    private fun turnToward(a: Vec3d, b: Vec3d, maxAngle: Double): Vec3d {
+        val dot = a.dotProduct(b).coerceIn(-1.0, 1.0)
+        val angle = kotlin.math.acos(dot)
+        if (angle <= maxAngle || angle < 1e-6) return b
+        // Gegenrichtung: über die Seite (waagerecht) drehen.
+        val axisHint = if (dot < -0.999) Vec3d(-a.z, 0.0, a.x).normalize() else b.subtract(a.multiply(dot)).normalize()
+        return a.multiply(kotlin.math.cos(maxAngle)).add(axisHint.multiply(kotlin.math.sin(maxAngle))).normalize()
     }
 
     private fun airPoint(xz: Vec3d, height: Double = cruise): Vec3d = Vec3d(xz.x, f.floorY + height, xz.z)
@@ -118,8 +159,10 @@ class NivarisMoves(private val f: EirholmFight) {
         }
         d.flying = true
         d.play(NivarisPose.HOVER)
-        val up = airPoint(d.entityPos)
-        flyTo(up, 0.5, 20)
+        // Steigend nach vorn (kein senkrechter Aufstieg: der Körper stünde sonst als Säule unter dem Kopf).
+        vel = f.facing(d).multiply(0.35).add(0.0, 0.25, 0.0)
+        val up = airPoint(f.clampToArena(d.entityPos.add(f.facing(d).multiply(14.0)), 4.0))
+        flyTo(up, 0.6, 30)
     }
 
     // --- Phasen ----------------------------------------------------------------------------------------------------------
@@ -338,14 +381,20 @@ class NivarisMoves(private val f: EirholmFight) {
         val spot = landingSpotNear(t)
         val ring = f.calls.ring(spot, 6f, AriusTimings.NIVARIS_WINDUP[NivarisPose.LAND], style = style)
         d.play(NivarisPose.LAND, ring.ticks)
-        val above = Vec3d(spot.x, d.y, spot.z)
+        // Anflug im Bogen: zuerst ein Punkt schräg hinter und über dem Landeplatz, dann flach auf den Platz gleiten.
+        val from = flatDir(spot, d.entityPos)
+        val approach = Vec3d(spot.x, f.floorY + 3.0, spot.z).add(from.multiply(9.0))
         val travel = max(1, ring.ticks - 8)
-        flyTo(above, max(0.6, sqrt(d.entityPos.squaredDistanceTo(above)) / travel), travel)
+        flyTo(approach, max(0.7, sqrt(d.entityPos.squaredDistanceTo(approach)) / travel), travel)
         val left = max(1, ring.remaining)
+        val start = d.entityPos
         for (i in 1..left) {
-            f.place(d, above.lerp(spot, i / left.toDouble()))
+            val k = i / left.toDouble()
+            f.place(d, start.lerp(spot, k).add(0.0, sin(k * Math.PI) * 0.8, 0.0))
+            f.face(d, spot.add(flatDir(start, spot)))
             yield(Unit)
         }
+        vel = null
         d.flying = false
         f.sound("nivaris.land", spot, 3.5f)
         for (p in ring.hits(f.players())) {

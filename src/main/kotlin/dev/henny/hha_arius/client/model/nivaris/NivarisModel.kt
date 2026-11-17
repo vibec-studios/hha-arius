@@ -507,9 +507,11 @@ class NivarisModel(root: ModelPart) : EntityModel<NivarisRenderState>(root) {
  *   geschrieben; das Kopfgelenk sitzt je Pose vor dem Rumpf ([NivarisModel.FWD]/[NivarisModel.UP]), ein weicher Bogen
  *   verbindet beide, dahinter folgen die Glieder der Spur in festem Bogenabstand (2,4). Darüber eine Welle, die nach
  *   hinten läuft, Rollen und Schräglage in Kurven.
- * * **Boden:** Der Körper liegt in Bögen hinter und um sie herum (Spirale, Schwanz innen). Die Spirale wird gedreht,
- *   bis sie in die Arena passt (Herzgewölbe R 28, Plateau R 40), und dreht sich beim Schwanzfeger einmal um sie.
- *   Zwischen Boden und Flug wird je Glied überblendet (Kopf zuerst).
+ * * **Boden (seit 1.2.2):** Der Körper bleibt die zurückgelegte Spur (wie die Drachen in Black Myth: Wukong) und sinkt
+ *   am Boden sanft auf die Lauffläche; so liegt er in den Bögen, die er geflogen bzw. gekrochen ist. Die frühere feste
+ *   Spirale und das Überblenden zwischen Spur und Spirale (eckige Brücken, senkrechte Säulen) sind entfallen.
+ * * **Glätten:** Die abgetasteten Punkte werden mehrfach geglättet und neu abgetastet, damit gerade Sehnen und Knicke
+ *   der Spur als weiche Kurve erscheinen; kein Glied taucht unter die Lauffläche.
  * * **An der Nadel ([NivarisModeC.COIL]):** Hals vom Kopf (ruhend oder über dem Gipfel) zur Helix
  *   [ArenaLayout.coil], der Körper liegt auf ihrem oberen Teil.
  * * **Lösen ([NivarisModeC.UNCOIL]):** Der Kopf folgt [EntrancePathC]; der Körper ist der zurückgelegte Weg, dahinter
@@ -538,7 +540,6 @@ class NivarisBody {
     private var lastAge = Float.NaN
     private var groundY = Double.NaN
     private var ground = -1f
-    private var coilYaw = 0.0
     private var raise = -1f
 
     fun update(e: dev.henny.hha_arius.boss.NivarisEntity, s: NivarisRenderState, tickDelta: Float) {
@@ -627,7 +628,20 @@ class NivarisBody {
                 if (spine.squaredDistanceTo(trail.first()) >= 0.25) trail.addFirst(spine)
                 trimTrail()
 
-                // A: Flugbahn.
+                // Am Boden sinkt die liegende Spur langsam auf die Lauffläche (Rumpfmitte über dem Boden), Glied für Glied
+                // von hinten nach vorn weniger, damit der Hals aufgerichtet bleibt.
+                if (ground > 0.01f) {
+                    val rest = groundY + NivarisShape.SPINE_UP * 0.55
+                    val step = dt * 0.35 * ground
+                    var k = 0
+                    val it = trail.listIterator()
+                    while (it.hasNext()) {
+                        val q = it.next()
+                        if (k++ > 6 && q.y > rest) it.set(Vec(q.x, maxOf(rest, q.y - step), q.z))
+                    }
+                }
+
+                // Flugbahn bzw. liegende Spur: vom Kopfgelenk weich zur Rumpfmitte, dann die Spur.
                 val a = Poly()
                 run {
                     val d = h.distanceTo(spine).coerceAtLeast(1.0)
@@ -635,27 +649,11 @@ class NivarisBody {
                     bezier(a, h, h.subtract(headFwd.multiply(0.35 * d)), spine.add(motion.multiply(0.35 * d)), spine, UP_V, 10)
                     for (q in trail) a.add(q, UP_V)
                 }
-                // B: am Boden in Bögen.
-                val b = Poly()
-                val afterE = restCurve(b, h, headFwd, spine, f, groundY, p, o, eirholm, base.y < o.y - 20.0, dt)
-
-                val ap = Array(POINTS) { Vec.ZERO }
-                val au = Array(POINTS) { UP_V }
-                sample(a, ap, au)
-                val bp = Array(POINTS) { Vec.ZERO }
-                val bu = Array(POINTS) { UP_V }
-                sample(b, bp, bu)
+                sample(a, pts, ups)
+                smoothBody(pts, ups, groundY)
                 for (i in 0 until POINTS) {
-                    val g = smooth(MathHelper.clamp(ground * 1.5f - i / POINTS.toFloat() * 0.5f, 0f, 1f))
-                    pts[i] = ap[i].lerp(bp[i], g.toDouble())
-                    ups[i] = au[i].lerp(bu[i], g.toDouble())
-                    air[i] = 1f - g
-                }
-                // Ganz am Boden: Die Spur ist der liegende Körper (beim Abflug wickelt er sich daraus ab).
-                if (ground >= 0.999f) {
-                    trail.clear()
-                    for (k in afterE until b.pts.size) trail.addLast(b.pts[k])
-                    trimTrail()
+                    val h0 = pts[i].y - (groundY + radius(i))
+                    air[i] = MathHelper.clamp((h0 / 2.5).toFloat(), 0f, 1f) * (1f - ground * 0.6f) + (1f - ground) * 0.4f
                 }
             }
         }
@@ -680,7 +678,12 @@ class NivarisBody {
             val amp = (0.2 + 0.9 * k) * front
             var lat = air[i] * amp * kotlin.math.sin(now * 0.16 - i * 0.42)
             var ver = air[i] * amp * 0.35 * kotlin.math.sin(now * 0.11 - i * 0.31 + 1.3)
-            if (mode == NivarisModeC.NORMAL) lat += (1f - air[i]) * walk * 0.5 * front * kotlin.math.sin(s.walkPhase * 0.6 - i * 0.5)
+            if (mode == NivarisModeC.NORMAL) {
+                lat += (1f - air[i]) * walk * 0.5 * front * kotlin.math.sin(s.walkPhase * 0.6 - i * 0.5)
+                // Schwanzfeger: der hintere Körper schwingt in einem weiten Bogen aus und zurück (statt der alten Spirale).
+                val sw = p[NivarisModel.SWEEP].toDouble()
+                if (sw > 0.0) lat += kotlin.math.sin(sw * 2.0 * Math.PI) * 7.0 * smooth(MathHelper.clamp((i - 10) / 18f, 0f, 1f))
+            }
             else if (air[i] < 0.01f) ver += 0.1 * kotlin.math.sin(now * 0.05 - i * 0.35)
             val j = (i - 1) * 9
             val l = Vec(frames0[j].toDouble(), frames0[j + 1].toDouble(), frames0[j + 2].toDouble())
@@ -770,63 +773,22 @@ class NivarisBody {
     }
 
     /**
-     * Liegender Körper: vom Kopfgelenk weich zur Rumpfmitte, dann eine Brücke zur äußeren Windung und eine Spirale
-     * nach innen (Schwanz in der Mitte). Gibt den Index des ersten Punkts hinter der Rumpfmitte zurück.
+     * Glättet die abgetasteten Punkte (Kopf und Hals bleiben, ab Glied 3 dreimal ein Mittelwert der Nachbarn), tastet
+     * die geglättete Linie neu in Gliedabständen ab und hält jedes Glied über der Lauffläche [groundY].
      */
-    private fun restCurve(
-        poly: Poly, h: Vec, headFwd: Vec, e: Vec, f: Vec, groundY: Double, p: FloatArray, o: Vec, eirholm: Boolean,
-        vault: Boolean, dt: Float,
-    ): Int {
-        val d = h.distanceTo(e).coerceAtLeast(1.0)
-        val hf = Vec(headFwd.x, 0.0, headFwd.z).normalizeOr(f)
-        bezier(poly, h, h.add(0.0, -0.55 * d, 0.0).subtract(hf.multiply(0.1 * d)), e.add(f.multiply(0.45 * d)), e, UP_V, 10)
-        val afterE = poly.pts.size
-        val tight = p[NivarisModel.TIGHT].toDouble()
-        val slack = p[NivarisModel.SLACK].toDouble()
-        val r1 = 7.6 - tight * 1.4 + slack * 1.6
-        val r0 = 2.0
-        // Abstand der Windungen je Umlauf (eng = Körper an Körper) und Abstand der Spiralmitte hinter ihr: so weit, dass
-        // die erste Windung hinter der Rumpfmitte vorbeiläuft und die Brücke nicht kreuzt.
-        val pitch = 2.6 - tight * 0.4
-        val dc = r1 + 3.2
-        val ground = Vec(e.x, groundY, e.z)
-        val sweep = p[NivarisModel.SWEEP].toDouble() * 2.0 * Math.PI
-        val back0 = f.negate()
-
-        // In die Arena drehen (die Drehung folgt weich, damit nichts springt).
-        var want = 0.0
-        if (eirholm) {
-            val center = if (vault) o.add(ArenaLayout.VAULT.x + 0.5, 0.0, ArenaLayout.VAULT.z + 0.5) else o.add(0.5, 0.0, 0.5)
-            val limit = (if (vault) ArenaLayout.VAULT_R else ArenaLayout.PLATEAU_R) - 1.5
-            fun excess(off: Double): Double {
-                val bb = rotY(back0, sweep + off)
-                val c = ground.add(bb.multiply(dc))
-                return kotlin.math.hypot(c.x - center.x, c.z - center.z) + r1 - limit
-            }
-            val tries = doubleArrayOf(0.0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6, 2.3, -2.3, Math.PI)
-            want = tries.firstOrNull { excess(it) <= 0.0 } ?: tries.minBy { excess(it) }
+    private fun smoothBody(pts: Array<Vec>, ups: Array<Vec>, groundY: Double) {
+        val tmp = Array(POINTS) { pts[it] }
+        repeat(3) {
+            for (i in 3 until POINTS - 1) tmp[i] = tmp[i].multiply(0.5).add(tmp[i - 1].add(tmp[i + 1]).multiply(0.25))
         }
-        coilYaw += (want - coilYaw) * MathHelper.clamp(dt * 0.05f, 0f, 1f)
-        val b = rotY(back0, sweep + coilYaw)
-        val side = Vec(b.z, 0.0, -b.x)
-        val c = ground.add(b.multiply(dc))
-        val g = c.add(side.multiply(r1)).add(0.0, 1.0, 0.0)
-        val l = g.distanceTo(e)
-        bezier(poly, e, e.subtract(f.multiply(0.4 * l)).add(0.0, -0.3, 0.0), g.subtract(b.multiply(0.4 * l)), g, UP_V, 12)
-        // Spirale nach innen (Schwanz zur Mitte); bleibt Länge übrig, läuft sie als zweite Lage obenauf wieder hinaus.
-        val inward = (r1 - r0) / pitch * 2.0 * Math.PI
-        var phi = 0.0
-        while (true) {
-            val outward = (phi - inward).coerceAtLeast(0.0)
-            val r = if (phi <= inward) r1 - pitch * phi / (2.0 * Math.PI) else r0 + pitch * outward / (2.0 * Math.PI)
-            if (phi > inward && r > r1) break
-            val k = (phi / inward).coerceAtMost(1.0)
-            val lift = 1.7 * smooth((outward / Math.PI).toFloat().coerceAtMost(1f))
-            val pos = c.add(side.multiply(kotlin.math.cos(phi) * r)).add(b.multiply(kotlin.math.sin(phi) * r))
-            poly.add(Vec(pos.x, groundY + 1.0 - 0.4 * k - slack * 0.2 + lift, pos.z), UP_V)
-            phi += 0.5 / r
+        val poly = Poly()
+        for (i in 0 until POINTS) poly.add(tmp[i], ups[i])
+        sample(poly, pts, ups)
+        if (groundY.isNaN()) return
+        for (i in 0 until POINTS) {
+            val floor = groundY + radius(i) * 0.9
+            if (pts[i].y < floor) pts[i] = Vec(pts[i].x, floor, pts[i].z)
         }
-        return afterE
     }
 
     /** Hals vom Kopfgelenk (ruhend → aufgerichtet nach [raise]) zur Spitze der Helix, dann die Helix hinab. */
