@@ -21,7 +21,7 @@ Client-Welt und Spieler sind vorhanden. Geprüft mit Minecraft 1.21.11, Fabric L
 ## Der Schnitt und Abschnitt II
 - [ ] Wind kehrt sich um, Linie, Schlag, Stille, Tempelhälfte rutscht (Blockbündel), Kluft im Süden, Trümmer
 - [ ] Tritt durchs Tor: alle landen auf den Plätzen, kein Fallschaden
-- [ ] Nivaris: Landung, Atem → Eiskämme, Sturzflug in einen Kamm → zu Boden, Ersticken durch Kehlentreffer
+- [ ] Solvane: Landung, Atem → Eiskämme, Sturzflug in einen Kamm → zu Boden, Ersticken durch Kehlentreffer
 - [ ] Kopftreffer am Boden (unsichtbare Kopf-Trefferbox)
 
 ## Gletschersturz und Abschnitt III
@@ -60,10 +60,10 @@ Client-Welt und Spieler sind vorhanden. Geprüft mit Minecraft 1.21.11, Fabric L
 
 ## Kamera, Spannung und Wucht (Paket V3)
 - [ ] Erster Besuch: Etablierungsfahrt (Kuppel unten, Nadel oben im Bild, Stille, Gesicht von Arius), Rückweg in die eigene Kamera ohne Sprung; Überspringen per Taste halten (Mehrspieler: alle stimmen ab)
-- [ ] Der Schnitt: Sprung + Detail **vor** der Ansage, Steuerung kommt zurück, bevor die Linie erscheint (volle Ansagezeit); danach Stille, weite Totale beim Abgleiten, Tritt durchs Tor (Seitenaufnahme, Flug über die Kamera), dann Nivaris' Auftritt
+- [ ] Der Schnitt: Sprung + Detail **vor** der Ansage, Steuerung kommt zurück, bevor die Linie erscheint (volle Ansagezeit); danach Stille, weite Totale beim Abgleiten, Tritt durchs Tor (Seitenaufnahme, Flug über die Kamera), dann Solvane' Auftritt
 - [ ] Auftritt: weite Totale füllt das obere Drittel der Nadel; Nadel ist von den Landeplätzen aus ab ~10 Chunks Sichtweite sichtbar
 - [ ] Gletschersturz/Verwandlung: Kamera durch Sturm, Totale beim Einbruch, Blick aus dem Gewölbe nach oben, Seitenschwenk bei der Verwandlung; danach normale Steuerung vor dem ersten Angriff
-- [ ] Ende: Knien, Halbkreis, Totale mit Nivaris, Rückweg
+- [ ] Ende: Knien, Halbkreis, Totale mit Solvane, Rückweg
 - [ ] Nachzügler während einer Szene bekommen die laufende Einstellung (und eigenen Rückweg)
 - [ ] Trefferpause (Haken, Seiten-/Drehtritt, Klarer Schnitt, Arius' Schläge auf Spieler): kurz, nur im Bild; Funken/Eissplitter, Schockring bei Tritten
 - [ ] Kamerarucken dezent; `/ariusc shake false` schaltet es ab (ebenso HHAs Kameraschütteln)
@@ -71,11 +71,11 @@ Client-Welt und Spieler sind vorhanden. Geprüft mit Minecraft 1.21.11, Fabric L
 - [ ] Solvane aufrecht: Haltungen des Klaren Schnitts (Hasso bzw. Hüfte), linke Hand am Griff, Klinge zeigt in Schnittrichtung; Energie an der Schneide sitzt auf der Klinge (erste und dritte Person, Linkshänder)
 - [ ] Moveset: Ausholen, Gewicht, Nachschwingen, Landen nach Tritten; Zauber-Ladebalken richtet sich nach der Höchstladung der Technik
 
-## Landschaft, Wetter und Nivaris (visuelles Upgrade)
+## Landschaft, Wetter und Solvane (visuelles Upgrade)
 - [ ] Fernlandschaft baut sich im Hintergrund auf (Nadel, Schlucht, Gletscherzüge), keine Ruckler im Tempelkampf; Sichtweite ≥ 10 Chunks
 - [ ] Wetterstimmungen: Tempel klar, Gletscher Schneetreiben, Whiteout vor dem Auftritt, Enthüllung mit blauem Himmel, Gewölbe blau, Verwandlung weiß; Schneeschleier und Eisglitzern
 - [ ] Auftritt: Windungen im Sturm, Totale an der Nadel (Kopf über dem Gipfel), Lösen vom Fels, Gleitflug, Landung; überspringbar; Nachzügler
-- [ ] Nivaris als Schlange im Kampf: Körper folgt fließend, am Boden in Bögen, im Herzgewölbe ohne Wände zu durchdringen; Kopf-Trefferbox sitzt
+- [ ] Solvane als Schlange im Kampf: Körper folgt fließend, am Boden in Bögen, im Herzgewölbe ohne Wände zu durchdringen; Kopf-Trefferbox sitzt
 - [ ] Weißes Loch (Boss und Set): Linse, weißer Kern, Ausfluss-Scheibe, Kollaps mit Schockwelle; Leistung ok
 - [ ] Musik „Auftritt“ und „Verwandlung“
 - [ ] Arius' neue Animationen (Ausholen, Treffer-Stoß, Nachschwingen, Mantel und Haar)

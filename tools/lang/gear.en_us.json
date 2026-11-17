@@ -4,11 +4,11 @@
   "item.hha_arius.eirholm_leggings": "Arius Leggings",
   "item.hha_arius.eirholm_boots": "Arius Boots",
   "item.hha_arius.solvane": "Solvane (Replica)",
-  "item.hha_arius.nivaris_wingscale": "Nivaris' Wingscale",
+  "item.hha_arius.nivaris_wingscale": "Solvane's Wingscale",
   "item.hha_arius.eirholm_seal": "Seal of Eirholm",
   "item.hha_arius.echo_of_eirholm": "Echo of Eirholm",
   "item.hha_arius.heartfrost": "Heartfrost",
-  "item.hha_arius.nivaris_scale": "Nivaris Scale",
+  "item.hha_arius.nivaris_scale": "White Dragon Scale",
   "item.hha_arius.eirholm_upgrade_smithing_template": "Smithing Template: Eirholm",
   "item.hha_arius.white_blade_armor_trim_smithing_template": "Smithing Template: White Blade",
   "item.hha_arius.smithing_template.eirholm_upgrade.applies_to": "Netherite Armor",
@@ -54,11 +54,12 @@
   "advancements.hha_arius.under_the_line.title": "Under the Line",
   "advancements.hha_arius.under_the_line.description": "Survive the cut that splits the arena without being hit",
   "advancements.hha_arius.takt_break.title": "Broken Rhythm",
-  "advancements.hha_arius.takt_break.description": "Break the rhythm of Arius and Nivaris",
+  "advancements.hha_arius.takt_break.description": "Break the rhythm of Arius and Solvane",
   "advancements.hha_arius.white_blade.title": "The White Blade",
   "advancements.hha_arius.white_blade.description": "Defeat Arius in Eirholm",
   "advancements.hha_arius.no_storm.title": "No More Storm",
   "advancements.hha_arius.no_storm.description": "Defeat Arius without anyone in the group being knocked out",
   "item.hha_arius.eirholm_helmet.lore3": "Pulls light enemies, bosses stay put · Cooldown %s s",
-  "item.hha_arius.eirholm_chestplate.lore3": "Passive – Frost Plate: whoever hits you in melee is briefly slowed"
+  "item.hha_arius.eirholm_chestplate.lore3": "Passive – Frost Plate: whoever hits you in melee is briefly slowed",
+  "item.hha_arius.solvane.lore0": "Replica of the blade forged from the heart of an ancient white dragon."
 }

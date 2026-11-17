@@ -4,11 +4,11 @@
   "item.hha_arius.eirholm_leggings": "Arius' Beinschienen",
   "item.hha_arius.eirholm_boots": "Arius' Stiefel",
   "item.hha_arius.solvane": "Solvane (Abbild)",
-  "item.hha_arius.nivaris_wingscale": "Nivaris' Schwingenschuppe",
+  "item.hha_arius.nivaris_wingscale": "Solvanes Schwingenschuppe",
   "item.hha_arius.eirholm_seal": "Siegel von Eirholm",
   "item.hha_arius.echo_of_eirholm": "Echo von Eirholm",
   "item.hha_arius.heartfrost": "Herzfrost",
-  "item.hha_arius.nivaris_scale": "Nivaris-Schuppe",
+  "item.hha_arius.nivaris_scale": "Schuppe des weißen Drachen",
   "item.hha_arius.eirholm_upgrade_smithing_template": "Schmiedevorlage: Eirholm",
   "item.hha_arius.white_blade_armor_trim_smithing_template": "Schmiedevorlage: Weiße Klinge",
   "item.hha_arius.smithing_template.eirholm_upgrade.applies_to": "Netheritrüstung",
@@ -54,11 +54,12 @@
   "advancements.hha_arius.under_the_line.title": "Unter der Linie",
   "advancements.hha_arius.under_the_line.description": "Überstehe den Schnitt, der die Arena teilt, ohne Treffer",
   "advancements.hha_arius.takt_break.title": "Taktbruch",
-  "advancements.hha_arius.takt_break.description": "Brich den Takt von Arius und Nivaris",
+  "advancements.hha_arius.takt_break.description": "Brich den Takt von Arius und Solvane",
   "advancements.hha_arius.white_blade.title": "Die weiße Klinge",
   "advancements.hha_arius.white_blade.description": "Besiege Arius in Eirholm",
   "advancements.hha_arius.no_storm.title": "Kein Sturm mehr",
   "advancements.hha_arius.no_storm.description": "Besiege Arius, ohne dass jemand aus der Gruppe k. o. geht",
   "item.hha_arius.eirholm_helmet.lore3": "Sog auf leichte Gegner, Bosse bleiben stehen · Abklingzeit %s s",
-  "item.hha_arius.eirholm_chestplate.lore3": "Passiv – Frostpanzer: wer dich im Nahkampf trifft, wird kurz langsamer"
+  "item.hha_arius.eirholm_chestplate.lore3": "Passiv – Frostpanzer: wer dich im Nahkampf trifft, wird kurz langsamer",
+  "item.hha_arius.solvane.lore0": "Abbild der Klinge, die aus dem Herzen eines uralten weißen Drachen geschmiedet wurde."
 }

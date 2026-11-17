@@ -1,8 +1,11 @@
 # HHA Arius: Die weiße Klinge (Konzept)
 
+> **Name:** Der Drache heißt **Solvane**: Er ist die Drachenform von Arius' Schwert, das aus dem Herzen eines uralten weißen Drachen geschmiedet wurde. Im Code heißen Entity, Modell und Dateien weiter `nivaris` (alte Arbeitsbezeichnung).
+
+
 > **Romanhintergrund und Mod-Adaption sind getrennt.** Abschnitte mit *(Roman)* geben nur wieder, was uns aus „The White
 > Blade“ vorgegeben wurde. Alles mit *(Mod)* ist frei erfundene Minecraft-Adaption und legt nichts für die Geschichte
-> fest: der Drache Nivaris, das Heiligtum von Eirholm als Arena, die Eirholm-Rüstung, die weiße Form, das weiße Loch,
+> fest: der Drache Solvane, das Heiligtum von Eirholm als Arena, die Eirholm-Rüstung, die weiße Form, das weiße Loch,
 > die Resonanz, das „Abbild“ von Solvane und alle Techniknamen außer *White Null*.
 >
 > **Herkunft, alle Zeilen, Untertitel und Szenentexte sind in [STIMME.md](STIMME.md) verbindlich**; zitierte Zeilen
@@ -50,7 +53,7 @@ Drei Grundsätze:
    stärker, sind aber keine Voraussetzung.
 
 ### 1.1 Begegnungsgrund *(Mod)*
-Tief im Eis über dem Bergdorf Eirholm liegt ein Heiligtum. Darin schläft **Nivaris**, ein alter weißer Drache, der das
+Tief im Eis über dem Bergdorf Eirholm liegt ein Heiligtum. Darin schläft **Solvane**, ein alter weißer Drache, der das
 *Herzenserbe* hütet: eine Glut aus Frost, die in Arius und in ihr zugleich schlägt. Der **White Throne** hat Siegel
 geschmiedet, mit denen man das Heiligtum öffnen kann. Wer mit einem solchen Siegel kommt, kommt für Arius vom White Throne.
 
@@ -74,12 +77,12 @@ Jeder Abschnitt bringt neue Entscheidungen, nicht nur mehr Leben.
 
 ```
 Siegel ─► [I  Tempel von Eirholm] ──Der Schnitt──► Tritt durchs Tor ─► [II Gletscherschwelle]
-          Arius (Rauhreif-Form)                                         Nivaris allein, Arius sieht zu
+          Arius (Rauhreif-Form)                                         Solvane allein, Arius sieht zu
                                                                                  │
-              ┌──── Nivaris stürzt in den Gletscher, der Boden bricht ◄──────────┘
+              ┌──── Solvane stürzt in den Gletscher, der Boden bricht ◄──────────┘
               ▼
        Verwandlung + Resonanz ─► [III Herzgewölbe] ──weißes Loch──► [Finale: der letzte klare Moment]
-                                  Arius (weiß) + Nivaris im Takt            drei Austausche, dann Sieg
+                                  Arius (weiß) + Solvane im Takt            drei Austausche, dann Sieg
 ```
 
 ### 2.1 Arena *(Mod)*: eigene Dimension `hha_arius:eirholm`
@@ -90,11 +93,11 @@ Tageszeit). Jede Begegnung bekommt eine **Instanz** (Slot × 4096 Blöcke auf de
 | Schauplatz | Aufbau | Was er am Kampf ändert |
 |---|---|---|
 | **I Tempel von Eirholm** | Runde Halle (R 18), 10 Eissäulen (zerbrechliche Deckung), Altarstufen im Norden, großes Tor im Süden, Kuppeldach mit Lichtschächten | Enge, Deckung gegen Fernangriffe, Säulen brechen unter Windschritt und Schnitt. Kurze Sichtlinien. |
-| **II Gletscherschwelle** | Offenes Gletscherplateau (R 46) rund um den Tempel; im Süden die Gletscherwand, die der Schnitt spaltet; Arius sitzt auf der stehengebliebenen Westhälfte des Tempels | Weite, Fliegen, keine Deckung außer dem, was Nivaris selbst erschafft (Eiskämme). Die Kluft in der Gletscherwand ist eine Fluchtrinne vor Atem und Flügelstoß. |
+| **II Gletscherschwelle** | Offenes Gletscherplateau (R 46) rund um den Tempel; im Süden die Gletscherwand, die der Schnitt spaltet; Arius sitzt auf der stehengebliebenen Westhälfte des Tempels | Weite, Fliegen, keine Deckung außer dem, was Solvane selbst erschafft (Eiskämme). Die Kluft in der Gletscherwand ist eine Fluchtrinne vor Atem und Flügelstoß. |
 | **III Herzgewölbe** | Kuppelhöhle 36 Blöcke unter dem Plateau (R 28), 8 Kristallsäulen, Lichtsäule aus dem Einsturzloch in der Mitte, Wände aus blauem Eis | Rundum geschlossen, Höhe für den Drachen begrenzt (sie muss oft landen), Säulen als Deckung gegen sie – aber nicht gegen den Null-Schnitt. |
 
 Die Übergänge folgen aus dem Kampf: **Der Schnitt** spaltet den Tempel und reißt die Ostwand weg, also führt der Weg
-hinaus aufs Plateau. **Nivaris' Sturz** bricht den Gletscher, also fällt man ins Herzgewölbe darunter.
+hinaus aufs Plateau. **Solvane' Sturz** bricht den Gletscher, also fällt man ins Herzgewölbe darunter.
 
 ### 2.2 Zugang, Vorbereitung, Wiederholung
 - **Siegel von Eirholm** (herstellbar: Netherstern, 4 blaues Eis, 2 Echosplitter, 2 Goldbarren). Benutzbar nur in einem
@@ -174,16 +177,16 @@ pariert dessen nächsten Schlag (oder tritt nach 3 s von selbst an), dreht sich 
 Südtor. Alle anderen trägt die Druckwelle mit.
 - Unausweichlich, aber **0 Schaden**, keine Fallschäden (in der ganzen Arena), Flugbahn vorab berechnet und gegen Blöcke
   geprüft, Landung auf drei festen Plattformen vor dem Tempel.
-- Während man fliegt, landet **Nivaris** mit gespreizten Schwingen über den Landeplätzen. Ihr Brüllen markiert den Start
+- Während man fliegt, landet **Solvane** mit gespreizten Schwingen über den Landeplätzen. Ihr Brüllen markiert den Start
   von Abschnitt II. Ihre erste Attacke folgt frühestens **40 Ticks** nach der Freigabe.
 - Bei Wiederholungen (Flag pro Spieler) und im Training ist der Übergang verkürzt.
 
 ---
 
-## 4. Abschnitt II: Die Gletscherschwelle (Nivaris allein)
+## 4. Abschnitt II: Die Gletscherschwelle (Solvane allein)
 
-### 4.1 Nivaris *(Mod)*
-- **Name:** Nivaris, „die Alte vom Eirgletscher“.
+### 4.1 Solvane *(Mod)*
+- **Name:** Solvane, „die Alte vom Eirgletscher“.
 - **Persönlichkeit:** uralt, geduldig, stolz. Sie spielt nicht mit Beute, sie *misst* sie. Sie beschützt Arius wie ein
   Elternteil, das ihm nichts mehr beibringen muss. Sie brüllt selten, und wenn, dann tief und kurz.
 - **Silhouette** (kein Enderdrache): langer, gerader Hals mit einer **Krone aus nach hinten gekämmten Eishörnern wie ein
@@ -201,7 +204,7 @@ mindestens alle 20 s ein langes Bodenfenster. Ihre Flughöhe bleibt ≤ 9 Blöck
 nächsten ist): **Kopf** ×1,5 (am Boden) / ×2 (zu Boden gebracht), **Kehle** beim Atemholen (zählt für den Erstickungs-
 Konter), **Körper** ×1, **Schwanz** ×0,5.
 
-### 4.3 Moveset Nivaris
+### 4.3 Moveset Solvane
 
 | # | Name | Vorbereitung / Warnung | Trefferbereich | Dauer | Schaden | Gegenmaßnahme | Erholung / Fenster |
 |---|---|---|---|---|---|---|---|
@@ -219,7 +222,7 @@ Konter), **Körper** ×1, **Schwanz** ×0,5.
 getrennt“). Treffer auf ihn bewirken nichts außer einem Hinweis. Einmal sagt er: „Sie war vor mir hier. Sei höflich.“
 
 ### 4.4 Übergang II → III: Der Gletscher bricht
-Nivaris' Leiste ist leer, aber sie stirbt nicht. Sie steigt hoch, Arius pfeift einmal, ihre Augen flackern im Takt
+Solvane' Leiste ist leer, aber sie stirbt nicht. Sie steigt hoch, Arius pfeift einmal, ihre Augen flackern im Takt
 mit seinen (**Resonanz**). Sie stürzt sich ins Zentrum des Plateaus.
 1. Ringförmige Risse laufen über das Plateau (Ansage-Ringe ohne Schaden, nur Information), 40 Ticks.
 2. Die Mitte (R 14) bricht in drei Ringen weg. Wer drauf steht, fällt mit **Sanftem Fall** ins Herzgewölbe. Wer
@@ -230,7 +233,7 @@ mit seinen (**Resonanz**). Sie stürzt sich ins Zentrum des Plateaus.
 
 ---
 
-## 5. Abschnitt III: Das Herzgewölbe (Arius weiß + Nivaris im Takt)
+## 5. Abschnitt III: Das Herzgewölbe (Arius weiß + Solvane im Takt)
 
 ### 5.1 Wer führt? Der **Takt**
 Immer genau **einer führt** (*Taktgeber*): Seine Augen leuchten hell, eine kleine Frostrune folgt ihm, und die
@@ -239,10 +242,10 @@ und darf nur einen kurzen Bodenangriff aus der Liste „Begleitung“ einsetzen,
 gerade keine Boss-Ansage hat. Beide teilen sich **ein** Telegraph-Budget, deshalb gilt höchstens eine Boss-Ansage je
 Spieler.
 - Der Takt wechselt nach jedem abgeschlossenen Angriff oder Kombinationsangriff.
-- **Taktbruch:** Wer den Taktgeber in seinem offenen Fenster trifft (≥ 25 Schaden) oder Nivaris' Atem erstickt, bricht
+- **Taktbruch:** Wer den Taktgeber in seinem offenen Fenster trifft (≥ 25 Schaden) oder Solvane' Atem erstickt, bricht
   den Takt. Der laufende Kombinationsangriff fällt aus, und **der Partner steht offen** (Gold, 50 Ticks).
 - Etwa alle 20 s beginnt der Taktgeber einen **Resonanzangriff** (5.3).
-- Ist Nivaris niedergerungen (ihre zweite Leiste leer), legt sie sich an die Wand. Arius kämpft dann allein mit dem
+- Ist Solvane niedergerungen (ihre zweite Leiste leer), legt sie sich an die Wand. Arius kämpft dann allein mit dem
   weißen Moveset. Wer zuerst den Drachen besiegt, hat ab dann einen leichteren, aber längeren Kampf. Das ist eine
   bewusste taktische Wahl.
 
@@ -257,21 +260,21 @@ Die gelernten Regeln gelten weiter (Kegel/Linie/Fenster), aber die Folgen änder
 | W4 | **Null-Schnitt** (White Null) | Lange, dünne Linie 24 × 1,4, die **durch Säulen und Eiskämme hindurch** trifft („trennt die Verbindung zur Deckung“). Danach wechselt der Takt sofort | 16 Ticks | 16 | 16 Ticks |
 | — | **Pfeilschnitt** | Projektile von vorn werden zerschnitten, solange er geht. Von der Seite und von hinten treffen sie | — | — | — |
 
-**Begleitung Nivaris** (wenn Arius führt): D4 Klauenhieb oder D5 Schwanzfeger. **Begleitung Arius** (wenn Nivaris
+**Begleitung Solvane** (wenn Arius führt): D4 Klauenhieb oder D5 Schwanzfeger. **Begleitung Arius** (wenn Solvane
 führt): A1-Hieb 1 allein oder Seitschritt zur Flanke.
-**Nivaris in III** fliegt kürzer (≤ 6 s, Decke!), hat D1 (max. 2 Kämme), D3, D4, D5. Ihre Leiste ist neu (Pool III).
+**Solvane in III** fliegt kürzer (≤ 6 s, Decke!), hat D1 (max. 2 Kämme), D3, D4, D5. Ihre Leiste ist neu (Pool III).
 
 ### 5.3 Resonanzangriffe (gemeinsam, mit sicherem Weg und anschließender Chance)
 
 | Name | Ablauf | Sicherer Weg | Danach | Taktbruch-Möglichkeit |
 |---|---|---|---|---|
-| **R1 Frostkorridor und Schnitt** | Nivaris zieht zwei parallele Atembahnen (Linien), daraus wachsen zwei Eiskämme mit je **zwei Lücken** (goldene Linien). Am Korridorende hebt Arius Solvane: Linie den Korridor entlang (5 breit), 40 Ticks nach den Kämmen | Seitlich durch eine goldene Lücke raus | Arius 40 Ticks offen, die Kämme zerbrechen | Atem ersticken → Kämme entstehen nicht, Arius steht offen |
-| **R2 Kristallsturm** | Arius schleudert 6 Eiskristalle in die Luft, sie hängen glitzernd. Ihre Bahnen werden sofort als parallele Linien gezeigt (Richtung = Nivaris' Flügelschlag, sichtbar an ihrer Stellung). 36 Ticks später treibt der Flügelschlag sie über die Arena | Zwischen den Linien (Gassen ≥ 2 breit, golden markiert) | Nivaris landet, 40 Ticks offen | Arius während des Wurfs (offen) treffen → Kristalle fallen harmlos, Nivaris offen |
-| **R3 Eisfeld spalten** | Nivaris friert einen großen Kreis (R 10) unter der Gruppe ein (Kreis, 30 Ticks, noch kein Schaden). Arius spaltet ihn mit einem Hieb: **eine Hälfte wird golden (sicher)**, die andere bricht 20 Ticks später (14 Schaden) | Auf die goldene Hälfte wechseln | Arius 30 Ticks offen | Nivaris beim Einfrieren an der Kehle treffen |
+| **R1 Frostkorridor und Schnitt** | Solvane zieht zwei parallele Atembahnen (Linien), daraus wachsen zwei Eiskämme mit je **zwei Lücken** (goldene Linien). Am Korridorende hebt Arius Solvane: Linie den Korridor entlang (5 breit), 40 Ticks nach den Kämmen | Seitlich durch eine goldene Lücke raus | Arius 40 Ticks offen, die Kämme zerbrechen | Atem ersticken → Kämme entstehen nicht, Arius steht offen |
+| **R2 Kristallsturm** | Arius schleudert 6 Eiskristalle in die Luft, sie hängen glitzernd. Ihre Bahnen werden sofort als parallele Linien gezeigt (Richtung = Solvane' Flügelschlag, sichtbar an ihrer Stellung). 36 Ticks später treibt der Flügelschlag sie über die Arena | Zwischen den Linien (Gassen ≥ 2 breit, golden markiert) | Solvane landet, 40 Ticks offen | Arius während des Wurfs (offen) treffen → Kristalle fallen harmlos, Solvane offen |
+| **R3 Eisfeld spalten** | Solvane friert einen großen Kreis (R 10) unter der Gruppe ein (Kreis, 30 Ticks, noch kein Schaden). Arius spaltet ihn mit einem Hieb: **eine Hälfte wird golden (sicher)**, die andere bricht 20 Ticks später (14 Schaden) | Auf die goldene Hälfte wechseln | Arius 30 Ticks offen | Solvane beim Einfrieren an der Kehle treffen |
 | **R4 Weißes Loch** | siehe Abschnitt 7 (einmal je Kampf) | Korridore | großes Doppelfenster | — |
 
 Eine Resonanz-Animation (Augen beider blitzen gleichzeitig auf, ein feiner goldener Faden zwischen Arius' Brust und
-Nivaris' Herzkern) kündigt **jeden** Resonanzangriff 20 Ticks vorher an. So wird die Zusammenarbeit lesbar.
+Solvane' Herzkern) kündigt **jeden** Resonanzangriff 20 Ticks vorher an. So wird die Zusammenarbeit lesbar.
 
 ### 5.4 Die Verwandlung zur weißen Form (einmalig, Übergang II → III)
 1. **Landung** (0–10): Arius landet im Gewölbe, ein Knie am Boden, der Mantel bläht sich.
@@ -280,7 +283,7 @@ Nivaris' Herzkern) kündigt **jeden** Resonanzangriff 20 Ticks vorher an. So wir
    das goldene Auge.
 3. **Weiß** (40): Das Modell wechselt auf die weiße Form. Ein Druckstoß (Ring R 12) **räumt den Schnee** (Schneeschichten
    im Umkreis werden entfernt, sichtbare Druckwelle, kein Schaden).
-4. **Resonanz** (40–70): Nivaris landet hinter ihm. Ihre Augen und seine wechseln gleichzeitig: Gold und Blau tauschen
+4. **Resonanz** (40–70): Solvane landet hinter ihm. Ihre Augen und seine wechseln gleichzeitig: Gold und Blau tauschen
    für einen Moment die Seiten. Weiße Linien leuchten in ihren Schwingenmembranen auf (Leuchtmaske „Resonanz“).
 5. Danach: 40 Ticks Ruhe, erst dann beginnt der Takt.
 
@@ -323,11 +326,11 @@ laufen, und zwischen ihnen öffnen sich **Korridore**, in denen der Druck „im 
 
 | Zeit | Ablauf | Lesbarkeit | Spiel |
 |---|---|---|---|
-| 0–60 | Arius springt in die Mitte, hebt Solvane senkrecht. Nivaris kreist und atmet in den Punkt über ihm (Resonanzfaden). Ein **dichter weißer Kern** (Ø 2,4) entsteht 5 Blöcke über dem Boden. Schnee und Licht strömen sichtbar *nach außen*. Der Himmel im Gewölbe wird heller statt dunkler. | Partikel fliegen radial weg, sanfter Schub nach außen (kein Schaden) | Abstand gewinnen |
+| 0–60 | Arius springt in die Mitte, hebt Solvane senkrecht. Solvane kreist und atmet in den Punkt über ihm (Resonanzfaden). Ein **dichter weißer Kern** (Ø 2,4) entsteht 5 Blöcke über dem Boden. Schnee und Licht strömen sichtbar *nach außen*. Der Himmel im Gewölbe wird heller statt dunkler. | Partikel fliegen radial weg, sanfter Schub nach außen (kein Schaden) | Abstand gewinnen |
 | je Puls (4×, alle 36 Ticks) | 30 Ticks vorher: **goldene Korridore** (3 radiale Bahnen, 3 breit) vom Kern bis zur Wand. Dann läuft eine **Druckfront** (Ring) mit 0,6 Bl./Tick nach außen | Gold = Windschatten | Front trifft alle **außerhalb** der Korridore: 10 Schaden + Stoß nach außen. Die Korridore drehen sich je Puls um 40° → man muss zwischen den Pulsen umsteigen |
 | zwischen Puls 3 und 4 | **Die Lücke**: Der Kern atmet ein (20 Ticks Stille). Arius fällt aus dem Licht und führt **einen** extremen Schnitt durch den Kern auf das Duellziel (Linie 60 × 4, 26 Ticks) | Linie, Stille, Licht bündelt sich an der Klinge | 36 Schaden, ausweichbar. Wer in einem Korridor steht, muss trotzdem aus der Linie |
 | Puls 4 | 4 Korridore (leichter) | | |
-| Ende | Der Kern kollabiert zu einem Lichtpunkt und erlischt (Blitz, abschaltbar). | | **Arius und Nivaris sind 100 Ticks offen** (beide Gold), das größte Fenster des Kampfs |
+| Ende | Der Kern kollabiert zu einem Lichtpunkt und erlischt (Blitz, abschaltbar). | | **Arius und Solvane sind 100 Ticks offen** (beide Gold), das größte Fenster des Kampfs |
 
 Unterschied zu einem schwarz eingefärbten Sog: Richtung nach außen, Rhythmus, Korridore als Struktur, Stille als
 Ankündigung des Schnitts, helleres statt dunkleres Licht.
@@ -336,7 +339,7 @@ Ankündigung des Schnitts, helleres statt dunkleres Licht.
 
 ## 8. Finale: Der letzte klare Moment
 
-Wenn Arius' Leiste in III leer ist: Der Sturm lässt nach, die Musik schrumpft auf ein einzelnes Motiv, Nivaris legt
+Wenn Arius' Leiste in III leer ist: Der Sturm lässt nach, die Musik schrumpft auf ein einzelnes Motiv, Solvane legt
 sich an die Wand. Arius steckt Solvane in die Scheide.
 
 > „Kein Sturm mehr. Nur du und ich.“
@@ -351,7 +354,7 @@ das Duellziel (30 → 24 → 18 Ticks). Dann zieht er und schneidet in einem Zug
 Warum kein größeres Finale? Nach Schnitt, Gletschersturz und weißem Loch wirkt eine weitere Explosion kleiner, nicht
 größer. Der Kontrast macht die Eskalation sichtbar und prüft am Ende genau das, was Abschnitt I gelehrt hat.
 
-**Ende:** Arius kniet kurz, steht auf, sieht Nivaris an.
+**Ende:** Arius kniet kurz, steht auf, sieht Solvane an.
 > „Du bist keine Waffe.“ … „Nimm es. Und komm nicht noch einmal mit diesem Siegel.“
 
 Die Belohnung erscheint als Frostkristall vor jedem Teilnehmer (eigene Beute je Spieler). Nach 20 s öffnet sich der Weg
@@ -392,7 +395,7 @@ Resistenz wirkt normal. Ein voll ausgerüsteter Spieler nimmt so etwa 56 % des G
 Herzen, der Schnitt (30) ≈ 8,4 Herzen. Config `hha_arius.damage_scale` (Standard 1,0).
 
 ### 9.4 Multiplayer
-- **Leben:** × (1 + 0,55·(n−1)), n = Spieler beim Start (max. 6 zählen). Druck: Ab 3 Spielern nutzt Nivaris in III ihre
+- **Leben:** × (1 + 0,55·(n−1)), n = Spieler beim Start (max. 6 zählen). Druck: Ab 3 Spielern nutzt Solvane in III ihre
   Begleitung auch gegen ein zweites Ziel. Ansagen werden nie kürzer.
 - **Duellziel:** Arius wählt den Spieler mit dem meisten Schaden in den letzten 10 s (bei Gleichstand den nächsten).
   Gewechselt wird nur zwischen zwei Angriffen. Das Ziel sieht „Arius fixiert dich“ und eine dünne Blicklinie.
@@ -426,11 +429,11 @@ keine Zusatzgeometrie, die die Form ändert).
 | Richtung | Kurzbeschreibung | Stärke | Schwäche |
 |---|---|---|---|
 | **A „Eirholm-Wacht“** | Netherite in **Anthrazit mit stahlblauem Unterton**, Trims aus **Altgold** im Motiv des **Viersterns** von Arius' Schulteremblem, **eisblaue Leuchtnähte** in den Fugen | Liest sich dunkel vor Schnee, gehört sichtbar zu Arius (Stufe-I-Bossrüstung), lässt Weiß für die Verwandlung frei | Wirkt erst aus der Nähe „frostig“ |
-| **B „Nivaris-Schuppe“** | Perlweißes Netherite mit Schuppenrelief, blassgoldene Herzlinie, membranblaue Akzente | Sehr drachig | Verschwimmt im Schnee, macht Arius' Weiß beliebig |
+| **B „Solvane-Schuppe“** | Perlweißes Netherite mit Schuppenrelief, blassgoldene Herzlinie, membranblaue Akzente | Sehr drachig | Verschwimmt im Schnee, macht Arius' Weiß beliebig |
 | **C „Weiße Null“** | Invertiert: kalkweiße Platten, schwarze Fugen, Licht bricht von innen durch Risse | Spektakulär | Zu nah an der weißen Bossform, Leuchtrisse wirken schnell wie Partikelwolke |
 
 **Empfehlung: A „Eirholm-Wacht“** mit einem Akzent aus B: Die Brustplatte trägt das **Herzenserbe** als kleinen goldenen
-Rautenstein mit blauem Kern (Verbindung zu Nivaris). Begründung: Lesbarkeit aus Spielentfernung, klare Zugehörigkeit zu
+Rautenstein mit blauem Kern (Verbindung zu Solvane). Begründung: Lesbarkeit aus Spielentfernung, klare Zugehörigkeit zu
 Arius (Stufe I trägt dieselbe Rüstung) und Weiß bleibt der Verwandlung vorbehalten.
 
 **Ausarbeitung:**
@@ -455,7 +458,7 @@ Loch), Arius' Kampfhandschuhe (Nahkampf-Moveset, Magiemodus mit Auswahlrad, 13 T
 Solvane als mittellanges Bastardschwert mit der Waffentechnik „Klarer Schnitt“ sowie Kosten, Grenzen und Balancing.
 Die frühere „Weiße Linie“ entfällt (sie hätte Solvanes Schnitt gedoppelt).
 
-### 10.3 Drachenrelikt: **Nivaris' Schwingenschuppe** *(Mod)*
+### 10.3 Drachenrelikt: **Solvane' Schwingenschuppe** *(Mod)*
 Eigener Zweck: **Bewegung und Gelände**, keine Resonanz, kein Schaden.
 - Benutzen: **Schwingenschlag**: 6 Blöcke hoch, 4 nach vorn, 5 s Sanfter Fall. Bei der Landung schiebt ein Schneestoß
   Gegner zurück (kein Schaden). Abklingzeit 20 s. Funktioniert ohne Set.
@@ -470,7 +473,7 @@ Eigener Zweck: **Bewegung und Gelände**, keine Resonanz, kein Schaden.
 | **Arius' Kampfhandschuhe** | garantiert | 10 % | Waffe und Zauberwerkzeug |
 | **Herzfrost** | 4 | 2 | Rüstungsaufwertung, Schwingenschuppe |
 | **Eirholm-Schmiedevorlage** | 1 | 50 % | Netherite → Eirholm (vervielfältigen: Vorlage + 7 Diamanten + Herzfrost → 2) |
-| **Nivaris-Schuppe** | 6 | 3 | Schwingenschuppe (3 Schuppen + 2 Phantomhaut + Herzfrost) |
+| **Solvane-Schuppe** | 6 | 3 | Schwingenschuppe (3 Schuppen + 2 Phantomhaut + Herzfrost) |
 | **Echo von Eirholm** | 1 | — | Training einzelner Abschnitte |
 | **Trim-Vorlage „Weiße Klinge“** | nur bei Sieg **ohne k. o.** in der Gruppe | ebenso | kosmetisch, Vanilla-Trim für jede Rüstung |
 | Fortschritte | „Das Siegel“, „Unter der Linie“ (Schnitt ohne Treffer überstehen), „Taktbruch“, „Die weiße Klinge“ (Sieg), „Kein Sturm mehr“ (Sieg ohne k. o.) | | Anerkennung |
@@ -485,11 +488,11 @@ Jeder Teilnehmer erhält eigene Beute. HHA erzeugt automatisch das Kit `/hha kit
 |---|---|---|
 | Addon-Einstieg | `AriusAddon` (Entrypoint `hha`): Config-Keys, Items, Set, Abilities, Lore. `AriusAddonClient` (`hha_client`): HUD-Cooldowns | `AriusAddon.kt`, `gear/` |
 | Bosse | `AriusEntity`, `NivarisEntity` (Puppets ohne KI, Posen über `DataTracker`), Kampf als Skript-Iteratoren wie bei HHA | `boss/` |
-| Ansagen | ein `Telegraph.Fight` für beide Bosse (Stil HEAVEN = Himmelblau-Weiß für Arius, SOUL = Tiefcyan für Nivaris) | `boss/EirholmFight.kt` |
+| Ansagen | ein `Telegraph.Fight` für beide Bosse (Stil HEAVEN = Himmelblau-Weiß für Arius, SOUL = Tiefcyan für Solvane) | `boss/EirholmFight.kt` |
 | Arena | Dimension + Biom per Datapack, Bau aus Vanilla-Blöcken, Instanz-Slots, Neubau je Versuch | `arena/`, `data/hha_arius/dimension*` |
 | Schnitt/Kern/Splitter | eigene Client-Effekte (Blockbündel-Renderer, Kern, Druckfronten-Schleier, Frostsplitter) | `client/fx/` |
 | Gehalten-Zustand | Server-Zustand + S2C-Paket + Client-Mixins (Bewegung/Aktionen) | `boss/Hold.kt`, `mixin/client/` |
-| Modelle | Python-Werkzeuge aus HHA übernommen (`tools/assets`), Modelle Arius (dunkel/weiß) und Nivaris, Schlüsselposen → Kotlin | `tools/assets/`, `client/model/` |
+| Modelle | Python-Werkzeuge aus HHA übernommen (`tools/assets`), Modelle Arius (dunkel/weiß) und Solvane, Schlüsselposen → Kotlin | `tools/assets/`, `client/model/` |
 | Rüstung/Items | Netherite-Basis umgefärbt (mctex), Leuchtebene, Item-Icons, Solvane als 3D-Handmodell | `assets/hha_arius/` |
 | Audio | Synthetisierte Musik (3 Themen + Finale-Motiv) und Effektklänge (numpy + ffmpeg), keine fremden Samples | `tools/assets/audio`, `sounds/` |
 | Tests | Build; Server-Selbsttest (Befehl `/hhaarius selftest`: Arena bauen, Abschnitte mit Fake-Ablauf durchschalten, Schnitt-Momentaufnahme zählen, Aufräumen prüfen) | `boss/SelfTest.kt` |

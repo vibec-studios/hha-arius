@@ -1,4 +1,7 @@
-# Nivaris als Schlangendrache: Modell-Vertrag für den Renderer
+# Solvane als Schlangendrache: Modell-Vertrag für den Renderer
+
+> **Name:** Der Drache heißt **Solvane**: Er ist die Drachenform von Arius' Schwert, das aus dem Herzen eines uralten weißen Drachen geschmiedet wurde. Im Code heißen Entity, Modell und Dateien weiter `nivaris` (alte Arbeitsbezeichnung).
+
 
 Quelle: `tools/assets/nivaris_model.py` → `python tools/assets/boss_models.py --only nivaris` erzeugt
 `client/model/nivaris/NivarisModelData.kt` (`nivaris()`) und die Texturen. Gesamtwirkung ohne Spiel:

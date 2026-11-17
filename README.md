@@ -1,12 +1,12 @@
 # HHA Arius – The White Blade
 
 **An endgame addon for [H&H Armors (HHA)](https://github.com/vibec-studios/HHA): the duel against Arius, the old white
-dragon Nivaris, and the Eirholm frost armour.**
+dragon Solvane, and the Eirholm frost armour.**
 
 Fabric · Minecraft 1.21.11 · Kotlin · MIT
 
 > Arius is the protagonist of our own light novel *The White Blade*. This mod is a **free adaptation**: the dragon
-> Nivaris, the Sanctum of Eirholm, the white form, the white hole, the Eirholm armour and every technique name except
+> Solvane, the Sanctum of Eirholm, the white form, the white hole, the Eirholm armour and every technique name except
 > *White Null* are mod inventions and set nothing for the story. Other HHA bosses are not changed and never mention him.
 
 ## The encounter
@@ -20,7 +20,7 @@ rebuilt from vanilla blocks for every attempt. Nothing in your survival world is
    within limits.
 2. **The Cut**: the wind turns, the hall goes silent, a single line crosses the temple. He strikes, nothing happens for
    a moment, then the temple splits along the line and slides apart. He kicks you through the breaking gate.
-3. **The Glacier Threshold**: Nivaris alone while Arius watches. Her breath leaves ice ridges; lure her dive into a
+3. **The Glacier Threshold**: Solvane alone while Arius watches. Her breath leaves ice ridges; lure her dive into a
    ridge to bring her down, choke her breath with hits to the throat, punish her landings.
 4. **The Heart of the Glacier**: she crashes through the ice, Arius sheds his dark armour and fights in white. They fight
    **in rhythm**: one leads, the other supports, and resonance attacks have clear safe paths. Break the rhythm and the
@@ -33,7 +33,7 @@ in the next part.
 
 ## Visuals
 Monumental polar landscape around the sanctuary (a 225-block ice spire, a deep canyon, glacier ranges), weather and light
-moods per section, Nivaris as a 96-block serpent dragon with an entrance coiled around the spire, a white hole rendered
+moods per section, Solvane as a 96-block serpent dragon with an entrance coiled around the spire, a white hole rendered
 as a gravitational-lens shader, upgraded wind/ice/yang magic, hit-stop, sword trails, camera work for all cutscenes and
 two new soundtracks. Effects scale with `/ariusc fx`; flashes and camera shake can be turned off (`/ariusc flash`,
 `/ariusc shake`). A view distance of at least 10 chunks is recommended. Details: `docs/VISUELL.md` (German).
@@ -46,7 +46,7 @@ two new soundtracks. Effects scale with `/ariusc fx`; flashes and camera shake c
 | Arius' Gauntlets (melee style and Wind/Ice/Yang magic) | yes | 10 % |
 | Heartfrost | 4 | 2 |
 | Eirholm upgrade template | 1 | 50 % |
-| Nivaris scales | 6 | 3 |
+| Solvane scales | 6 | 3 |
 | Echo of Eirholm (train single parts) | yes | – |
 | "White Blade" armour trim template | only if nobody was knocked out | same |
 

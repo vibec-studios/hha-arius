@@ -33,6 +33,7 @@ object GearLore {
             line("$P.eirholm_boots.lore2", num(k("resonance_rest")), num(k("resonance_rest_set")))
         }
         context.registerLore(GearItems.SOLVANE) {
+            line("$P.solvane.lore0")
             line("$P.solvane.lore1", num(k("solvane_frost_damage")))
             line("$P.solvane.lore2", num(k("solvane_shatter_every")), num(k("solvane_shatter_damage")))
             line("$P.solvane.lore3", seconds(k("solvane_counter_ticks")), seconds(k("solvane_counter_cooldown_success")), seconds(k("solvane_counter_cooldown_fail")))

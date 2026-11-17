@@ -1,6 +1,9 @@
-# Nivaris: Anker der Trefferzonen (Schlangendrache, seit V2)
+# Solvane: Anker der Trefferzonen (Schlangendrache, seit V2)
 
-Nivaris ist ein 96 Blöcke langer Schlangendrache aus 40 Gliedern. Der lange Körper ist **nur Darstellung**; getroffen
+> **Name:** Der Drache heißt **Solvane**: Er ist die Drachenform von Arius' Schwert, das aus dem Herzen eines uralten weißen Drachen geschmiedet wurde. Im Code heißen Entity, Modell und Dateien weiter `nivaris` (alte Arbeitsbezeichnung).
+
+
+Solvane ist ein 96 Blöcke langer Schlangendrache aus 40 Gliedern. Der lange Körper ist **nur Darstellung**; getroffen
 wird über die Trefferbox der Entity (4,5 × 3,6, der **Rumpf vorn**: Glieder 2–4) und die unsichtbare Kopf-Trefferbox
 (`NivarisHeadEntity`, 1,9 × 1,9), die der Kampf jeden Tick an die Kopfmitte setzt. Welche Zone ein Treffer auf die
 Rumpfbox trifft, entscheidet der nächste Anker (`NivarisMoves.zoneOf`).
