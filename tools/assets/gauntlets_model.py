@@ -228,13 +228,23 @@ WIND_LINES = [
 ]
 
 
+def scales_t(x, y, period=3, rows=3):
+    """Drachenschuppen: Bögen in versetzten Reihen; liefert Helligkeitsversatz (unterer Schuppenrand dunkler)."""
+    row = y // rows
+    off = (period // 2) if row % 2 else 0
+    u = (x + off) % period
+    v = y % rows
+    edge = v == rows - 1 or (v == rows - 2 and u in (0, period - 1))
+    return -0.16 if edge else (0.07 if v == 0 and u == period // 2 else 0.0)
+
+
 def brace():
-    """Unterarmschiene: vorn der Eiskristall, außen die Windböen, hinten eine feine Goldnaht, Spitzbogen oben vorn."""
+    """Unterarmschiene: Drachenschuppen, vorn der Eiskristall, außen die Windböen, hinten eine feine Naht."""
     def paint(face, x, y, w, h):
         if face in ('top', 'bottom'):
             o = opening(face, x, y, w, h, 1)
             return o if o is not None else ramp(PLATE, 0.5)
-        t = enamel_t(face, x, y, w, h, 0.68, 2)
+        t = enamel_t(face, x, y, w, h, 0.68, 2) + scales_t(x, y)
         c = ramp(PLATE, t)
         if face == 'front':
             cx = (w - 1) // 2
@@ -312,7 +322,7 @@ def band():
             return o if o is not None else gold_c(face, x, y, w, h, 0.5)
         if y == h - 1:
             return gold_c(face, x, y, w, h, 0.56)                             # Goldkante am Lamellenrand
-        return ramp(PLATE, enamel_t(face, x, y, w, h, 0.66, 5))
+        return ramp(PLATE, enamel_t(face, x, y, w, h, 0.66, 5) + scales_t(x, y, 2, 2))
     return paint
 
 
@@ -425,6 +435,44 @@ def claw():
     return paint
 
 
+def fin(tip=False):
+    """Drachenschwinge außen an der Schiene: Perlweiß, vorn eine Goldkante, innen eine leuchtende Eislinie."""
+    def paint(face, x, y, w, h):
+        if face == 'front' or (tip and face == 'top'):
+            return gold_c(face, x, y, w, h, 0.66)
+        if face == OUTER:
+            c = ramp(PLATE, enamel_t(face, x, y, w, h, 0.74, 14))
+            if x == 0:
+                return gold_c(face, x, y, w, h, 0.6)
+            if x == w - 1 and h > 1:
+                return (mix(c, ICE, 0.7), GLOW_ICE[:3] + (150,))
+            return c
+        if face in ('top', 'bottom'):
+            return gold_c(face, x, y, w, h, 0.5)
+        return ramp(PLATE, enamel_t(face, x, y, w, h, 0.56, 14, gloss=False))
+    return paint
+
+
+def spike():
+    """Kleiner Dorn (Knöchel, Ellbogen): Goldfuß, eisweiße Spitze."""
+    def paint(face, x, y, w, h):
+        if face in ('top', 'bottom'):
+            return ramp(PLATE, 0.9)
+        return gold_c(face, x, y, w, h, 0.62) if y == h - 1 else ramp(PLATE, 0.88 if face == OUTER else 0.7)
+    return paint
+
+
+def wrist_ice():
+    """Eisband am Handgelenk: eisblau, leuchtet schwach (Magiemodus stärker über die Leuchtmaske)."""
+    def paint(face, x, y, w, h):
+        if face in ('top', 'bottom'):
+            o = opening(face, x, y, w, h, 1)
+            return o if o is not None else ramp(GOLD, 0.5)
+        c = mix(ramp(PLATE, 0.7), ICE, 0.55 + 0.2 * ((x + y) % 2))
+        return (c, GLOW_ICE[:3] + (110,))
+    return paint
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Zusammenbau
 # ---------------------------------------------------------------------------------------------------------------------
@@ -445,14 +493,22 @@ def side(right):
             return HDCube(x, y, z, w, h, d, paint, dilate)
         return HDCube(-(x + w), y, z, w, h, d, mirrored(paint), dilate)
 
+    # Seit 1.2.2 (Crix: „Modell ist kacke“): schlanker, kein Eimer mehr. Flache Stulpe, außen eine geschwungene
+    # Drachenschwinge (stufig, Spitze über dem Ellbogen), Ellbogendorn, Eisband am Handgelenk, Knöcheldornen an der Faust.
     base = Part(f'{s}_base', cubes=[
-        C(-4.0, 2.0, -2.75, 5.5, 1.5, 5.5, flare()),                         # Stulpe: x -4..1.5, innen 0,5 über
-        C(-1.75, 1.5, -2.75, 1.0, 0.5, 0.5, crest()),                        # Spitzbogen vorn
-        C(-4.0, 1.5, -0.5, 0.5, 0.5, 1.0, crest()),                          # Spitzbogen außen
-        C(-4.5, 2.25, -0.5, 0.5, 1.0, 1.0, rivet()),                         # Zierniete an der Stulpe
+        C(-3.75, 2.5, -2.5, 5.0, 1.0, 5.0, flare()),                         # Stulpe: flach, x -3,75..1,25
+        C(-1.75, 2.0, -2.75, 1.0, 0.5, 0.5, crest()),                        # Spitzbogen vorn
+        C(-4.25, 4.0, -0.75, 0.5, 3.0, 1.5, fin()),                          # Schwinge 1 (am Grat)
+        C(-4.75, 2.5, -0.5, 0.5, 2.0, 1.0, fin()),                           # Schwinge 2
+        C(-5.25, 1.0, -0.25, 0.5, 2.0, 0.5, fin()),                          # Schwinge 3
+        C(-5.75, 0.0, 0.0, 0.5, 1.5, 0.5, fin(tip=True)),                    # Schwingenspitze über dem Ellbogen
+        C(-4.75, 3.5, 0.5, 0.5, 1.5, 1.0, fin()),                            # hintere Feder
+        C(-2.0, 2.75, 2.5, 1.5, 1.0, 0.5, spike()),                          # Ellbogendorn (Fuß)
+        C(-1.75, 3.0, 3.0, 1.0, 0.5, 0.5, spike()),                          # Ellbogendorn (Spitze)
         C(-3.5, 3.5, -2.0, 4.5, 3.5, 4.0, brace(), 0.34),                    # Schiene: x -3.84..1.34, y bis 7.34
         C(-4.3, 4.0, -0.5, 0.5, 2.5, 1.0, ridge()),                          # Grat außen
-        C(-3.5, 7.0, -2.0, 4.5, 1.5, 4.0, band(), 0.2),                      # untere Lamelle, schmaler (Verjüngung)
+        C(-3.5, 7.0, -2.0, 4.5, 1.0, 4.0, band(), 0.2),                      # untere Lamelle, schmaler (Verjüngung)
+        C(-3.25, 7.75, -1.75, 4.0, 0.5, 3.5, wrist_ice(), 0.3),              # Eisband am Handgelenk
         C(-3.0, 8.0, -2.0, 4.0, 2.0, 4.0, hand_plate(), 0.15),               # Handplatte: x -3.15..1.15, bis y 10.15
         C(-3.65, 8.5, -1.75, 0.5, 1.5, 3.5, hand_back()),                    # gewölbter Handrücken
         C(-4.15, 8.5, -0.75, 0.5, 1.5, 1.5, sun_disc()),                     # Yang-Sonne auf dem Handrücken
@@ -461,6 +517,10 @@ def side(right):
         C(-3.0, 10.0, -2.0, 4.0, 1.0, 4.0, fist_block(), 0.28),             # eingerollte Finger, y bis 11.28
         C(-3.8, 10.0, -2.0, 0.5, 1.0, 4.0, knuckle_guard(), 0.02),          # Knöchelschutz außen
         C(-2.5, 9.5, -2.75, 3.0, 1.0, 0.5, thumb_fist()),                    # Daumen quer vor der Faust
+        C(-4.3, 10.25, -1.75, 0.5, 0.5, 0.5, spike()),                       # Knöcheldornen (vier, außen)
+        C(-4.3, 10.25, -0.75, 0.5, 0.5, 0.5, spike()),
+        C(-4.3, 10.25, 0.25, 0.5, 0.5, 0.5, spike()),
+        C(-4.3, 10.25, 1.25, 0.5, 0.5, 0.5, spike()),
     ])
     open_cubes = []
     for z0, segs, end in FINGERS:

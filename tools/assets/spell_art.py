@@ -581,10 +581,13 @@ def main(argv):
     import hud_icons  # animierte Abklingzeit-Icons (Blood-Stil) ersetzen die statischen gleichen Namens
     jobs = [(t, f'textures/gui/sprites/hud/art/{k}.png') for k, t in hud.items() if k not in hud_icons.NAMES]
     jobs += [(t, f'textures/block/{k}.png') for k, t in blocks.items()]
-    jobs.append((gicon, 'textures/item/arius_gauntlets.png'))
+    # Item-Icon der Handschuhe: handgezeichnet in item_icons.py (der 32er-Render war matschig).
     G.save_textures(jobs)
     write_jsons()
     hud_icons.write_all()
+    import item_icons
+    H = item_icons.H
+    H.png(os.path.join(item_icons.OUT_ITEM, 'arius_gauntlets.png'), 16, 16, item_icons.rows_of(item_icons.gauntlet_icon()))
 
 
 if __name__ == '__main__':
