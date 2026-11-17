@@ -123,6 +123,8 @@
   "hha_arius.qte.clash_lost": "Er stößt dich zurück.",
   "hha_arius.qte.clash_won": "Du brichst seine Deckung!",
   "hha_arius.qte.clash_won_other": "Seine Deckung bricht!",
+  "hha_arius.qte.counter": "Jetzt – Konter!",
+  "hha_arius.qte.dodge": "Er stürmt heran – spring!",
   "hha_arius.qte.mash": "%s  ×  hämmern",
   "hha_arius.role.attack": "Angriff",
   "hha_arius.role.construct": "Bauwerk",

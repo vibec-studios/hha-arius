@@ -1248,80 +1248,122 @@ class Scenes(private val f: EirholmFight) {
     }
 
     /**
-     * Klingenbindung (Quick-Time-Event, Crix: Szene mit QTE wie in Wukong): Arius schnellt aus dem Iai heran, die Klingen
-     * treffen sich, Funken und Stille, Kamera dicht an den beiden. Alle Spieler müssen in 3 Sekunden 9-mal angreifen.
-     * Schafft es einer, bricht Arius' Deckung: der dritte Austausch ist gewonnen. Sonst schleudert er alle zurück
-     * (Schaden), und der letzte Austausch läuft normal. Die Runde läuft unabhängig von der Kamera (Überspringen
-     * überspringt nur die Kamera). Gibt true zurück, wenn gewonnen.
+     * QTE-Szene des letzten Austauschs (Crix: wie die Quick-Time-Event-Szenen in Spider-Man): drei Takte in Zeitlupe mit
+     * eigenen Kamerabildern, jeder mit Prompt (schließender Kreis um die Taste):
+     * 1. **Ausweichen** (Springen): Arius stürmt aus dem Iai heran, wer springt, setzt über ihn hinweg.
+     * 2. **Klingenbindung** (Angriff hämmern): die Klingen binden sich, Funken.
+     * 3. **Konter** (Benutzen): Wer es trifft, schlägt ihm die Klinge aus der Hand – der Austausch ist gewonnen.
+     * Scheitert ein Takt (niemand trifft ihn), wirft Arius alle zurück (Schaden), und der letzte Austausch läuft normal.
+     * Die Prompts laufen auch, wenn jemand die Kamera überspringt.
      */
     private var clashWon = false
 
     private fun clashScene(a: AriusEntity, t: ServerPlayerEntity): Script = script {
         clashWon = false
+        val players = f.players()
         val dir = flatDir(a.entityPos, t.entityPos)
-        val meet = t.entityPos.subtract(dir.multiply(1.7)).let { Vec3d(it.x, f.floorY, it.z) }
-        a.sheathed = false
-        a.play(AriusPose.IAI_DRAW, 1)
-        f.ambient("iai.draw", a.entityPos, 4f)
-        val from = a.entityPos
-        for (i in 1..4) {
-            f.place(a, from.lerp(meet, i / 4.0))
-            yield(Unit)
-        }
-        f.face(a, t.entityPos)
-        a.play(AriusPose.GUARD)
-        val mid = meet.lerp(t.entityPos, 0.5).add(0.0, 1.3, 0.0)
-        f.ambient("arius.parry", mid, 3.5f, 0.6f)
-        Vfx.flare(f.world, Vfx.Style.GOLD, mid, 2.2f, 10)
-        f.calls.hitShake(mid, 2f, 12f)
-        val round = Qte.start(f.players(), Qte.Kind.MASH, 60, 9, "hha_arius.qte.clash")
         val side = Vec3d(-dir.z, 0.0, dir.x)
+        val start = a.entityPos
+        var ok = false
         val scene = CineScene(f) {}
+        fun beat(kind: Qte.Kind, ticks: Int, count: Int, text: String): Qte.Round = Qte.start(f.players(), kind, ticks, count, text)
         yieldAll(scene.play(script {
-            // Zweierbild dicht an der Bindung, langsam herein; dann Detail auf die Klingen.
-            scene.line(mid.add(side.multiply(3.6)).add(0.0, 0.2, 0.0), mid.add(side.multiply(2.6)).add(0.0, 0.1, 0.0), mid, mid, 34, 46.0, 38.0)
+            // --- Takt 1: Ausweichen. Weit, tief, leicht seitlich: Arius im Iai, der Sturm kommt langsam auf das Ziel zu.
+            a.sheathed = true
+            a.play(AriusPose.IAI_STANCE)
+            val eye = t.entityPos.add(0.0, 1.2, 0.0)
+            scene.line(eye.add(side.multiply(5.0)).add(dir.multiply(-2.0)).add(0.0, -0.4, 0.0), eye.add(side.multiply(4.0)).add(dir.multiply(-1.0)),
+                start.add(0.0, 1.2, 0.0), eye, 30, 62.0, 54.0)
+            f.ambient("iai.glint", start, 3f, 0.7f)
+            val r1 = beat(Qte.Kind.JUMP, 24, 1, "hha_arius.qte.dodge")
+            a.sheathed = false
+            a.play(AriusPose.IAI_DRAW, 1)
+            val rushTo = t.entityPos.add(dir.multiply(3.0)).let { Vec3d(it.x, f.floorY, it.z) }
+            for (i in 1..24) {
+                f.place(a, start.lerp(rushTo, (i / 24.0) * (i / 24.0) * 0.55))   // Zeitlupe: langsam heran
+                if (r1.done()) break
+                yield(Unit)
+            }
+            waitUntil(6) { r1.done() }
+            Qte.close(r1)
+            if (!r1.anySuccess()) return@script
+            for (p in f.players()) if (r1.success(p)) dev.henny.hha.logic.Fx.launchPlayer(p, Vec3d(0.0, 0.75, 0.0).add(dir.multiply(-0.15)))
+            f.ambient("iai.draw", a.entityPos, 4f, 1.1f)
+            for (i in 1..6) {
+                f.place(a, a.entityPos.lerp(rushTo, i / 6.0))
+                yield(Unit)
+            }
+            Vfx.crescent(f.world, Vfx.Style.HEAVEN, a.entityPos.add(0.0, 1.0, 0.0), dir, 5f, 1.4f, 6)
+            wait(8)
+            // --- Takt 2: Klingenbindung. Dicht an den beiden, Funken.
+            val tgt = f.players().minByOrNull { it.squaredDistanceTo(a) } ?: return@script
+            f.face(a, tgt.entityPos)
+            a.play(AriusPose.GUARD)
+            val mid = a.entityPos.lerp(tgt.entityPos, 0.5).add(0.0, 1.3, 0.0)
+            val d2 = flatDir(a.entityPos, tgt.entityPos)
+            val s2 = Vec3d(-d2.z, 0.0, d2.x)
+            scene.line(mid.add(s2.multiply(3.2)).add(0.0, 0.2, 0.0), mid.add(s2.multiply(2.2)).add(0.0, 0.1, 0.0), mid, mid, 64, 44.0, 32.0)
+            f.ambient("arius.parry", mid, 3.5f, 0.6f)
+            Vfx.flare(f.world, Vfx.Style.GOLD, mid, 2.2f, 10)
+            val r2 = beat(Qte.Kind.MASH, 60, 9, "hha_arius.qte.clash")
+            var n = 0
+            while (!r2.done() && n++ < 64) {
+                if (n % 3 == 0) f.world.spawnParticles(net.minecraft.particle.ParticleTypes.ELECTRIC_SPARK, mid.x, mid.y, mid.z, 6, 0.15, 0.15, 0.15, 0.25)
+                if (n % 8 == 0) f.ambient("arius.parry", mid, 1.6f, 0.9f + n * 0.01f)
+                yield(Unit)
+            }
+            Qte.close(r2)
+            if (!r2.anySuccess()) return@script
+            f.ambient("arius.parry", mid, 4f, 1.3f)
+            Vfx.flare(f.world, Vfx.Style.GOLD, mid, 3.0f, 10)
+            a.play(AriusPose.STAGGER)
+            // --- Takt 3: Konter. Über die Schulter des Spielers auf Arius, der taumelt.
+            val over = tgt.entityPos.add(0.0, 1.7, 0.0).subtract(d2.multiply(-1.6)).add(s2.multiply(0.8))
+            scene.line(over, over.add(d2.multiply(0.6)), a.entityPos.add(0.0, 1.3, 0.0), a.entityPos.add(0.0, 1.1, 0.0), 30, 50.0, 40.0)
+            val r3 = beat(Qte.Kind.USE, 18, 1, "hha_arius.qte.counter")
+            waitUntil(20) { r3.done() }
+            Qte.close(r3)
+            if (!r3.anySuccess()) return@script
+            ok = true
+            // Entwaffnet: die Klinge fliegt wirbelnd davon (Lichtspur), goldener Blitz, Druckwelle.
+            val hand = a.entityPos.add(0.0, 1.4, 0.0)
+            Entrance.storyFx(f, FxKind.BLADE_STREAM, hand, hand.add(d2.multiply(-6.0)).add(0.0, 4.0, 0.0), a = 14f, b = 0f, life = 30, e1 = a)
+            a.bladeState = AriusBlade.NONE
+            f.ambient("iai.draw", hand, 4f, 1.5f)
+            Vfx.flare(f.world, Vfx.Style.GOLD, hand, 3.6f, 14)
+            Vfx.shockwave(f.world, Vfx.Style.GOLD, Vec3d(hand.x, f.floorY, hand.z), 6f, 14, 1.2f)
+            a.play(AriusPose.KNEEL)
             wait(30)
-            scene.line(mid.add(side.multiply(1.7)).add(dir.multiply(-0.4)).add(0.0, 0.25, 0.0), mid.add(side.multiply(1.3)).add(0.0, 0.15, 0.0), mid, mid, 30, 36.0, 30.0)
-            wait(30)
+            scene.home(16)
+            wait(16)
         }))
-        // Funken, solange gehämmert wird
-        var n = 0
-        while (!round.done() && n++ < 66) {
-            if (n % 4 == 0) f.world.spawnParticles(net.minecraft.particle.ParticleTypes.ELECTRIC_SPARK, mid.x, mid.y, mid.z, 6, 0.15, 0.15, 0.15, 0.25)
-            if (n % 8 == 0) f.ambient("arius.parry", mid, 1.6f, 0.9f + n * 0.01f)
-            yield(Unit)
-        }
-        Qte.close(round)
-        if (round.anySuccess()) {
+        if (ok) {
             clashWon = true
-            f.ambient("arius.parry", mid, 4f, 1.4f)
-            Vfx.flare(f.world, Vfx.Style.GOLD, mid, 3.2f, 14)
-            Vfx.shockwave(f.world, Vfx.Style.GOLD, Vec3d(mid.x, f.floorY, mid.z), 5f, 14, 1.2f)
             f.exchangesWon = 3
             f.ariusOpenUntil = f.now
             a.open = false
-            a.play(AriusPose.STAGGER)
             f.updateBars()
-            for (p in f.players()) {
-                val key = if (round.success(p)) "hha_arius.qte.clash_won" else "hha_arius.qte.clash_won_other"
-                p.sendMessage(net.minecraft.text.Text.translatable(key).formatted(net.minecraft.util.Formatting.GOLD), true)
-            }
-            wait(30)
+            a.bladeState = AriusBlade.HELD
+            for (p in f.players()) p.sendMessage(net.minecraft.text.Text.translatable("hha_arius.qte.clash_won_other").formatted(net.minecraft.util.Formatting.GOLD), true)
+            wait(10)
         } else {
-            f.ambient("iai.draw", mid, 4f, 0.8f)
-            Vfx.crescent(f.world, Vfx.Style.HEAVEN, mid, dir, 6f, 1.6f, 6)
+            val at = a.entityPos.add(0.0, 1.2, 0.0)
+            f.ambient("iai.draw", at, 4f, 0.8f)
+            Vfx.crescent(f.world, Vfx.Style.HEAVEN, at, dir, 7f, 1.6f, 6)
             for (p in f.players()) {
-                if (p.squaredDistanceTo(mid) < 12.0 * 12.0) {
-                    f.hurt(p, 10f, Damage.Kind.NULL_CUT)
-                    dev.henny.hha.logic.Fx.launchPlayer(p, flatDir(a.entityPos, p.entityPos).multiply(1.1).add(0.0, 0.4, 0.0))
+                if (p.squaredDistanceTo(at) < 12.0 * 12.0) {
+                    f.hurt(p, 8f, Damage.Kind.NULL_CUT)
+                    dev.henny.hha.logic.Fx.launchPlayer(p, flatDir(a.entityPos, p.entityPos).multiply(1.0).add(0.0, 0.4, 0.0))
                 }
                 p.sendMessage(net.minecraft.text.Text.translatable("hha_arius.qte.clash_lost").formatted(net.minecraft.util.Formatting.RED), true)
             }
+            a.bladeState = AriusBlade.HELD
             wait(24)
             a.sheathed = true
             a.play(AriusPose.IAI_STANCE)
             wait(20)
         }
+        if (players.isEmpty()) return@script
     }
 
     /** Perfekter Block: Schild höchstens [AriusTimings.PERFECT_BLOCK] Ticks vor dem Treffer erhoben. */

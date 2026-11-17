@@ -123,6 +123,8 @@
   "hha_arius.qte.clash_lost": "He throws you back.",
   "hha_arius.qte.clash_won": "You break his guard!",
   "hha_arius.qte.clash_won_other": "His guard breaks!",
+  "hha_arius.qte.counter": "Now – counter!",
+  "hha_arius.qte.dodge": "He charges – jump!",
   "hha_arius.qte.mash": "%s  ×  mash",
   "hha_arius.role.attack": "Attack",
   "hha_arius.role.construct": "Construct",

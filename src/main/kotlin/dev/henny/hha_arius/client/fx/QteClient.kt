@@ -80,8 +80,33 @@ object QteClient {
         MinecraftClient.getInstance().player?.playSound(if (ok) SoundEvents.BLOCK_AMETHYST_BLOCK_RESONATE else SoundEvents.BLOCK_GLASS_BREAK, 1f, if (ok) 1.4f else 0.8f)
     }
 
+    /** Kreis aus kleinen Quadraten (für den sich schließenden Ring um die Taste). */
+    private fun ring(ctx: DrawContext, cx: Int, cy: Int, r: Float, thick: Int, color: Int) {
+        val n = (r * 2.2f).toInt().coerceIn(24, 120)
+        for (i in 0 until n) {
+            val a = i / n.toFloat() * 6.2832f
+            val x = cx + (kotlin.math.cos(a) * r).toInt()
+            val y = cy + (kotlin.math.sin(a) * r).toInt()
+            ctx.fill(x - thick / 2, y - thick / 2, x + (thick + 1) / 2, y + (thick + 1) / 2, color)
+        }
+    }
+
     private fun render(ctx: DrawContext, td: Float) {
         if (id < 0 && result == 0) return
+        // Zeitlupen-Schleier: dunkle, kalte Ränder, solange ein Prompt offen ist (wie die Zeitlupe in Action-Szenen).
+        if (result == 0) {
+            val w0 = ctx.scaledWindowWidth
+            val h0 = ctx.scaledWindowHeight
+            val steps = 14
+            for (i in 0 until steps) {
+                val a = 0.38f * (1f - i / steps.toFloat()).let { it * it }
+                val o = (minOf(w0, h0) * 0.28f * i / steps).toInt()
+                val o2 = (minOf(w0, h0) * 0.28f * (i + 1) / steps).toInt()
+                val c = withAlpha(0xFF050A18.toInt(), a)
+                ctx.fill(0, o, w0, o2, c); ctx.fill(0, h0 - o2, w0, h0 - o, c)
+                ctx.fill(o, o2, o2, h0 - o2, c); ctx.fill(w0 - o2, o2, w0 - o, h0 - o2, c)
+            }
+        }
         val client = MinecraftClient.getInstance()
         val tr = client.textRenderer
         val w = ctx.scaledWindowWidth
@@ -110,6 +135,15 @@ object QteClient {
         if (text.isNotEmpty()) {
             val t = Text.translatable(text)
             ctx.drawText(tr, t, cx - tr.getWidth(t) / 2, cy - 34, withAlpha(0xFFE8F2FF.toInt(), fade), true)
+        }
+        // Sich schließender Kreis um die Taste (Erfolg: Kreis springt golden auf)
+        val tRing = if (result == 0) (left - td).coerceAtLeast(0f) / total else 0f
+        val baseR = 22f
+        if (result == 0) {
+            ring(ctx, cx, cy - 2, baseR + 26f * tRing, 2, withAlpha(0xFFFFFFFF.toInt(), 0.9f))
+            ring(ctx, cx, cy - 2, baseR, 1, withAlpha(0xFF9FE6FF.toInt(), 0.7f))
+        } else if (result == 1) {
+            ring(ctx, cx, cy - 2, baseR + resultAge * 2.5f, 3, withAlpha(0xFFFFD98A.toInt(), fade))
         }
         // Zeitbalken und Fortschritt
         val bw = 120
