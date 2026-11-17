@@ -1,4 +1,4 @@
-# Was im Spiel geprüft werden muss (Stand 1.3.0)
+# Was im Spiel geprüft werden muss (Stand 1.4.0)
 
 Gebaut und statisch geprüft (6 Review-Runden, Berichte in `docs/review/`). Seit 1.0.1 besteht zusätzlich ein echter
 Client-Starttest (`./gradlew runClientGameTest`): Haupt- und Client-Entrypoints laden, eine Einzelspielerwelt startet,
@@ -87,6 +87,18 @@ Client-Welt und Spieler sind vorhanden. Geprüft mit Minecraft 1.21.11, Fabric L
 - [ ] Texte: überall „Solvane“ statt „Nivaris“ (Bossleiste, Hinweise, Untertitel, Items)
 - [ ] Rüstung „Drachenherz-Wacht“: an Spieler, Rüstungsständer, Mannequin, Zombie; Leuchten Tag/Nacht, Verzauberungsglanz, Umhang, Federn beim Laufen/Springen, schmale Arme, mit und ohne Handschuhe
 - [ ] Solvane-Item: länger, Lichtfluss in der Hohlkehle, Sitz in erster und dritter Person
+
+## 1.4.0
+- [ ] Landschaft: Felshorn statt Eisnadel (Grate, Fels, Schneebänder, Eisrinnen), Fels/Schnee statt Eis; Auftritt: Solvane windet sich weiter frei ums Horn
+- [ ] Arena ab dem Drachenkampf offen: keine Gletscherwände mehr ums Plateau (außer hinter dem Tempel), weites Hochland, Kampfbereich Radius 100; Himmelsbalkon größer (R 40) aus Fels
+- [ ] Schneesturm mit Shaderpack (Iris): Bildschirm-Schnee erscheint automatisch; `/ariusc snow screen|both|world|auto`
+- [ ] Finale-QTE als Szene: Ausweichen (Springen) → Klingenbindung (Angriff hämmern) → Konter (Benutzen); Zeitlupen-Schleier, schließender Kreis; Erfolg entwaffnet Arius
+- [ ] Weißes Loch: herausgerissene Blöcke kreisen und fliegen beim Kollaps davon, Eiskristalle, Lichtarme, Jets, Fesseln, Runenkreis
+- [ ] Brust: Drachenatem (Frostkegel 1,5 s); Beine: Schwingensprung mit Aufprall-Schockwelle; neue HUD-Icons
+- [ ] Handschuhe: Wirbelsturm (Wind) und Gletscherlanze (Eis, aufladen); Yang-Brücke 3 breit mit Geländerpfosten, Leuchtbogen und Lichtgeländer
+- [ ] Szenen: Handkamera-Schwanken und Farbstimmung/Vignette/Korn in Arius' Cutscenes (Schalter: `/ariusc shake`)
+- [ ] Balance: Boss-Treffer der neuen Angriffe, Axttritt, Drachenatem, Weißes Loch (16)
+- [ ] Item-Icons Solvane und Handschuhe
 
 ## 1.3.0
 - [ ] Schneesturm: Flockenstreifen mit Bewegungsunschärfe, Böen mit kurzem Whiteout, Bodentreiben, Frostrand; im Tempel unter dem Dach kaum Schnee; `/ariusc fx` skaliert

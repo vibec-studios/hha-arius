@@ -1,4 +1,4 @@
-# Visuelles Upgrade (Stand 1.3.0)
+# Visuelles Upgrade (Stand 1.4.0)
 
 Referenz für Atmosphäre, Wucht und Cinematics war *Black Myth: Wukong*. Alles läuft direkt in Minecraft; die Welt ist aus Vanilla-Blöcken gebaut, Custom-Rendering und eigene Shader kommen dort zum Einsatz, wo sie die Darstellung verbessern.
 
@@ -8,6 +8,8 @@ Referenz für Atmosphäre, Wucht und Cinematics war *Black Myth: Wukong*. Alles 
 | **Wetter und Licht** | Eine Stimmung je Abschnitt, weich überblendet; seit 1.3.0 draußen **immer Schneesturm** (je Abschnitt stärker oder lichter): Tempel, Gletscher, Whiteout vor dem Auftritt, aufreißende Wolken bei der Enthüllung, Sturm auf dem Himmelsbalkon, weißes Licht bei Verwandlung und Ende. Glitzern auf Eisflächen. | `client/fx/Atmos.kt`, `AtmosS2C`, Mixin auf die Umgebungswerte |
 | **Schneesturm (1.3.0)** | Eigenes Flockenfeld in zwei Tiefen um die Kamera, jede Flocke als Streifen mit Bewegungsunschärfe und eigener Turbulenz; Windwellen und Sturmböen mit kurzem Whiteout (Nebel zieht zu); Bodentreiben; Frostrand am Bildrand; unter Dächern fast kein Schnee. | `client/fx/SnowStorm.kt` |
 | **Himmelsbalkon (1.3.0)** | Abschnitt III und Finale spielen nicht mehr unten im Gletscher, sondern auf einem zerklüfteten Eisschelf hoch über der Schlucht an der Nordflanke der Nadel (Kristallsäulen, Eiszapfen, Zuschauervorsprung). Beim Gletschersturz trägt Solvanes Lichtstrom alle hinauf. | `arena/FarPlan.kt` (`balcony`), `ArenaLayout.VAULT`, `boss/Scenes.kt` |
+| **Alpen und offenes Hochland (1.4.0)** | Die Eisnadel ist ein Felshorn wie das Matterhorn (vier Grate, Felsschichten, Schneebänder, Eisrinnen), das Gelände Fels und Schnee. Ums Plateau keine Gletscherwände mehr (außer hinter dem Tempel): ein weites Hochland, ab dem Drachenkampf Kampfbereich Radius 100. `far_preview.py` spiegelt diesen Stand noch nicht. | `arena/FarPlan.kt` (v3), `arena/ArenaPlan.kt` |
+| **Cutscenes (1.4.0)** | Handkamera-Schwanken, Farbstimmung mit Vignette und Filmkorn; Finale-QTE als dreiteilige Zeitlupen-Szene. | `client/fx/CineGrade.kt`, `Impact.kt` (CameraKick), `boss/Scenes.kt` |
 | **Plateau (1.3.0)** | Eis-Obelisken am Rand, zwei halb eingestürzte Ruinenbögen, Dornenkristalle; die Sichtachse zur Nadel bleibt frei. | `arena/ArenaPlan.kt` (`dressing`) |
 | **Solvane** | Ein 96 Blöcke langer **Schlangendrache** aus 40 Gliedern. Der Körper fließt entlang der Flugbahn mit Welle, Rollen und Schräglage. Am Boden liegt er in Bögen. Schwingen werden angelegt oder gespannt (Quaternion-Überblendung). | `client/model/nivaris/*`, `tools/assets/nivaris_model.py`, `docs/NIVARIS_SERPENT.md` |
 | **Auftritt** | Schneesturm, einzelne Körperwindungen im Sturm, dann reißen die Wolken auf. Totale: Solvane windet sich 1½-mal um das obere Drittel der Nadel, den Kopf über dem Gipfel. Dann löst sie sich fließend vom Fels, gleitet über die Schlucht und landet auf dem Plateau. Etwa 34 s, eigene Musik, überspringbar. | `boss/Entrance.kt` |

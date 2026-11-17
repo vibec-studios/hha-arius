@@ -71,6 +71,12 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.4.0
+An alpine rock horn and an open highland arena from the dragon fight on, a slow-motion QTE action scene in the finale,
+a White Hole that rips up and hurls real blocks, new armour abilities (Dragon Breath, Wing Leap), Tornado and Glacier
+Lance for the gauntlets, a real Yang bridge, a screen-space snowstorm that also works with shader packs, a cinematic
+camera look and rebalanced damage.
+
 ### New in 1.3.0
 A permanent cinematic snowstorm, a new final stage high on the spire (the Sky Balcony) instead of the glacier vault,
 Arius' flying blade and frost thorns, a blade-lock quick-time event in the finale, a redesigned plateau, new gauntlet
