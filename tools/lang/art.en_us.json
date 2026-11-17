@@ -69,5 +69,10 @@
   "hha_arius.keys.solvane": "Solvane: hold [%s] to charge Clear Cut, release to cut (sneak: horizontal)",
   "hha_arius.keys.conflict": "Arius: the key %s is bound to \"%s\" and also to \"%s\". Rebind one of them under Options → Controls, otherwise the press may not arrive.",
   "hha_arius.keys.unbound": "Arius: \"%s\" is not bound. Bind it under Options → Controls → HHA, otherwise the spell wheel, mode switch or Clear Cut are missing.",
-  "item.hha_arius.arius_gauntlets.lore5": "Chain: jab · cross · hook · uppercut (launches) – kick after the hook = spin kick, after the uppercut = axe kick with a frost wave"
+  "item.hha_arius.arius_gauntlets.lore5": "Chain: jab · cross · hook · uppercut (launches) – kick after the hook = spin kick, after the uppercut = axe kick with a frost wave",
+  "hha_arius.qte.clash": "Blades locked – push back!",
+  "hha_arius.qte.mash": "%s  ×  mash",
+  "hha_arius.qte.clash_won": "You break his guard!",
+  "hha_arius.qte.clash_won_other": "His guard breaks!",
+  "hha_arius.qte.clash_lost": "He throws you back."
 }

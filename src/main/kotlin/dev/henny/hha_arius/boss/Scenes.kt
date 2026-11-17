@@ -1108,10 +1108,18 @@ class Scenes(private val f: EirholmFight) {
         f.say("finale", 70)
         f.exchangesWon = 0
         wait(70)
+        var clashTried = false
         while (f.exchangesWon < 3) {
             val t = f.target()
             if (t == null) {
                 wait(20)
+                continue
+            }
+            // Letzter Austausch: Klingenbindung als Szene mit Quick-Time-Event (einmal; danach wie gewohnt).
+            if (f.exchangesWon == 2 && !clashTried) {
+                clashTried = true
+                yieldAll(clashScene(a, t))
+                if (clashWon) break
                 continue
             }
             f.face(a, t.entityPos)
@@ -1237,6 +1245,83 @@ class Scenes(private val f: EirholmFight) {
         a.bladeState = AriusBlade.HELD
         a.sheathed = true
         a.eyeGlow = 60
+    }
+
+    /**
+     * Klingenbindung (Quick-Time-Event, Crix: Szene mit QTE wie in Wukong): Arius schnellt aus dem Iai heran, die Klingen
+     * treffen sich, Funken und Stille, Kamera dicht an den beiden. Alle Spieler müssen in 3 Sekunden 9-mal angreifen.
+     * Schafft es einer, bricht Arius' Deckung: der dritte Austausch ist gewonnen. Sonst schleudert er alle zurück
+     * (Schaden), und der letzte Austausch läuft normal. Die Runde läuft unabhängig von der Kamera (Überspringen
+     * überspringt nur die Kamera). Gibt true zurück, wenn gewonnen.
+     */
+    private var clashWon = false
+
+    private fun clashScene(a: AriusEntity, t: ServerPlayerEntity): Script = script {
+        clashWon = false
+        val dir = flatDir(a.entityPos, t.entityPos)
+        val meet = t.entityPos.subtract(dir.multiply(1.7)).let { Vec3d(it.x, f.floorY, it.z) }
+        a.sheathed = false
+        a.play(AriusPose.IAI_DRAW, 1)
+        f.ambient("iai.draw", a.entityPos, 4f)
+        val from = a.entityPos
+        for (i in 1..4) {
+            f.place(a, from.lerp(meet, i / 4.0))
+            yield(Unit)
+        }
+        f.face(a, t.entityPos)
+        a.play(AriusPose.GUARD)
+        val mid = meet.lerp(t.entityPos, 0.5).add(0.0, 1.3, 0.0)
+        f.ambient("arius.parry", mid, 3.5f, 0.6f)
+        Vfx.flare(f.world, Vfx.Style.GOLD, mid, 2.2f, 10)
+        f.calls.hitShake(mid, 2f, 12f)
+        val round = Qte.start(f.players(), Qte.Kind.MASH, 60, 9, "hha_arius.qte.clash")
+        val side = Vec3d(-dir.z, 0.0, dir.x)
+        val scene = CineScene(f) {}
+        yieldAll(scene.play(script {
+            // Zweierbild dicht an der Bindung, langsam herein; dann Detail auf die Klingen.
+            scene.line(mid.add(side.multiply(3.6)).add(0.0, 0.2, 0.0), mid.add(side.multiply(2.6)).add(0.0, 0.1, 0.0), mid, mid, 34, 46.0, 38.0)
+            wait(30)
+            scene.line(mid.add(side.multiply(1.7)).add(dir.multiply(-0.4)).add(0.0, 0.25, 0.0), mid.add(side.multiply(1.3)).add(0.0, 0.15, 0.0), mid, mid, 30, 36.0, 30.0)
+            wait(30)
+        }))
+        // Funken, solange gehämmert wird
+        var n = 0
+        while (!round.done() && n++ < 66) {
+            if (n % 4 == 0) f.world.spawnParticles(net.minecraft.particle.ParticleTypes.ELECTRIC_SPARK, mid.x, mid.y, mid.z, 6, 0.15, 0.15, 0.15, 0.25)
+            if (n % 8 == 0) f.ambient("arius.parry", mid, 1.6f, 0.9f + n * 0.01f)
+            yield(Unit)
+        }
+        Qte.close(round)
+        if (round.anySuccess()) {
+            clashWon = true
+            f.ambient("arius.parry", mid, 4f, 1.4f)
+            Vfx.flare(f.world, Vfx.Style.GOLD, mid, 3.2f, 14)
+            Vfx.shockwave(f.world, Vfx.Style.GOLD, Vec3d(mid.x, f.floorY, mid.z), 5f, 14, 1.2f)
+            f.exchangesWon = 3
+            f.ariusOpenUntil = f.now
+            a.open = false
+            a.play(AriusPose.STAGGER)
+            f.updateBars()
+            for (p in f.players()) {
+                val key = if (round.success(p)) "hha_arius.qte.clash_won" else "hha_arius.qte.clash_won_other"
+                p.sendMessage(net.minecraft.text.Text.translatable(key).formatted(net.minecraft.util.Formatting.GOLD), true)
+            }
+            wait(30)
+        } else {
+            f.ambient("iai.draw", mid, 4f, 0.8f)
+            Vfx.crescent(f.world, Vfx.Style.HEAVEN, mid, dir, 6f, 1.6f, 6)
+            for (p in f.players()) {
+                if (p.squaredDistanceTo(mid) < 12.0 * 12.0) {
+                    f.hurt(p, 10f, Damage.Kind.NULL_CUT)
+                    dev.henny.hha.logic.Fx.launchPlayer(p, flatDir(a.entityPos, p.entityPos).multiply(1.1).add(0.0, 0.4, 0.0))
+                }
+                p.sendMessage(net.minecraft.text.Text.translatable("hha_arius.qte.clash_lost").formatted(net.minecraft.util.Formatting.RED), true)
+            }
+            wait(24)
+            a.sheathed = true
+            a.play(AriusPose.IAI_STANCE)
+            wait(20)
+        }
     }
 
     /** Perfekter Block: Schild höchstens [AriusTimings.PERFECT_BLOCK] Ticks vor dem Treffer erhoben. */

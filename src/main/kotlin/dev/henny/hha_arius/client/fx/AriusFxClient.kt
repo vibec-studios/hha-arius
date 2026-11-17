@@ -30,6 +30,7 @@ object AriusFxClient {
         ArtPipelines.init()
         Impacts.init()
         CutLens.init()
+        QteClient.init()
         net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback.EVENT.register { ctx, _ ->
             if (!MinecraftClient.getInstance().options.hudHidden) Atmos.renderHud(ctx)
         }

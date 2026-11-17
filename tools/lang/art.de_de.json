@@ -69,5 +69,10 @@
   "hha_arius.keys.solvane": "Solvane: [%s] halten = Klarer Schnitt laden, loslassen = schneiden (Schleichen: waagrecht)",
   "hha_arius.keys.conflict": "Arius: Die Taste %s ist für „%s“ und zugleich für „%s“ belegt. Belege eine davon unter Optionen → Steuerung neu, sonst kommt der Druck evtl. nicht an.",
   "hha_arius.keys.unbound": "Arius: „%s“ ist nicht belegt. Belege die Taste unter Optionen → Steuerung → HHA, sonst fehlen Zauberrad, Moduswechsel bzw. Klarer Schnitt.",
-  "item.hha_arius.arius_gauntlets.lore5": "Folge: Gerade · Gerade · Haken · Aufwärtshaken (schleudert hoch) – Tritt nach dem Haken = Drehtritt, nach dem Aufwärtshaken = Axttritt mit Frostwelle"
+  "item.hha_arius.arius_gauntlets.lore5": "Folge: Gerade · Gerade · Haken · Aufwärtshaken (schleudert hoch) – Tritt nach dem Haken = Drehtritt, nach dem Aufwärtshaken = Axttritt mit Frostwelle",
+  "hha_arius.qte.clash": "Die Klingen sind gebunden – drück dagegen!",
+  "hha_arius.qte.mash": "%s  ×  hämmern",
+  "hha_arius.qte.clash_won": "Du brichst seine Deckung!",
+  "hha_arius.qte.clash_won_other": "Seine Deckung bricht!",
+  "hha_arius.qte.clash_lost": "Er stößt dich zurück."
 }

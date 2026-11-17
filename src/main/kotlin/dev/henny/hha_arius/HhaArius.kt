@@ -39,6 +39,7 @@ object HhaArius : ModInitializer {
         dev.henny.hha_arius.boss.Encounters.init()
         dev.henny.hha_arius.boss.AriusCommands.init()
         dev.henny.hha_arius.boss.DragonAim.init()
+        dev.henny.hha_arius.boss.Qte.init()
     }
 
     /**
