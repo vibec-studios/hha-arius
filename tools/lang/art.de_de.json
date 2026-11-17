@@ -1,10 +1,10 @@
 {
   "item.hha_arius.arius_gauntlets": "Arius' Kampfhandschuhe",
-  "item.hha_arius.arius_gauntlets.lore1": "Nahkampf: Links Schlagfolge, Rechts Tritt, Schleichen + Rechts Parade (Grundschaden %s)",
-  "item.hha_arius.arius_gauntlets.lore2": "Magie: Rechtsklick wirkt, Links bricht ab · Technik-Taste: Zauberrad",
-  "item.hha_arius.arius_gauntlets.lore3": "Modus-Taste: Nahkampf ↔ Magie · Wind, Eis und Yang",
+  "item.hha_arius.arius_gauntlets.lore1": "Nahkampf: Linksklick Schlagfolge, Rechtsklick Tritt, Schleichen + Rechtsklick Parade (Grundschaden %s)",
+  "item.hha_arius.arius_gauntlets.lore2": "Magie: Rechtsklick wirkt, Linksklick bricht ab · Ability 4 halten: Zauberrad",
+  "item.hha_arius.arius_gauntlets.lore3": "Ability 5: Nahkampf ↔ Magie · Schulen Wind, Eis und Yang",
   "item.hha_arius.arius_gauntlets.lore4": "Ein Paar, in der Haupthand getragen. Die Nebenhand ruht.",
-  "item.hha_arius.solvane.lore4": "Technik-Taste – Klarer Schnitt: %s Resonanz, %s–%s Schaden · Abklingzeit %s s",
+  "item.hha_arius.solvane.lore4": "Ability 4 – Klarer Schnitt: %s Resonanz, %s–%s Schaden · Abklingzeit %s s",
   "item.hha_arius.solvane.lore5": "Halten = laden, Schleichen = waagerecht · spaltet bis Härte %s (max. %s Blöcke)",
   "block.hha_arius.frost_construct": "Kristalleis (Zauber)",
   "block.hha_arius.yang_construct": "Yang-Licht (Zauber)",
@@ -68,5 +68,6 @@
   "hha_arius.keys.gauntlets_magic": "Magie: [%s] wirken · [%s] Zauberrad (halten) · [%s] Nahkampf",
   "hha_arius.keys.solvane": "Solvane: [%s] halten = Klarer Schnitt laden, loslassen = schneiden (Schleichen: waagrecht)",
   "hha_arius.keys.conflict": "Arius: Die Taste %s ist für „%s“ und zugleich für „%s“ belegt. Belege eine davon unter Optionen → Steuerung neu, sonst kommt der Druck evtl. nicht an.",
-  "hha_arius.keys.unbound": "Arius: „%s“ ist nicht belegt. Belege die Taste unter Optionen → Steuerung → HHA, sonst fehlen Zauberrad, Moduswechsel bzw. Klarer Schnitt."
+  "hha_arius.keys.unbound": "Arius: „%s“ ist nicht belegt. Belege die Taste unter Optionen → Steuerung → HHA, sonst fehlen Zauberrad, Moduswechsel bzw. Klarer Schnitt.",
+  "item.hha_arius.arius_gauntlets.lore5": "Folge: Gerade · Gerade · Haken · Aufwärtshaken (schleudert hoch) – Tritt nach dem Haken = Drehtritt, nach dem Aufwärtshaken = Axttritt mit Frostwelle"
 }

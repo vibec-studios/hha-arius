@@ -530,13 +530,16 @@ internal object ArtPose {
         }
     }
 
-    /** Boxdeckung (Rechtsauslage: linke Seite vorn), Fäuste vor Kinn und Gesicht, leichtes Atmen. */
+    /**
+     * Kampfhaltung (Rechtsauslage: linke Seite vorn). Fäuste auf Brusthöhe und etwas seitlich, damit Gesicht und Skin
+     * frei bleiben (Crix 17.11.: vorher Fäuste vor dem Gesicht); leichtes Atmen.
+     */
     fun guard(p: Pose, c: Ctx, t: Float) {
         p.reset()
         val b = breathe(t)
         p.tYaw = 0.25f; p.tPitch = 0.08f + 0.015f * b
-        p.rHand.set(-1.8f, -1.0f + 0.25f * b, -6.5f); p.rPalm.set(1f, 0.3f, -0.2f)
-        p.lHand.set(1.8f, -2.0f + 0.25f * breathe(t, phase = 0.6f), -9.0f); p.lPalm.set(-1f, 0.3f, -0.2f)
+        p.rHand.set(-3.0f, 3.4f + 0.25f * b, -6.2f); p.rPalm.set(1f, 0.3f, -0.2f)
+        p.lHand.set(2.4f, 2.6f + 0.25f * breathe(t, phase = 0.6f), -8.4f); p.lPalm.set(-1f, 0.3f, -0.2f)
         p.rLeg(0.22f, 0.25f, 0.06f); p.lLeg(-0.28f, -0.1f, -0.06f)
         p.legW = 1f - c.walk
         p.headP = 0.08f
@@ -665,6 +668,8 @@ internal object ArtPose {
             Anim.ART_CHARGE -> artCharge(p, c, t, ArtParam.horizontal(s.param), ArtTimings.artCharge(a))
             Anim.ART_RELEASE -> artRelease(p, c, t, a, ArtParam.horizontal(s.param), ArtParam.charge(s.param))
             Anim.WHITE_HOLE -> whiteHole(p, c, t, a)
+            Anim.UPPERCUT -> uppercut(p, c, t, a, s)
+            Anim.AXE_KICK -> axeKick(p, c, t, a, s)
             Anim.NONE -> idle(p, c, t)
         }
     }
@@ -755,6 +760,88 @@ internal object ArtPose {
     }
 
     private val HOOK_CTRL = Vector3f(5.5f, 4.8f, -12f)
+    private val UPPER_CTRL = Vector3f(-3.2f, 6.5f, -11f)
+
+    /**
+     * Aufwärtshaken rechts: tief einsinken, rechte Schulter zurück, Faust an der Hüfte; dann drückt das hintere Bein,
+     * die Hüfte dreht ein und die Faust schießt im Bogen nach oben vorn bis über Kopfhöhe (Treffer bei t = windup), der
+     * Körper streckt sich auf die Zehen. Danach Nachschwingen und federnd zurück in die Haltung.
+     */
+    private fun uppercut(p: Pose, c: Ctx, t: Float, a: Float, s: ArtAnims.State) {
+        val w = s.param.coerceAtLeast(1).toFloat()
+        val d = if (s.duration > 0) s.duration.toFloat() else (w + Move.UPPERCUT.recover)
+        guard(keyA, c, t)
+        keyB.set(keyA).apply {   // geladen
+            tYaw = -0.32f; tPitch = 0.22f; tRoll = -0.1f; drop = 1.6f
+            rHand.set(-5.2f, 9.0f, -4.0f); rPalm.set(0f, -1f, 0f)
+            lHand.set(2.4f, 2.0f, -8.0f)
+            rLeg(0.34f, 0.2f, 0.06f); lLeg(-0.34f, -0.1f, -0.06f); legW = 1f - 0.5f * c.walk
+        }
+        keyC.set(keyA).apply {   // Treffer
+            tYaw = 0.5f; tPitch = -0.12f; tRoll = 0.08f; drop = -0.6f
+            rHand.set(-0.6f, -6.0f, -10.0f); rPalm.set(0f, 0.2f, 1f)
+            lHand.set(3.2f, 3.4f, -6.5f)
+            rLeg(0.1f, 0.3f, 0.04f); lLeg(-0.2f, -0.2f, -0.04f); legW = 1f - 0.5f * c.walk; headP = -0.15f
+        }
+        val load = 0.45f * w
+        when {
+            a < load -> p.mix(keyA, keyB, easeOut(a / load))
+            a < w -> {
+                val u = drive(seg(a, load, w), 0f)
+                p.mix(keyB, keyC, u)
+                bezier(keyB.rHand, UPPER_CTRL, keyC.rHand, u, p.rHand)
+                p.bodyFrom(keyB, keyC, smooth(seg(a, load, w) * 1.3f))
+            }
+            a < w + 3f -> {
+                val v = seg(a, w, w + 3f)
+                p.mixFree(keyC, keyB, -0.1f * bump(v))
+                p.bodyFrom(keyA, keyC, 1f + 0.15f * bump(v))
+            }
+            else -> {
+                val v = seg(a, w + 3f, d)
+                p.mixFree(keyC, keyA, smooth(v) + 0.05f * bump(v))
+                p.drop += 0.6f * bump(seg(v, 0.2f, 0.8f))
+            }
+        }
+    }
+
+    /**
+     * Axttritt: Absprung (der Server gibt einen kleinen Sprung), das rechte Bein schwingt gestreckt hoch über den Kopf,
+     * der Rumpf lehnt als Gegengewicht zurück, die Arme öffnen; dann kracht die Ferse beschleunigend herab (Treffer bei
+     * t = windup), der Rumpf klappt nach vorn, tiefe Landung, danach zurück in die Haltung.
+     */
+    private fun axeKick(p: Pose, c: Ctx, t: Float, a: Float, s: ArtAnims.State) {
+        val w = s.param.coerceAtLeast(2).toFloat()
+        val d = if (s.duration > 0) s.duration.toFloat() else (w + Move.AXE_KICK.recover)
+        guard(keyA, c, t)
+        keyB.set(keyA).apply {   // Bein oben
+            tYaw = 0.1f; tPitch = -0.28f; tRoll = 0.05f; drop = -0.4f
+            rLeg(-2.5f, 0.05f, 0.12f); lLeg(0.12f, -0.05f, -0.06f); legW = 1f
+            rHand.set(-10.5f, 4.0f, -2.0f); rPalm.set(0f, 1f, 0f)
+            lHand.set(10.5f, 4.0f, -2.0f); lPalm.set(0f, 1f, 0f)
+            headP = -0.2f
+        }
+        keyC.set(keyA).apply {   // Ferse unten
+            tYaw = 0.05f; tPitch = 0.42f; tRoll = 0f; drop = 2.2f
+            rLeg(-0.75f, 0f, 0.05f); lLeg(0.35f, -0.05f, -0.05f); legW = 1f
+            rHand.set(-6.5f, 9.0f, -5.0f); rPalm.set(1f, 0f, 0f)
+            lHand.set(6.0f, 8.0f, -5.5f); lPalm.set(-1f, 0f, 0f)
+            headP = 0.3f
+        }
+        val up = 0.6f * w
+        when {
+            a < up -> {
+                val u = easeOut(a / up)
+                p.mix(keyA, keyB, u)
+            }
+            a < w -> {
+                val u = drive(seg(a, up, w), 0.05f).coerceAtLeast(0f)
+                p.mix(keyB, keyC, u)
+            }
+            a < w + 2f -> { p.set(keyC); p.drop += 0.4f * bump(seg(a, w, w + 2f)) }
+            else -> p.mix(keyC, keyA, smooth(seg(a, w + 2f, d)))
+        }
+    }
 
     /**
      * Seitentritt rechts: Gewicht aufs Standbein (leicht einsinken), Knie hoch in die Kammer, der Rumpf lehnt sich als

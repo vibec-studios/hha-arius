@@ -94,7 +94,13 @@ enum class Move(
     PARRY(6, 16, 0f, 0.0, 0.0, 0, 0.0, 0.0, "melee_gain_parry", 0.5, Anim.PARRY),
 
     /** Konterstoß nach erfolgreicher Parade (automatisch, nur wenn der Angreifer in Reichweite und vorn ist). */
-    COUNTER(2, 8, 1.2f, 3.0, 40.0, 1, 0.5, 0.1, "melee_gain_parry", 0.6, Anim.COUNTER);
+    COUNTER(2, 8, 1.2f, 3.0, 40.0, 1, 0.5, 0.1, "melee_gain_parry", 0.6, Anim.COUNTER),
+
+    /** Aufwärtshaken rechts (4. Schlag nach dem Haken): schleudert leichte Gegner hoch, Windspirale. */
+    UPPERCUT(4, 9, 1.15f, 2.9, 40.0, 1, 0.15, 0.75, "melee_gain_uppercut", 0.55, Anim.UPPERCUT),
+
+    /** Axttritt (Tritt nach dem Aufwärtshaken): Sprung, Ferse kracht herab, Frost-Schockwelle trifft im Halbkreis vorn. */
+    AXE_KICK(9, 14, 2.0f, 3.6, 80.0, 4, 0.7, 0.0, "melee_gain_axe", 0.3, Anim.AXE_KICK);
 
     val total: Int get() = windup + recover
 }
@@ -146,7 +152,13 @@ enum class Anim(val loop: Boolean = false) {
     ART_RELEASE,
 
     /** Weißes Loch (Setfähigkeit): Hände führen zusammen (Wirken 20 Ticks), dann 10 Ticks Halten. */
-    WHITE_HOLE;
+    WHITE_HOLE,
+
+    /** Aufwärtshaken rechts (param = Ausholzeit). */
+    UPPERCUT,
+
+    /** Axttritt: Sprung, Bein hoch über den Kopf, Ferse herab (param = Ausholzeit). */
+    AXE_KICK;
 
     companion object {
         fun of(raw: Int): Anim = entries.getOrElse(raw) { NONE }

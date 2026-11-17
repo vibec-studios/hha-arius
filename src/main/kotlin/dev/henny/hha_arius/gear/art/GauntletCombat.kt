@@ -93,10 +93,12 @@ object GauntletCombat {
             ArtAction.ATTACK -> when (chain) {
                 1 -> Move.CROSS
                 2 -> Move.HOOK
+                3 -> Move.UPPERCUT
                 else -> Move.JAB
             }
             ArtAction.KICK -> when (chain) {
                 3 -> Move.SPIN_KICK
+                4 -> Move.AXE_KICK
                 1, 2 -> Move.SIDE_KICK.also { windupOverride = 4 }
                 else -> Move.SIDE_KICK
             }
@@ -125,7 +127,14 @@ object GauntletCombat {
             Move.CROSS -> 1.3f
             Move.HOOK -> 1.1f
             Move.SPIN_KICK -> 0.8f
+            Move.UPPERCUT -> 1.0f
+            Move.AXE_KICK -> 0.7f
             else -> 1.0f
+        }
+        stepIn(player, move)
+        if (move == Move.AXE_KICK) {
+            // Absprung: kurz hoch, die Ferse kommt zum Treffer herab.
+            dev.henny.hha.logic.Fx.launchPlayer(player, player.velocity.add(0.0, 0.42, 0.0))
         }
         if (move != Move.PARRY) {
             GearSounds.play(world, player.entityPos, "gauntlet.swing", SoundEvents.ENTITY_PLAYER_ATTACK_WEAK, 0.5f, pitch)
@@ -172,6 +181,7 @@ object GauntletCombat {
             Move.JAB -> 1
             Move.CROSS -> 2
             Move.HOOK -> 3
+            Move.UPPERCUT -> 4
             else -> 0
         }
         s.chainUntil = GearTasks.now + GearConfig.ticks("melee_link_ticks")
@@ -215,10 +225,56 @@ object GauntletCombat {
             }
             GearSounds.play(world, player.entityPos, "gauntlet.hit", sound, 0.8f, pitch)
         }
-        if (move == Move.SPIN_KICK) {
-            GearVfx.crescent(world, Vfx.Style.STORM, player.entityPos.add(0.0, 0.7, 0.0), horizontalLook(player), 3.2f, 2.6f, 6)
-        }
+        strikeFx(player, move, any)
         if (knockGuard.size > 512) knockGuard.entries.removeIf { GearTasks.now - it.value > 200 }
+    }
+
+    /**
+     * Vorrücken: Ist ein Ziel vorn in Reichweite + 2, schiebt der Schlag den Spieler ein Stück darauf zu (nur am Boden,
+     * nie näher als 1,6 Blöcke). Gibt Schlägen Gewicht, statt auf der Stelle zu wedeln.
+     */
+    private fun stepIn(player: ServerPlayerEntity, move: Move) {
+        val speed = GearConfig.num("melee_step_in")
+        if (speed <= 0.0 || move == Move.PARRY || move == Move.COUNTER || !player.isOnGround) return
+        val look = horizontalLook(player)
+        val box = player.boundingBox.expand(move.reach + 2.0)
+        val target = player.entityWorld.getOtherEntities(player, box) { GearCombat.canHit(player, it) }
+            .filter { val d = it.entityPos.subtract(player.entityPos); Vec3d(d.x, 0.0, d.z).normalize().dotProduct(look) > 0.7 }
+            .minByOrNull { it.squaredDistanceTo(player) } ?: return
+        val dist = kotlin.math.sqrt(target.squaredDistanceTo(player))
+        if (dist < 1.6) return
+        val k = when (move) { Move.JAB -> 0.8; Move.CROSS -> 0.9; Move.AXE_KICK -> 0.6; else -> 1.0 }
+        val v = look.multiply(minOf(speed * k * (dist - 1.6), speed * k * 2.2))
+        dev.henny.hha.logic.Fx.launchPlayer(player, player.velocity.add(v.x, 0.0, v.z))
+    }
+
+    /** Treffer-Effekte je Schlag (sichtbar auch ohne Treffer: Luftstoß, damit jeder Schlag Wucht zeigt). */
+    private fun strikeFx(player: ServerPlayerEntity, move: Move, hit: Boolean) {
+        val world = player.entityWorld
+        val look = horizontalLook(player)
+        val chest = player.entityPos.add(0.0, 1.1, 0.0)
+        when (move) {
+            Move.JAB, Move.CROSS, Move.COUNTER ->
+                GearVfx.crescent(world, Vfx.Style.STORM, chest.add(look.multiply(0.9)), player.rotationVector, 1.6f, if (hit) 1.2f else 0.8f, 4)
+            Move.HOOK -> {
+                GearVfx.crescent(world, Vfx.Style.STORM, chest.add(look.multiply(0.8)), look, 2.0f, 1.6f, 5)
+                if (hit) world.spawnParticles(ParticleTypes.SNOWFLAKE, chest.x + look.x * 1.8, chest.y, chest.z + look.z * 1.8, 10, 0.25, 0.25, 0.25, 0.05)
+            }
+            Move.UPPERCUT -> {
+                GearVfx.crescent(world, Vfx.Style.STORM, chest.add(look.multiply(0.7)).add(0.0, -0.4, 0.0), Vec3d(look.x * 0.3, 1.0, look.z * 0.3).normalize(), 2.6f, 1.4f, 7)
+                world.spawnParticles(ParticleTypes.CLOUD, chest.x + look.x * 1.4, chest.y - 0.6, chest.z + look.z * 1.4, 8, 0.2, 0.6, 0.2, 0.08)
+            }
+            Move.SPIN_KICK -> GearVfx.crescent(world, Vfx.Style.STORM, player.entityPos.add(0.0, 0.7, 0.0), look, 3.2f, 2.6f, 6)
+            Move.AXE_KICK -> {
+                val at = player.entityPos.add(look.multiply(1.8))
+                GearVfx.shockwave(world, Vfx.Style.HEAVEN, at, 3.6f, 14, 1.2f)
+                GearVfx.crescent(world, Vfx.Style.STORM, player.entityPos.add(0.0, 2.2, 0.0), Vec3d(look.x * 0.4, -1.0, look.z * 0.4).normalize(), 2.4f, 2.0f, 6)
+                world.spawnParticles(ParticleTypes.SNOWFLAKE, at.x, at.y + 0.2, at.z, 30, 1.4, 0.15, 1.4, 0.12)
+                world.spawnParticles(ParticleTypes.EXPLOSION, at.x, at.y + 0.3, at.z, 1, 0.0, 0.0, 0.0, 0.0)
+                GearSounds.play(world, at, "gauntlet.slam", SoundEvents.ENTITY_GENERIC_EXPLODE.value(), 0.6f, 1.4f)
+            }
+            else -> {}
+        }
     }
 
     private fun horizontalLook(player: ServerPlayerEntity): Vec3d {

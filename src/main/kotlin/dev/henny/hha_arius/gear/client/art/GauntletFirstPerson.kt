@@ -247,7 +247,8 @@ internal object GauntletFirstPerson {
         return when (anim.anim) {
             Anim.JAB, Anim.CROSS -> minOf(1.4f, w * 0.7f)
             Anim.HOOK, Anim.COUNTER -> minOf(1.6f, w * 0.5f)
-            Anim.SIDE_KICK, Anim.SPIN_KICK -> 2f
+            Anim.SIDE_KICK, Anim.SPIN_KICK, Anim.AXE_KICK -> 2f
+            Anim.UPPERCUT -> minOf(1.6f, w * 0.5f)
             Anim.PARRY, Anim.CAST_TAP, Anim.CAST_RELEASE -> 1.4f
             else -> 2.5f
         }
@@ -290,6 +291,7 @@ internal object GauntletFirstPerson {
     }
 
     private val HOOK_C = Vector3f(-0.50f, -0.44f, -1.18f)
+    private val UPPER_C = Vector3f(0.40f, -0.40f, -1.10f)
     private val WIND_C = Vector3f(0.25f, -0.20f, -1.25f)
 
     private fun build(s: ArtAnims.State?, a: Float, t: Float, magic: Boolean, p: FpPose) {
@@ -347,6 +349,33 @@ internal object GauntletFirstPerson {
                     else -> seg(a, w + 2f, d).let { v -> p.mix(a3, a1, smooth(v)); p.dy -= 0.035f * bump(seg(v, 0.15f, 0.7f)) }
                 }
                 sink(p, a, w, 0.02f)
+            }
+            Anim.UPPERCUT -> {
+                // Faust taucht tief rechts unten ab und schießt im Bogen nach oben vorn durch die Bildmitte.
+                guard(a1, t)
+                a2.set(a1).apply { rH.set(0.42f, -0.66f, -0.70f); rS.set(0.70f, -1.15f, -0.25f); rN.set(-0.6f, 0.8f, 0f); lH.set(-0.26f, -0.20f, -0.86f); dy = -0.03f }
+                a3.set(a1).apply { rH.set(0.06f, 0.06f, -1.18f); rS.set(0.45f, -1.0f, -0.80f); rN.set(0f, -0.6f, -0.8f); lH.set(-0.30f, -0.28f, -0.80f); roll = 0.04f; dy = 0.02f }
+                val load = 0.45f * w
+                when {
+                    a < load -> p.mix(a1, a2, easeOut(a / load))
+                    a < w -> { val u = drive(seg(a, load, w), 0f); p.mix(a2, a3, u); bezier(a2.rH, UPPER_C, a3.rH, u, p.rH) }
+                    a < w + 2.5f -> p.mixFree(a2, a3, 1f + 0.1f * bump(seg(a, w, w + 2.5f)))
+                    else -> seg(a, w + 2.5f, d).let { p.mixFree(a3, a1, smooth(it) + 0.05f * bump(it)) }
+                }
+                sink(p, a, w, -0.015f)
+            }
+            Anim.AXE_KICK -> {
+                // Sprung: Arme öffnen sich zum Gleichgewicht, Blick hebt sich; Ferse herab: alles sackt tief ein.
+                guard(a1, t)
+                a2.set(a1).apply { rH.set(0.80f, -0.30f, -0.62f); rN.set(0f, -1f, 0f); lH.set(-0.80f, -0.30f, -0.62f); lN.set(0f, -1f, 0f); dy = 0.05f; roll = -0.03f }
+                a3.set(a1).apply { rH.set(0.48f, -0.72f, -0.72f); lH.set(-0.46f, -0.70f, -0.74f); dy = -0.07f; roll = 0.02f }
+                val up = 0.6f * w
+                when {
+                    a < up -> p.mix(a1, a2, easeOut(a / up))
+                    a < w -> p.mix(a2, a3, drive(seg(a, up, w), 0f))
+                    a < w + 2f -> p.set(a3)
+                    else -> seg(a, w + 2f, d).let { v -> p.mix(a3, a1, smooth(v)) }
+                }
             }
             Anim.PARRY -> {
                 guard(a1, t); parry(a2)

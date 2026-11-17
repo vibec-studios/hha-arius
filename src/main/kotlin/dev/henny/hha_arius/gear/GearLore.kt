@@ -42,6 +42,7 @@ object GearLore {
         }
         context.registerLore(GearItems.ARIUS_GAUNTLETS) {
             line("$P.arius_gauntlets.lore1", num(k("melee_base_damage")))
+            line("$P.arius_gauntlets.lore5")
             line("$P.arius_gauntlets.lore2")
             line("$P.arius_gauntlets.lore3")
             line("$P.arius_gauntlets.lore4")

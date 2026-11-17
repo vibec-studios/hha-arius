@@ -39,6 +39,10 @@ object GearConfig {
         "melee_gain_kick" to 5.0,
         "melee_gain_spin" to 8.0,
         "melee_gain_parry" to 20.0,
+        "melee_gain_uppercut" to 6.0,
+        "melee_gain_axe" to 10.0,
+        // Vorrücken: Schläge schieben den Spieler ein Stück auf das nächste Ziel vorn zu (Blöcke je Tick, 0 = aus).
+        "melee_step_in" to 0.32,
         "melee_link_ticks" to 8.0,
         "melee_knock_guard_ticks" to 30.0,
         // Zauber (Kosten in Resonanz, Zeiten in Ticks)

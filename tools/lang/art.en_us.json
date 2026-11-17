@@ -1,10 +1,10 @@
 {
   "item.hha_arius.arius_gauntlets": "Arius' Gauntlets",
-  "item.hha_arius.arius_gauntlets.lore1": "Melee: left combo, right kick, sneak + right parry (base damage %s)",
-  "item.hha_arius.arius_gauntlets.lore2": "Magic: right-click casts, left cancels · Technique key: spell wheel",
-  "item.hha_arius.arius_gauntlets.lore3": "Mode key: melee ↔ magic · Wind, Ice and Yang",
+  "item.hha_arius.arius_gauntlets.lore1": "Melee: left-click combo, right-click kick, sneak + right-click parry (base damage %s)",
+  "item.hha_arius.arius_gauntlets.lore2": "Magic: right-click casts, left-click cancels · hold Ability 4: spell wheel",
+  "item.hha_arius.arius_gauntlets.lore3": "Ability 5: melee ↔ magic · schools Wind, Ice and Yang",
   "item.hha_arius.arius_gauntlets.lore4": "A pair, worn in the main hand. The off hand rests.",
-  "item.hha_arius.solvane.lore4": "Technique key – Clear Cut: %s resonance, %s–%s damage · Cooldown %s s",
+  "item.hha_arius.solvane.lore4": "Ability 4 – Clear Cut: %s resonance, %s–%s damage · Cooldown %s s",
   "item.hha_arius.solvane.lore5": "Hold to charge, sneak = horizontal · cuts up to hardness %s (max %s blocks)",
   "block.hha_arius.frost_construct": "Crystal Ice (spell)",
   "block.hha_arius.yang_construct": "Yang Light (spell)",
@@ -68,5 +68,6 @@
   "hha_arius.keys.gauntlets_magic": "Magic: [%s] cast · [%s] spell wheel (hold) · [%s] melee",
   "hha_arius.keys.solvane": "Solvane: hold [%s] to charge Clear Cut, release to cut (sneak: horizontal)",
   "hha_arius.keys.conflict": "Arius: the key %s is bound to \"%s\" and also to \"%s\". Rebind one of them under Options → Controls, otherwise the press may not arrive.",
-  "hha_arius.keys.unbound": "Arius: \"%s\" is not bound. Bind it under Options → Controls → HHA, otherwise the spell wheel, mode switch or Clear Cut are missing."
+  "hha_arius.keys.unbound": "Arius: \"%s\" is not bound. Bind it under Options → Controls → HHA, otherwise the spell wheel, mode switch or Clear Cut are missing.",
+  "item.hha_arius.arius_gauntlets.lore5": "Chain: jab · cross · hook · uppercut (launches) – kick after the hook = spin kick, after the uppercut = axe kick with a frost wave"
 }
