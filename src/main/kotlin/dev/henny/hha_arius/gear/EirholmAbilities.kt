@@ -131,6 +131,8 @@ object EirholmAbilities {
 
         GearSounds.play(world, player.entityPos, "frost_step", SoundEvents.BLOCK_POWDER_SNOW_STEP, 1f, 1.2f)
         GearVfx.trail(world, Vfx.Style.STORM, player, 0.45f, 10)
+        // Nachbild: am Startpunkt zerspringt eine Frost-Silhouette in Splitter (seit 1.2.2).
+        dev.henny.hha_arius.gear.art.ArtFx.send(world, dev.henny.hha_arius.net.FxKind.FRAGMENTS, player.entityPos, a = 0.35f, life = 16, e1 = player.id)
 
         for (t in 0 until dashTicks) {
             val step: () -> Unit = {
@@ -148,6 +150,11 @@ object EirholmAbilities {
             if (GearCombat.stillThere(player, world)) {
                 if (placeIce) FrostIce.pathAhead(world, player.entityPos, dir, 1.5)
                 Fx.launchPlayer(player, Vec3d(dir.x * 0.2, player.velocity.y.coerceAtMost(0.0), dir.z * 0.2))
+                // Ankunft: Eis-Aufprall mit Sichel in Laufrichtung.
+                val at = player.entityPos
+                GearVfx.nova(world, Vfx.Style.STORM, at.add(0.0, 0.6, 0.0), 1.4f, 8)
+                GearVfx.crescent(world, Vfx.Style.STORM, at.add(0.0, 0.8, 0.0), dir, 2.4f, 1.4f, 6)
+                world.spawnParticles(ParticleTypes.SNOWFLAKE, at.x, at.y + 0.3, at.z, 14, 0.5, 0.2, 0.5, 0.08)
             }
         }
     }
@@ -219,6 +226,14 @@ object EirholmAbilities {
 
         GearVfx.shockwave(world, Vfx.Style.HEAVEN, player.entityPos, radius.toFloat(), 16, 1.4f)
         GearVfx.nova(world, Vfx.Style.STORM, center, 2.2f, 12)
+        // Seit 1.2.2 wuchtiger: acht Eissicheln strahlen aus, eine Frostwelle läuft über den Boden, ein Nachhall folgt.
+        for (k in 0 until 8) {
+            val ang = k / 8.0 * 2 * Math.PI
+            GearVfx.crescent(world, Vfx.Style.STORM, center, Vec3d(cos(ang), 0.05, sin(ang)), radius.toFloat(), 1.2f, 8)
+        }
+        dev.henny.hha_arius.gear.art.ArtFx.send(world, dev.henny.hha_arius.net.FxKind.CLEAR_WAVE, player.entityPos, a = radius.toFloat() + 2f, life = 18)
+        world.spawnParticles(ParticleTypes.SNOWFLAKE, center.x, center.y, center.z, 40, radius * 0.4, 0.4, radius * 0.4, 0.15)
+        GearTasks.later(5) { GearVfx.shockwave(world, Vfx.Style.STORM, player.entityPos, (radius * 1.4).toFloat(), 12, 0.8f) }
         GearSounds.play(world, center, "white_core", SoundEvents.ENTITY_WARDEN_SONIC_BOOM, 0.6f, 1.6f)
     }
 

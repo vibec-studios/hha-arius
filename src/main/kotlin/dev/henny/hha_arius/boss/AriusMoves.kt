@@ -89,8 +89,18 @@ class AriusMoves(private val f: EirholmFight) {
         }
     }
 
+    /**
+     * Hiebspur (seit 1.2.2 hochwertiger): weiße Hauptsichel, darüber eine schmale, schnellere Sturmsichel als
+     * Nachschwung, Frostfunken entlang der Schneide und ein kurzer Bodenkratzer, wo die Spitze aufsetzt.
+     */
     private fun slash(at: Vec3d, dir: Vec3d, range: Float) {
-        Vfx.crescent(f.world, style, at.add(0.0, 1.1, 0.0), dir, range, 2.6f, 8)
+        val mid = at.add(0.0, 1.1, 0.0)
+        Vfx.crescent(f.world, style, mid, dir, range, 2.6f, 8)
+        Vfx.crescent(f.world, Vfx.Style.STORM, mid.add(0.0, 0.25, 0.0), dir, range * 1.15f, 1.1f, 5)
+        val tip = at.add(dir.multiply(range * 0.8))
+        f.world.spawnParticles(net.minecraft.particle.ParticleTypes.SNOWFLAKE, tip.x, tip.y + 0.9, tip.z, 10, range * 0.15, 0.3, range * 0.15, 0.12)
+        f.world.spawnParticles(net.minecraft.particle.ParticleTypes.END_ROD, tip.x, tip.y + 1.0, tip.z, 4, range * 0.12, 0.2, range * 0.12, 0.03)
+        f.world.spawnParticles(net.minecraft.particle.BlockStateParticleEffect(net.minecraft.particle.ParticleTypes.BLOCK, net.minecraft.block.Blocks.SNOW_BLOCK.defaultState), tip.x, f.floorY + 0.1, tip.z, 8, 0.4, 0.05, 0.4, 0.1)
     }
 
     // --- Zug wählen ----------------------------------------------------------------------------------------------------
