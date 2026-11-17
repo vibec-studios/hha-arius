@@ -67,8 +67,9 @@ form: the white dragon you fight *is* Solvane. **Clear Cut**: hold the technique
 for a limited planar cut that can also split wood and stone (configurable, never containers, protected areas or the
 arena).
 
-Armour, gauntlets and Solvane share one resource, **frost resonance**, which rests at 30 (50 with the full set) out of
-combat and grows only through skill. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
+Armour, gauntlets and Solvane share one resource, **frost resonance**. It recharges passively (faster out of combat and
+with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
+try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
 ## Requirements
 

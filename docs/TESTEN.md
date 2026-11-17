@@ -1,4 +1,4 @@
-# Was im Spiel geprüft werden muss (Stand 1.2.0)
+# Was im Spiel geprüft werden muss (Stand 1.2.1)
 
 Gebaut und statisch geprüft (6 Review-Runden, Berichte in `docs/review/`). Seit 1.0.1 besteht zusätzlich ein echter
 Client-Starttest (`./gradlew runClientGameTest`): Haupt- und Client-Entrypoints laden, eine Einzelspielerwelt startet,
@@ -41,7 +41,7 @@ Client-Welt und Spieler sind vorhanden. Geprüft mit Minecraft 1.21.11, Fabric L
 - [ ] Echo von Eirholm: Abschnitte 1–4 trainieren
 
 ## Ausrüstung 1.1 (Handschuhe, Solvane, Rüstung neu verteilt)
-- [ ] Volles Rüstungsset **ohne** Waffen: Ability 1 Weißer Kern (Brust), Ability 2 Frostschritt (Beine), Ability 3 Weißes Loch (ersetzt Ultra), Resonanzbalken mit Ruhepunkt 50
+- [ ] Volles Rüstungsset **ohne** Waffen: Ability 1 Weißer Kern (Brust), Ability 2 Frostschritt (Beine), Ability 3 Weißes Loch (ersetzt Ultra), Resonanzbalken lädt passiv bis 100
 - [ ] Einzelteile: Helm kein Gefrieren, Stiefel Pulverschnee + kleine Stürze, Brust Frostpanzer
 - [ ] Handschuhe in der Hand: beide Arme mit Handschuhen in erster und dritter Person, Nebenhand-Item ausgeblendet, slim-Skin
 - [ ] Nahkampf: Jab → Cross → Haken (Linksklick), Seitentritt, Drehtritt nach dem Haken, Parade (Schleichen + Rechts) + Konterstoß; aus erster und dritter Person
@@ -87,6 +87,13 @@ Client-Welt und Spieler sind vorhanden. Geprüft mit Minecraft 1.21.11, Fabric L
 - [ ] Texte: überall „Solvane“ statt „Nivaris“ (Bossleiste, Hinweise, Untertitel, Items)
 - [ ] Rüstung „Drachenherz-Wacht“: an Spieler, Rüstungsständer, Mannequin, Zombie; Leuchten Tag/Nacht, Verzauberungsglanz, Umhang, Federn beim Laufen/Springen, schmale Arme, mit und ohne Handschuhe
 - [ ] Solvane-Item: länger, Lichtfluss in der Hohlkehle, Sitz in erster und dritter Person
+
+## Fehlerbehebungen 1.2.1
+- [ ] Windklinge, Frostsplitter, Yang-Kugel feuern; voll geladene Yang-Kugel ohne Serverabsturz
+- [ ] Resonanz lädt passiv (2/s, ohne Kampf +6/s, volles Set +9/s) bis 100; Klarer Schnitt und Weißes Loch außerhalb des Kampfs
+- [ ] `/hhaarius test`: Balken voll, nichts kostet, Abklingzeiten 0,5 s, Bauwerke auch in der Arena; `off` und Neuverbinden beenden ihn
+- [ ] Handschuhe/Solvane ziehen: Aktionsleiste zeigt die eigenen Tasten; R oder V doppelt belegt (z. B. Sprach-Chat) → einmal Chat-Hinweis
+- [ ] Abschnitt I: Arius springt nach dem Aufstehen von den Altarstufen auf den Hallenboden und kämpft (vorher blieb er am Sitz)
 
 ## Bekannte Grenzen
 - Keine Voicelines (nur Untertitel), bewusst.

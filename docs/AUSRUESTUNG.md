@@ -18,8 +18,8 @@ Zahlen hier = Standardwerte im Code (`gear/GearConfig.kt`).
 | **Solvane** | Schwertmechaniken (Klare Schneide, Konterhaltung) und die Waffentechnik **Klarer Schnitt** | Links/Rechts, **Technik-Taste** (R) | nur Solvane |
 
 - Der **volle Setbonus braucht nur die vier Rüstungsteile**. Solvane und Handschuhe sind keine Voraussetzung.
-- Jede Quelle funktioniert allein. Das volle Set ergänzt die beiden Waffen nur über die gemeinsame Ressource (höherer
-  Ruhepunkt, +25 % Gewinn), nie über zusätzliche Kopien derselben Zauber.
+- Jede Quelle funktioniert allein. Das volle Set ergänzt die beiden Waffen nur über die gemeinsame Ressource (schnelleres
+  Aufladen, +25 % Gewinn), nie über zusätzliche Kopien derselben Zauber.
 - **Kein Zauber liegt doppelt:** Die Rüstung hat Kern (Druckstoß), Frostschritt (Dash) und Weißes Loch. Die Handschuhe
   haben andere Formen: Sichel, Sprung, Kegel, Sog, Splitter, Wand, Feld, Panzer, Kugel, Schild, Plattform, Brücke und
   Gleiter. Solvane hat den Schnitt. Die frühere „Weiße Linie“ der Brustplatte ist entfallen, weil sie mit Solvanes
@@ -33,6 +33,8 @@ Zahlen hier = Standardwerte im Code (`gear/GearConfig.kt`).
 | HHA Ability 1 / 2 / 3 | G / H / U | Rüstung: Weißer Kern / Frostschritt / Weißes Loch | dasselbe |
 
 Die Handschuh-Tasten sind eigene Tasten und kollidieren nicht mit den HHA-Abilities 1–6 (Blood nutzt 4 und 5).
+Beim Ziehen von Handschuhen oder Solvane zeigt die Aktionsleiste die tatsächlich belegten Tasten. Liegt R oder V zugleich
+auf einer anderen Belegung (z. B. V bei Sprach-Chat-Mods), weist ein Chat-Hinweis einmal je Sitzung darauf hin.
 
 ---
 
@@ -41,12 +43,12 @@ Die Handschuh-Tasten sind eigene Tasten und kollidieren nicht mit den HHA-Abilit
 Eine Energie für alles, damit Entscheidungen entstehen („Schild halten oder gleich schneiden?“).
 
 - **Träger:** Wer ein Arius-Rüstungsteil trägt oder Handschuhe bzw. Solvane in der Haupthand hält. Der Balken über der
-  HHA-Leiste zeigt den Wert, den **Ruhepunkt** (Goldstrich) und die **Kosten der bereiten Technik** (weißer Strich).
-- **Ruhepunkt:** Nach 6 s ohne Kampf strebt die Resonanz mit 4/s zum Ruhepunkt, **von unten wie von oben**. Er liegt bei
-  **30**, mit vollem Set bei **50**. Folgen:
-  - Nutzzauber (Plattform 12, Brücke 20, Windsog 4) gehen auch außerhalb des Kampfs.
-  - Große Techniken (Klarer Schnitt 50, Weißes Loch 100) brauchen Kampf.
-  - **Horten ist unmöglich**, weil alles über dem Ruhepunkt nach dem Kampf wieder abfließt.
+  HHA-Leiste zeigt den Wert und die **Kosten der bereiten Technik** (weißer Strich).
+- **Passives Aufladen (seit 1.2.1):** Träger laden immer **2/s**, nach 6 s ohne Kampf zusätzlich **6/s** (volles Set
+  **9/s**), bis zum Maximum 100. So gehen alle Techniken auch außerhalb des Kampfs, im Kampf zählt weiter das Können.
+  Wer nichts trägt, verliert die Resonanz langsam.
+- **Testmodus:** `/hhaarius test [on|off]` (OP) – unendliche Resonanz, Abklingzeiten 0,5 s, kein Nachhall, Bauwerke
+  überall. Zum Ausprobieren ohne Gegner; gilt bis zum Abschalten oder Verlassen.
 - **Gewinn im Kampf** (nur an lohnenden Zielen: Monster, Spieler, Wesen, die dich gerade angreifen, sehr zähe Wesen;
   **nicht** an Tieren, Rüstungsständern, Dorfbewohnern oder Verbündeten):
 
@@ -86,7 +88,7 @@ Anzeigenamen: **Arius' Helm, Arius' Brustpanzer, Arius' Beinschienen, Arius' Sti
 | **Brustpanzer** | **Ability 1 – Weißer Kern** (Schutz): 40 Resonanz, 0,5 s Kern an der Brust, dann Druckstoß R 6, 6 Schaden, Gegner 3 Blöcke zurück, Geschosse zerstört, 3 s Resistenz I. Abklingzeit 25 s | **Frostpanzer:** Wer dich im Nahkampf trifft, ist 1 s verlangsamt (je Angreifer höchstens alle 3 s) |
 | **Beinschienen** | **Ability 2 – Frostschritt** (Bewegung): 15 Resonanz, 6 Blöcke in Laufrichtung, 0,3 s keine Nahkampftreffer, über stillem Wasser brüchiges Eis (schmilzt selbst). Abklingzeit 2,5 s | – |
 | **Stiefel** | – | Pulverschnee trägt; Stürze bis 2,5 Herzen Schaden werden abgefangen |
-| **Volles Set** | **Ability 3 – Weißes Loch** (ersetzt bei vollem Set den HHA-Ultra-Modus, wie bei HHA Void) | Ruhepunkt 50, +25 % Resonanz, Frosthauch bei hoher Resonanz |
+| **Volles Set** | **Ability 3 – Weißes Loch** (ersetzt bei vollem Set den HHA-Ultra-Modus, wie bei HHA Void) | Schnelleres Aufladen (9/s), +25 % Resonanz, Frosthauch bei hoher Resonanz |
 
 ### Das weiße Loch: warum als Setfähigkeit
 Es ist Arius' Erkennungszeichen und im Kampf seine „letzte Karte“. Als **Setfähigkeit** gehört es zur Rüstung, die man
@@ -307,7 +309,7 @@ Es gibt drei verschiedene Dinge:
 | Aufladung abbrechen | kostet nichts, gibt aber 0,5 s Sperre auf diese Technik. Spammen bringt also nichts |
 | Waffen- oder Moduswechsel während einer Aktion | bricht ab, dann Ziehzeit 0,4 s. Abklingzeiten hängen am Spieler |
 | Mehrere Exemplare desselben Items | Abklingzeiten liegen am Spieler bzw. in der Abklinggruppe des Items, die Ziehzeit gilt auch hier |
-| Resonanz an harmlosen Zielen aufbauen | Tiere, Rüstungsständer und Verbündete geben nichts. Alles über dem Ruhepunkt fließt nach dem Kampf ab |
+| Resonanz an harmlosen Zielen aufbauen | Tiere, Rüstungsständer und Verbündete geben nichts. Das passive Aufladen deckelt bei 100 |
 | Dauerhafte Schilde | max. 5 s, 8/s plus 2 je Schadenspunkt, 3 s Abklingzeit |
 | Dauerhafte Plattformen | 15 s, max. 3, Abklingzeit, kosten Resonanz, die nur langsam nachkommt |
 | Unbegrenzte Brücken | 16 Blöcke, 15 s, 5 s Abklingzeit, 20 Resonanz |
