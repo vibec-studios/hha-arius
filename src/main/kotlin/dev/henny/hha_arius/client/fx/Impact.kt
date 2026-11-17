@@ -111,11 +111,25 @@ object CameraKick {
     /** Ausschlag (Grad) als (Gieren, Nicken), oder null. */
     @JvmStatic
     fun offset(tickDelta: Float): FloatArray? {
-        if (CinePlayer.active) return null
+        if (CinePlayer.active) return cineSway(tickDelta)
         val t = ArtAnims.ticks + tickDelta - start
         val e = envelope(t)
         if (e <= 0.0001f) return null
         return floatArrayOf(yawAmp * e, -pitchAmp * e)
+    }
+
+    /**
+     * Handkamera in Arius' Szenen (seit 1.3.1): ganz leichtes, organisches Schwanken des Blicks (mehrere langsame
+     * Sinus), damit Kamerafahrten nicht wie auf Schienen wirken. Nur im Heiligtum; folgt dem Kamerarucken-Schalter.
+     */
+    private fun cineSway(tickDelta: Float): FloatArray? {
+        if (!AriusClientConfig.shake) return null
+        val world = net.minecraft.client.MinecraftClient.getInstance().world ?: return null
+        if (world.registryKey != dev.henny.hha_arius.arena.ArenaDimension.WORLD) return null
+        val t = ArtAnims.ticks + tickDelta
+        val yaw = 0.32f * kotlin.math.sin(t * 0.045f) + 0.14f * kotlin.math.sin(t * 0.11f + 1.7f)
+        val pitch = 0.22f * kotlin.math.sin(t * 0.052f + 0.6f) + 0.09f * kotlin.math.sin(t * 0.13f + 2.9f)
+        return floatArrayOf(yaw, pitch)
     }
 
     fun clear() {

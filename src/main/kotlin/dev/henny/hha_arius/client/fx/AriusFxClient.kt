@@ -33,6 +33,7 @@ object AriusFxClient {
         QteClient.init()
         net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback.EVENT.register { ctx, _ ->
             if (!MinecraftClient.getInstance().options.hudHidden) Atmos.renderHud(ctx)
+            CineGrade.render(ctx)
         }
         ClientPlayNetworking.registerGlobalReceiver(HoldS2C.ID) { p, _ -> HoldClient.set(p.on, p.ticks) }
         ClientPlayNetworking.registerGlobalReceiver(SliceS2C.ID) { p, _ -> SliceRender.handle(p) }
