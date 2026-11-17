@@ -85,6 +85,7 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
         state.fly = blend[0]
         model.pose(state)
         bodies.getOrPut(entity) { NivarisBody() }.update(entity, state, tickDelta)
+        dev.henny.hha_arius.client.fx.DragonHits.update(entity.id, state)
         // Schleier: je Teil Maßstab und Leuchten; die Lage geht an DragonVeil (Lichtschein, Funken, Splitter).
         val veil = entity.veilAt(tickDelta)
         state.veil = veil

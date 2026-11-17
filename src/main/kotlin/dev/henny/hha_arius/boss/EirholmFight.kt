@@ -566,7 +566,7 @@ class EirholmFight(
         val projectile = source.source is ProjectileEntity
         return when {
             boss === arius -> hitArius(player, source, amount, projectile)
-            boss === nivaris -> hitDragon(player, source, amount, projectile, null)
+            boss === nivaris -> hitDragon(player, source, amount, projectile, if (projectile) null else DragonAim.takeZone(player))
             boss === nivarisHead -> hitDragon(player, source, amount, projectile, NivarisMoves.Zone.HEAD)
             else -> 0f
         }

@@ -38,6 +38,7 @@ object HhaArius : ModInitializer {
         dev.henny.hha_arius.net.AriusNet.init()
         dev.henny.hha_arius.boss.Encounters.init()
         dev.henny.hha_arius.boss.AriusCommands.init()
+        dev.henny.hha_arius.boss.DragonAim.init()
     }
 
     /**

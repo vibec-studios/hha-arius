@@ -255,6 +255,8 @@ object GauntletCombat {
             if (hit.type == HitResult.Type.BLOCK && hit.pos.squaredDistanceTo(eye) < dist * dist - 0.05) continue
             out.add(target to dist)
         }
+        // Langer Drachenkörper: Der Client hat ein Glied anvisiert (die Rumpf-Box liegt oft weit weg).
+        dev.henny.hha_arius.boss.DragonAim.gauntletTarget(player)?.let { d -> if (out.none { it.first === d }) out.add(0, d to 0.0) }
         return out.sortedBy { it.second }.take(move.maxTargets).map { it.first }
     }
 

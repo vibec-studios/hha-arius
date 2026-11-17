@@ -146,6 +146,8 @@ object ArtClient {
         val client = MinecraftClient.getInstance()
         val player = client.player ?: return false
         if (client.currentScreen != null || player.isSpectator) return false
+        // Langer Drachenkörper: Treffer auf ein gezeichnetes Glied (Handschuhe melden nur und schlagen normal weiter).
+        if (dev.henny.hha_arius.client.fx.DragonHits.onAttack()) return true
         val main = player.mainHandStack
         if (GauntletsItem.isGauntlets(main)) {
             return if (mode(player) == GauntletMode.MELEE) {
