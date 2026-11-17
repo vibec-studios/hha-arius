@@ -144,6 +144,7 @@ object SnowStorm {
     }
 
     fun render(d: VfxDraw, snow: Float) {
+        if (!worldMode()) return
         val fx = AriusClientConfig.fx.coerceIn(0f, 1f)
         val k = (snow * fx * (1f - 0.85f * roof)).coerceIn(0f, 2f)
         if (k <= 0.02f) return
@@ -201,6 +202,94 @@ object SnowStorm {
                 vc.put(cx + hx - bx, cy + hy - by, cz + hz - bz, 0f, 0f, col)
             }
         }
+    }
+
+    // --- Bildschirm-Schnee (unabhängig von Shadern und Render-Mods) -----------------------------------------------
+
+    private class ScreenFlake(var x: Float, var y: Float, val z: Float, val seed: Float) {
+        var px = x
+        var py = y
+    }
+
+    private val screen = Array(420) { ScreenFlake(rnd.nextFloat(), rnd.nextFloat(), 0.25f + 0.75f * rnd.nextFloat(), rnd.nextFloat() * 6.283f) }
+    private var lastYaw = Float.NaN
+    private var lastPitch = Float.NaN
+    private var irisCheckedAt = -1000L
+    private var irisCache = false
+
+    /** Läuft ein Iris-Shaderpack? Dann übergeht die Shader-Pipeline eigene Welt-Ebenen (Schnee unsichtbar). */
+    private fun shadersActive(): Boolean {
+        if (age - irisCheckedAt < 40) return irisCache
+        irisCheckedAt = age
+        irisCache = try {
+            val c = Class.forName("net.irisshaders.iris.api.v0.IrisApi")
+            val inst = c.getMethod("getInstance").invoke(null)
+            c.getMethod("isShaderPackInUse").invoke(inst) as Boolean
+        } catch (_: Throwable) {
+            false
+        }
+        return irisCache
+    }
+
+    /** Welt-Schnee zeichnen? (aus bei "screen") */
+    fun worldMode(): Boolean = AriusClientConfig.snow != "screen"
+
+    /** Bildschirm-Schnee zeichnen? ("screen"/"both" immer, "auto" bei aktivem Shaderpack) */
+    fun screenMode(): Boolean = when (AriusClientConfig.snow) {
+        "screen", "both" -> true
+        "world" -> false
+        else -> shadersActive()
+    }
+
+    /** Je Tick: Bildschirmflocken mit Wind (relativ zur Blickrichtung), Fall und Kameradrehung (Parallaxe) bewegen. */
+    fun tickScreen(yaw: Float, pitch: Float) {
+        val dyaw = if (lastYaw.isNaN()) 0f else MathHelper.wrapDegrees(yaw - lastYaw)
+        val dpitch = if (lastPitch.isNaN()) 0f else pitch - lastPitch
+        lastYaw = yaw
+        lastPitch = pitch
+        val yr = Math.toRadians(yaw.toDouble())
+        // Wind in Bildschirmrichtung: seitlich = Anteil quer zur Blickrichtung
+        val right = Vec3d(-cos(yr), 0.0, -sin(yr))
+        val side = (wind.x * right.x + wind.z * right.z).toFloat()
+        for (f in screen) {
+            f.px = f.x; f.py = f.y
+            val k = f.z
+            f.x += (side * 0.05f + kotlin.math.sin(age * 0.07f + f.seed) * 0.0015f) * k - dyaw / 90f * k
+            f.y += (0.012f + 0.01f * k) * (1f + whiteout) + dpitch / 70f * k
+            var wrapped = false
+            if (f.x > 1.05f) { f.x -= 1.1f; wrapped = true } else if (f.x < -0.05f) { f.x += 1.1f; wrapped = true }
+            if (f.y > 1.05f) { f.y -= 1.1f; wrapped = true } else if (f.y < -0.05f) { f.y += 1.1f; wrapped = true }
+            if (wrapped) { f.px = f.x; f.py = f.y }
+        }
+    }
+
+    /** Bildschirmflocken als kurze Streifen (Bewegungsunschärfe) plus Whiteout-Schleier in Böen. */
+    fun renderScreen(ctx: DrawContext, snow: Float, td: Float) {
+        val fx = AriusClientConfig.fx.coerceIn(0f, 1f)
+        val k = (snow * fx * (1f - 0.85f * roof)).coerceIn(0f, 2f)
+        if (k <= 0.02f) return
+        val w = ctx.scaledWindowWidth.toFloat()
+        val h = ctx.scaledWindowHeight.toFloat()
+        val count = (screen.size * (k / 1.6f).coerceAtMost(1f)).toInt()
+        for (i in 0 until count) {
+            val f = screen[i]
+            val x = (f.px + (f.x - f.px) * td) * w
+            val y = (f.py + (f.y - f.py) * td) * h
+            val vx = (f.x - f.px) * w * 2.2f
+            val vy = (f.y - f.py) * h * 2.2f
+            val len = kotlin.math.sqrt(vx * vx + vy * vy).coerceAtLeast(1f)
+            val size = if (f.z > 0.8f) 2 else 1
+            val a = (0.25f + 0.55f * f.z) * k.coerceAtMost(1f)
+            val col = withAlpha(0xFFF4F8FF.toInt(), a)
+            val n = (len / 1.5f).toInt().coerceIn(1, 8)
+            for (s in 0 until n) {
+                val t = s / n.toFloat()
+                val sx = (x - vx * t).toInt()
+                val sy = (y - vy * t).toInt()
+                ctx.fill(sx, sy, sx + size, sy + size, col)
+            }
+        }
+        if (whiteout > 0.02f) ctx.fill(0, 0, w.toInt(), h.toInt(), withAlpha(0xFFE9F1FA.toInt(), whiteout * 0.45f * fx))
     }
 
     /** Frostrand: kalter, weicher Bildrand (stärker in Böen). Wird vom HUD gezeichnet. */

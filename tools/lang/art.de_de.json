@@ -74,5 +74,6 @@
   "hha_arius.qte.mash": "%s  ×  hämmern",
   "hha_arius.qte.clash_won": "Du brichst seine Deckung!",
   "hha_arius.qte.clash_won_other": "Seine Deckung bricht!",
-  "hha_arius.qte.clash_lost": "Er stößt dich zurück."
+  "hha_arius.qte.clash_lost": "Er stößt dich zurück.",
+  "hha_arius.client.snow": "Schneesturm-Darstellung: %s (auto = Welt, mit Shaderpack zusätzlich Bildschirm)"
 }

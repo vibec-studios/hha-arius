@@ -134,6 +134,7 @@ object Atmos {
         val wz = sin(windAngle) * m.wind * gust
         // Schneesturm (eigenes Flockenfeld mit Bewegungsunschärfe, Böen, Bodentreiben)
         SnowStorm.tick(world, m.snow, m.wind * 0.55f, windAngle)
+        client.player?.let { SnowStorm.tickScreen(it.yaw, it.pitch) }
         // Schneeschleier
         if (m.veil > 0.05f && veils.size < (14 * fx).toInt() && r.nextFloat() < m.veil * 0.4f) {
             val a = r.nextDouble() * 2 * PI
@@ -156,6 +157,7 @@ object Atmos {
     /** Frostrand im HUD (nur im Heiligtum). */
     fun renderHud(ctx: net.minecraft.client.gui.DrawContext) {
         if (!active || !inEirholm()) return
+        if (SnowStorm.screenMode()) SnowStorm.renderScreen(ctx, current().snow, MinecraftClient.getInstance().renderTickCounter.getTickProgress(true))
         SnowStorm.renderVignette(ctx)
     }
 

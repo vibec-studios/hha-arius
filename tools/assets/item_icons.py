@@ -26,21 +26,21 @@ LEGEND = {
 # Eine Faust im Profil (Handrücken zum Betrachter), Unterarmschiene nach rechts oben, Schwinge oben, Eisband am Gelenk.
 GAUNTLET = [
     '................',
-    '.....kkkkkk.....',
-    '....k434343k....',
-    '....kG4G4G4k....',
-    '..kkk333333k....',
-    '.k43k333332k....',
-    '.k32k333322k....',
-    '..k2kk32222k....',
-    '...kk22222k..kk.',
-    '....kIIIIIIk.kwk',
-    '....k234432kk3k.',
-    '....k23ii32kk3k.',
-    '....k2iIIi2k3k..',
-    '...k223ii322Gk..',
-    '...kGGGGGGGGk...',
-    '...kkkkkkkkkk...',
+    '....kkkkkkk.....',
+    '...k4343434k....',
+    '...k3GgGgGgk....',
+    '..kk3333332kk...',
+    '.k43k333322k3k..',
+    '.k32k332221k2k..',
+    '.k22kk22211k2k..',
+    '..k2kk22211kk...',
+    '...kkIIIIIIk....',
+    '...k2iI44Ii2k...',
+    '...k23I44I32k...',
+    '..k223i44i322k..',
+    '..k2233ii3322k..',
+    '..kgGgGgGgGgGk..',
+    '..kkkkkkkkkkkk..',
 ]
 LEGEND['w'] = H.hexc('#ffffff')
 
@@ -54,32 +54,43 @@ def gauntlet_icon():
     return im
 
 
+# Solvane: Struktur des Vanilla-Diamantschwerts (saubere Vanilla-Pixelarbeit), Ton für Ton umgefärbt.
+SWORD = [
+    '.............aaa',
+    '............abbc',
+    '...........abdbc',
+    '..........abdbc.',
+    '.........abdec..',
+    '........abdec...',
+    '..aa...aedec....',
+    '..afa.aedec.....',
+    '...agcegec......',
+    '...aggfec.......',
+    '....afac........',
+    '...hicaac.......',
+    '..hjk.ccac......',
+    'aaik....cc......',
+    'afc.............',
+    'ccc.............',
+]
+SWORD_COL = {
+    'a': '#141a2b', 'c': '#0b0f1a',                          # Umriss
+    'b': '#ffffff', 'd': '#d6e4f3', 'e': '#86b4dd',          # Klinge: Glanz, Licht, Eis-Mittellinie
+    'f': '#c99a3e', 'g': '#f1d58c',                          # Parierstange und Knauf: Gold
+    'h': '#2a2638', 'i': '#4a4560', 'j': '#6b6688', 'k': '#c99a3e',   # Griffwicklung, Knaufring
+}
+
+
 def solvane_icon():
-    """Solvane als kräftiges 16er-Schwert (Vanilla-Diagonale): perlweiße Klinge mit Eis-Hohlkehle, goldene Parierstange
-    mit Eisjuwel, dunkler Griff, goldener Knauf, dunkler Umriss."""
+    """Solvane: Vanilla-Schwertstruktur in Perlweiß/Eis mit Goldparierstange, Eisjuwel und dunklem Griff."""
     im = H.Img()
-    hi, light, mid, shade = H.hexc('#ffffff'), H.hexc('#e4ecf6'), H.hexc('#b2c3da'), H.hexc('#6f86a8')
-    ice, ice_hi = H.hexc('#4f95cc'), H.hexc('#bfeaff')
-    g1, g2, g3 = H.hexc('#8a6428'), H.hexc('#c99a3e'), H.hexc('#f1d58c')
-    grip, grip_hi = H.hexc('#2a2638'), H.hexc('#4a4560')
-    for i in range(10):                      # Klinge: (5,10) → (14,1)
-        cx, cy = 5 + i, 10 - i
-        im.set(cx, cy, light)
-        im.set(cx + 1, cy, shade if i < 9 else mid)
-        im.set(cx, cy - 1, hi if i < 9 else light)
-        if 1 <= i <= 6:
-            im.set(cx, cy, ice_hi if i % 2 else ice)    # Hohlkehle mit Lichtfluss
-    im.set(15, 0, light)
-    # Parierstange quer (Richtung +1,+1), Juwel in der Mitte
-    for x, y, c in ((1, 8, g2), (2, 9, g3), (3, 10, g3), (5, 12, g2), (6, 13, g1), (7, 14, g1)):
-        im.set(x, y, c)
-    im.set(4, 11, ice_hi)
-    # Griff und Knauf
-    for x, y, c in ((3, 12, grip_hi), (2, 13, grip)):
-        im.set(x, y, c)
-    for x, y, c in ((1, 14, g3), (0, 15, g1), (1, 15, g2), (0, 14, g2)):
-        im.set(x, y, c)
-    return im.outline()
+    for y, row in enumerate(SWORD):
+        for x, ch in enumerate(row):
+            if ch != '.':
+                im.set(x, y, H.hexc(SWORD_COL[ch]))
+    im.set(5, 8, H.hexc('#bfeaff'))   # Eisjuwel in der Parierstange
+    im.set(4, 9, H.hexc('#3e8fd0'))
+    return im
 
 
 def scale_icon():

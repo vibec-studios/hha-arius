@@ -15,6 +15,11 @@ object AriusClientConfig {
     var flash = true
     var shake = true
 
+    /** Schneesturm-Darstellung: "auto" (Welt, bei Shaderpack zusätzlich Bildschirm), "world", "screen", "both". */
+    var snow = "auto"
+
+    val SNOW_MODES = listOf("auto", "world", "screen", "both")
+
     private val file get() = FabricLoader.getInstance().configDir.resolve("hha_arius_client.json")
 
     fun load() {
@@ -24,6 +29,7 @@ object AriusClientConfig {
             fx = o.get("fx")?.asFloat?.coerceIn(0f, 1f) ?: fx
             flash = o.get("flash")?.asBoolean ?: flash
             shake = o.get("shake")?.asBoolean ?: shake
+            snow = o.get("snow")?.asString?.takeIf { it in SNOW_MODES } ?: snow
         }
     }
 
@@ -33,6 +39,7 @@ object AriusClientConfig {
             o.addProperty("fx", fx)
             o.addProperty("flash", flash)
             o.addProperty("shake", shake)
+            o.addProperty("snow", snow)
             Files.writeString(file, Gson().toJson(o))
         }
     }

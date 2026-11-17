@@ -74,5 +74,6 @@
   "hha_arius.qte.mash": "%s  ×  mash",
   "hha_arius.qte.clash_won": "You break his guard!",
   "hha_arius.qte.clash_won_other": "His guard breaks!",
-  "hha_arius.qte.clash_lost": "He throws you back."
+  "hha_arius.qte.clash_lost": "He throws you back.",
+  "hha_arius.client.snow": "Snowstorm rendering: %s (auto = world, plus screen layer with a shader pack)"
 }

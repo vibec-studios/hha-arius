@@ -99,7 +99,17 @@ object AriusFxClient {
                         AriusClientConfig.save()
                         ctx.source.sendFeedback(Text.translatable(if (AriusClientConfig.shake) "hha_arius.client.shake_on" else "hha_arius.client.shake_off"))
                         1
-                    })),
+                    }))
+                    .then(ClientCommandManager.literal("snow").let { node ->
+                        var n = node
+                        for (mode in AriusClientConfig.SNOW_MODES) n = n.then(ClientCommandManager.literal(mode).executes { ctx ->
+                            AriusClientConfig.snow = mode
+                            AriusClientConfig.save()
+                            ctx.source.sendFeedback(Text.translatable("hha_arius.client.snow", mode))
+                            1
+                        })
+                        n
+                    }),
             )
         }
     }
