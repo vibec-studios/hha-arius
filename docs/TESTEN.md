@@ -1,4 +1,4 @@
-# Was im Spiel geprüft werden muss (Stand 1.2.1)
+# Was im Spiel geprüft werden muss (Stand 1.2.2)
 
 Gebaut und statisch geprüft (6 Review-Runden, Berichte in `docs/review/`). Seit 1.0.1 besteht zusätzlich ein echter
 Client-Starttest (`./gradlew runClientGameTest`): Haupt- und Client-Entrypoints laden, eine Einzelspielerwelt startet,
@@ -87,6 +87,16 @@ Client-Welt und Spieler sind vorhanden. Geprüft mit Minecraft 1.21.11, Fabric L
 - [ ] Texte: überall „Solvane“ statt „Nivaris“ (Bossleiste, Hinweise, Untertitel, Items)
 - [ ] Rüstung „Drachenherz-Wacht“: an Spieler, Rüstungsständer, Mannequin, Zombie; Leuchten Tag/Nacht, Verzauberungsglanz, Umhang, Federn beim Laufen/Springen, schmale Arme, mit und ohne Handschuhe
 - [ ] Solvane-Item: länger, Lichtfluss in der Hohlkehle, Sitz in erster und dritter Person
+
+## 1.2.2
+- [ ] Tasten: Steuerung → HHA, Ability 4 = Technik (Zauberrad / Klarer Schnitt halten), Ability 5 = Modus; neu installiert einmal mit R/V vorbelegt; unbelegt → Chat-Hinweis
+- [ ] Ego-Sicht: Solvane sitzt wie ein Netherite-Schwert in der Hand; Schwertspur und Klarer Schnitt passen dazu
+- [ ] Drache im Kampf: Körper folgt fließend der Flugbahn, keine eckigen Brücken, keine senkrechten Säulen, keine Spirale; am Boden liegt er in Bögen; Abheben nach vorn, Landung im Gleitbogen; Schwanzfeger schwingt den hinteren Körper aus
+- [ ] Treffer auf jedes sichtbare Körperglied zählen (Schwert, Solvane, Handschuhe); Schwanzglieder als Schwanztreffer
+- [ ] Handschuhe: Deckung auf Brusthöhe (Gesicht frei), Folge Gerade · Gerade · Haken · Aufwärtshaken, Tritt danach = Axttritt mit Frostwelle; Vorrücken zum Ziel
+- [ ] Rüstung: Netherite-Form in Perlweiß/Gold mit Hornkrone, Herz-Juwel und Schwingenplatten; Trims sichtbar; neue Item-Icons
+- [ ] HUD: animierte Abklingzeit-Icons (Weißer Kern, Frostschritt, Klarer Schnitt, Weißes Loch, Konter, Flügelschuppe)
+- [ ] Namen: „Heiligtum der Weißen Klinge“, Phase III „Arius, Erbe des Weißen Drachen“ (Titelkarte, Boss-Leiste)
 
 ## Fehlerbehebungen 1.2.1
 - [ ] Windklinge, Frostsplitter, Yang-Kugel feuern; voll geladene Yang-Kugel ohne Serverabsturz

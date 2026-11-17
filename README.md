@@ -6,16 +6,16 @@ dragon Solvane, and the Eirholm frost armour.**
 Fabric · Minecraft 1.21.11 · Kotlin · MIT
 
 > Arius is the protagonist of our own light novel *The White Blade*. This mod is a **free adaptation**: the dragon
-> Solvane, the Sanctum of Eirholm, the white form, the white hole, the Eirholm armour and every technique name except
+> Solvane, the Sanctum of the White Blade, the white form, the white hole, the Eirholm armour and every technique name except
 > *White Null* are mod inventions and set nothing for the story. Other HHA bosses are not changed and never mention him.
 
 ## The encounter
 
-Craft the **Seal of Eirholm** (nether star, 4 blue ice, 2 echo shards, 2 gold ingots) and use it in a cold biome. Snow
-starts to fall upward, and everyone within 12 blocks is taken into the Sanctum of Eirholm, a separate dimension that is
+Craft the **Seal of the White Blade** (nether star, 4 blue ice, 2 echo shards, 2 gold ingots) and use it in a cold biome. Snow
+starts to fall upward, and everyone within 12 blocks is taken into the Sanctum of the White Blade, a separate dimension that is
 rebuilt from vanilla blocks for every attempt. Nothing in your survival world is ever damaged.
 
-1. **The Temple of Eirholm**: Arius alone. Readable stances, sword combos, wind steps, a parry that punishes greedy
+1. **The Temple of the White Blade**: Arius alone. Readable stances, sword combos, wind steps, a parry that punishes greedy
    attacks, frost walls that close escape routes. Below 40 % he takes you seriously and adapts to repeated tactics,
    within limits.
 2. **The Cut**: the wind turns, the hall goes silent, a single line crosses the temple. He strikes, nothing happens for
@@ -47,12 +47,12 @@ two new soundtracks. Effects scale with `/ariusc fx`; flashes and camera shake c
 | Heartfrost | 4 | 2 |
 | Eirholm upgrade template | 1 | 50 % |
 | Solvane scales | 6 | 3 |
-| Echo of Eirholm (train single parts) | yes | – |
+| Echo of the Sanctum (train single parts) | yes | – |
 | "White Blade" armour trim template | only if nobody was knocked out | same |
 
 **Arius armour** (item IDs `eirholm_*`): netherite + template + heartfrost at the smithing table. Since 1.2.0 it is a
-custom 3D armour, the *Dragonheart Watch*: pearl-white dragon scales with gold edging, a crown of ice horns, wing-plate
-pauldrons, a pulsing heart gem and swinging tassets. Following the
+netherite-shaped armour in pearl white, ice blue and old gold (since 1.2.2), with 3D accents of the *Dragonheart Watch*:
+a crown of ice horns, a pulsing heart gem and wing plates. Following the
 other HHA sets: chestplate → *White Core* (Ability 1), leggings → *Frost Step* (Ability 2), full set → *White Hole*
 (Ability 3, replaces Ultra), plus passives on helmet, chestplate and boots. The kit is available via
 `/hha kit hha_arius.eirholm`.

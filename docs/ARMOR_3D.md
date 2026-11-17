@@ -1,5 +1,11 @@
 # Drachenherz-Wacht (3D-Rüstung) und Solvane V6
 
+> **Stand 1.2.2:** Auf Wunsch von Crix trägt wieder die **Netherite-Form** die Rüstung: `tools/assets/armor_netherite.py`
+> färbt die Vanilla-Netherite-Texturen (Equipment-Ebene und Item-Icons) in den Drachenherz-Verlauf um (Navy → Eisblau →
+> Perlweiß, hellste Kanten Altgold, eisblaue Fugen) und schreibt wieder `equipment/eirholm.json` (damit gehen auch Trims
+> wieder). Das 3D-Modell unten zeichnet nur noch Akzente darüber: Hornkrone, Herz-Juwel mit Rautenstern und die
+> Schwingenplatten (`armor_model.py`, `ACCENTS`). Die übrigen Knochen bleiben leer im Modell, der Renderer ist unverändert.
+
 Paket V6 aus `tmp/visual/V6_ruestung_schwert.md`. Die Eirholm-Rüstung ist kein umgefärbtes Netherite mehr, sondern ein
 eigenes 3D-Modell an den Knochen des Trägers (wie die Handschuhe). Solvane ist deutlich länger und lebendiger.
 Nichts davon ist im Spiel gesehen; geprüft wurde mit Vorschaubildern und `compileKotlin`/`compileJava`.

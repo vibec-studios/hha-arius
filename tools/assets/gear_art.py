@@ -1256,8 +1256,8 @@ def icon_trim_template():
 
 def _armor_icon(name):
     def make():
-        import armor_preview                                         # rendert aus dem 3D-Modell (armor_model.py)
-        return armor_preview.icon(name)
+        import armor_netherite                                       # Netherite-Icons im Drachenherz-Verlauf (seit 1.2.2)
+        return armor_netherite.icons()[name.split('_', 1)[1]]
     return make
 
 
@@ -1534,14 +1534,7 @@ def write_item_jsons(solvane_model):
             write_json(f'models/item/{item}.json', {'parent': 'minecraft:item/generated',
                                                      'textures': {'layer0': f'hha_arius:item/{item}'}})
             write_json(f'items/{item}.json', {'model': {'type': 'minecraft:model', 'model': f'hha_arius:item/{item}'}})
-    # Keine equipment/eirholm.json: der Codec verlangt mindestens eine Ebene, und ohne Datei liefert Minecraft ein leeres
-    # Equipment-Modell (nichts Vanilla-Seitiges unter dem 3D-Modell, auch kein Trim). Alte Stände aufräumen.
-    for rel in ('equipment/eirholm.json', 'textures/entity/equipment/humanoid/eirholm.png',
-                'textures/entity/equipment/humanoid_leggings/eirholm.png',
-                'textures/entity/equipment/humanoid/eirholm_glow.png',
-                'textures/entity/equipment/humanoid_leggings/eirholm_glow.png'):
-        if os.path.exists(os.path.join(ASSETS, rel)):
-            os.remove(os.path.join(ASSETS, rel))
+    # Equipment-Ebene (Netherite-Basis) schreibt armor_netherite.py.
     write_json('atlases/armor_trims.json', TRIM_ATLAS, base=os.path.join(ROOT, 'src', 'main', 'resources', 'assets', 'minecraft'))
 
 

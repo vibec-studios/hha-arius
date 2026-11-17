@@ -82,7 +82,7 @@ Eine Energie für alles, damit Entscheidungen entstehen („Schild halten oder g
 Anzeigenamen: **Arius' Helm, Arius' Brustpanzer, Arius' Beinschienen, Arius' Stiefel**. Die Item-IDs bleiben
 `eirholm_*`, damit bestehende Welten ihre Rüstung behalten. Werte wie Netherite (3/8/6/3, Härte 3,5).
 
-**Optik seit 1.2.0: „Drachenherz-Wacht“**, eine eigene 3D-Rüstung statt umgefärbtem Netherite (`docs/ARMOR_3D.md`).
+**Optik seit 1.2.2:** Netherite-Form im Drachenherz-Verlauf (Perlweiß, Eisblau, Altgold an den Kanten, eisblaue Fugen), darüber 3D-Akzente der „Drachenherz-Wacht“: Hornkrone, Herz-Juwel und Schwingenplatten (`docs/ARMOR_3D.md`). Die Punkte unten beschreiben die Akzente bzw. die frühere Voll-3D-Fassung.
 - **Farben:** perlweiße Drachenschuppen mit eisblauen Schatten, Gold nur als Kante, Navy-Leder darunter.
 - **Helm:** Krone aus Eishörnern wie bei Solvanes Drachenform; ein Horn ist abgebrochen.
 - **Brust:** Herz-Juwel in der Mitte, Schulterstücke als gefaltete Schwingenplatten.

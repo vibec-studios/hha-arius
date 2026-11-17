@@ -704,8 +704,24 @@ BONE = {
 SLOT = {name: name.split('_')[0] for name in BONE}            # helm / chest / legs / boots
 
 
+# Seit 1.2.2 trägt die Netherite-Form (armor_netherite.py, Vanilla-Equipment-Ebene) die Rüstung; das 3D-Modell zeichnet
+# nur noch diese Akzente. Alle anderen Teile bleiben als leere Knochen erhalten (der Renderer erwartet die Namen).
+ACCENTS = {'helm_head': lambda p: p.name.startswith('helm_horn'), 'chest_heart': None,
+           'chest_wing_r': None, 'chest_wing_l': None}
+
+
+def accents_only(parts):
+    for part in parts:
+        keep = ACCENTS.get(part.name, False)
+        if keep is None:
+            continue
+        part.cubes = []
+        part.children = [c for c in part.children if keep and keep(c)] if keep else []
+    return parts
+
+
 def armor():
-    model = HDModel('armor', 128, 128, helmet() + chest() + leggings() + boots(), texture='eirholm_armor')
+    model = HDModel('armor', 128, 128, accents_only(helmet() + chest() + leggings() + boots()), texture='eirholm_armor')
     _check(model)
     return model
 
@@ -738,6 +754,8 @@ def _check(model):
                 for v in (c.w, c.h, c.d):
                     assert abs(v * RES - round(v * RES)) < 1e-6, f'{p.name}: Maß {v} nicht auf dem Texelraster'
         pts = _bounds(part)
+        if not pts:
+            continue  # leerer Knochen (nur Akzente aktiv)
         lo = [min(q[i] for q in pts) for i in range(3)]
         hi = [max(q[i] for q in pts) for i in range(3)]
         if part.name.startswith('chest_arm') or part.name.startswith('chest_wing'):

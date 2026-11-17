@@ -1,0 +1,14 @@
+{
+  "layers": {
+    "humanoid": [
+      {
+        "texture": "hha_arius:eirholm"
+      }
+    ],
+    "humanoid_leggings": [
+      {
+        "texture": "hha_arius:eirholm"
+      }
+    ]
+  }
+}
