@@ -523,30 +523,56 @@ class Scenes(private val f: EirholmFight) {
             }
             wait(10)
         }
-        // Nivaris und Arius fallen ins Gewölbe.
+        // Solvane fängt sie auf (seit 1.2.2): Statt ins Gewölbe zu stürzen, trägt ein weißer Lichtstrom alle hinauf auf den
+        // Himmelsbalkon an der Nadel – das Ende spielt hoch oben im Sturm, nicht unten im Gletscher.
+        yieldAll(waitForFar())
         val vault = f.abs(Vec3d.of(ArenaLayout.VAULT)).add(0.5, 0.0, 0.5)
+        for (p in f.players()) p.addStatusEffect(StatusEffectInstance(StatusEffects.SLOW_FALLING, 200, 0, false, false, true))
+        d.flying = true
+        d.play(NivarisPose.HOVER)
+        cue("resonance.chime", center, 4f, 1.2f)
+        // 5) Steil hinauf: aus dem Einsturz an der Nadel entlang, bis der Balkon im Sturm auftaucht; Solvane zieht voraus.
+        val camFrom = center.add(-6.0, 4.0, 14.0)
+        val camTo = vault.add(-22.0, 9.0, -24.0)
+        scene.line(camFrom, camTo, center.add(0.0, 20.0, 40.0), vault.add(0.0, 2.0, 0.0), 80, 64.0, 58.0)
+        shown { Entrance.storyFx(f, FxKind.BLADE_STREAM, center.add(0.0, 1.0, 0.0), vault.add(0.0, 2.0, 0.0), a = 60f, b = 0f, life = 80) }
+        val dFrom = d.entityPos
+        val dTo = vault.add(-6.0, 12.0, -20.0)
+        for (i in 1..80) {
+            val k = i / 80.0
+            val sm = k * k * (3 - 2 * k)
+            f.place(d, dFrom.lerp(dTo, sm).add(sin(k * PI) * 12.0, sin(k * PI) * 14.0, 0.0))
+            f.face(d, vault)
+            if (i == 30) {
+                // Die Spieler steigen im Strom mit (ihr Blick ist die Kamerafahrt): oben abgesetzt, sanft fallend.
+                for ((j, p) in f.players().withIndex()) {
+                    val spot = f.abs(ArenaLayout.VAULT_LANDING[j % ArenaLayout.VAULT_LANDING.size]).add(0.0, 3.0, 0.0)
+                    p.teleport(f.world, spot.x, spot.y, spot.z, emptySet(), 180f, 0f, false)
+                }
+                f.place(a, vault.add(0.0, 9.0, 0.0))
+            }
+            yield(Unit)
+        }
         f.place(d, f.abs(ArenaLayout.VAULT_REST))
         d.flying = false
         d.play(NivarisPose.EXHAUSTED)
-        f.place(a, vault.add(0.0, 9.0, 0.0))
-        // 5) Im Gewölbe, Blick nach oben durch das Loch in der Decke: Trümmer und Fallende.
-        scene.line(vault.add(9.0, 2.0, 12.0), vault.add(7.0, 3.0, 10.0), vault.add(0.0, 18.0, 0.0), vault.add(0.0, 10.0, 0.0), 120, 72.0, 64.0)
-        // Wer noch oben steht, wird an die Kante geführt und fällt ebenfalls.
-        wait(60)
         for ((i, p) in f.players().withIndex()) {
-            if (p.y > vault.y + 6) {
-                val drop = f.ringPoint(center, 8.0, i * 1.3).add(0.0, -4.0, 0.0)
-                p.addStatusEffect(StatusEffectInstance(StatusEffects.SLOW_FALLING, 200, 0, false, false, true))
-                p.teleport(f.world, drop.x, drop.y, drop.z, emptySet(), p.yaw, p.pitch, false)
-            }
-        }
-        waitUntil(140) { f.players().all { it.y < vault.y + 2.5 } }
-        for ((i, p) in f.players().withIndex()) {
-            if (p.y > vault.y + 2.5) {
+            if (p.y < vault.y - 2.0 || p.squaredDistanceTo(vault) > 40.0 * 40.0) {
                 val spot = f.abs(ArenaLayout.VAULT_LANDING[i % ArenaLayout.VAULT_LANDING.size])
                 p.teleport(f.world, spot.x, spot.y, spot.z, emptySet(), p.yaw, p.pitch, false)
             }
             p.onLanding()
+        }
+    }
+
+    /** Wartet, bis die Fernlandschaft (mit dem Himmelsbalkon) fertig gebaut ist, und zeigt den Fortschritt. */
+    private fun waitForFar(): Script = script {
+        while (!f.farReady) {
+            if (f.world.time % 10L == 0L) {
+                val pct = (f.farProgress * 100).toInt()
+                for (p in f.audience()) p.sendMessage(net.minecraft.text.Text.translatable("hha_arius.msg.forming_pct", pct), true)
+            }
+            yield(Unit)
         }
     }
 
@@ -1334,6 +1360,7 @@ class Scenes(private val f: EirholmFight) {
     }
 
     fun trainingVault(): Script = script {
+        yieldAll(waitForFar())
         prepareVault()
         f.say("echo", 60)
         wait(60)
@@ -1341,6 +1368,7 @@ class Scenes(private val f: EirholmFight) {
     }
 
     fun trainingFinale(): Script = script {
+        yieldAll(waitForFar())
         prepareVault()
         f.dragonDowned = true
         f.say("echo", 60)

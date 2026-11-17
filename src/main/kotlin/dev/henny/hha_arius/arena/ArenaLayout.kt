@@ -113,25 +113,32 @@ object ArenaLayout {
     const val COLLAPSE_R = 14
     val COLLAPSE_RINGS = doubleArrayOf(6.0, 10.0, 14.0)
 
-    // --- Herzgewölbe -------------------------------------------------------------------------------------------------
+    // --- Himmelsbalkon (Abschnitt III und Finale, seit 1.2.2) --------------------------------------------------------
 
-    /** Gewölbemitte (Lauffläche). */
-    val VAULT = BlockPos(0, -36, 0)
+    /**
+     * Schauplatz von Abschnitt III und Finale: ein weites, zerklüftetes Eisschelf, das hoch über der Schlucht aus der
+     * Nordflanke der Nadel ragt (Crix: „man soll am Ende nicht unten im Gletscher sein“). Mitte der Lauffläche; die Nadel
+     * steht im Süden als Wand im Rand, ringsum Sturm und Abgrund. Gebaut von [FarBuild] (FarPlan.balcony).
+     * Der Name `VAULT` bleibt im Code (früher das Herzgewölbe unter dem Plateau).
+     */
+    val VAULT = BlockPos(0, 100, 94)
     const val VAULT_R = 28
-    const val VAULT_CEIL = -16
 
-    /** Kristallsäulen im Gewölbe (Deckung gegen Nivaris, nicht gegen den Null-Schnitt). */
+    /** Kein Deckengewölbe mehr: Obergrenze nur für den Drachenkörper. */
+    const val VAULT_CEIL = 170
+
+    /** Eiskristall-Säulen auf dem Balkon (Deckung gegen Solvane, nicht gegen den Null-Schnitt). */
     val VAULT_PILLARS: List<BlockPos> = (0 until 8).map { i ->
         val a = (i + 0.5) / 8.0 * 2.0 * PI
-        BlockPos(Math.round(sin(a) * 17.0).toInt(), -36, Math.round(cos(a) * 17.0).toInt())
+        BlockPos(Math.round(sin(a) * 17.0).toInt(), 100, 94 + Math.round(cos(a) * 17.0).toInt())
     }
 
-    /** Nivaris' Liegeplatz im Finale (Nordwand). */
-    val VAULT_REST = Vec3d(0.5, -36.0, -22.5)
+    /** Solvanes Liegeplatz im Finale (Nordrand des Balkons, Blick zur Nadel). */
+    val VAULT_REST = Vec3d(0.5, 100.0, 72.5)
 
-    /** Landepunkte nach dem Sturz ins Gewölbe. */
-    val VAULT_LANDING: List<Vec3d> = listOf(Vec3d(0.5, -36.0, 9.5), Vec3d(-6.5, -36.0, 8.5), Vec3d(7.5, -36.0, 8.5),
-        Vec3d(-3.5, -36.0, 13.5), Vec3d(4.5, -36.0, 13.5), Vec3d(0.5, -36.0, 16.5))
+    /** Landepunkte auf dem Balkon (nach dem Aufstieg im Lichtstrom). */
+    val VAULT_LANDING: List<Vec3d> = listOf(Vec3d(0.5, 100.0, 90.5), Vec3d(-6.5, 100.0, 89.5), Vec3d(7.5, 100.0, 89.5),
+        Vec3d(-3.5, 100.0, 85.5), Vec3d(4.5, 100.0, 85.5), Vec3d(0.5, 100.0, 82.5))
 
     // --- Fernlandschaft und die Nadel (Auftritt von Nivaris) --------------------------------------------------------
 
@@ -179,8 +186,8 @@ object ArenaLayout {
     /** Zuschauerpunkt (k. o., Nachzügler) in Abschnitt I/II: kleine Galerie auf der Westmauer des Tempels. */
     val WATCH_UPPER = Vec3d(-21.5, 13.0, -50.5)
 
-    /** Zuschauerpunkt in Abschnitt III: Nische in der Gewölbewand (Westen, erhöht). */
-    val WATCH_VAULT = Vec3d(-29.5, -30.0, 0.5)
+    /** Zuschauerpunkt in Abschnitt III: kleiner Eisvorsprung westlich neben dem Balkon (erhöht). */
+    val WATCH_VAULT = Vec3d(-34.5, 104.0, 94.5)
 
     /**
      * Begrenzung des gesamten Bauvolumens (für Neubau/Aufräumen), relativ. Der Tempel liegt am Nordrand des Plateaus

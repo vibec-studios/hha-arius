@@ -692,7 +692,8 @@ class NivarisBody {
         }
 
         // Herzgewölbe: eng winden, nicht durch Wand oder Decke (Teile dürfen in den Boden tauchen).
-        if (eirholm && mode == NivarisModeC.NORMAL && base.y < o.y - 20.0) {
+        // Himmelsbalkon (seit 1.2.2 hoch an der Nadel): im Rund halten, nicht durch die Nadel.
+        if (eirholm && mode == NivarisModeC.NORMAL && base.y > o.y + 60.0) {
             val vc = o.add(ArenaLayout.VAULT.x + 0.5, ArenaLayout.VAULT.y.toDouble(), ArenaLayout.VAULT.z + 0.5)
             val ceil = o.y + ArenaLayout.VAULT_CEIL
             for (i in 0 until POINTS) {

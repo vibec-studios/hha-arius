@@ -39,7 +39,7 @@ object Atmos {
         Mood(12f, 160f, 0xFFC9D7E7.toInt(), 0xFF9FB8D6.toInt(), 0.88f, 1.1f, 1.05f, 0.5f), // SNOW
         Mood(1f, 30f, 0xFFE6EDF5.toInt(), 0xFFCAD7E6.toInt(), 0.72f, 1.8f, 1.7f, 1.0f), // BLIZZARD
         Mood(34f, 300f, 0xFFCADAEC.toInt(), 0xFF6F9BD6.toInt(), 1.05f, 0.6f, 0.8f, 0.25f), // REVEAL
-        Mood(4f, 80f, 0xFF1C3352.toInt(), 0xFF12223A.toInt(), 0.55f, 0.08f, 0.05f, 0.15f), // VAULT
+        Mood(10f, 150f, 0xFFB7C7DB.toInt(), 0xFF7F9CC2.toInt(), 0.82f, 1.3f, 1.6f, 0.7f), // VAULT = Himmelsbalkon im Sturm
         Mood(8f, 150f, 0xFFF5F9FF.toInt(), 0xFFE8F1FF.toInt(), 1.2f, 0.55f, 0.6f, 0.3f), // WHITE
     )
 

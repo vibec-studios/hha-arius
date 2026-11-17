@@ -26,7 +26,7 @@ import kotlin.math.sin
  */
 internal object FarPlan {
 
-    const val VERSION = 1
+    const val VERSION = 2 // 2: Himmelsbalkon an der Nadel
 
     const val X_MIN = -ArenaLayout.FAR_X
     const val X_MAX = ArenaLayout.FAR_X
@@ -177,6 +177,55 @@ internal object FarPlan {
         return PACKED
     }
 
+    // --- Himmelsbalkon --------------------------------------------------------------------------------------------
+
+    private val VX = ArenaLayout.VAULT.x
+    private val VY = ArenaLayout.VAULT.y
+    private val VZ = ArenaLayout.VAULT.z
+
+    /** Zerklüfteter Rand: Radius je Richtung. */
+    fun balconyEdge(x: Int, z: Int): Double = ArenaLayout.VAULT_R + 1.5 + (vnoise(x, z, 5, 701) - 0.5) * 4.0
+
+    /** Dicke des Schelfs (zur Nadel hin dicker). */
+    private fun balconyThick(x: Int, z: Int): Int {
+        val k = ((z - (VZ - ArenaLayout.VAULT_R)).toDouble() / (2.0 * ArenaLayout.VAULT_R)).coerceIn(0.0, 1.0)
+        return 3 + (k * 6.0 + vnoise(x, z, 4, 703) * 2.0).toInt()
+    }
+
+    /** Block des Balkons an (x, y, z) relativ, oder -1 (nichts). Säulen, Lauffläche, Unterseite, Eiszapfen, Zuschauervorsprung. */
+    fun balcony(x: Int, y: Int, z: Int): Int {
+        // Zuschauervorsprung im Westen (Lauffläche y 104)
+        if (x in -37..-32 && z in 92..97 && y in 101..103) return if (y == 103) SNOW else PACKED
+        val dx = (x - VX).toDouble()
+        val dz = (z - VZ).toDouble()
+        val r = hypot(dx, dz)
+        if (r > ArenaLayout.VAULT_R + 4.0) return -1
+        // Säulen: Kristall, Höhe 6–9, Kern blau
+        for (p in ArenaLayout.VAULT_PILLARS) {
+            val pr = hypot((x - p.x).toDouble(), (z - p.z).toDouble())
+            if (pr <= 1.6 && y >= VY) {
+                val hgt = 6 + (h32(p.x, 0, p.z, 707) * 4).toInt()
+                val taper = if (y - VY > hgt - 3) 1.6 - (y - VY - (hgt - 3)) * 0.45 else 1.6
+                if (y < VY + hgt && pr <= taper) return if (pr < 0.8) BLUE else PACKED
+            }
+        }
+        if (r > balconyEdge(x, z)) return -1
+        val th = balconyThick(x, z)
+        if (y >= VY) return -1
+        if (y == VY - 1) {
+            val vein = vnoise(x, z, 3, 709)
+            return if (r > balconyEdge(x, z) - 1.2) PACKED else if (vein > 0.72) BLUE else SNOW
+        }
+        if (y >= VY - th) return if (h32(x, y, z, 711) > 0.8) BLUE else PACKED
+        // Eiszapfen unter dem Schelf
+        val icicle = h32(x, 0, z, 713)
+        if (icicle < 0.2) {
+            val len = 2 + (h32(x, 1, z, 715) * 8).toInt()
+            if (y >= VY - th - len) return if (y == VY - th - len) BLUE else PACKED
+        }
+        return -1
+    }
+
     fun state(id: Int): BlockState = when (id) {
         BLUE -> Blocks.BLUE_ICE.defaultState
         SNOW -> Blocks.SNOW_BLOCK.defaultState
@@ -279,6 +328,24 @@ class FarBuild(private val world: ServerWorld, private val origin: BlockPos) {
         for (y in bottom..top) {
             val state = FarPlan.state(FarPlan.material(x, y, z, top, slope, spire))
             pos.set(ax, origin.y + y, az)
+            if (chunk.getBlockState(pos) != state) {
+                world.setBlockState(pos, state, ArenaBuilder.FLAGS)
+                sets++
+            }
+        }
+        // Himmelsbalkon (über der Schlucht an der Nadel): Lauffläche, Säulen, Unterseite, Eiszapfen.
+        for (y in ArenaLayout.VAULT.y - 20..ArenaLayout.VAULT.y + 10) {
+            val id = FarPlan.balcony(x, y, z)
+            pos.set(ax, origin.y + y, az)
+            if (id < 0) {
+                // Luft über der Lauffläche freihalten (außer der Nadel selbst).
+                if (y >= ArenaLayout.VAULT.y && y > top && !chunk.getBlockState(pos).isAir) {
+                    world.setBlockState(pos, net.minecraft.block.Blocks.AIR.defaultState, ArenaBuilder.FLAGS)
+                    sets++
+                }
+                continue
+            }
+            val state = FarPlan.state(id)
             if (chunk.getBlockState(pos) != state) {
                 world.setBlockState(pos, state, ArenaBuilder.FLAGS)
                 sets++

@@ -135,6 +135,7 @@ class EirholmFight(
 
     /** Steht die Fernlandschaft (für den Auftritt von Nivaris an der Nadel)? */
     val farReady: Boolean get() = far == null
+    val farProgress: Float get() = far?.progress ?: 1f
     private var noPlayers = 0
 
     val calls: Telegraph.Fight = Telegraph.open(world, "arius", Vfx.Style.HEAVEN) { players() }

@@ -71,7 +71,11 @@ internal object ArenaPlan {
     private const val M32 = 0xFFFFFFFFL
 
     private val TEMPLE_P: List<IntArray> = ArenaLayout.TEMPLE_PILLARS.map { intArrayOf(it.x, it.z) }
-    private val VAULT_P: List<IntArray> = ArenaLayout.VAULT_PILLARS.map { intArrayOf(it.x, it.z) }
+    // Altes Herzgewölbe unter dem Plateau (bleibt als Hohlraum, in den der Einsturz bricht): eigene Säulenlage.
+    private val VAULT_P: List<IntArray> = (0 until 8).map { i ->
+        val a = (i + 0.5) / 8.0 * 2.0 * PI
+        intArrayOf(Math.round(kotlin.math.sin(a) * 17.0).toInt(), Math.round(kotlin.math.cos(a) * 17.0).toInt())
+    }
 
     // --- Hash und Rauschen -------------------------------------------------------------------------------------------
 
