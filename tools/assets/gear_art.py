@@ -874,9 +874,10 @@ SOLVANE_GRIP = (8, GRIP_Y, 8)
 # Ändert sich diese Zeile, müssen ArtPose.GRIP/BLADE_FROM/BLADE_TO (Schwertspur) nachgezogen werden.
 SOLVANE_TP_SCALE = 0.9
 SOLVANE_TP = _held(55, (0, 4, 0.5), 0.85, (8, 1, 8), (0, -90, 10), SOLVANE_TP_SCALE, SOLVANE_GRIP)
-# Ego-Sicht wie Void (Klinge zeigt vom Spieler weg nach vorn, steigt ~30° an, Flachseite zum Spieler gedreht). V6: 1,15
-# -> 1,02, damit das längere Schwert im Bild kaum mehr Raum nimmt als vorher (Klinge wirkt länger, Griff etwas kleiner).
-SOLVANE_FP = _pose(6, 58, 38, (4.2, -3.6, 0.5), 1.02, SOLVANE_GRIP)
+# Ego-Sicht wie ein Vanilla-Schwert (Crix 17.11.: „so halten wie ein normales Netherite-Schwert“): Vanilla-Handheld
+# (z 25°, Verschiebung 1,13/3,2/1,13, Größe 0,68), Griff dort, wo Vanilla den Schwertgriff hält. Größe 0,52: Die Klinge
+# ist so etwa ein Drittel länger als das Netherite-Schwert. Ändert sich das, GauntletFirstPerson.ITEM_* nachziehen.
+SOLVANE_FP = _held(25, (1.13, 3.2, 1.13), 0.68, (8, 2.3, 8), (0, -90, -20), 0.52, SOLVANE_GRIP)
 
 
 def build_solvane_3d():

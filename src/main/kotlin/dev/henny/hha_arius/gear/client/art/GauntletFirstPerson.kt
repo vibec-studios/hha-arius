@@ -475,12 +475,12 @@ internal object GauntletFirstPerson {
      * Das aufrechte Modell (display.firstperson_righthand von solvane_3d.json): Griffmitte, Klinge (schräg nach vorn
      * oben), Flachseite (Modell-z), Klingenansatz/-spitze und Knauf in Blöcken ab der Griffmitte.
      */
-    private val ITEM_GRIP = Vector3f(4.265f / 16f, -4.207f / 16f, 1.475f / 16f)
-    private val ITEM_BLADE = Vector3f(-0.055f, 0.527f, -0.848f).normalize()
-    private val ITEM_FLAT = Vector3f(-0.838f, 0.437f, 0.326f)
-    private const val ITEM_BLADE_FROM = 5.17f / 16f
-    private const val ITEM_BLADE_TO = 26.45f / 16f
-    private const val ITEM_POMMEL = -0.21f
+    private val ITEM_GRIP = Vector3f(1.13f / 16f, -0.443f / 16f, -0.192f / 16f)
+    private val ITEM_BLADE = Vector3f(0f, 0.94f, 0.342f).normalize()
+    private val ITEM_FLAT = Vector3f(-1f, 0f, 0f)
+    private const val ITEM_BLADE_FROM = 1.82f / 16f
+    private const val ITEM_BLADE_TO = 14.82f / 16f
+    private const val ITEM_POMMEL = -0.184f
 
     /** Drehung, die das aufrechte Modell in den Entwurfsrahmen legt (Klinge → Klinge, Flachseite → Flachseite). */
     private val CORRECT: Quaternionf = run {
