@@ -88,6 +88,9 @@ Client-Welt und Spieler sind vorhanden. Geprüft mit Minecraft 1.21.11, Fabric L
 - [ ] Rüstung „Drachenherz-Wacht“: an Spieler, Rüstungsständer, Mannequin, Zombie; Leuchten Tag/Nacht, Verzauberungsglanz, Umhang, Federn beim Laufen/Springen, schmale Arme, mit und ohne Handschuhe
 - [ ] Solvane-Item: länger, Lichtfluss in der Hohlkehle, Sitz in erster und dritter Person
 
+## 1.6.1
+- [ ] Kit holen (`/hha kit hha_arius.eirholm`) bzw. Rüstung anziehen, Handschuhe/Solvane in die Hand nehmen: kein Ruckler, Sounds haken nicht (Modelle, Texturen und Klassen werden beim Betreten der Welt vorgewärmt, Log: „HHA Arius vorgewärmt in … ms“; alle Klangeffekte mit `preload`)
+
 ## 1.6.0
 - [ ] Der Schnitt: riesige Lichtklinge über Arius während der Ansage, blauer Schein hinter ihm, Schlag nach vorn; Naht bis zum Berg, der Berg bricht der Länge nach auf (Kluft, Brocken), Klingengrab bleibt ganz; am Kampfende ist der Berg wieder heil
 - [ ] Auftritt Solvane: Kamera nie im Berg, Windung über der Schulter, Kopf über dem Gipfel (y 220)

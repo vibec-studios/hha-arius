@@ -16,6 +16,7 @@ object HhaAriusClient : ClientModInitializer {
         dev.henny.hha_arius.gear.client.BlueprintClient.init()
         dev.henny.hha_arius.gear.client.art.ArtRender.init()
         dev.henny.hha_arius.client.model.armor.ArmorRender.init()
+        Preload.init()
         EntityRendererRegistry.register(AriusEntities.NIVARIS_HEAD, ::EmptyEntityRenderer)
     }
 }

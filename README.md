@@ -71,6 +71,10 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.6.1
+No more stutter and choppy sounds when you receive the armour kit or first equip or hold the gear. Models, textures and
+classes are warmed up when you join a world, and all sound effects are preloaded.
+
 ### New in 1.6.0
 - **The Cut:** Arius charges a giant blade of light while the sky behind him fills with light, then cleaves the
   mountain in the south lengthwise (no more splitting the sanctum).

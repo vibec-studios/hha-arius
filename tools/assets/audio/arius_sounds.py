@@ -699,7 +699,9 @@ def write_sounds_json():
         sounds[f'music.{name}'] = {'sounds': [{'name': f'hha_arius:music/{name}', 'stream': True}]}
     for sound_id, (_, variants, _) in EFFECTS.items():
         sounds[sound_id] = {'subtitle': f'subtitles.hha_arius.{sound_id}',
-                            'sounds': [f'hha_arius:sfx/{file_name(sound_id, v)}' for v in range(variants)]}
+                            # preload (seit 1.6.1): kurze Effekte beim Laden der Ressourcen einlesen, sonst stockt der
+                            # erste Abruf (Crix: Ruckler und hakende Sounds, wenn man das Kit holt).
+                            'sounds': [{'name': f'hha_arius:sfx/{file_name(sound_id, v)}', 'preload': True} for v in range(variants)]}
     path = os.path.join(ASSETS, 'sounds.json')
     if os.path.exists(path):  # Sprachzeilen (voice.*) gehören einem anderen Generator; erhalten.
         with open(path, encoding='utf8') as f:

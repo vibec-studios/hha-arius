@@ -102,6 +102,9 @@ internal object GauntletParts {
     private val layer: RenderLayer by lazy { RenderLayers.entityCutoutNoCull(TEX) }
     private val glowLayer: RenderLayer by lazy { RenderLayers.eyes(GLOW_TEX) }
 
+    /** Modell vorab bauen (siehe [dev.henny.hha_arius.client.Preload]). */
+    fun warm() = ensure()
+
     private fun ensure() {
         if (root != null) return
         val r = GauntletsModelData.gauntlets().createModel()
