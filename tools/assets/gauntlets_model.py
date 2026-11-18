@@ -498,31 +498,32 @@ def side(right):
     base = Part(f'{s}_base', cubes=[
         # Seit 1.4.2 (Crix: „das 3D-Modell ist kacke“): Stulpe schmaler, keine Hörner mehr über dem Ellbogen; die
         # Schwinge liegt flach an der Außenseite und schwingt nach hinten aus, die Schiene trägt weniger auf.
-        C(-3.5, 2.5, -2.25, 4.5, 1.0, 4.5, flare()),                          # Stulpe: x -3,5..1
+        C(-3.75, 2.5, -2.5, 5.0, 1.0, 5.0, flare()),                          # Stulpe: x -3,75..1,25
         C(-1.75, 2.0, -2.5, 1.0, 0.5, 0.5, crest()),                         # Spitzbogen vorn
-        C(-4.25, 4.0, -1.25, 0.5, 3.0, 1.5, fin()),                          # Schwinge (am Grat)
-        C(-4.25, 3.0, 0.25, 0.5, 3.0, 1.0, fin()),                           # Schwinge, nach hinten gezogen
-        C(-4.25, 2.5, 1.25, 0.5, 2.5, 1.0, fin()),
-        C(-4.25, 2.5, 2.25, 0.5, 1.5, 0.5, fin(tip=True)),                   # Schwingenspitze hinten am Ellbogen
-        C(-2.0, 2.75, 2.25, 1.5, 1.0, 0.5, spike()),                         # Ellbogendorn (Fuß)
-        C(-1.75, 3.0, 2.75, 1.0, 0.5, 0.5, spike()),                         # Ellbogendorn (Spitze)
-        C(-3.5, 3.5, -2.0, 4.5, 3.5, 4.0, brace(), 0.2),                     # Schiene: x -3.7..1.2, y bis 7.2
-        C(-4.3, 4.0, -0.5, 0.5, 2.5, 1.0, ridge()),                          # Grat außen
-        C(-3.5, 7.0, -2.0, 4.5, 1.0, 4.0, band(), 0.2),                      # untere Lamelle, schmaler (Verjüngung)
-        C(-3.25, 7.75, -1.75, 4.0, 0.5, 3.5, wrist_ice(), 0.3),              # Eisband am Handgelenk
+        C(-4.35, 4.0, -1.25, 0.5, 3.0, 1.5, fin()),                          # Schwinge (am Grat)
+        C(-4.35, 3.0, 0.25, 0.5, 3.0, 1.0, fin()),                           # Schwinge, nach hinten gezogen
+        C(-4.35, 2.5, 1.25, 0.5, 2.5, 1.0, fin()),
+        C(-4.35, 2.5, 2.25, 0.5, 1.5, 0.5, fin(tip=True)),                   # Schwingenspitze hinten am Ellbogen
+        C(-2.0, 2.75, 2.5, 1.5, 1.0, 0.5, spike()),                         # Ellbogendorn (Fuß)
+        C(-1.75, 3.0, 3.0, 1.0, 0.5, 0.5, spike()),                         # Ellbogendorn (Spitze)
+        # Abstände zu Arm (±2) und Ärmel (±2,25) und untereinander ≥ 0,1, sonst flimmern Flächen (z-fighting, 1.6.2).
+        C(-3.5, 3.5, -2.0, 4.5, 3.0, 4.0, brace(), 0.4),                     # Schiene: x -3.9..1.4, z ±2.4, y 3.1..6.9
+        C(-4.3, 4.25, -0.5, 0.5, 2.5, 1.0, ridge()),                          # Grat außen
+        C(-3.5, 7.0, -2.0, 4.5, 1.0, 4.0, band(), 0.5),                      # untere Lamelle, schmaler (Verjüngung)
+        C(-3.25, 7.75, -1.75, 4.0, 0.5, 3.5, wrist_ice(), 0.65),              # Eisband am Handgelenk
         C(-3.0, 8.0, -2.0, 4.0, 2.0, 4.0, hand_plate(), 0.15),               # Handplatte: x -3.15..1.15, bis y 10.15
-        C(-3.65, 8.5, -1.75, 0.5, 1.5, 3.5, hand_back()),                    # gewölbter Handrücken
-        C(-4.15, 8.5, -0.75, 0.5, 1.5, 1.5, sun_disc()),                     # Yang-Sonne auf dem Handrücken
+        C(-3.75, 8.75, -1.75, 0.5, 1.5, 3.5, hand_back()),                    # gewölbter Handrücken
+        C(-4.25, 8.75, -0.75, 0.5, 1.5, 1.5, sun_disc()),                     # Yang-Sonne auf dem Handrücken
     ])
     fist = Part(f'{s}_fist', cubes=[
         # Seit 1.4.2 eine richtige Faust (zwei Einheiten hoch statt einer flachen Scheibe).
-        C(-3.0, 10.0, -2.0, 4.0, 2.0, 4.0, fist_block(), 0.2),              # eingerollte Finger, y bis 12.2
-        C(-3.75, 10.0, -2.0, 0.5, 1.5, 4.0, knuckle_guard(), 0.02),         # Knöchelschutz außen
+        C(-3.0, 10.0, -2.0, 4.0, 2.0, 4.0, fist_block(), 0.4),              # eingerollte Finger, y bis 12.2
+        C(-4.0, 10.0, -2.0, 0.5, 1.5, 4.0, knuckle_guard()),         # Knöchelschutz außen
         C(-2.5, 10.5, -2.75, 3.0, 1.0, 0.5, thumb_fist()),                   # Daumen quer vor der Faust
-        C(-4.25, 10.5, -1.75, 0.5, 0.5, 0.5, spike()),                       # Knöcheldornen (vier, außen)
-        C(-4.25, 10.5, -0.75, 0.5, 0.5, 0.5, spike()),
-        C(-4.25, 10.5, 0.25, 0.5, 0.5, 0.5, spike()),
-        C(-4.25, 10.5, 1.25, 0.5, 0.5, 0.5, spike()),
+        C(-4.4, 10.5, -1.75, 0.5, 0.5, 0.5, spike()),                       # Knöcheldornen (vier, außen)
+        C(-4.4, 10.5, -0.75, 0.5, 0.5, 0.5, spike()),
+        C(-4.4, 10.5, 0.25, 0.5, 0.5, 0.5, spike()),
+        C(-4.4, 10.5, 1.25, 0.5, 0.5, 0.5, spike()),
     ])
     open_cubes = []
     for z0, segs, end in FINGERS:
@@ -535,7 +536,7 @@ def side(right):
         # spitze Kappe, schmaler als das Glied
         open_cubes.append(C(-1.75, y, z0 + 0.25, 1.0, end - y, 0.5, claw(), -0.02))
     open_cubes += [
-        C(-2.0, 8.5, -3.0, 1.5, 1.5, 1.0, phalanx(), -0.02),                 # Daumenballen, ragt vorn heraus
+        C(-2.0, 8.5, -3.1, 1.5, 1.5, 1.0, phalanx(), -0.02),                 # Daumenballen, ragt vorn heraus
         C(-1.75, 10.0, -3.5, 1.0, 1.0, 1.0, phalanx(), -0.05),               # Daumen, nach vorn-unten
         C(-1.75, 11.0, -3.75, 1.0, 0.5, 0.5, claw(), -0.02),                 # Daumenkappe
     ]

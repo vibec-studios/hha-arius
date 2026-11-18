@@ -71,6 +71,10 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.6.2
+Fixed flickering, striped textures on the gauntlets in first person. Overlapping plates and the skin sleeve no longer z-fight.
+The leggings cooldown icon now really shows Dragon Tail; it was never written in 1.5.0 and 1.6.0.
+
 ### New in 1.6.1
 No more stutter and choppy sounds when you receive the armour kit or first equip or hold the gear. Models, textures and
 classes are warmed up when you join a world, and all sound effects are preloaded.

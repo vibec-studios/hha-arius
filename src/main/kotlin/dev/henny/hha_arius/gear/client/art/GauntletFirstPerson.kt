@@ -190,8 +190,10 @@ internal object GauntletFirstPerson {
             matrices.translate((if (right) 5f else -5f) / 16f, -2f / 16f, 0f)
             val renderer = MinecraftClient.getInstance().entityRenderDispatcher.getPlayerRenderer(player)
             val skin = player.skin.body().texturePath()
-            if (right) renderer.renderRightArm(matrices, queue, light, skin, player.isModelPartVisible(PlayerModelPart.RIGHT_SLEEVE))
-            else renderer.renderLeftArm(matrices, queue, light, skin, player.isModelPartVisible(PlayerModelPart.LEFT_SLEEVE))
+            // Mit Handschuhen ohne Ärmel-Schicht (seit 1.6.2): Der Ärmel (±2,25) lag fast genau auf den Platten und
+            // flimmerte in der Ego-Sicht durch (Crix' Screenshot). Die Platten decken den Unterarm ohnehin ab.
+            if (right) renderer.renderRightArm(matrices, queue, light, skin, !gloves && player.isModelPartVisible(PlayerModelPart.RIGHT_SLEEVE))
+            else renderer.renderLeftArm(matrices, queue, light, skin, !gloves && player.isModelPartVisible(PlayerModelPart.LEFT_SLEEVE))
             matrices.pop()
         }
         if (gloves) GauntletParts.submit(queue, matrices, right, slim, open, glow, light)

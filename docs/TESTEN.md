@@ -88,6 +88,10 @@ Client-Welt und Spieler sind vorhanden. Geprüft mit Minecraft 1.21.11, Fabric L
 - [ ] Rüstung „Drachenherz-Wacht“: an Spieler, Rüstungsständer, Mannequin, Zombie; Leuchten Tag/Nacht, Verzauberungsglanz, Umhang, Federn beim Laufen/Springen, schmale Arme, mit und ohne Handschuhe
 - [ ] Solvane-Item: länger, Lichtfluss in der Hohlkehle, Sitz in erster und dritter Person
 
+## 1.6.2
+- [ ] Abklingzeit-Icon der Hose (HHA-Leiste) zeigt den Drachenschweif, nicht mehr Schwingen
+- [ ] Handschuhe in der Ego-Sicht (Nahkampf und Magie, beide Arme, auch beim Schlagen und Zaubern): keine flimmernden Streifen/Muster auf den Platten; in der dritten Person ebenso
+
 ## 1.6.1
 - [ ] Kit holen (`/hha kit hha_arius.eirholm`) bzw. Rüstung anziehen, Handschuhe/Solvane in die Hand nehmen: kein Ruckler, Sounds haken nicht (Modelle, Texturen und Klassen werden beim Betreten der Welt vorgewärmt, Log: „HHA Arius vorgewärmt in … ms“; alle Klangeffekte mit `preload`)
 
