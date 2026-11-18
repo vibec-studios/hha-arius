@@ -99,6 +99,16 @@ internal object GauntletParts {
     private lateinit var lFist: ModelPart
     private lateinit var lOpen: ModelPart
 
+    /** Fingerglieder je Seite: [finger][glied], Daumen [2]. */
+    private lateinit var rFingers: Array<Array<ModelPart>>
+    private lateinit var lFingers: Array<Array<ModelPart>>
+    private lateinit var rThumb: Array<ModelPart>
+    private lateinit var lThumb: Array<ModelPart>
+
+    /** Gelenke (Armraum px, rechter Arm): je Finger y der drei Glieder; x −1,25, z = Fingermitte (wie gauntlets_model.py). */
+    private val JOINT_Y = arrayOf(floatArrayOf(10f, 11f, 12f), floatArrayOf(10f, 11f, 12f), floatArrayOf(10f, 11f, 11.5f), floatArrayOf(10f, 10.5f, 11f))
+    private val FINGER_Z = floatArrayOf(-1.5f, -0.5f, 0.5f, 1.5f)
+
     private val layer: RenderLayer by lazy { RenderLayers.entityCutoutNoCull(TEX) }
     private val glowLayer: RenderLayer by lazy { RenderLayers.eyes(GLOW_TEX) }
 
@@ -110,6 +120,10 @@ internal object GauntletParts {
         val r = GauntletsModelData.gauntlets().createModel()
         rBase = r.getChild("r_base"); rFist = r.getChild("r_fist"); rOpen = r.getChild("r_open")
         lBase = r.getChild("l_base"); lFist = r.getChild("l_fist"); lOpen = r.getChild("l_open")
+        rFingers = Array(4) { i -> Array(3) { k -> r.getChild("r_f${i}_$k") } }
+        lFingers = Array(4) { i -> Array(3) { k -> r.getChild("l_f${i}_$k") } }
+        rThumb = Array(2) { k -> r.getChild("r_t$k") }
+        lThumb = Array(2) { k -> r.getChild("l_t$k") }
         root = r
     }
 
@@ -120,6 +134,7 @@ internal object GauntletParts {
     fun submit(
         queue: OrderedRenderCommandQueue, matrices: MatrixStack, right: Boolean, slim: Boolean, open: Boolean,
         glow: Float, light: Int, overlay: Int = OverlayTexture.DEFAULT_UV,
+        anim: ArtAnims.State? = null, td: Float = 0f, time: Float = 0f, canonRight: Boolean = right,
     ) {
         ensure()
         matrices.push()
@@ -131,12 +146,64 @@ internal object GauntletParts {
         val hand = if (right) (if (open) rOpen else rFist) else (if (open) lOpen else lFist)
         queue.submitModelPart(base, matrices, layer, light, overlay, null)
         queue.submitModelPart(hand, matrices, layer, light, overlay, null)
+        val tint = ((MathHelper.clamp(glow, 0f, 1f) * 255f).toInt() shl 24) or 0xFFFFFF
         if (glow > 0.01f) {
-            val tint = ((MathHelper.clamp(glow, 0f, 1f) * 255f).toInt() shl 24) or 0xFFFFFF
             queue.submitModelPart(base, matrices, glowLayer, FULL_BRIGHT, OverlayTexture.DEFAULT_UV, null, tint, null)
             queue.submitModelPart(hand, matrices, glowLayer, FULL_BRIGHT, OverlayTexture.DEFAULT_UV, null, tint, null)
         }
+        if (open) fingers(queue, matrices, right, glow, tint, light, overlay, anim, td, time, canonRight)
         matrices.pop()
+    }
+
+    private val pose = FloatArray(6)
+    private val rot = org.joml.Quaternionf()
+
+    /** Dreht [m] um das Gelenk [jx], [jy], [jz] (px): Krümmung um z, Spreizung um x. */
+    private fun hinge(m: MatrixStack, jx: Float, jy: Float, jz: Float, curl: Float, splay: Float) {
+        m.translate(jx / 16f, jy / 16f, jz / 16f)
+        m.multiply(rot.identity().rotateZ(curl).rotateX(splay))
+        m.translate(-jx / 16f, -jy / 16f, -jz / 16f)
+    }
+
+    /**
+     * Bewegliche Finger (seit 1.6.4): Jedes Glied dreht sich um sein Gelenk. Krümmung zur Handfläche hin (+x am
+     * rechten Arm), Spreizung entlang z. Die Haltung kommt aus [FingerAnim].
+     */
+    private fun fingers(
+        queue: OrderedRenderCommandQueue, m: MatrixStack, right: Boolean, glow: Float, tint: Int, light: Int, overlay: Int,
+        anim: ArtAnims.State?, td: Float, time: Float, canonRight: Boolean,
+    ) {
+        FingerAnim.pose(anim, td, time, canonRight, pose)
+        val sx = if (right) 1f else -1f
+        val parts = if (right) rFingers else lFingers
+        fun draw(p: ModelPart) {
+            queue.submitModelPart(p, m, layer, light, overlay, null)
+            if (glow > 0.01f) queue.submitModelPart(p, m, glowLayer, FULL_BRIGHT, OverlayTexture.DEFAULT_UV, null, tint, null)
+        }
+        for (i in 0 until 4) {
+            val curl = pose[i]
+            val splay = pose[4] * (FINGER_Z[i] / 1.5f)
+            m.push()
+            val jy = JOINT_Y[i]
+            hinge(m, -1.25f * sx, jy[0], FINGER_Z[i], -sx * curl * 0.85f, splay)
+            draw(parts[i][0])
+            hinge(m, -1.25f * sx, jy[1], FINGER_Z[i], -sx * curl * 1.1f, 0f)
+            draw(parts[i][1])
+            hinge(m, -1.25f * sx, jy[2], FINGER_Z[i], -sx * curl * 0.8f, 0f)
+            draw(parts[i][2])
+            m.pop()
+        }
+        // Daumen: klappt über die Handfläche (um die y-Achse am Daumenballen), Glied zwei krümmt mit.
+        val th = pose[5]
+        val thumb = if (right) rThumb else lThumb
+        m.push()
+        m.translate(-1.25f * sx / 16f, 10f / 16f, -3f / 16f)
+        m.multiply(rot.identity().rotateZ(-sx * th * 0.7f).rotateX(th * 0.4f))
+        m.translate(1.25f * sx / 16f, -10f / 16f, 3f / 16f)
+        draw(thumb[0])
+        hinge(m, -1.25f * sx, 11f, -3f, -sx * th * 0.8f, 0f)
+        draw(thumb[1])
+        m.pop()
     }
 
     /** Mitte der Handfläche im Armraum (px), etwas vor der Fläche – dort sitzt die Energie beim Zaubern. */

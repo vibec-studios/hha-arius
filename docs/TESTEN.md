@@ -88,6 +88,9 @@ Client-Welt und Spieler sind vorhanden. Geprüft mit Minecraft 1.21.11, Fabric L
 - [ ] Rüstung „Drachenherz-Wacht“: an Spieler, Rüstungsständer, Mannequin, Zombie; Leuchten Tag/Nacht, Verzauberungsglanz, Umhang, Federn beim Laufen/Springen, schmale Arme, mit und ohne Handschuhe
 - [ ] Solvane-Item: länger, Lichtfluss in der Hohlkehle, Sitz in erster und dritter Person
 
+## 1.6.4
+- [ ] Zaubermodus, Ego- und dritte Person: Finger einzeln beweglich; Ruhe = langsame Fingerwelle, Aufladen = zitternde Klaue, Wirken/Freigabe = Finger schnellen auf, Bauwerk zielen = Zeigefinger zeigt, Schild = flache gespreizte Hand, Moduswechsel = Faust öffnet sich; helle Handfläche mit leuchtender Eisrune, leuchtende Fingerspitzen
+
 ## 1.6.3
 - [ ] Nach dem Schnitt: Totale von hoch oben seitlich auf die Bergflanke mit Kluft und Himmel, nicht „im Berg“
 - [ ] Lichtstrom zum Gipfel / Sturm-Einstellung: Kamera höher, Blick auf den Gipfel statt auf die Flanke

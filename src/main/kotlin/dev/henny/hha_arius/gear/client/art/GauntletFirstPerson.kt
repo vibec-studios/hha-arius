@@ -162,7 +162,7 @@ internal object GauntletFirstPerson {
             val n = if (canonRight) pose.rN else pose.lN
             val hv = Vector3f(h); val sv = Vector3f(s); val nv = Vector3f(n)
             if (leftHanded) { hv.x = -hv.x; sv.x = -sv.x; nv.x = -nv.x }
-            arm(player, matrices, queue, light, right, hv, sv, nv, slim, true, open, glow)
+            arm(player, matrices, queue, light, right, hv, sv, nv, slim, true, open, glow, anim, td, now, canonRight)
             handGlow(matrices, glowB, anim, td, right, slim, canonRight)
         }
         if (anim != null && anim.anim == Anim.WHITE_HOLE) whiteHoleCore(matrices, glowB, anim.age(td), leftHanded)
@@ -174,6 +174,7 @@ internal object GauntletFirstPerson {
     private fun arm(
         player: AbstractClientPlayerEntity, matrices: MatrixStack, queue: OrderedRenderCommandQueue, light: Int,
         right: Boolean, h: Vector3f, s: Vector3f, n: Vector3f, slim: Boolean, gloves: Boolean, open: Boolean, glow: Float,
+        anim: ArtAnims.State? = null, td: Float = 0f, now: Float = 0f, canonRight: Boolean = right,
     ) {
         dir.set(h).sub(s)
         ArtPoseMath.armFrame(dir, n, right, q)
@@ -196,7 +197,7 @@ internal object GauntletFirstPerson {
             else renderer.renderLeftArm(matrices, queue, light, skin, !gloves && player.isModelPartVisible(PlayerModelPart.LEFT_SLEEVE))
             matrices.pop()
         }
-        if (gloves) GauntletParts.submit(queue, matrices, right, slim, open, glow, light)
+        if (gloves) GauntletParts.submit(queue, matrices, right, slim, open, glow, light, anim = anim, td = td, time = now, canonRight = canonRight)
         matrices.pop()
     }
 

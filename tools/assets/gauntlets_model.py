@@ -330,7 +330,14 @@ def hand_plate():
     """Handrücken und Handballen: Perlweiß mit Goldsaum unten, Innenseite (Handfläche) dunkles Leder."""
     def paint(face, x, y, w, h):
         if face == INNER:
-            return under_c(face, x, y, w, h, 0.68)
+            # Seit 1.6.4: Handfläche hell mit leuchtender Eisrune (sie zeigt beim Zaubern zum Betrachter).
+            cx, cy = (w - 1) / 2, (h - 1) / 2
+            r = math.hypot(x - cx, (y - cy) * 1.1)
+            if abs(r - 2.2) < 0.6:
+                return (mix(ramp(PLATE, 0.7), ICE, 0.7), GLOW_ICE)
+            if r < 0.8:
+                return (ICE_HI, GLOW_ICE)
+            return ramp(PLATE, 0.62 + _n(x, y, 31) * 0.04)
         if face == 'top':
             return ramp(PLATE, 0.5)
         if face == 'bottom':
@@ -424,6 +431,25 @@ def phalanx(tip=False):
     return paint
 
 
+def finger(k, tip=False):
+    """Fingerglied (seit 1.6.4): Perlweiß mit Glanz, dunkle Gelenkfuge oben, Handflächenseite hell (nicht Leder),
+    das Endglied mit Goldrand unten und leuchtender Eislinie außen."""
+    def paint(face, x, y, w, h):
+        if face == 'top':
+            return under_c(face, x, y, w, h, 0.5)
+        if face == 'bottom':
+            return gold_c(face, x, y, w, h, 0.6) if tip else ramp(PLATE, 0.5)
+        if y == 0 and h > 1:
+            return mix(ramp(PLATE, 0.55), ramp(UNDER, 0.5), 0.45)
+        c = ramp(PLATE, enamel_t(face, x, y, w, h, 0.7 - 0.04 * k, 40 + k, gloss=face in (OUTER, 'front')))
+        if tip and face == OUTER and y >= h - 1:
+            return (mix(c, ICE, 0.75), GLOW_ICE)
+        if tip and y == h - 1:
+            return gold_c(face, x, y, w, h, 0.6)
+        return c
+    return paint
+
+
 def claw():
     """Spitze Fingerkappe: Gold eingefasst, Perlweiß mit Glanzpunkt."""
     def paint(face, x, y, w, h):
@@ -476,6 +502,14 @@ def wrist_ice():
 # ---------------------------------------------------------------------------------------------------------------------
 # Zusammenbau
 # ---------------------------------------------------------------------------------------------------------------------
+# Seit 1.6.4: z-Start und Gliedlängen der beweglichen Finger (Grund- und Mittelglied; das Endglied ist 0,5 + Kappe 0,5).
+FINGERS2 = (
+    (-2.0, (1.0, 1.0)),     # Zeigefinger (vorn), Spitze bis 13
+    (-1.0, (1.0, 1.0)),     # Mittelfinger
+    (0.0, (1.0, 0.5)),      # Ringfinger
+    (1.0, (0.5, 0.5)),      # kleiner Finger (hinten)
+)
+
 FINGERS = (
     # z-Start, Gliedhöhen (Einheiten), Spitze bis y
     (-2.0, (1.0, 1.0), 12.5),     # Zeigefinger (vorn)
@@ -525,23 +559,29 @@ def side(right):
         C(-4.4, 10.5, 0.25, 0.5, 0.5, 0.5, spike()),
         C(-4.4, 10.5, 1.25, 0.5, 0.5, 0.5, spike()),
     ])
-    open_cubes = []
-    for z0, segs, end in FINGERS:
+    # Seit 1.6.4 (Crix: „Finger im Zaubermodus sehen nicht tuff aus, gib ihnen Animationen“): jedes Fingerglied ist
+    # ein eigener Teil (Drehpunkt 0, Armraum), der Renderer krümmt und spreizt sie um ihre Gelenke ([FINGER_JOINTS]
+    # in GauntletLook.kt). Glieder schmaler als vorher, Fugen dazwischen, Handfläche hell.
+    open_cubes = [
+        C(-2.0, 8.5, -3.1, 1.5, 1.5, 1.0, finger(0), -0.02),                 # Daumenballen
+    ]
+    finger_parts = []
+    for i, (z0, segs) in enumerate(FINGERS2):
         y = 10.0
         for k, hgt in enumerate(segs):
-            shrink = -0.04 - 0.05 * k
-            last = k == len(segs) - 1
-            open_cubes.append(C(-2.0, y, z0, 1.5, hgt, 1.0, phalanx(tip=False if not last else False), shrink))
+            w = 1.5 if k == 0 else 1.0
+            x0 = -2.0 if k == 0 else -1.75
+            finger_parts.append(Part(f'{s}_f{i}_{k}', cubes=[C(x0, y, z0, w, hgt, 1.0, finger(k), -0.06 - 0.04 * k)]))
             y += hgt
-        # spitze Kappe, schmaler als das Glied
-        open_cubes.append(C(-1.75, y, z0 + 0.25, 1.0, end - y, 0.5, claw(), -0.02))
-    open_cubes += [
-        C(-2.0, 8.5, -3.1, 1.5, 1.5, 1.0, phalanx(), -0.02),                 # Daumenballen, ragt vorn heraus
-        C(-1.75, 10.0, -3.5, 1.0, 1.0, 1.0, phalanx(), -0.05),               # Daumen, nach vorn-unten
-        C(-1.75, 11.0, -3.75, 1.0, 0.5, 0.5, claw(), -0.02),                 # Daumenkappe
-    ]
+        finger_parts.append(Part(f'{s}_f{i}_2', cubes=[
+            C(-1.75, y, z0, 1.0, 0.5, 1.0, finger(2, tip=True), -0.14),
+            C(-1.5, y + 0.5, z0 + 0.25, 0.5, 0.5, 0.5, claw(), -0.02),
+        ]))
+    finger_parts.append(Part(f'{s}_t0', cubes=[C(-1.75, 10.0, -3.5, 1.0, 1.0, 1.0, finger(1), -0.05)]))
+    finger_parts.append(Part(f'{s}_t1', cubes=[C(-1.75, 11.0, -3.5, 1.0, 0.5, 1.0, finger(2, tip=True), -0.08),
+                                               C(-1.5, 11.5, -3.25, 0.5, 0.5, 0.5, claw(), -0.02)]))
     open_ = Part(f'{s}_open', cubes=open_cubes)
-    return [base, fist, open_]
+    return [base, fist, open_] + finger_parts
 
 
 def gauntlets():
@@ -569,9 +609,14 @@ _L = (0, 0, 0, 5, 2, 0)
 _PUNCH_R = (-1.57, 0, 0, -5, 2, 0)
 _CAST_R = (-1.4, 0.3, 0, -5, 2, 0)
 _CAST_L = (-1.4, -0.3, 0, 5, 2, 0)
+def _fingers(side, value):
+    names = [f'{side}_f{i}_{k}' for i in range(4) for k in range(3)] + [f'{side}_t0', f'{side}_t1']
+    return {n: value for n in names}
+
+
 POSES = {
-    'melee': {'r_base': _R, 'r_fist': _R, 'r_open': None, 'l_base': _L, 'l_fist': _L, 'l_open': None},
-    'magic': {'r_base': _R, 'r_fist': None, 'r_open': _R, 'l_base': _L, 'l_fist': None, 'l_open': _L},
+    'melee': {'r_base': _R, 'r_fist': _R, 'r_open': None, 'l_base': _L, 'l_fist': _L, 'l_open': None, **_fingers('r', None), **_fingers('l', None)},
+    'magic': {'r_base': _R, 'r_fist': None, 'r_open': _R, 'l_base': _L, 'l_fist': None, 'l_open': _L, **_fingers('r', _R), **_fingers('l', _L)},
     'punch': {'r_base': _PUNCH_R, 'r_fist': _PUNCH_R, 'r_open': None, 'l_base': _L, 'l_fist': _L, 'l_open': None},
     'cast': {'r_base': _CAST_R, 'r_fist': None, 'r_open': _CAST_R, 'l_base': _CAST_L, 'l_fist': None, 'l_open': _CAST_L},
     # Nur der rechte Arm, für Detailansichten (--poses r_melee,r_magic).

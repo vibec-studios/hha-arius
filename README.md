@@ -71,6 +71,16 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.6.4
+Animated gauntlet fingers in spell mode:
+- **Idle:** the fingers ripple slowly.
+- **Charging:** the hand curls into a trembling claw.
+- **Casting:** the fingers flick open.
+- **Aiming a construct:** the index finger points.
+- **Shield:** the hand opens flat.
+
+The palm is now light with a glowing ice rune, and the fingertips glow.
+
 ### New in 1.6.3
 - New camera angles after the Cut and in the shot towards the summit. They no longer look like the camera is inside the mountain.
 - Vines only hang as a narrow strip at real rock steps.

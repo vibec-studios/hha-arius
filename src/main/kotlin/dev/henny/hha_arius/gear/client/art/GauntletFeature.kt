@@ -38,7 +38,7 @@ internal class GauntletFeature(ctx: FeatureRendererContext<PlayerEntityRenderSta
                 matrices.push()
                 model.rootPart.applyTransform(matrices)
                 arm.applyTransform(matrices)
-                GauntletParts.submit(queue, matrices, right, slim, open, glow, light, overlay)
+                GauntletParts.submit(queue, matrices, right, slim, open, glow, light, overlay, anim, td, ArtAnims.ticks + td, right)
                 matrices.pop()
             }
         }
