@@ -26,7 +26,7 @@ import kotlin.math.sin
  */
 internal object FarPlan {
 
-    const val VERSION = 8 // 8: Massiv größer, Kletterweg mit Ranken; 7: 7: endloses Schneefeld, Riesenmassiv mit Spiralweg (neue Dimension); 6: 6: Feld im Hochland statt Balkon, kein Massiv; 5: Bergmassiv mit Terrasse statt schwebendem Balkon; 4: Balkon als Felsschelf mit Strebe, Schneebänder am Horn; 2: Himmelsbalkon an der Nadel; 3: Alpen (Felshorn, Fels/Schnee, offenes Hochland)
+    const val VERSION = 9 // 9: Ranken nur als schmaler Streifen an echten Stufen; 8: 8: Massiv größer, Kletterweg mit Ranken; 7: 7: endloses Schneefeld, Riesenmassiv mit Spiralweg (neue Dimension); 6: 6: Feld im Hochland statt Balkon, kein Massiv; 5: Bergmassiv mit Terrasse statt schwebendem Balkon; 4: Balkon als Felsschelf mit Strebe, Schneebänder am Horn; 2: Himmelsbalkon an der Nadel; 3: Alpen (Felshorn, Fels/Schnee, offenes Hochland)
 
     const val X_MIN = -ArenaLayout.FAR_X
     const val X_MAX = ArenaLayout.FAR_X
@@ -208,6 +208,10 @@ internal object FarPlan {
         if (i < 0) return null
         val frac = pathArc[i] % CLIMB_EVERY
         if (frac < CLIMB_EVERY - 1.6) return null
+        // Seit 1.6.3 nur ein schmaler Rankenstreifen in der Wegmitte (2 Blöcke), nicht über die ganze Breite.
+        val dx = x + 0.5 - (ArenaLayout.SPIRE.x + 0.5)
+        val dz = z + 0.5 - (ArenaLayout.SPIRE.z + 0.5)
+        if (abs(hypot(dx, dz) - pathR[i]) > 1.0) return null
         val a = A0 + i * PHI_STEP
         val fx = kotlin.math.cos(a)
         val fz = -sin(a)
@@ -477,8 +481,12 @@ class FarBuild(private val world: ServerWorld, private val origin: BlockPos) {
                     // Kletterstelle: Ranken an der Felsstufe (bis zur nächsten Weghöhe).
                     val face = FarPlan.climbFace(x, z)
                     if (face != null) {
-                        val vine = Blocks.VINE.defaultState.with(net.minecraft.block.VineBlock.getFacingProperty(face), true)
-                        for (h in 1..FarPlan.CLIMB_H.toInt()) put(top + h, vine)
+                        // Nur dort, wo wirklich eine Felsstufe steht: Ranken bis zur Oberkante der Nachbarsäule.
+                        val wallTop = FarPlan.top(x + face.offsetX, z + face.offsetZ)
+                        if (wallTop >= top + 2) {
+                            val vine = Blocks.VINE.defaultState.with(net.minecraft.block.VineBlock.getFacingProperty(face), true)
+                            for (h in 1..minOf(FarPlan.CLIMB_H.toInt(), wallTop - top)) put(top + h, vine)
+                        }
                     }
                 }
             }

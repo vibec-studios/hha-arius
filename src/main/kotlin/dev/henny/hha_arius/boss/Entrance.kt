@@ -352,9 +352,10 @@ internal object Entrance {
 
         // 2) Sturm: Blick vom Südrand des Plateaus in das Weiß, langsame Fahrt nach vorn (70 Ticks). Der Strom kommt an,
         //    erst dann verdichtet sich der Sturm, und im Weiß legen sich die Windungen um die Nadel.
-        val stormFrom = rel(f, 1.5, 8.0, 18.0)
-        val stormTo = rel(f, 1.0, 11.0, 34.0)
-        scene.line(stormFrom, stormTo, spire(f, 0.0, 60.0, 0.0), spire(f, 0.0, 110.0, 0.0), 70, 70.0, 56.0)
+        // Seit 1.6.3 höher und auf den Gipfel gerichtet (vorher füllte die Bergflanke das ganze Bild, es wirkte wie im Berg).
+        val stormFrom = rel(f, 1.5, 22.0, 18.0)
+        val stormTo = rel(f, 1.0, 30.0, 34.0)
+        scene.line(stormFrom, stormTo, spire(f, 0.0, 150.0, 0.0), spire(f, 0.0, 185.0, 0.0), 70, 70.0, 60.0)
         wait(RELEASE_ARRIVAL - RELEASE_TICKS)
         f.atmos(AtmosMode.BLIZZARD, 36)
         sound(f, "seal.blizzard", stormTo, 2.5f, 0.7f)
@@ -572,7 +573,7 @@ class CineScene(private val f: EirholmFight, private val onAbort: () -> Unit) {
             rz !in dev.henny.hha_arius.arena.FarPlan.Z_MIN..dev.henny.hha_arius.arena.FarPlan.Z_MAX) return 0.0
         val top = f.origin.y + dev.henny.hha_arius.arena.FarPlan.top(rx, rz) + 1.0
         if (top <= f.origin.y + 0.5) return 0.0                     // flaches Feld: die Szenen planen selbst über dem Boden
-        return (top + margin - p.y).coerceAtLeast(0.0)
+        return (top + margin + 2.0 - p.y).coerceAtLeast(0.0)
     }
 
     /** Gerade Kamerafahrt (siehe [Cine.camera]); merkt sich den Verlauf für [home]. */

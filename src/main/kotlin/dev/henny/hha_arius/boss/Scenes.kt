@@ -249,8 +249,10 @@ class Scenes(private val f: EirholmFight) {
             f.fx(FxKind.SEAM, f.abs(ArenaLayout.CUT_FROM).add(0.0, 0.2, 0.0), f.abs(ArenaLayout.CUT_TO).add(0.0, 0.2, 0.0), a = 14f, life = AriusTimings.CUT_SILENCE + 16)
             wait(AriusTimings.CUT_SILENCE)
             // Weite Totale über das Plateau nach Süden: die Naht läuft bis zum Berg, das Massiv bricht der Länge nach auf.
-            val mountain = f.abs(Vec3d(ArenaLayout.CUT_X, 70.0, ArenaLayout.SPIRE.z - 60.0))
-            post.line(rel(-30.0, 26.0, -40.0), rel(-38.0, 34.0, -30.0), mountain, mountain.add(0.0, 25.0, 0.0), AriusTimings.CUT_SLIDE + 20, 58.0, 64.0)
+            // Seit 1.6.3 von hoch oben und seitlich: die ganze Flanke mit der Kluft und Himmel darüber (vorher füllte die
+            // Bergwand das Bild, es wirkte wie im Berg).
+            val mountain = f.abs(Vec3d(ArenaLayout.CUT_X, 110.0, ArenaLayout.SPIRE.z - 70.0))
+            post.line(rel(-95.0, 120.0, 30.0), rel(-105.0, 135.0, 45.0), mountain, mountain.add(0.0, 30.0, 0.0), AriusTimings.CUT_SLIDE + 20, 72.0, 76.0)
             split()
             wait(40)
             shown { f.sceneText("cut_after") }
