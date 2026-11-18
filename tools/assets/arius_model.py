@@ -480,42 +480,55 @@ def head_part():
     nose = by_mode(surf(SKIN, 0.68, 0.2, 2))
     hair_top = hair_paint(3, 0.7)
     hair_side = hair_paint(4, 0.6)
+    # Seit 1.4.2 (Crix: „Kopf sieht rund komisch aus, die Haare passen nicht“): keine Strähnen mehr, die rundum
+    # abstehen (das ergab einen runden Puschel). Stattdessen anliegende Kappe, ein Pony aus spitzen Strähnen, der
+    # über die Stirn fällt, lange Seitensträhnen bis zum Kiefer, die das Gesicht rahmen, und hinten Haar, das in
+    # Spitzen bis in den Nacken fällt. Das Gesicht ist schmaler und länger (Kinn, Wangenlinie).
     hair_back = Part('hair_back', (0, -4.0, 4.2), cubes=[
-        C(-3, -1, -0.8, 6, 3, 2, hair_paint(5, 0.55)),
-        C(-2.6, 1.8, -0.6, 2, 2, 1, hair_paint(6, 0.5, tips=True)),
-        C(0.4, 1.6, -0.6, 2, 2, 1, hair_paint(7, 0.5, tips=True)),
-        C(-0.8, 2.4, -0.4, 1, 2, 1, hair_paint(8, 0.48, tips=True)),
+        C(-3, -1, -0.8, 6, 3, 1, hair_paint(5, 0.55)),
+        C(-3, 2, -0.8, 2, 2, 1, hair_paint(6, 0.5, tips=True)),
+        C(-0.5, 2, -0.8, 1, 3, 1, hair_paint(8, 0.48, tips=True)),
+        C(1, 2, -0.8, 2, 2, 1, hair_paint(7, 0.5, tips=True)),
     ])
-    antenna = Part('antenna', (0.6, -11.2, -0.6), (-12, 0, 14), cubes=[C(-0.5, -3, -0.5, 1, 3, 1, hair_paint(9, 0.75))],
-                   children=[Part('antenna_1', (0, -3, 0), (-60, 0, 0), cubes=[C(-0.5, -2.5, -0.5, 1, 3, 1, hair_paint(10, 0.8))])])
+    antenna = Part('antenna', (0.6, -10.4, -0.8), (-18, 0, 12), cubes=[C(-0.5, -2, -0.5, 1, 2, 1, hair_paint(9, 0.75))],
+                   children=[Part('antenna_1', (0, -2, 0), (-70, 0, 0), cubes=[C(-0.5, -2, -0.5, 1, 2, 1, hair_paint(10, 0.8))])])
+
+    def lock(name, pivot, rot, w, l, seed, d=1):
+        """Strähne, die nach unten (+y) fällt und spitz ausläuft."""
+        return Part(name, pivot, rot, cubes=[
+            C(-w / 2.0, 0, -d / 2.0, w, l, d, hair_paint(seed, 0.66)),
+            C(-max(1, w - 1) / 2.0, l, -d / 2.0, max(1, w - 1), 2, d, hair_paint(seed + 1, 0.72, tips=True)),
+        ])
     tufts = [
-        tuft('tuft_0', (-3.4, -8.4, -1.6), (-6, 0, -138), 2, 3, 2, 11),       # Schläfen-Strähnen, nach außen unten
-        tuft('tuft_1', (3.4, -8.4, -1.6), (-6, 0, 138), 2, 3, 2, 12),
-        tuft('tuft_2', (-2.8, -9.4, 2.0), (62, 0, -48), 2, 3, 2, 13),         # Hinterkopf, nach hinten außen
-        tuft('tuft_3', (2.8, -9.4, 2.2), (66, 0, 46), 2, 3, 2, 14),
-        tuft('tuft_4', (0.0, -10.2, 3.0), (78, 0, 0), 3, 3, 2, 15),            # Wirbel hinten
-        tuft('tuft_5', (-3.6, -5.4, 1.9), (14, 0, -166), 2, 2, 2, 16),         # über den Ohren, nach unten
-        tuft('tuft_6', (3.6, -5.4, 1.9), (14, 0, 166), 2, 2, 2, 17),
-        tuft('tuft_7', (-1.6, -10.4, -3.0), (-62, 0, -14), 2, 2, 2, 18),      # Pony hebt sich vorn
-        tuft('tuft_8', (1.8, -10.4, -2.8), (-56, 0, 20), 2, 2, 2, 19),
-        tuft('tuft_9', (-2.4, -4.4, 3.8), (152, 0, -22), 2, 2, 2, 20),        # Nackenspitzen
-        tuft('tuft_10', (2.4, -4.4, 3.8), (150, 0, 24), 2, 2, 2, 21),
+        # Pony: vier Strähnen fallen schräg über die Stirn
+        lock('tuft_0', (-2.4, -9.4, -4.3), (8, 0, 14), 2, 2, 11),
+        lock('tuft_1', (-0.6, -9.6, -4.4), (10, 0, -6), 2, 3, 12),
+        lock('tuft_2', (1.4, -9.4, -4.3), (8, 0, -16), 2, 2, 13),
+        lock('tuft_3', (2.9, -9.0, -4.0), (4, 0, -8), 1, 3, 14),
+        # Lange Seitensträhnen vor den Ohren bis zum Kiefer
+        lock('tuft_5', (-3.6, -8.0, -2.6), (0, 0, 6), 1, 5, 16, d=2),
+        lock('tuft_6', (3.6, -8.0, -2.6), (0, 0, -6), 1, 5, 17, d=2),
+        # Hinterkopf: Spitzen fallen nach hinten unten
+        lock('tuft_9', (-2.2, -5.0, 3.9), (-24, 0, 10), 2, 3, 20),
+        lock('tuft_10', (2.2, -5.0, 3.9), (-24, 0, -10), 2, 3, 21),
+        # Wirbel: eine Strähne leicht nach hinten gekämmt
+        Part('tuft_4', (0.0, -10.4, 2.4), (70, 0, 0), cubes=[
+            C(-1.5, -2, -1, 3, 2, 2, hair_paint(15, 0.64)),
+            C(-1, -3.5, -0.5, 2, 2, 1, hair_paint(16, 0.7, tips=True)),
+        ]),
     ]
     return Part('head', (0, -12, 0), cubes=[
         C(-3, -9, -3.5, 6, 6, 7, face_upper),                 # Schädel, vorn das Gesicht
         C(-2.5, -3, -3.3, 5, 1, 6, face_lower),               # Oberkiefer mit Mund
-        C(-1.5, -2, -3.2, 3, 1, 5, face_lower),               # Kinn
+        C(-1.5, -2, -3.4, 3, 1, 4, face_lower),               # Kinn (schmaler, etwas vor)
         C(-0.5, -4.6, -3.9, 1, 1, 1, nose),                   # Nase
         C(-3.5, -6, -0.5, 1, 2, 1, skin), C(2.5, -6, -0.5, 1, 2, 1, skin),     # Ohren
-        C(-3.5, -10, -4, 7, 2, 8, hair_top),                  # Haarkappe
-        C(-2.5, -10.7, -3, 5, 1, 6, hair_top),                # Fülle auf dem Scheitel
-        C(-3.5, -9, 3.2, 7, 6, 2, hair_side),                 # Hinterkopf
-        C(-3, -3.4, 3.0, 6, 2, 2, hair_side),                 # Nacken
-        C(-4, -9, -3, 1, 5, 7, hair_side), C(3, -9, -3, 1, 5, 7, hair_side),   # Schläfen
-        C(-3.2, -9, -4.3, 2, 3, 1, hair_paint(22, 0.66, tips=True)),           # Pony rechts (über der Braue)
-        C(-0.6, -9, -4.4, 1, 4, 1, hair_paint(23, 0.7, tips=True)),            # Strähne zwischen den Augen
-        C(1.2, -9, -4.3, 2, 2, 1, hair_paint(24, 0.66, tips=True)),            # Pony links
-        C(2.4, -8.5, -4.2, 1, 3, 1, hair_paint(25, 0.6, tips=True)),
+        C(-3.5, -10, -3.8, 7, 1, 8, hair_top),                # anliegende Kappe
+        C(-3, -10.5, -3, 6, 1, 6, hair_top),                  # Scheitel
+        C(-3.5, -9, 3.3, 7, 6, 1, hair_side),                 # Hinterkopf, glatt
+        C(-3, -3.2, 3.2, 6, 1, 1, hair_side),                 # Nackenansatz
+        C(-3.5, -9, -3.6, 1, 3, 6, hair_side), C(2.5, -9, -3.6, 1, 3, 6, hair_side),   # Schläfen, anliegend
+        C(-3.1, -9, -4.0, 6, 1, 1, hair_paint(22, 0.66)),    # Haaransatz über der Stirn
     ], children=[hair_back, antenna] + tufts)
 
 
@@ -1210,7 +1223,7 @@ def P(**k):
 K('idle', STAND, feet=STAND_FEET, **LOW_R)
 K('idle_empty', dict(STAND, arm_r=(0.06, 0.0, 0.12), fore_r=(-0.28, 0.0, 0.0), hand_r=(0.0, 0.2, 0.0)),
   feet=STAND_FEET, sheathed=True)
-SEAT = P(hips=(-0.05, 0.0, 0.0, 0.0, 12.0, 0.0), torso=(0.12, 0.0, 0.0), chest=(0.14, 0.05, 0.0), head=(0.28, -0.05, 0.0),
+SEAT = P(hips=(-0.05, 0.0, 0.0, 0.0, 12.0, 0.0), torso=(0.08, 0.0, 0.0), chest=(0.06, 0.05, 0.0), head=(0.06, -0.05, 0.0),
          thigh_r=(-1.45, 0.0, 0.08), thigh_l=(-1.5, 0.0, -0.06), shin_r=(1.4, 0.0, 0.0), shin_l=(1.5, 0.0, 0.0),
          arm_r=(-0.6, 0.0, 0.2), fore_r=(-0.8, 0.0, 0.0), arm_l=(-0.6, 0.0, -0.2), fore_l=(-0.8, 0.0, 0.0))
 K('seated', SEAT, ground_=False, feet={'r': (-4.6, -14.0), 'l': (4.2, -13.0)},
@@ -1755,7 +1768,7 @@ class _LazyPoses(dict):
 POSES = _LazyPoses()
 
 # Für die Größenprüfung in preview.py: Zubehör über dem Scheitel zählt nicht zur Körperhöhe.
-HEIGHT_EXCLUDE = ('antenna', 'scabbard', 'solvane', 'tuft_4', 'tuft_2', 'tuft_3', 'coat_collar')
+HEIGHT_EXCLUDE = ('antenna', 'scabbard', 'solvane', 'tuft_4', 'coat_collar')
 
 
 # =====================================================================================================================

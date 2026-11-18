@@ -51,11 +51,12 @@ internal object ArenaPlan {
     const val LAMP: Byte = 18
     const val GLASS: Byte = 19
     const val SQUARTZ: Byte = 20
+    const val STONE: Byte = 21
 
     val NAMES = arrayOf("air", "packed_ice", "blue_ice", "snow_block", "snow1", "snow2", "deepslate_tiles",
         "polished_deepslate", "chiseled_deepslate", "deepslate_bricks", "cobbled_deepslate", "deepslate", "tuff", "calcite",
         "quartz_bricks", "quartz_pillar", "chiseled_quartz_block", "gold_block", "sea_lantern", "light_blue_stained_glass",
-        "smooth_quartz")
+        "smooth_quartz", "stone")
 
     const val X_MIN = -ArenaLayout.BOUND_XZ
     const val X_MAX = ArenaLayout.BOUND_XZ
@@ -71,12 +72,6 @@ internal object ArenaPlan {
     private const val M32 = 0xFFFFFFFFL
 
     private val TEMPLE_P: List<IntArray> = ArenaLayout.TEMPLE_PILLARS.map { intArrayOf(it.x, it.z) }
-    // Altes Herzgewölbe unter dem Plateau (bleibt als Hohlraum, in den der Einsturz bricht): eigene Säulenlage.
-    private val VAULT_P: List<IntArray> = (0 until 8).map { i ->
-        val a = (i + 0.5) / 8.0 * 2.0 * PI
-        intArrayOf(Math.round(kotlin.math.sin(a) * 17.0).toInt(), Math.round(kotlin.math.cos(a) * 17.0).toInt())
-    }
-
     // --- Hash und Rauschen -------------------------------------------------------------------------------------------
 
     fun h32(x: Int, y: Int, z: Int, s: Int): Double {
@@ -133,27 +128,6 @@ internal object ArenaPlan {
 
     fun isGround(x: Int, z: Int): Boolean = sqrt((x * x + z * z).toDouble()) < PLATEAU_R + 0.5 || ellipse(x, z) <= 1.0
 
-    /** (s, sPlateau, sVorplatz): ungefährer Abstand außerhalb der Lauffläche. */
-    private fun outsideDist(x: Int, z: Int): DoubleArray {
-        val sp = sqrt((x * x + z * z).toDouble()) - (PLATEAU_R + 0.5)
-        val e = ellipse(x, z)
-        val gx = x / (34.0 * 34.0)
-        val gz = (z - TZ) / (22.0 * 22.0)
-        val g = sqrt(gx * gx + gz * gz) / max(e, 1e-6)
-        val se = (e - 1.0) / max(g, 1e-6)
-        return doubleArrayOf(min(sp, se), sp, se)
-    }
-
-    /** Höchste Luftschicht des Gewölbes über Radius r. */
-    fun vaultTop(r: Double): Double = -17.0 - 9.0 * (r / (VAULT_R + 0.5)) * (r / (VAULT_R + 0.5))
-
-    fun inVaultAir(x: Int, y: Int, z: Int): Boolean {
-        val r = sqrt((x * x + z * z).toDouble())
-        if (r < VAULT_R + 0.5 && y >= VY && y <= vaultTop(r)) return true
-        if (x in -31..-29 && z in -2..2 && y in -30..-27) return !(x == -29 && y == -30)
-        return false
-    }
-
     /** Index der Säule, deren 3 × 3-Fläche (x, z) enthält, sonst −1; Versatz in [off]. */
     private fun pillarAt(x: Int, z: Int, pillars: List<IntArray>, off: IntArray): Int {
         for (i in pillars.indices) {
@@ -164,53 +138,6 @@ internal object ArenaPlan {
             }
         }
         return -1
-    }
-
-    private fun wallHeight(x: Int, z: Int): Int {
-        val d = outsideDist(x, z)
-        val s = d[0]; val sp = d[1]; val se = d[2]
-        if (z < -78 || s <= 0.0) return Int.MIN_VALUE
-        val thick = 8.0 + 1.5 * vnoise(x, z, 5, 21)
-        if (s > thick) return Int.MIN_VALUE
-        val a = deg(x.toDouble(), z.toDouble())
-        val base: Double = if (se < sp) {
-            val t = smooth((TZ - z) / 14.0)
-            RIM_H + (28.0 - RIM_H) * t
-        } else {
-            val aa = abs(a)
-            when {
-                aa <= 42.0 -> SOUTH_WALL_H.toDouble()
-                aa <= 50.0 -> SOUTH_WALL_H + (RIM_H - SOUTH_WALL_H) * smooth((aa - 42.0) / 8.0)
-                else -> RIM_H.toDouble()
-            }
-        }
-        val jag = (vnoise(x, z, 4, 22) - 0.5) * 5.0 + (vnoise(x, z, 11, 23) - 0.5) * 4.0
-        var h = base + jag
-        h = h * (0.25 + 0.75 * smooth(s / 2.5))
-        val out = thick - s
-        if (out < 2.0) h = h - (2.0 - out) * 2.5
-        var top = floor(h).toInt()
-        if (top < 2) top = 2
-        if (top > Y_MAX - 1) top = Y_MAX - 1
-        return top
-    }
-
-    private fun iceBody(x: Int, y: Int, z: Int): Byte {
-        val band = Math.floorMod(y + floor(vnoise(x, z, 9, 31) * 5.0).toInt(), 6)
-        if (band == 0 && vnoise(x, z, 7, 32) > 0.45) return BLUE
-        return PACKED
-    }
-
-    private fun glacierBlock(x: Int, y: Int, z: Int, top: Int, cliff: Boolean): Byte {
-        if (y == top - 1) return SNOWB
-        if (cliff && y < 4 + floor(vnoise(x, z, 6, 41) * 6.0).toInt()) {
-            val k = h32(x, y, z, 42)
-            return if (k < 0.45) DEEP else if (k < 0.8) CDS else TUFF
-        }
-        val band = Math.floorMod(y + floor(vnoise(x, z, 8, 43) * 4.0).toInt(), 7)
-        if (band <= 1) return BLUE
-        if (band == 4 && h32(x, y, z, 44) < 0.25) return SNOWB
-        return PACKED
     }
 
     private val FLOOR_LAMPS: List<IntArray> = intArrayOf(1, 2, 3, 4, 6, 7, 8, 9).map { k ->
@@ -249,81 +176,40 @@ internal object ArenaPlan {
         return false
     }
 
-    /** Füllt [col] (Länge [NY], Index y − [Y_MIN]) mit den Block-Ids der Spalte (x, z). */
+    /**
+     * Füllt [col] (Länge [NY], Index y − [Y_MIN]) mit den Block-Ids der Spalte (x, z). Seit 1.4.2 steht alles auf dem
+     * endlosen Schneefeld des Weltgenerators (Stein bis y −6, Schnee bis −1): Der Plan füllt den Untergrund genauso, damit
+     * das Leeren beim Neubau keine Löcher reißt. Keine Gletscherwände und kein Gewölbe mehr.
+     */
     fun column(x: Int, z: Int, col: ByteArray) {
         java.util.Arrays.fill(col, AIR)
+        for (y in Y_MIN until -5) col[y - Y_MIN] = STONE
+        for (y in -5 until -1) col[y - Y_MIN] = SNOWB
         val r = sqrt((x * x + z * z).toDouble())
         val dz = z - TZ
         val dt = sqrt((x * x + dz * dz).toDouble())
         val at = deg(x.toDouble(), dz.toDouble())
         val ground = isGround(x, z)
 
-        // 1) Boden / Eisplatte bzw. Gletscherwand
-        if (ground) {
-            for (y in ICE_BOTTOM until -1) col[y - Y_MIN] = iceBody(x, y, z)
-            val surf: Byte = when {
-                dt < TEMPLE_R + 0.5 -> templeFloor(x, z, dt, at)
-                dt < 20.5 -> PDEEP
-                dt < 21.5 -> DTILES
-                dt < 22.5 -> PDEEP
-                gatePath(x, z) -> DTILES
-                else -> plateauSurface(x, z, r)
-            }
-            col[-1 - Y_MIN] = surf
-            if (dt >= 25.0 && !gatePath(x, z) && (surf == SNOWB || surf == PACKED)) {
-                val n = vnoise(x, z, 5, 6)
-                if (n > 0.74) col[-Y_MIN] = SNOW2 else if (n > 0.6) col[-Y_MIN] = SNOW1
-            }
-        } else {
-            val d = outsideDist(x, z)
-            if (d[2] < d[1]) {
-                // Hinter und neben dem Tempel bleibt die Gletscherklippe.
-                val top = wallHeight(x, z)
-                if (top != Int.MIN_VALUE) {
-                    val cliff = z < -56
-                    for (y in ICE_BOTTOM until top) col[y - Y_MIN] = glacierBlock(x, y, z, top, cliff)
-                }
-            } else if (z <= 54) {
-                // Seit 1.3.1 offen (Crix: Arena ab dem Drachen „unendlich groß“): weites Schneehochland auf Plateauhöhe,
-                // das draußen in die Fernlandschaft übergeht.
-                for (y in ICE_BOTTOM until -1) col[y - Y_MIN] = iceBody(x, y, z)
-                col[-1 - Y_MIN] = plateauSurface(x, z, r)
-                val n = vnoise(x, z, 5, 6)
-                if (n > 0.72) col[-Y_MIN] = SNOW2 else if (n > 0.58) col[-Y_MIN] = SNOW1
-            }
+        // 1) Lauffläche: Klingengrab, Ringwege, Torweg, sonst Schnee mit Eisadern
+        val surf: Byte = when {
+            dt < TEMPLE_R + 0.5 -> templeFloor(x, z, dt, at)
+            dt < 20.5 -> PDEEP
+            dt < 21.5 -> DTILES
+            dt < 22.5 -> PDEEP
+            gatePath(x, z) -> DTILES
+            else -> plateauSurface(x, z, r)
+        }
+        col[-1 - Y_MIN] = surf
+        if (dt >= 25.0 && !gatePath(x, z) && (surf == SNOWB || surf == PACKED)) {
+            val n = vnoise(x, z, 5, 6)
+            if (n > 0.74) col[-Y_MIN] = SNOW2 else if (n > 0.6) col[-Y_MIN] = SNOW1
         }
 
-        // 2) Herzgewölbe
-        if (r < 32.5) {
-            for (y in Y_MIN until ICE_BOTTOM) {
-                if (inVaultAir(x, y, z)) continue
-                col[y - Y_MIN] = vaultBlock(x, y, z, r)
-            }
-            val off = IntArray(2)
-            val p = pillarAt(x, z, VAULT_P, off)
-            if (p >= 0) {
-                val ox = off[0]; val oz = off[1]
-                val ytop = floor(vaultTop(r)).toInt()
-                for (y in VY..ytop) {
-                    val b: Byte = when {
-                        y <= VY + 1 -> if (y == VY) CDEEP else PDEEP
-                        y == ytop -> if ((ox == 0) != (oz == 0)) LAMP else BLUE
-                        ox != 0 && oz != 0 -> PACKED
-                        else -> BLUE
-                    }
-                    col[y - Y_MIN] = b
-                }
-            }
-            if (r <= 12.5 && p < 0) {
-                val n = vnoise(x, z, 4, 61)
-                if (n > 0.4) col[VY - Y_MIN] = if (n > 0.7) SNOW2 else SNOW1
-            }
-        }
+        // 2) Klingengrab (Abschnitt I): offene Terrasse mit Steinklingen statt Tempel
+        if (dt < 24.5 || (x in -26..-24 && z in -51..-49)) temple(x, z, dt, at, col)
 
-        // 3) Tempel
-        if (dt < 24.5 || (x in -24..-21 && z in -54..-48)) temple(x, z, dt, at, col)
-
-        // 4) Plateau-Gestaltung (seit 1.2.2): Eis-Obelisken am Rand, Ruinenbögen, Dornenkristalle (Deckung und Bild)
+        // 3) Plateau-Gestaltung: Eis-Obelisken am Rand, Ruinenbögen, Dornenkristalle (Deckung und Bild)
         if (ground && dt >= 25.0 && r in 24.0..40.0 && !gatePath(x, z)) dressing(x, z, r, col)
     }
 
@@ -373,55 +259,43 @@ internal object ArenaPlan {
         }
     }
 
-    private fun vaultBlock(x: Int, y: Int, z: Int, r: Double): Byte {
-        val a = deg(x.toDouble(), z.toDouble())
-        if (y == VY - 1 && r < VAULT_R + 0.5) return vaultFloor(x, z, r, a)
-        if (y < VY - 1) return if (h32(x, y, z, 51) < 0.6) DEEP else CDS
-        if (r >= VAULT_R + 0.5) {
-            if (y == -32 && r < VAULT_R + 1.5 && nearStep(a, 22.5, 11.25) * DEG * r < 0.55 && !(abs(z) <= 4 && x < 0)) {
-                return LAMP
+    /**
+     * Eine Steinklinge, mit der Spitze im Boden: [u] entlang der Schneide (Breite 2 · [half] + 1), [v] quer (Dicke 1),
+     * Klinge bis [blade] hoch, darüber Parierstange, Griff und Knauf. Kanten weiß (Kalzit), Hohlkehle Eis.
+     */
+    private fun sword(u: Int, v: Int, half: Int, blade: Int, glow: Boolean, put: (Int, Byte) -> Unit) {
+        val au = abs(u)
+        val av = abs(v)
+        if (av == 0 && au <= half) {
+            for (y in 0 until blade) {
+                val tipIn = y < 2 && au == half  // leichte Verjüngung am Boden
+                if (tipIn) continue
+                put(y, when {
+                    au == half -> CALCITE
+                    au == 0 -> if (glow) BLUE else PACKED
+                    else -> SQUARTZ
+                })
             }
-            if (y <= VY + 1) return PDEEP
-            val band = Math.floorMod(y + floor(vnoise(x, z, 6, 52) * 3.0).toInt(), 5)
-            return if (band == 0) PACKED else BLUE
         }
-        val shell = y - vaultTop(r)
-        if (shell < 1.5) {
-            if (r < 26.0 && abs(r - 22.0) < 0.75 && nearStep(a, 30.0, 0.0) * DEG * r < 0.55) return LAMP
-            if (nearStep(a, 45.0, 22.5) * DEG * max(r, 1.0) < 0.7 && r > 4.0) return BLUE
+        val guard = half * 2 + 2
+        if (av == 0 && au <= guard) put(blade, if (au == guard) GOLD else PDEEP)
+        if (av == 1 && au <= 1) put(blade, CDEEP)
+        if (av == 0 && au == 0) {
+            if (glow) put(blade, LAMP)
+            val grip = maxOf(2, half + 1)
+            for (y in blade + 1..blade + grip) put(y, DBRICK)
+            put(blade + grip + 1, GOLD)
         }
-        if (x == -31 && z == 0 && y == -26) return LAMP
-        return if (shell < 3.0) iceBody(x, y, z) else PACKED
     }
 
-    private val GLYPHS = intArrayOf(0b010111010, 0b101010101, 0b111101111, 0b100111001, 0b011010110, 0b110010011,
-        0b010101010, 0b111010111, 0b001111100, 0b101111101, 0b010110011, 0b110101011)
-
-    private fun vaultFloor(x: Int, z: Int, r: Double, a: Double): Byte {
-        if (x == 0 && z == 0) return GOLD
-        if (r < 2.5) return PDEEP
-        if (r < 3.5) return CQUARTZ
-        if (r >= 7.0 && r < 8.0) return CALCITE
-        if (r >= 12.0 && r < 13.0) return CALCITE
-        if (r >= 8.0 && r < 12.0) {
-            val k = Math.floorMod(floor((a + 180.0) / 30.0).toInt(), 12)
-            val center = -180.0 + (k + 0.5) * 30.0
-            val u = floor(r - 10.0 + 0.5).toInt()
-            val v = floor(wrapDeg(a - center) * DEG * r / 1.1 + 0.5).toInt()
-            if (u in -1..1 && v in -1..1) {
-                val bit = (u + 1) * 3 + (v + 1)
-                if ((GLYPHS[k] shr (8 - bit)) and 1 == 1) return CQUARTZ
-            }
-            return DTILES
-        }
-        if (r >= 13.0 && r < 18.5 && nearStep(a, 45.0, 22.5) * DEG * r < 0.55) return CDEEP
-        if (r >= VAULT_R - 1.5) return PDEEP
-        return DTILES
-    }
-
+    /**
+     * Das Klingengrab (seit 1.4.2 statt des Kuppeltempels; Crix: „für die erste Phase denk dir was anderes aus“): eine
+     * offene, runde Terrasse unter freiem Himmel, umstellt von zehn Steinklingen der gefallenen Weißen Klingen, die mit
+     * der Spitze im Boden stecken. Hinter Arius' Thron ragt die große Klinge des Ordens auf (24 hoch); zwei Klingen
+     * flankieren den Torweg im Süden. Der Schnitt teilt Terrasse und große Klinge.
+     */
     private fun temple(x: Int, z: Int, dt: Double, at: Double, col: ByteArray) {
-        fun put(y: Int, b: Byte) { col[y - Y_MIN] = b }
-        val dz = z - TZ
+        fun put(y: Int, b: Byte) { if (y - Y_MIN in col.indices) col[y - Y_MIN] = b }
         val inside = dt < TEMPLE_R + 0.5
         // Altarstufen
         if (inside && z <= -62) {
@@ -443,112 +317,44 @@ internal object ArenaPlan {
             }
             if ((x == -1 || x == 1) && z == -65) put(2, PDEEP)
         }
-        // Säulen
+        // Die zehn Klingen des Rings (an den alten Säulenplätzen), Schneide quer zum Radius
         if (inside) {
-            val off = IntArray(2)
-            if (pillarAt(x, z, TEMPLE_P, off) >= 0) {
-                val ox = off[0]; val oz = off[1]
-                for (y in 0 until PILLAR_H) {
-                    val b: Byte = when {
-                        y == 0 -> PDEEP
-                        y == PILLAR_H - 1 -> CQUARTZ
-                        ox != 0 && oz != 0 -> BLUE
-                        else -> PACKED
-                    }
-                    put(y, b)
-                }
+            for (p in TEMPLE_P) {
+                val rx = p[0]
+                val rz = p[1] - TZ
+                val alongX = abs(rz) >= abs(rx)
+                val u = if (alongX) x - p[0] else z - p[1]
+                val v = if (alongX) z - p[1] else x - p[0]
+                if (abs(u) > 4 || abs(v) > 1) continue
+                val blade = 8 + (h32(p[0], 0, p[1], 31) * 3).toInt()
+                sword(u, v, 1, blade, false, ::put)
             }
         }
-        // Mauer
-        if (dt >= TEMPLE_R + 0.5 && dt < 20.5) {
-            val inner = dt < 19.5
-            for (y in 0 until TEMPLE_WALL_H) {
-                var b: Byte
-                if (y == 0 || y == TEMPLE_WALL_H - 1) b = PDEEP
-                else if (y == TEMPLE_WALL_H - 2) b = CDEEP
-                else if (inner) {
-                    b = QBRICK
-                    if (y == 7 && nearStep(at, 36.0, 18.0) * DEG * dt < 0.5) b = LAMP
-                } else {
-                    b = DBRICK
-                    if (nearStep(at, 36.0, 18.0) * DEG * dt < 0.8) b = QPILLAR
-                }
-                if (y in 3..8 && nearStep(at, 36.0, 0.0) * DEG * dt < 0.6) {
-                    val k = floor(at / 36.0 + 0.5).toInt()
-                    val km = k % 10
-                    if (km != 0 && km != 5 && km != -5) b = GLASS
-                }
-                put(y, b)
-            }
-            if (dz < 0 && abs(x) <= 3 && inner) {
-                for (y in 2 until 11) {
-                    if (abs(x) <= 2 && y <= 9) put(y, BLUE)
-                    else if (abs(x) == 3 || y == 10) put(y, if (x == 0 && y == 10) GOLD else CQUARTZ)
-                }
-            }
-            if (dt >= 19.5 && !(abs(x) <= 5 && dz > 0)) {
-                if (Math.floorMod(floor((at + 180.0) * DEG * 20.0 / 2.0).toInt(), 2) == 0) put(TEMPLE_WALL_H, PDEEP)
-            }
-        }
-        // Decke des Umgangs mit Lichtschächten, Westöffnung zur Galerie
-        if (dt >= 10.5 && dt < TEMPLE_R + 0.5) {
-            val shaft = dt >= 14.5 && dt < 17.5 && nearStep(at, 36.0, 0.0) * DEG * dt < 1.6
-            val west = x < 0 && abs(z + 51) <= 3 && dt >= 13.5
-            if (!shaft && !west) {
-                put(TEMPLE_WALL_H - 1, DTILES)
-                if (dt >= 12.0 && dt < 18.5 && vnoise(x, z, 4, 71) > 0.62) put(TEMPLE_WALL_H, SNOW1)
-            }
-        }
-        // Tambour
-        if (dt >= 10.5 && dt < 11.5) {
-            for (y in TEMPLE_WALL_H until 15) {
-                put(y, if (y == 13 && nearStep(at, 36.0, 18.0) * DEG * dt < 0.6) GLASS else QBRICK)
-            }
-        }
-        // Kuppel
-        if (dt >= 1.5 && dt < 11.5) {
-            val yo = 14.0 + 11.0 * sqrt(max(0.0, 1.0 - (dt / 11.5) * (dt / 11.5)))
-            val yi = if (dt < 10.5) 14.0 + 10.0 * sqrt(max(0.0, 1.0 - (dt / 10.5) * (dt / 10.5))) else 14.0
-            val lo = max(15, kround(yi))
-            val hi = min(TEMPLE_TOP, kround(yo))
-            val rib = nearStep(at, 36.0, 18.0) * DEG * dt < 0.8
-            for (y in lo..hi) {
-                put(y, when {
-                    dt < 2.5 -> GOLD
-                    rib -> PDEEP
-                    y < 21 -> CALCITE
-                    else -> SQUARTZ
-                })
-            }
-        }
-        // Südtor mit Portal
-        if (z in -31..-28 && abs(x) <= 5) {
-            val ax = abs(x)
-            if (ax >= 4) {
-                for (y in 0 until 11) put(y, if (ax == 4) QPILLAR else PDEEP)
-                if (ax == 5 && z == -28) put(7, LAMP)
-            }
-            for (y in 9..10) if (ax <= 3) put(y, if (x == 0 && y == 9 && z == -28) GOLD else CDEEP)
-            put(11, PDEEP)
-            if (ax <= 3) put(12, CQUARTZ)
-            if (ax <= 1) put(13, PDEEP)
+        // Die große Klinge hinter dem Thron (Schneide in x-Richtung)
+        if (z in -71..-69 && abs(x) <= 7) sword(x, z + 70, 2, 18, true, ::put)
+        // Torklingen links und rechts des Torwegs
+        if (z in -32..-30) {
+            for (cx in intArrayOf(-5, 5)) if (abs(x - cx) <= 4) sword(x - cx, z + 31, 1, 7, false, ::put)
         }
         if (abs(x) <= GATE_HALF_WIDTH && z in -33..-28) {
             for (y in 0 until GATE_HEIGHT) put(y, AIR)
         }
-        // Galerie an der Westseite
-        if (x in -24..-21 && z in -54..-48) {
-            put(TEMPLE_WALL_H, PDEEP)
-            if (x == -24 || z == -54 || z == -48) put(TEMPLE_WALL_H + 1, CDEEP)
-            if (x >= -22) put(TEMPLE_WALL_H - 1, DBRICK)
-            if (x == -23 && (z == -53 || z == -49)) for (y in 0 until TEMPLE_WALL_H) put(y, DBRICK)
+        // Zuschauerfels im Westen (Lauffläche y 4)
+        if (x in -26..-24 && z in -51..-49) {
+            for (y in 0 until 4) put(y, if (y == 3) SNOWB else if (h32(x, y, z, 33) < 0.5) STONE else PDEEP)
         }
-        if (x < 0 && abs(z + 51) <= 2 && dt >= 10.5 && dt < 11.5) put(13, AIR)
     }
 
     // --- Ereignisse --------------------------------------------------------------------------------------------------
 
+    /** Seit 1.4.2 gibt es keinen Südwall mehr, also auch keine Kluft. */
+    @Suppress("UNUSED_PARAMETER")
     fun inCleft(x: Int, y: Int, z: Int): Boolean {
+        return false
+    }
+
+    @Suppress("unused")
+    private fun oldCleft(x: Int, y: Int, z: Int): Boolean {
         if (y < 0 || z <= 0) return false
         val r = sqrt((x * x + z * z).toDouble())
         if (r < PLATEAU_R + 0.5) return false

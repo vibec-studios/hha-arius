@@ -4,7 +4,6 @@ import dev.henny.hha.client.vfx.withAlpha
 import dev.henny.hha_arius.boss.Qte
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.option.KeyBinding
@@ -40,10 +39,9 @@ object QteClient {
             text = p.text
             result = 0
             resultAge = 0
-            wasDown = key()?.isPressed == true
+            wasDown = key()?.let { down(it) } == true
         }
         ClientTickEvents.END_CLIENT_TICK.register { tick(it) }
-        HudRenderCallback.EVENT.register { ctx, tc -> render(ctx, tc.getTickProgress(true)) }
     }
 
     private fun key(): KeyBinding? {
@@ -63,7 +61,7 @@ object QteClient {
         }
         if (id < 0) return
         val k = key() ?: return
-        val down = k.isPressed
+        val down = down(k)
         if (down && !wasDown) {
             presses++
             client.player?.playSound(SoundEvents.BLOCK_NOTE_BLOCK_HAT.value(), 0.6f, 1.2f + 0.08f * presses)
@@ -91,7 +89,22 @@ object QteClient {
         }
     }
 
-    private fun render(ctx: DrawContext, td: Float) {
+    /** Taste gedrückt? Über den Tastenzustand und zusätzlich roh über GLFW (Szenen sperren die normale Eingabe). */
+    private fun down(k: KeyBinding): Boolean {
+        if (k.isPressed) return true
+        val c = MinecraftClient.getInstance()
+        val key = net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper.getBoundKeyOf(k)
+        if (c.currentScreen != null) return false
+        return when (key.category) {
+            net.minecraft.client.util.InputUtil.Type.MOUSE -> org.lwjgl.glfw.GLFW.glfwGetMouseButton(c.window.handle, key.code) == org.lwjgl.glfw.GLFW.GLFW_PRESS
+            net.minecraft.client.util.InputUtil.Type.KEYSYM -> key.code >= 0 && net.minecraft.client.util.InputUtil.isKeyPressed(c.window, key.code)
+            else -> false
+        }
+    }
+
+    /** Wird aus [dev.henny.hha_arius.mixin.client.QteHudMixin] gerufen – auch während HHA-Szenen. */
+    @JvmStatic
+    fun render(ctx: DrawContext, td: Float) {
         if (id < 0 && result == 0) return
         // Zeitlupen-Schleier: dunkle, kalte Ränder, solange ein Prompt offen ist (wie die Zeitlupe in Action-Szenen).
         if (result == 0) {

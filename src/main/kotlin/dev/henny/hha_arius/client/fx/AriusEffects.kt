@@ -76,6 +76,8 @@ abstract class AriusFx(val life: Int) {
                 FxKind.FIELD -> FieldFx(pos, p.a.toDouble(), p.life)
                 FxKind.BRIDGE -> BridgeFx(pos, Vec3d(p.dx, p.dy, p.dz), p.a.toDouble(), p.life)
                 FxKind.TORNADO -> TornadoFx(pos, Vec3d(p.dx, p.dy, p.dz), p.a.toDouble(), p.life)
+                FxKind.DRAGON_BREATH -> e1?.let { DragonBreathFx(it, p.a.toDouble(), p.life) }
+                FxKind.DRAGON_TAIL -> e1?.let { DragonTailFx(it, p.b.toDouble(), p.a.toDouble(), p.life) }
                 FxKind.CUT_PLANE -> CutPlaneFx(pos, dir, p.a.toDouble(), p.b >= 0.5f, p.life)
                 FxKind.PULL -> e1?.let { PullFx(it, p.a.toDouble(), p.life) }
                 FxKind.GALE -> GaleFx(pos, dir, p.a, p.life)
@@ -402,54 +404,44 @@ object ScreenFlash {
  * Yang-Brücke als Bauwerk aus Licht (seit 1.3.1): unter der Bahn ein leuchtender Bogen (Parabel) mit Rippen, an beiden
  * Seiten Geländer aus Lichtbändern, an den Enden Lichtsäulen, über die Bahn wandern Lichtfunken.
  */
+/**
+ * Entstehen der Yang-Brücke (seit 1.4.2 eine steinerne Bogenbrücke aus echten Bauwerk-Blöcken): eine Lichtfront läuft
+ * über die ganze Breite vom Spieler weg mit, wie die Blöcke wachsen; Funken steigen von der Front auf. Nach ~2 s vorbei.
+ */
 class BridgeFx(private val start: Vec3d, private val span: Vec3d, private val width: Double, life: Int) : AriusFx(life) {
-    override fun tick(world: ClientWorld) {}
+    override fun tick(world: ClientWorld) {
+        if (age > SHOW) return
+        val len = span.length().coerceAtLeast(1.0)
+        val f = (age / (len / 2.0 + 4.0)).coerceIn(0.0, 1.0)
+        val p = start.add(span.multiply(f))
+        val r = random()
+        repeat((4 * particlesAllowed()).toInt()) {
+            world.addParticleClient(ParticleTypes.END_ROD, p.x + (r.nextDouble() - 0.5) * width, p.y + 0.2, p.z + (r.nextDouble() - 0.5) * width, 0.0, 0.05, 0.0)
+        }
+    }
 
     override fun render(d: VfxDraw, matrices: MatrixStack, t: Float) {
-        val k = fadeInOut(t, 10f, 20f)
+        if (t > SHOW) return
+        val k = (min(1f, t / 3f) * ((SHOW - t) / 10f).coerceIn(0f, 1f))
         val len = span.length().coerceAtLeast(1.0)
         val fwd = span.multiply(1.0 / len)
         var side = fwd.crossProduct(UP)
         if (side.lengthSquared() < 1e-4) side = X
         side = side.normalize()
-        val grow = (t / 12f).coerceIn(0f, 1f)
-        val n = (len * 2).toInt().coerceAtLeast(4)
-        val gold = 0xFFEFF4FF.toInt() // Yang = Weiß (seit 1.4.1)
-        // Bogen unter der Bahn
-        var prev: Vec3d? = null
-        for (i in 0..n) {
-            val f = i / n.toDouble()
-            if (f > grow) break
-            val dip = 1.0 + 2.6 * kotlin.math.sin(f * PI)
-            val p = start.add(fwd.multiply(f * len)).add(0.0, -dip, 0.0)
-            prev?.let { d.band(VfxLayers.GLOW_ADD, it, p, side, 0.18, withAlpha(gold, 0.75f * k), withAlpha(gold, 0.75f * k)) }
-            // Rippen vom Bogen zur Bahn
-            if (i % 3 == 0) d.band(VfxLayers.GLOW_ADD, p, start.add(fwd.multiply(f * len)).add(0.0, -0.5, 0.0), side, 0.06, withAlpha(0xFFFFFFFF.toInt(), 0.45f * k), withAlpha(gold, 0.1f * k))
-            prev = p
-        }
-        // Geländer aus Licht
-        for (sg in doubleArrayOf(1.0, -1.0)) {
-            val off = side.multiply(sg * (width * 0.5 + 0.1)).add(0.0, 1.0, 0.0)
-            val a = start.add(off)
-            val b = start.add(fwd.multiply(len * grow)).add(off)
-            d.band(VfxLayers.GLOW_ADD, a, b, UP, 0.07, withAlpha(0xFFFFFFFF.toInt(), 0.8f * k), withAlpha(0xFFFFFFFF.toInt(), 0.8f * k))
-        }
-        // Lichtsäulen an den Enden
-        for (e in arrayOf(start, start.add(span))) {
-            d.band(VfxLayers.GLOW_ADD, e.add(0.0, -0.5, 0.0), e.add(0.0, 2.5, 0.0), d.camRight, 0.25, withAlpha(gold, 0.6f * k), withAlpha(gold, 0f))
-        }
-        // Wandernde Funken
-        for (j in 0 until 6) {
-            val f = ((t * 0.02 + j / 6.0) % 1.0).coerceAtMost(grow.toDouble())
-            d.billboard(VfxLayers.FLARE_ADD, start.add(fwd.multiply(f * len)).add(0.0, 0.6, 0.0), 0.25, withAlpha(0xFFFFFFFF.toInt(), 0.6f * k))
-        }
+        // Die Blöcke wachsen mit 2 Blöcken je Tick (Reihenfolge = Abstand / 2); die Front läuft mit.
+        val f = (t / (len / 2.0 + 0.5)).coerceIn(0.0, 1.0)
+        val front = start.add(fwd.multiply(f * len)).add(0.0, -0.3, 0.0)
+        val half = width * 0.5 + 0.3
+        d.band(VfxLayers.GLOW_ADD, front.add(side.multiply(-half)), front.add(side.multiply(half)), UP, 0.9, withAlpha(0xFFFFFFFF.toInt(), 0.75f * k), withAlpha(0xFFFFFFFF.toInt(), 0.75f * k))
+        d.billboard(VfxLayers.FLARE_ADD, front, width * 0.7, withAlpha(0xFFFFFFFF.toInt(), 0.6f * k))
+        d.band(VfxLayers.FLOW_ADD, start.add(0.0, 0.55, 0.0), front.add(0.0, 0.85, 0.0), side, half, withAlpha(0xFFEFF4FF.toInt(), 0.05f * k), withAlpha(0xFFFFFFFF.toInt(), 0.35f * k), uScale = 0.3f, uOffset = -t * 0.1f)
+    }
+
+    private companion object {
+        const val SHOW = 40f
     }
 }
 
-/**
- * Wirbelsturm (seit 1.3.1): wandert mit (dx,dy,dz) je Tick über den Boden; ein Trichter aus übereinander gelegten,
- * gegeneinander drehenden Windringen (unten eng, oben weit), Staub und Schnee am Fuß, Funken im Sog.
- */
 class TornadoFx(private val origin: Vec3d, private val vel: Vec3d, private val radius: Double, life: Int) : AriusFx(life) {
     private fun at(t: Float): Vec3d = origin.add(vel.multiply(t.toDouble()))
 

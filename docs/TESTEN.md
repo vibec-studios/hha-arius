@@ -1,4 +1,4 @@
-# Was im Spiel geprüft werden muss (Stand 1.4.0)
+# Was im Spiel geprüft werden muss (Stand 1.5.0)
 
 Gebaut und statisch geprüft (6 Review-Runden, Berichte in `docs/review/`). Seit 1.0.1 besteht zusätzlich ein echter
 Client-Starttest (`./gradlew runClientGameTest`): Haupt- und Client-Entrypoints laden, eine Einzelspielerwelt startet,
@@ -25,7 +25,7 @@ Client-Welt und Spieler sind vorhanden. Geprüft mit Minecraft 1.21.11, Fabric L
 - [ ] Kopftreffer am Boden (unsichtbare Kopf-Trefferbox)
 
 ## Gletschersturz und Abschnitt III
-- [ ] Einsturz, Aufstieg im Lichtstrom auf den Himmelsbalkon (seit 1.3.0), Verwandlung (Splitter, weiße Form, Druckwelle), Resonanzfaden
+- [ ] Übergang zum Feld im Lichtstrom (seit 1.5.0 ohne Einsturz), Verwandlung (Splitter, weiße Form, Druckwelle), Resonanzfaden
 - [ ] Takt: Taktgeber-Anzeige, Begleitangriffe, Taktbruch
 - [ ] Resonanzangriffe (Korridor, Kristallsturm, Eisfeld spalten) mit goldenen Wegen
 - [ ] Weißes Loch: Kern, Korridore, Druckfronten, Lücke + Durchbruch, Doppelfenster
@@ -88,6 +88,23 @@ Client-Welt und Spieler sind vorhanden. Geprüft mit Minecraft 1.21.11, Fabric L
 - [ ] Rüstung „Drachenherz-Wacht“: an Spieler, Rüstungsständer, Mannequin, Zombie; Leuchten Tag/Nacht, Verzauberungsglanz, Umhang, Federn beim Laufen/Springen, schmale Arme, mit und ohne Handschuhe
 - [ ] Solvane-Item: länger, Lichtfluss in der Hohlkehle, Sitz in erster und dritter Person
 
+## 1.5.0
+- [ ] Neue Dimension `hha_arius:highland`: endloses Schneefeld (auch weit draußen), nirgends ansteigende Ränder; alte Welten bauen alles neu
+- [ ] Riesenmassiv im Süden mit Spiralweg (Start im Norden am Fuß, Steigung 1 : 5, Schneeschichten, Laternen alle 22 Blöcke) bis zur Schulter (y 128); das Felshorn ragt darüber
+- [ ] Phase I im **Klingengrab**: offene Terrasse, zehn Steinklingen, große Klinge hinter dem Thron, Torklingen; Arius steht auf und kämpft; der Schnitt teilt Terrasse und große Klinge
+- [ ] Übergang II → III ohne Loch: Solvane kreist, streicht tief über die Spieler, Lichtstrom trägt alle aufs Feld, Verwandlung
+- [ ] QTE im Finale: Prompt sichtbar trotz Szene, Springen / Angriff hämmern / Benutzen werden erkannt; längere Zeitfenster
+- [ ] Drache: kein Körperteil durchdringt ein anderes, keine 90°-Knicke, Kopf dreht weich, Schräglage begrenzt
+- [ ] Arius: Kopf schmaler, Haar anliegend mit Pony und Seitensträhnen (kein runder Puschel), Sitzhaltung in Phase II blickt zum Kampf
+- [ ] Drachenatem: Geisterkopf erscheint vor dir (Ego-Sicht höher und blasser), Maul öffnet, rollende Frostschwaden folgen dem Blick verzögert, Schaden im Kegel
+- [ ] Drachenschweif (Beine, Ability 2): Geisterschwanz peitscht in 0,6 s einmal um dich, trifft jedes Ziel einmal, schleudert weg, vereist
+- [ ] Weißes Loch: harte weiße Kugel, Photonenring, gebänderte Scheibe, Spiralarme, Jets, Lichtfesseln, Kuppel beim Kollaps
+- [ ] Yang-Kugel: atmet, Lichtbänder, Begleitkugeln mit Spuren, schwimmender weißer Fisch
+- [ ] Yang-Brücke: Bogenbrücke aus leuchtendem Yang-Licht; beim Zielen Mausrad = Länge (4–50), Schleichen + Mausrad = Breite (3–9); Pfeiler bis zum Boden; Kosten wachsen mit der Größe; verschwindet nach 8 s
+- [ ] Icons Solvane und Handschuhe neu; Handschuhmodell schlanker (keine Hörner), richtige Faust
+- [ ] Frostspeicher (Rezept: Glas, Amethyst, Herzfrost): füllt sich durch Kills (auch Mobfarm, ohne Rüstung) und Überschuss; Balken im Inventar; Rechtsklick füllt Resonanz; fehlende Resonanz wird automatisch gedeckt
+- [ ] Litematica: `.litematic` in `.minecraft/schematics`; `/ariusc schematic list`, `build <name>` (Umriss vor dir, Kosten), `confirm` baut echte Blöcke aus dem Speicher, von unten nach oben, nur in Luft; verbotene Blöcke übersprungen; nicht in der Arena; Erstattung für Nicht-Gesetztes
+
 ## 1.4.1
 - [ ] Abschnitt III und Finale auf dem offenen Feld im Hochland östlich des Plateaus (kein Himmelsbalkon mehr): flacher Grund, Säulen am Rand, Zuschauerhügel im Süden, Felshorn im Hintergrund; Gletschersturz/Lichtstrom landet dort
 - [ ] Fernlandschaft baut sich einmal neu (Version 6); Feld eben
@@ -95,7 +112,7 @@ Client-Welt und Spieler sind vorhanden. Geprüft mit Minecraft 1.21.11, Fabric L
 
 ## 1.4.0
 - [ ] Landschaft: Felshorn statt Eisnadel (Grate, Fels, Schneebänder, Eisrinnen), Fels/Schnee statt Eis; Auftritt: Solvane windet sich weiter frei ums Horn
-- [ ] Arena ab dem Drachenkampf offen: keine Gletscherwände mehr ums Plateau (außer hinter dem Tempel), weites Hochland, Kampfbereich Radius 100; Himmelsbalkon größer (R 40) aus Fels
+- [ ] Arena ab dem Drachenkampf offen: keine Gletscherwände mehr ums Plateau (außer hinter dem Tempel), weites Hochland, Kampfbereich Radius 100
 - [ ] Schneesturm mit Shaderpack (Iris): Bildschirm-Schnee erscheint automatisch; `/ariusc snow screen|both|world|auto`
 - [ ] Finale-QTE als Szene: Ausweichen (Springen) → Klingenbindung (Angriff hämmern) → Konter (Benutzen); Zeitlupen-Schleier, schließender Kreis; Erfolg entwaffnet Arius
 - [ ] Weißes Loch: herausgerissene Blöcke kreisen und fliegen beim Kollaps davon, Eiskristalle, Lichtarme, Jets, Fesseln, Runenkreis
@@ -107,8 +124,7 @@ Client-Welt und Spieler sind vorhanden. Geprüft mit Minecraft 1.21.11, Fabric L
 
 ## 1.3.0
 - [ ] Schneesturm: Flockenstreifen mit Bewegungsunschärfe, Böen mit kurzem Whiteout, Bodentreiben, Frostrand; im Tempel unter dem Dach kaum Schnee; `/ariusc fx` skaliert
-- [ ] Gletschersturz: Plateau bricht, Kamera fährt an der Nadel hinauf, alle landen auf dem Himmelsbalkon (hoch über der Schlucht); Training III/IV wartet, bis die Fernlandschaft fertig ist
-- [ ] Himmelsbalkon: Kristallsäulen, Rand zerklüftet, Absturz setzt zurück, Zuschauervorsprung im Westen; Solvanes Körper bleibt im Rund und geht nicht durch die Nadel
+- [ ] Training III/IV wartet, bis die Fernlandschaft fertig ist
 - [ ] Plateau: Obelisken, Ruinenbögen, Dornenkristalle; Blick zur Nadel frei; Landungen und Drachenplätze frei
 - [ ] Arius: Klingenflug (Schwert wirbelt allein auf angesagten Bahnen, er tritt dabei), Frostdornen (Dornenreihe, weiße Form mit Dornenkranz), neue Hiebspuren
 - [ ] Finale: letzter Austausch als Klingenbindung mit QTE (9× Angriff in 3 s), Erfolg gewinnt, Fehlschlag wirft zurück

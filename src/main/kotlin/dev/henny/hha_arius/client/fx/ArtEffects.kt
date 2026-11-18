@@ -115,27 +115,62 @@ class ArtBolt(val boltId: Int, private val start: Vec3d, private val vel: Vec3d,
                 d.band(VfxLayers.GLOW_ADD, p.subtract(fwd.multiply(2.4)), p, d.camUp, 0.09, withAlpha(ArtColors.ICE, 0f), withAlpha(0xFFFFFFFF.toInt(), 0.6f * k))
             }
             else -> {
-                // Yang-Kugel (seit 1.4.1, nach den Wahrheitssucherkugeln, aber Yang = Weiß): massive, glatte weiße Kugel,
-                // von oben beleuchtet mit Glanzlicht, drei kleine weiße Kugeln umkreisen sie, dahinter ein geschwungener
-                // weißer Schweif wie die Yang-Hälfte des Yin-Yang-Fischs, weicher weißer Hof.
-                val r = radius * 0.62
-                d.sphere(VfxLayers.SHARD_ALPHA, p, r, { up -> withAlpha(lerpColor(0xFFC9D2E0.toInt(), 0xFFFFFFFF.toInt(), (0.55f + 0.45f * up).coerceIn(0f, 1f)), k) })
-                d.billboard(VfxLayers.FLARE_ADD, p.add(d.camUp.multiply(r * 0.45)).add(d.camRight.multiply(-r * 0.35)), r * 0.7, withAlpha(0xFFFFFFFF.toInt(), 0.9f * k))
-                d.billboard(VfxLayers.GLOW_ADD, p, r * 3.2, withAlpha(0xFFFFFFFF.toInt(), 0.35f * k))
+                // Yang-Kugel (seit 1.4.2 lebendig; Crix: „sieht noch tot aus“): gleißend weiße Kugel, die atmet, über ihre
+                // Oberfläche fließen Lichtbänder, ein heller Rand umrahmt sie; drei kleine Kugeln umkreisen sie mit
+                // Leuchtspuren, dahinter schwimmt ein weißer Fisch (Yang-Hälfte des Yin-Yang aus Black Myth: Wukong) mit
+                // schlagendem Schwanz und Flossen; Funken lösen sich.
+                val pulse = 1.0 + 0.07 * sin(t * 0.55)
+                val r = radius * 0.62 * pulse
+                val spin = t * 0.12
+                d.sphere(VfxLayers.SHARD_ALPHA, p, r, { up -> withAlpha(lerpColor(0xFFD3DAE6.toInt(), 0xFFFFFFFF.toInt(), (0.6f + 0.4f * up).coerceIn(0f, 1f)), k) })
+                d.sphere(VfxLayers.FLOW_ADD, p, r * 1.03, { up -> withAlpha(0xFFFFFFFF.toInt(), (0.25f + 0.2f * up) * k) }, lat = 10, lon = 18, uOffset = t * 0.06f)
+                // Glanzlicht wandert langsam um die Kugel
+                d.billboard(VfxLayers.FLARE_ADD, p.add(d.camUp.multiply(r * (0.35 + 0.1 * sin(spin)))).add(d.camRight.multiply(-r * (0.3 + 0.1 * cos(spin)))), r * 0.75, withAlpha(0xFFFFFFFF.toInt(), 0.95f * k))
+                // Heller Rand und atmender Hof
+                d.ring(VfxLayers.GLOW_ADD, p, d.camRight, d.camUp, r * 0.92, r * 1.45, withAlpha(0xFFFFFFFF.toInt(), 0.7f * k), withAlpha(0xFFFFF4D6.toInt(), 0f), segments = 40)
+                d.billboard(VfxLayers.GLOW_ADD, p, r * (3.0 + 0.4 * sin(t * 0.55)), withAlpha(0xFFFFFFFF.toInt(), 0.38f * k))
+                d.billboard(VfxLayers.RAYS_ADD, p, r * 4.2, withAlpha(0xFFFFF8E8.toInt(), 0.22f * k), t * 1.5)
                 val side = fwd.crossProduct(Vec3d(0.0, 1.0, 0.0)).let { if (it.lengthSquared() < 1e-4) d.camRight else it.normalize() }
                 val upv = side.crossProduct(fwd).normalize()
+                // Drei Begleitkugeln auf geneigten Bahnen, jede mit Leuchtspur
                 for (m in 0 until 3) {
-                    val ang = t * 0.35 + m * 2.094
-                    val q = p.add(side.multiply(cos(ang) * r * 2.1)).add(upv.multiply(sin(ang) * r * 2.1))
-                    d.sphere(VfxLayers.SHARD_ALPHA, q, r * 0.28, { up -> withAlpha(lerpColor(0xFFCFD7E4.toInt(), 0xFFFFFFFF.toInt(), (0.55f + 0.45f * up).coerceIn(0f, 1f)), k) }, lat = 6, lon = 10)
+                    val tilt = m * 1.05
+                    val ax = side.multiply(cos(tilt)).add(fwd.multiply(sin(tilt) * 0.6)).normalize()
+                    val ay = upv
+                    fun orbit(tt: Double): Vec3d = p.add(ax.multiply(cos(tt) * r * 2.2)).add(ay.multiply(sin(tt) * r * 2.2))
+                    val ang = t * 0.42 + m * 2.094
+                    val q = orbit(ang)
+                    d.sphere(VfxLayers.SHARD_ALPHA, q, r * 0.27, { up -> withAlpha(lerpColor(0xFFD8DFEA.toInt(), 0xFFFFFFFF.toInt(), (0.6f + 0.4f * up).coerceIn(0f, 1f)), k) }, lat = 6, lon = 10)
+                    d.billboard(VfxLayers.GLOW_ADD, q, r * 0.9, withAlpha(0xFFFFFFFF.toInt(), 0.35f * k))
+                    val trail = (0..10).map { j -> orbit(ang - j * 0.12) }
+                    d.ribbon(VfxLayers.GLOW_ADD, trail, { f -> r * 0.22 * (1.0 - f) }, { f -> withAlpha(0xFFFFFFFF.toInt(), (1f - f) * 0.55f * k) }, uScale = 1f, uOffset = 0f)
                 }
-                // Fischschweif: S-förmig geschwungen, wird nach hinten schmaler
-                var prev = p
-                for (i in 1..10) {
-                    val f = i / 10.0
-                    val q = p.subtract(fwd.multiply(f * 3.0)).add(side.multiply(sin(f * PI * 1.5 + t * 0.2) * r * 1.2 * f))
-                    d.band(VfxLayers.GLOW_ADD, prev, q, upv, r * (1.0 - f * 0.85), withAlpha(0xFFFFFFFF.toInt(), 0.8f * k * (1f - f.toFloat())), withAlpha(0xFFFFFFFF.toInt(), 0.8f * k * (1f - f.toFloat())))
-                    prev = q
+                // Der weiße Fisch: Körper schlängelt sich (Welle läuft nach hinten), Schwanzflosse am Ende, zwei Brustflossen
+                val body = ArrayList<Vec3d>(16)
+                for (i in 0..14) {
+                    val f = i / 14.0
+                    val wave = sin(f * PI * 2.0 - t * 0.7) * r * 0.9 * f
+                    body += p.subtract(fwd.multiply(r * 0.6 + f * r * 5.0)).add(side.multiply(wave))
+                }
+                d.ribbon(VfxLayers.GLOW_ADD, body, { f -> r * (0.9 * (1.0 - f) + 0.08) }, { f -> withAlpha(0xFFFFFFFF.toInt(), (0.85f - f * 0.5f) * k) }, uScale = 1f, uOffset = 0f)
+                d.ribbon(VfxLayers.FLOW_ADD, body, { f -> r * (1.3 * (1.0 - f) + 0.1) }, { f -> withAlpha(0xFFEFF4FF.toInt(), (0.4f - f * 0.3f) * k) }, uScale = 0.5f, uOffset = -t * 0.08f)
+                val tail = body.last()
+                val tailDir = tail.subtract(body[body.size - 2]).normalize()
+                val flap = sin(t * 0.7) * 0.6
+                for (sg in intArrayOf(-1, 1)) {
+                    val fin = tail.add(tailDir.multiply(r * 1.1)).add(side.multiply((sg * 0.9 + flap) * r)).add(upv.multiply(sg * 0.3 * r))
+                    d.band(VfxLayers.GLOW_ADD, tail, fin, upv, r * 0.35, withAlpha(0xFFFFFFFF.toInt(), 0.75f * k), withAlpha(0xFFFFFFFF.toInt(), 0.1f * k))
+                }
+                val chest = body[3]
+                for (sg in intArrayOf(-1, 1)) {
+                    val fin = chest.add(side.multiply(sg * r * (1.2 + 0.2 * sin(t * 0.9 + sg)))).subtract(fwd.multiply(r * 0.6))
+                    d.band(VfxLayers.GLOW_ADD, chest, fin, upv, r * 0.18, withAlpha(0xFFFFFFFF.toInt(), 0.6f * k), withAlpha(0xFFFFFFFF.toInt(), 0.05f * k))
+                }
+                // Funken lösen sich und treiben zurück
+                for (j in 0 until 6) {
+                    val f = ((t * 0.08 + j / 6.0) % 1.0)
+                    val q = p.subtract(fwd.multiply(f * r * 4.0)).add(side.multiply(sin(j * 2.1 + t * 0.3) * r * 1.4 * f)).add(upv.multiply(cos(j * 1.7) * r * 1.2 * f))
+                    d.billboard(VfxLayers.FLARE_ADD, q, r * 0.35 * (1.0 - f), withAlpha(0xFFFFFFFF.toInt(), (1.0 - f).toFloat() * 0.8f * k))
                 }
             }
         }

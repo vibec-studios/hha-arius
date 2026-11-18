@@ -17,7 +17,9 @@
     "gear.client.GauntletHeldItemRendererMixin",
     "client.AtmosEnvironmentMixin",
     "client.CameraKickMixin",
-    "client.AriusRendererHitStopMixin"
+    "client.AriusRendererHitStopMixin",
+    "client.QteHudMixin",
+    "client.BridgeScrollMixin"
   ],
   "injectors": {
     "defaultRequire": 1

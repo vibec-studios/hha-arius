@@ -8,6 +8,8 @@
   "item.hha_arius.solvane.lore5": "Loslassen schneidet eine Ebene (Schleichen = waagerecht), spaltet Blöcke bis Härte %s (höchstens %s)",
   "block.hha_arius.frost_construct": "Kristalleis (Zauber)",
   "block.hha_arius.yang_construct": "Yang-Licht (Zauber)",
+  "block.hha_arius.yang_bricks": "Yang-Ziegel (Zauber)",
+  "block.hha_arius.yang_wall": "Yang-Brüstung (Zauber)",
   "hha_arius.wheel.title": "Zauberrad",
   "hha_arius.wheel.hint": "Schule wählen",
   "hha_arius.wheel.current": "Bereit: %s",
@@ -58,8 +60,8 @@
   "hha_arius.spell.yang_shield.desc": "Halten (bis 5 s): Lichtschild vorn, −60 % Schaden, kostet 8/s plus je Treffer · 3 s",
   "hha_arius.spell.yang_platform": "Lichtplattform",
   "hha_arius.spell.yang_platform.desc": "Zielen und setzen: 3 × 3 Lichtplattform, hält 15 s, höchstens 3 gleichzeitig · 1,5 s",
-  "hha_arius.spell.yang_bridge": "Lichtbrücke",
-  "hha_arius.spell.yang_bridge.desc": "Lichtbrücke bis 16 Blöcke geradeaus in Blickrichtung, hält 15 s · 5 s",
+  "hha_arius.spell.yang_bridge": "Yang-Brücke",
+  "hha_arius.spell.yang_bridge.desc": "Bogenbrücke aus Yang-Licht geradeaus: Mausrad = Länge (4–50), Schleichen + Mausrad = Breite (3–9); Pfeiler bis zum Boden, Kosten wachsen mit der Größe, hält 8 s · 5 s",
   "hha_arius.spell.yang_glide": "Lichtgleiter",
   "hha_arius.spell.yang_glide.desc": "Auf einer Lichtscheibe gleiten (bis 8 s, 4/s), lenken mit dem Blick, Schleichen steigt ab · 10 s",
   "hha_arius.client.shake_on": "Kamerarucken bei schweren Treffern: an",
@@ -81,5 +83,6 @@
   "hha_arius.spell.tornado": "Wirbelsturm",
   "hha_arius.spell.tornado.desc": "Wandernder Wirbelsturm (5 s): saugt Gegner ein, hebt sie hoch, 1,5 Schaden je 0,5 s, zerreißt Geschosse · 11 s",
   "hha_arius.spell.glacier_lance": "Gletscherlanze",
-  "hha_arius.spell.glacier_lance.desc": "Halten zum Laden (bis 1,8 s): riesiger Eisspeer (30 Blöcke), durchschlägt alles, 8–18 Schaden, zerbirst in eine Frostexplosion · 7 s"
+  "hha_arius.spell.glacier_lance.desc": "Halten zum Laden (bis 1,8 s): riesiger Eisspeer (30 Blöcke), durchschlägt alles, 8–18 Schaden, zerbirst in eine Frostexplosion · 7 s",
+  "hha_arius.msg.art.bridge_dims": "Brücke: Länge %s · Breite %s (Mausrad; Schleichen + Mausrad: Breite)"
 }

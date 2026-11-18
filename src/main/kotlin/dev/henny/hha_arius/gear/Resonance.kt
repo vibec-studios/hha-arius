@@ -80,7 +80,10 @@ object Resonance {
         val mult = if (Gear.hasFullSet(player)) GearConfig.num("resonance_set_gain_mult") else 1.0
         val s = state(player)
         val before = s.value
-        s.value = (s.value + (amount * mult).toFloat()).coerceAtMost(max())
+        val want = s.value + (amount * mult).toFloat()
+        // Überschuss fließt in den Frostspeicher (Manabank), falls einer im Inventar ist.
+        if (want > max()) FrostBank.deposit(player, (want - max()).toInt())
+        s.value = want.coerceAtMost(max())
         val threshold = GearConfig.float("resonance_frost_breath_threshold")
         if (before < threshold && s.value >= threshold) {
             GearSounds.play(player.entityWorld, player.entityPos, "resonance.chime", null, 0.5f, 1.2f)
@@ -95,11 +98,26 @@ object Resonance {
             return true
         }
         val s = state(player)
-        if (s.value < amount) return false
+        if (s.value < amount) {
+            // Frostspeicher deckt den Rest (seit 1.4.2).
+            val missing = kotlin.math.ceil(amount - s.value).toLong()
+            if (!FrostBank.withdraw(player, missing)) return false
+            s.value = 0f
+            markCombat(player)
+            sync(player)
+            return true
+        }
         s.value -= amount
         markCombat(player)
         sync(player)
         return true
+    }
+
+    /** Füllt den Balken um [amount] auf (Frostspeicher), höchstens bis zum Maximum. */
+    fun fill(player: ServerPlayerEntity, amount: Float) {
+        val s = state(player)
+        s.value = (s.value + amount).coerceAtMost(max())
+        sync(player)
     }
 
     /** Gibt alles aus, was da ist, und liefert die Menge zurück. */

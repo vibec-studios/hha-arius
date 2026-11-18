@@ -24,7 +24,6 @@ object Placement {
     const val FIELD_RADIUS = 4.0
     const val PLATFORM_RANGE = 10.0
     const val PLATFORM_AIR = 5.0
-    const val BRIDGE_LENGTH = 16
 
     /** Mindestzahl freier Zellen, sonst gilt der Ort als ungültig. */
     private const val MIN_WALL = 5
@@ -98,12 +97,13 @@ object Placement {
         return if (cells.size >= MIN_PLATFORM) Target(cells, Vec3d.ofCenter(center)) else null
     }
 
-    private fun bridge(world: World, player: PlayerEntity): Target? {
+    /** Mittellinie der Brücke (ohne Breite); siehe [bridge]. */
+    fun bridgePath(world: World, player: PlayerEntity): List<BlockPos>? {
         val dir = horizontal(player)
         // Unter den Füßen beginnend, ein Block vor dem Spieler; leicht nach oben/unten schauen ändert die Höhe nicht.
         val start = BlockPos.ofFloored(player.x, player.y - 0.5, player.z).offset(dir)
         val cells = ArrayList<BlockPos>()
-        for (i in 0 until BRIDGE_LENGTH) {
+        for (i in 0 until BridgeShape.length(player.uuid)) {
             val p = start.offset(dir, i)
             val state = world.getBlockState(p)
             if (!state.isAir) {
@@ -113,6 +113,25 @@ object Placement {
             if (!free(world, p)) break
             cells.add(p.toImmutable())
         }
-        return if (cells.size >= MIN_BRIDGE) Target(cells, Vec3d.ofCenter(start)) else null
+        return if (cells.size >= MIN_BRIDGE) cells else null
+    }
+
+    /** Querrichtung der Brücke (Einheitsschritt in x oder z). */
+    fun bridgeSide(player: PlayerEntity): BlockPos {
+        val d = horizontal(player).rotateYClockwise()
+        return BlockPos(d.offsetX, 0, d.offsetZ)
+    }
+
+    /** Fahrbahn über die eingestellte Breite (für die Vorschau und die Prüfung). */
+    private fun bridge(world: World, player: PlayerEntity): Target? {
+        val path = bridgePath(world, player) ?: return null
+        val side = bridgeSide(player)
+        val half = BridgeShape.width(player.uuid) / 2
+        val cells = ArrayList<BlockPos>()
+        for (c in path) for (w in -half..half) {
+            val p = c.add(side.x * w, 0, side.z * w)
+            if (w == 0 || free(world, p)) cells.add(p)
+        }
+        return Target(cells, Vec3d.ofCenter(path.first()))
     }
 }

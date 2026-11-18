@@ -1,0 +1,17 @@
+{
+  "type": "hha_arius:eirholm",
+  "generator": {
+    "type": "minecraft:flat",
+    "settings": {
+      "biome": "hha_arius:eirholm",
+      "features": false,
+      "lakes": false,
+      "layers": [
+        { "block": "minecraft:bedrock", "height": 1 },
+        { "block": "minecraft:stone", "height": 154 },
+        { "block": "minecraft:snow_block", "height": 5 }
+      ],
+      "structure_overrides": []
+    }
+  }
+}

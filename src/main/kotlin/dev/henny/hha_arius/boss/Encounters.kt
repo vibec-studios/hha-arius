@@ -33,7 +33,7 @@ import kotlin.math.floor
 /** Laufende Begegnungen im Heiligtum (eine je Instanz-Slot) und ihre Anbindung an die Spielereignisse. */
 object Encounters {
 
-    val WORLD: RegistryKey<World> = RegistryKey.of(RegistryKeys.WORLD, HhaArius.id("eirholm"))
+    val WORLD: RegistryKey<World> = dev.henny.hha_arius.arena.ArenaDimension.WORLD
 
     private val fights = HashMap<Int, EirholmFight>()
 

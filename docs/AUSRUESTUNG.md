@@ -267,7 +267,7 @@ Eine begrenzte Spieler-Version von Arius' gewaltigem Schnitt:
 - **Kosten:** 50 Resonanz, abgezogen erst bei der Freigabe.
 - **Abbruch:** Linksklick, Itemwechsel, Tod oder Weltwechsel kosten nichts. Zu frühes Loslassen verpufft kostenlos.
 - **Nach Volladung:** höchstens weitere 4 s halten, dann löst der Schnitt von selbst aus.
-- **Vergleich:** Arius schneidet im Bosskampf einen ganzen Tempel in zwei Hälften. Der Spieler schneidet höchstens
+- **Vergleich:** Arius schneidet im Bosskampf das ganze Klingengrab in zwei Hälften. Der Spieler schneidet höchstens
   12 × 5 Blöcke und **24 Blöcke**.
 
 ### 5.2 Zerstörung (ehrlich definiert)
@@ -371,3 +371,21 @@ Es gibt drei verschiedene Dinge:
 
 ## 8. Im Spiel zu prüfen
 Siehe `TESTEN.md`, Abschnitt „Ausrüstung 1.1“.
+
+
+## Seit 1.5.0
+
+- **Beinschienen, Ability 2: Drachenschweif** (ersetzt den Schwingensprung): `tail_cost` 25, Radius `tail_radius` 5,5,
+  `tail_damage` 8 je Ziel, Abklingzeit `tail_cooldown` 160 Ticks. Peitscht in 12 Ticks einmal um den Spieler; jedes
+  überstrichene Ziel einmal, nach außen geschleudert, Langsamkeit III 3 s, vereist; währenddessen kein Nahkampfschaden.
+- **Yang-Brücke:** Bogenbrücke aus Yang-Licht (Bauwerk-Blöcke `yang_bricks`, `yang_wall`), Länge 4–50 und Breite 3–9 per
+  Mausrad beim Zielen, Kosten × (Länge · Breite / 48), höchstens × 5; hält 8 s.
+- **Frostspeicher (Manabank):** Item `frost_bank`, Kapazität `bank_capacity` 100 000. Je getötetem Wesen
+  `bank_per_kill` 2 + maximale Gesundheit × `bank_per_kill_health` 0,2; Überschuss des Balkens fließt hinein. Fehlende
+  Resonanz für Techniken wird automatisch gedeckt, Rechtsklick füllt den Balken auf.
+- **Litematica-Baupläne:** `/ariusc schematic list|build <name>|confirm|cancel` (Client liest `.minecraft/schematics`).
+  Kosten je Block 2 + Härte / 2 (Erze, Metall- und Edelsteinblöcke × 25, Shulkerkisten × 10) × `blueprint_cost_mult`;
+  höchstens `blueprint_max_blocks` 20 000; `blueprint_blocks_per_tick` 300. Nur aus dem Frostspeicher bezahlt, echte
+  Blöcke nur in Luft/ersetzbaren Blöcken, nie in der Arena; Nicht-Gesetztes wird erstattet. Verboten: Befehls-,
+  Struktur-, Puzzle-, Barriere-, Licht-, Grundgestein-, Portal-, Spawner-, Tresor-Blöcke, verstärkter Tiefenschiefer,
+  Drachenei, Flüssigkeiten.

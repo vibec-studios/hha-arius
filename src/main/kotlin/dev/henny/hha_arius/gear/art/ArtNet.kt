@@ -42,7 +42,10 @@ enum class ArtAction {
     ART_RELEASE,
 
     /** Abbruch der Haltung (Linksklick). */
-    ART_CANCEL;
+    ART_CANCEL,
+
+    /** Maße der Yang-Brücke (seit 1.4.2); arg = Länge · 16 + Breite. */
+    BRIDGE_DIMS;
 
     companion object {
         fun of(raw: Int): ArtAction? = entries.getOrNull(raw)

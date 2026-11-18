@@ -58,6 +58,7 @@ object ArtServer {
             ArtAction.ART_PRESS -> SolvaneArt.press(player)
             ArtAction.ART_RELEASE -> SolvaneArt.release(player, arg == 1)
             ArtAction.ART_CANCEL -> SolvaneArt.cancel(player)
+            ArtAction.BRIDGE_DIMS -> BridgeShape.unpack(player.uuid, arg)
         }
     }
 

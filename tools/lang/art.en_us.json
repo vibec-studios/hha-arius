@@ -8,6 +8,8 @@
   "item.hha_arius.solvane.lore5": "Release to cut a plane (sneak = horizontal), splits blocks up to hardness %s (at most %s)",
   "block.hha_arius.frost_construct": "Crystal Ice (spell)",
   "block.hha_arius.yang_construct": "Yang Light (spell)",
+  "block.hha_arius.yang_bricks": "Yang Bricks (spell)",
+  "block.hha_arius.yang_wall": "Yang Parapet (spell)",
   "hha_arius.wheel.title": "Spell wheel",
   "hha_arius.wheel.hint": "Choose a school",
   "hha_arius.wheel.current": "Ready: %s",
@@ -58,8 +60,8 @@
   "hha_arius.spell.yang_shield.desc": "Hold (up to 5 s): light shield in front, −60 % damage, costs 8/s plus per hit · 3 s",
   "hha_arius.spell.yang_platform": "Light Platform",
   "hha_arius.spell.yang_platform.desc": "Aim and place: 3 × 3 light platform, lasts 15 s, up to 3 at once · 1.5 s",
-  "hha_arius.spell.yang_bridge": "Light Bridge",
-  "hha_arius.spell.yang_bridge.desc": "Light bridge up to 16 blocks straight in your view direction, lasts 15 s · 5 s",
+  "hha_arius.spell.yang_bridge": "Yang Bridge",
+  "hha_arius.spell.yang_bridge.desc": "Arch bridge of Yang light straight ahead: scroll = length (4–50), sneak + scroll = width (3–9); pillars down to the ground, cost grows with size, lasts 8 s · 5 s",
   "hha_arius.spell.yang_glide": "Light Glider",
   "hha_arius.spell.yang_glide.desc": "Glide on a disc of light (up to 8 s, 4/s), steer with your view, sneak to step off · 10 s",
   "hha_arius.client.shake_on": "Camera jolt on heavy hits: on",
@@ -81,5 +83,6 @@
   "hha_arius.spell.tornado": "Tornado",
   "hha_arius.spell.tornado.desc": "Travelling tornado (5 s): pulls enemies in and lifts them, 1.5 damage every 0.5 s, shreds projectiles · 11 s",
   "hha_arius.spell.glacier_lance": "Glacier Lance",
-  "hha_arius.spell.glacier_lance.desc": "Hold to charge (up to 1.8 s): giant ice spear (30 blocks), pierces everything, 8–18 damage, bursts into a frost explosion · 7 s"
+  "hha_arius.spell.glacier_lance.desc": "Hold to charge (up to 1.8 s): giant ice spear (30 blocks), pierces everything, 8–18 damage, bursts into a frost explosion · 7 s",
+  "hha_arius.msg.art.bridge_dims": "Bridge: length %s · width %s (scroll; sneak + scroll: width)"
 }

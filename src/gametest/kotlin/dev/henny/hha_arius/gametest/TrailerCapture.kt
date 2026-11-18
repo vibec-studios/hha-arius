@@ -363,7 +363,7 @@ class TrailerCapture : FabricClientGameTest {
         tick(40)
     }
 
-    private val eir = "hha_arius:eirholm"
+    private val eir = "hha_arius:highland"
     private fun at(x: Double, y: Double, z: Double) = Vec3d(x, 160.0 + y, z)
 
     /** Arius-Wetterstimmung am Client setzen (ohne Kampf ist sie aus; der Kampf schickt dieselben Pakete). */

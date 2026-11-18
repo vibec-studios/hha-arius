@@ -26,11 +26,11 @@ import kotlin.math.sin
  */
 internal object FarPlan {
 
-    const val VERSION = 6 // 6: Feld im Hochland statt Balkon, kein Massiv; 5: Bergmassiv mit Terrasse statt schwebendem Balkon; 4: Balkon als Felsschelf mit Strebe, Schneebänder am Horn; 2: Himmelsbalkon an der Nadel; 3: Alpen (Felshorn, Fels/Schnee, offenes Hochland)
+    const val VERSION = 7 // 7: endloses Schneefeld, Riesenmassiv mit Spiralweg (neue Dimension); 6: 6: Feld im Hochland statt Balkon, kein Massiv; 5: Bergmassiv mit Terrasse statt schwebendem Balkon; 4: Balkon als Felsschelf mit Strebe, Schneebänder am Horn; 2: Himmelsbalkon an der Nadel; 3: Alpen (Felshorn, Fels/Schnee, offenes Hochland)
 
     const val X_MIN = -ArenaLayout.FAR_X
     const val X_MAX = ArenaLayout.FAR_X
-    const val Z_MIN = -130
+    const val Z_MIN = -150
     const val Z_MAX = ArenaLayout.FAR_Z_MAX
     const val Y_MIN = ArenaLayout.FAR_Y_MIN
 
@@ -92,13 +92,6 @@ internal object FarPlan {
         return t * t * (3 - 2 * t)
     }
 
-    fun canyonCenter(z: Double): Double = 9.0 * sin(z / 19.0) + 4.0 * sin(z / 7.3)
-
-    private fun canyonHalf(z: Double): Double {
-        val t = ((z - ArenaLayout.CANYON_Z_FROM) / (ArenaLayout.CANYON_Z_TO - ArenaLayout.CANYON_Z_FROM)).coerceIn(0.0, 1.0)
-        return 14.0 + 22.0 * sin(PI * t)
-    }
-
     /**
      * Oberkante des Horns über (x, z) oder [Int.MIN_VALUE]. Seit 1.3.1 ein alpines Felshorn (wie das Matterhorn):
      * Pyramide mit vier Graten (Superellipse-Abstand, p 1,3), Flanken dazwischen eingezogen. Der Abstand ist nie kleiner
@@ -122,63 +115,126 @@ internal object FarPlan {
         return floor(h).toInt()
     }
 
-    /** Oberkante des Gletschergeländes ohne Nadel. */
-    fun ground(x: Int, z: Int): Int {
-        val ax = abs(x).toDouble()
-        val zd = z.toDouble()
-        // Seit 1.3.1: weites Hochland auf Plateauhöhe, die Alpenketten beginnen erst weit draußen.
-        val base = -1.0 + (fbm(x, z, 40, 3) - 0.5) * 7.0
-        val rise = smooth(92.0, 136.0, ax)
-        val ridge = ridged(x + 400, z, 48, 7)
-        var h = base + rise * (70.0 + 55.0 * ridge) + rise * (vnoise(x, z, 5, 13) - 0.5) * 7.0
-        val north = smooth(-92.0, -128.0, zd)
-        h = max(h, base + north * (60.0 + 30.0 * ridged(x, z + 300, 40, 11)))
-        val sb = smooth(ArenaLayout.CANYON_Z_TO - 16.0, ArenaLayout.CANYON_Z_TO + 10.0, zd)
-        if (sb > 0.0) {
-            val shelf = -38.0 + (fbm(x, z, 20, 5) - 0.5) * 6.0
-            val sh = max(shelf + rise * 40.0, min(h, shelf + rise * 120.0))
-            h += (sh - h) * sb
+    // --- Das Bergmassiv mit Spiralweg (seit 1.4.2) ------------------------------------------------------------------
+
+    /**
+     * Crix (18.11.): „Der Berg soll riesig sein und man soll ihn wie eine Spirale hochgehen können.“ Um das Horn liegt
+     * ein breites Massiv (Fuß [MASSIF_R] Blöcke um die Achse, Schulter auf y [SHOULDER_Y] mit [SHOULDER_R] Radius), aus
+     * dessen Schulter das alte Felshorn aufragt. Ein Weg ([PATH_W] breit, Steigung 1 : 5) windet sich vom Nordfuß
+     * (Richtung Plateau) hinauf bis auf die Schulter; Schneeschichten glätten ihn, Laternen stehen alle [POST_EVERY]
+     * Blöcke am Außenrand.
+     */
+    const val MASSIF_R = 120.0
+    const val SHOULDER_R = 22.0
+    const val SHOULDER_Y = 128.0
+    const val PATH_W = 7.0
+    private const val GRADE = 0.2
+    private const val POST_EVERY = 22.0
+    private const val PHI_STEP = 0.003
+
+    /** Höhe des Massivs über dem Kreisabstand d zur Achse (ohne Rauschen). */
+    fun massifH(d: Double): Double = when {
+        d >= MASSIF_R -> -1.0
+        d <= SHOULDER_R -> SHOULDER_Y
+        else -> -1.0 + (SHOULDER_Y + 1.0) * Math.pow((MASSIF_R - d) / (MASSIF_R - SHOULDER_R), 1.15)
+    }
+
+    /** Kreisabstand zur Achse, auf dem das Massiv die Höhe y hat. */
+    fun massifR(y: Double): Double =
+        MASSIF_R - (MASSIF_R - SHOULDER_R) * Math.pow(((y + 1.0) / (SHOULDER_Y + 1.0)).coerceIn(0.0, 1.0), 1.0 / 1.15)
+
+    private const val A0 = PI // Wegbeginn im Norden (Blick zum Plateau)
+    private val pathY: DoubleArray
+    private val pathR: DoubleArray
+    private val posts = HashMap<Long, Int>()
+
+    init {
+        val ys = ArrayList<Double>()
+        val rs = ArrayList<Double>()
+        var y = -1.0
+        var arc = 0.0
+        var nextPost = 8.0
+        var i = 0
+        while (y < SHOULDER_Y) {
+            val r = massifR(y)
+            ys.add(y)
+            rs.add(r)
+            val ds = r * PHI_STEP
+            arc += ds
+            if (arc >= nextPost) {
+                nextPost += POST_EVERY
+                val a = A0 + i * PHI_STEP
+                val ro = r + PATH_W / 2 - 0.6
+                val px = floor(ArenaLayout.SPIRE.x + 0.5 + sin(a) * ro).toInt()
+                val pz = floor(ArenaLayout.SPIRE.z + 0.5 + kotlin.math.cos(a) * ro).toInt()
+                posts[key(px, pz)] = floor(y).toInt()
+            }
+            y += GRADE * ds
+            i++
         }
-        val from = ArenaLayout.CANYON_Z_FROM
-        val to = ArenaLayout.CANYON_Z_TO
-        if (z in (from - 10)..(to + 10)) {
-            val cz = minOf(1.0, (z - (from - 10)) / 10.0, ((to + 10) - z) / 10.0)
-            val dxc = abs(x - canyonCenter(zd))
-            val half = canyonHalf(zd.coerceIn(from.toDouble(), to.toDouble()))
-            val inside = 1.0 - smooth(half - 1.0, half + 5.0 + 3.0 * vnoise(x, z, 4, 21), dxc)
-            val floorY = ArenaLayout.CANYON_FLOOR + (vnoise(x, z, 9, 23) - 0.5) * 6.0
-            h += (floorY - h) * inside * max(0.0, cz)
+        pathY = ys.toDoubleArray()
+        pathR = rs.toDoubleArray()
+    }
+
+    private fun key(x: Int, z: Int): Long = (x.toLong() shl 32) or (z.toLong() and 0xFFFFFFFFL)
+
+    /** Höhe der Wegfläche über (x, z) (mit Bruchteil, für Schneeschichten) oder NaN. */
+    fun pathAt(x: Int, z: Int): Double {
+        val dx = x + 0.5 - (ArenaLayout.SPIRE.x + 0.5)
+        val dz = z + 0.5 - (ArenaLayout.SPIRE.z + 0.5)
+        val d = hypot(dx, dz)
+        if (d > MASSIF_R + PATH_W || d < SHOULDER_R - 1.0) return Double.NaN
+        var phi = atan2(dx, dz) - A0
+        while (phi < 0.0) phi += 2 * PI
+        while (phi >= 2 * PI) phi -= 2 * PI
+        while (true) {
+            val i = (phi / PHI_STEP).toInt()
+            if (i >= pathY.size) return Double.NaN
+            if (abs(d - pathR[i]) <= PATH_W / 2) return pathY[i]
+            phi += 2 * PI
         }
-        return floor(h).toInt()
+    }
+
+    /** Laternenpfosten am Außenrand des Wegs: Wegoberkante darunter oder [Int.MIN_VALUE]. */
+    fun postAt(x: Int, z: Int): Int = posts[key(x, z)] ?: Int.MIN_VALUE
+
+    /** Massiv mit Gratrauschen über (x, z) oder [Int.MIN_VALUE]. */
+    fun massifTop(x: Int, z: Int): Int {
+        val dx = x + 0.5 - (ArenaLayout.SPIRE.x + 0.5)
+        val dz = z + 0.5 - (ArenaLayout.SPIRE.z + 0.5)
+        val d = hypot(dx, dz)
+        if (d >= MASSIF_R + 4.0) return Int.MIN_VALUE
+        val rough = (ridged(x, z, 22, 81) - 0.5) * 8.0 * smooth(MASSIF_R, MASSIF_R - 30.0, d) * smooth(SHOULDER_R, SHOULDER_R + 12.0, d)
+        val h = massifH(d) + rough
+        return if (h < -1.0) Int.MIN_VALUE else floor(h).toInt()
     }
 
     /**
-     * Breites Bergmassiv unter der Gipfelpyramide (seit 1.4.1): Grate wie die Pyramide (Superellipse), Flanken fallen
-     * mit ~1,25 je Block nach außen, ein Gratrauschen bricht sie auf. Nur jenseits der Schlucht (z ≥ 60).
+     * Oberkante des Hochlands ohne Berg: seit 1.4.2 ein endloses Schneefeld auf Plateauhöhe (Crix: „die Arena soll
+     * unendlich groß sein“, kein Rand, der ansteigt). Weit draußen nur sanfte Schneewellen, die zum Rand des Baubereichs
+     * wieder auf die Ebene des Weltgenerators auslaufen.
      */
-    fun massifTop(x: Int, z: Int): Int {
-        if (z < 60) return Int.MIN_VALUE
-        val dx = x + 0.5 - (ArenaLayout.SPIRE.x + 0.5)
-        val dz = z + 0.5 - (ArenaLayout.SPIRE.z + 0.5)
-        val u = abs(dx * 0.866 - dz * 0.5)
-        val v = abs(dx * 0.5 + dz * 0.866)
-        val m = Math.pow(Math.pow(u, 1.3) + Math.pow(v, 1.3), 1.0 / 1.3)
-        if (m > 120.0) return Int.MIN_VALUE
-        val h = 112.0 - max(0.0, m - 20.0) * 1.25 + (ridged(x, z, 26, 81) - 0.5) * 14.0
-        return floor(h).toInt()
+    fun ground(x: Int, z: Int): Int {
+        val rc = hypot(x.toDouble(), z + 20.0)
+        var w = smooth(80.0, 120.0, rc)
+        val dv = hypot((x - ArenaLayout.VAULT.x).toDouble(), (z - ArenaLayout.VAULT.z).toDouble())
+        w *= smooth(ArenaLayout.VAULT_R + 12.0, ArenaLayout.VAULT_R + 40.0, dv)
+        w *= smooth(X_MAX.toDouble(), X_MAX - 24.0, abs(x).toDouble()) * smooth(Z_MAX.toDouble(), Z_MAX - 24.0, z.toDouble()) *
+            smooth(Z_MIN.toDouble(), Z_MIN + 24.0, z.toDouble())
+        if (w <= 0.0) return -1
+        val m = max(0.0, (fbm(x, z, 44, 3) - 0.47) * 16.0)
+        return -1 + floor(m * w).toInt()
     }
 
-    /** Liegt (x, z) auf der Terrasse des Himmelsbalkons (zerklüfteter Rand)? */
-    fun onTerrace(x: Int, z: Int): Boolean =
-        hypot((x - ArenaLayout.VAULT.x).toDouble(), (z - ArenaLayout.VAULT.z).toDouble()) <= balconyEdge(x, z)
-
-    /** Oberkante der Fernlandschaft (Gelände, Massiv, Gipfelpyramide; auf der Terrasse eben). */
+    /** Oberkante der Fernlandschaft: Gelände, Massiv (mit Weg), Felshorn. */
     fun top(x: Int, z: Int): Int {
         var t = ground(x, z)
+        val m = massifTop(x, z)
+        if (m > t) t = m
+        val p = pathAt(x, z)
+        if (!p.isNaN()) t = floor(p).toInt()
         val s = spireTop(x, z)
         if (s > t) t = s
-        // Terrasse: flach auf Balkonhöhe (in den Berg geschnitten bzw. auf der Schulter aufgefüllt).
-        if (onTerrace(x, z)) t = ArenaLayout.VAULT.y - 1
         return t.coerceIn(Y_MIN, ArenaLayout.SPIRE_TOP)
     }
 
@@ -194,6 +250,8 @@ internal object FarPlan {
     const val CALCITE = 6
     const val DEEP = 11
     const val TUFF = 12
+    const val WALL = 13
+    const val LANTERN = 14
 
     /**
      * Seit 1.3.1 alpin (Crix: „ein Berg wie in den Alpen, nicht aus Eis“): Fels in Schichten (Stein, Andesit, Tuff,
@@ -202,7 +260,6 @@ internal object FarPlan {
      */
     fun material(x: Int, y: Int, z: Int, top: Int, slope: Int, spire: Boolean): Int {
         val depth = top - y
-        if (y < ArenaLayout.CANYON_FLOOR + 6 && depth > 0) return if (h32(x, y, z, 51) < 0.6) DEEP else TUFF
         val snowLine = 70 + (vnoise(x, z, 13, 65) * 20).toInt()
         // Schnee: flache Oberflächen immer, steilere oberhalb der Schneegrenze teilweise
         if (depth == 0 && (slope <= 2 || (y > snowLine && slope <= 5 && h32(x, y, z, 67) < 0.75))) return SNOW
@@ -231,21 +288,7 @@ internal object FarPlan {
     private val VY = ArenaLayout.VAULT.y
     private val VZ = ArenaLayout.VAULT.z
 
-    /** Zerklüfteter Rand: Radius je Richtung. */
-    fun balconyEdge(x: Int, z: Int): Double = ArenaLayout.VAULT_R + 1.5 + (vnoise(x, z, 5, 701) - 0.5) * 4.0
-
-    /**
-     * Dicke des Schelfs: außen dünn (4), zur Bergflanke hin wächst die Unterseite als Strebe schräg in den Berg hinein
-     * (bis ~60 tief). So wirkt der Balkon wie aus der Flanke gewachsen, nicht wie eine schwebende Scheibe (Pilzhut).
-     */
-    private fun balconyThick(x: Int, z: Int): Int {
-        val ds = hypot((x - ArenaLayout.SPIRE.x).toDouble(), (z - ArenaLayout.SPIRE.z).toDouble())
-        val face = ArenaLayout.spireRadius(VY.toDouble())
-        val k = (1.0 - (ds - face) / 46.0).coerceIn(0.0, 1.0)
-        return 4 + (k * k * 58.0 + vnoise(x, z, 4, 703) * 3.0).toInt()
-    }
-
-    /** Block des Balkons an (x, y, z) relativ, oder -1 (nichts). Säulen, Lauffläche, Unterseite, Eiszapfen, Zuschauervorsprung. */
+    /** Block des Feldes an (x, y, z) relativ, oder -1 (nichts): Kristallsäulen und Zuschauerhügel. */
     fun balcony(x: Int, y: Int, z: Int): Int {
         // Zuschauerhügel südlich des Feldes (Lauffläche 6 über dem Feld)
         val wx = ArenaLayout.WATCH_VAULT.x.toInt()
@@ -253,8 +296,7 @@ internal object FarPlan {
         if (abs(x - wx) <= 2 && abs(z - wz) <= 2 && y in VY until VY + 6) return if (y == VY + 5) SNOW else PACKED
         val dx = (x - VX).toDouble()
         val dz = (z - VZ).toDouble()
-        val r = hypot(dx, dz)
-        if (r > ArenaLayout.VAULT_R + 4.0) return -1
+        if (hypot(dx, dz) > ArenaLayout.VAULT_R + 4.0) return -1
         // Säulen: Kristall, Höhe 6–9, Kern blau
         for (p in ArenaLayout.VAULT_PILLARS) {
             val pr = hypot((x - p.x).toDouble(), (z - p.z).toDouble())
@@ -264,27 +306,12 @@ internal object FarPlan {
                 if (y < VY + hgt && pr <= taper) return if (pr < 0.8) BLUE else PACKED
             }
         }
-        // Lauffläche und Unterbau liefert seit 1.4.1 das Gelände (Terrasse auf dem Massiv), hier nur Säulen.
-        if (y >= VY || r >= 0.0) return -1
-        val th = balconyThick(x, z)
-        if (y == VY - 1) {
-            val vein = vnoise(x, z, 3, 709)
-            return if (r > balconyEdge(x, z) - 1.2) STONE else if (vein > 0.8) PACKED else SNOW
-        }
-        if (y >= VY - th) {
-            val k = h32(x, y, z, 711)
-            return if (k < 0.45) STONE else if (k < 0.75) ANDESITE else if (k < 0.9) TUFF else DEEP
-        }
-        // Wenige kurze Eiszapfen am dünnen Außenrand
-        val icicle = h32(x, 0, z, 713)
-        if (icicle < 0.04 && th <= 8) {
-            val len = 1 + (h32(x, 1, z, 715) * 3).toInt()
-            if (y >= VY - th - len) return if (y == VY - th - len) BLUE else PACKED
-        }
         return -1
     }
 
     fun state(id: Int): BlockState = when (id) {
+        WALL -> Blocks.STONE_BRICK_WALL.defaultState
+        LANTERN -> Blocks.LANTERN.defaultState
         BLUE -> Blocks.BLUE_ICE.defaultState
         SNOW -> Blocks.SNOW_BLOCK.defaultState
         DEEP -> Blocks.DEEPSLATE.defaultState
@@ -374,42 +401,50 @@ class FarBuild(private val world: ServerWorld, private val origin: BlockPos) {
             if (low >= 0) limit = ArenaPlan.Y_MIN + low - 1
             top = min(top, limit)
         }
-        val n = intArrayOf(FarPlan.top(x + 1, z), FarPlan.top(x - 1, z), FarPlan.top(x, z + 1), FarPlan.top(x, z - 1))
-        var lowest = top
-        var slope = 0
-        for (v in n) {
-            val vv = min(v, limit)
-            if (vv < lowest) lowest = vv
-            slope = max(slope, abs(top - vv))
-        }
-        val bottom = max(FarPlan.Y_MIN, min(top - 4, lowest - 1))
-        val spire = FarPlan.spireTop(x, z).let { it != Int.MIN_VALUE && it >= FarPlan.ground(x, z) }
         val chunk = world.getChunk(ax shr 4, az shr 4)
         var sets = 0
-        for (y in bottom..top) {
-            val state = FarPlan.state(FarPlan.material(x, y, z, top, slope, spire))
+        fun put(y: Int, state: BlockState) {
             pos.set(ax, origin.y + y, az)
             if (chunk.getBlockState(pos) != state) {
                 world.setBlockState(pos, state, ArenaBuilder.FLAGS)
                 sets++
             }
         }
-        // Himmelsbalkon (über der Schlucht an der Nadel): Lauffläche, Säulen, Unterseite, Eiszapfen.
-        for (y in ArenaLayout.VAULT.y - 2..ArenaLayout.VAULT.y + 12) {
-            val id = FarPlan.balcony(x, y, z)
-            pos.set(ax, origin.y + y, az)
-            if (id < 0) {
-                // Luft über der Lauffläche freihalten (außer der Nadel selbst).
-                if (y >= ArenaLayout.VAULT.y && y > top && !FarPlan.inCore(x, z) && !chunk.getBlockState(pos).isAir) {
-                    world.setBlockState(pos, net.minecraft.block.Blocks.AIR.defaultState, ArenaBuilder.FLAGS)
-                    sets++
-                }
-                continue
+        // Das Schneefeld liefert der Weltgenerator (Oberkante y −1); gebaut wird nur, was darüber hinausragt.
+        if (top > -1) {
+            val n = intArrayOf(FarPlan.top(x + 1, z), FarPlan.top(x - 1, z), FarPlan.top(x, z + 1), FarPlan.top(x, z - 1))
+            var lowest = top
+            var slope = 0
+            for (v in n) {
+                val vv = min(v, limit)
+                if (vv < lowest) lowest = vv
+                slope = max(slope, abs(top - vv))
             }
-            val state = FarPlan.state(id)
-            if (chunk.getBlockState(pos) != state) {
-                world.setBlockState(pos, state, ArenaBuilder.FLAGS)
-                sets++
+            val path = FarPlan.pathAt(x, z)
+            val bottom = max(-1, min(top - 4, lowest - 1))
+            val spire = FarPlan.spireTop(x, z).let { it != Int.MIN_VALUE && it >= FarPlan.massifTop(x, z) }
+            for (y in bottom..top) {
+                val id = if (!path.isNaN() && y >= top - 1) FarPlan.SNOW else FarPlan.material(x, y, z, top, slope, spire)
+                put(y, FarPlan.state(id))
+            }
+            // Weg: Schneeschichten glätten die Steigung; Laternenpfosten am Außenrand.
+            if (!path.isNaN()) {
+                val post = FarPlan.postAt(x, z)
+                if (post != Int.MIN_VALUE) {
+                    put(top + 1, FarPlan.state(FarPlan.WALL))
+                    put(top + 2, FarPlan.state(FarPlan.WALL))
+                    put(top + 3, FarPlan.state(FarPlan.LANTERN))
+                } else {
+                    val layers = ((path - floor(path)) * 8.0).toInt()
+                    if (layers > 0) put(top + 1, Blocks.SNOW.defaultState.with(net.minecraft.block.SnowBlock.LAYERS, layers))
+                }
+            }
+        }
+        // Feld von Abschnitt III: Säulen und Zuschauerhügel.
+        if (abs(x - ArenaLayout.VAULT.x) <= ArenaLayout.VAULT_R + 40 && abs(z - ArenaLayout.VAULT.z) <= ArenaLayout.VAULT_R + 40) {
+            for (y in ArenaLayout.VAULT.y..ArenaLayout.VAULT.y + 12) {
+                val id = FarPlan.balcony(x, y, z)
+                if (id >= 0) put(y, FarPlan.state(id))
             }
         }
         return sets

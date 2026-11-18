@@ -427,10 +427,9 @@ class Scenes(private val f: EirholmFight) {
      * Gletschersturz und Verwandlung als eine Szene mit Kamera (überspringbar; keine Ansage, kein Schaden: die Risse sind
      * nur Information, die Spieler fallen mit Sanftem Fall). Ablauf der Kamera:
      * 1. Spannung: nah an Arius, der pfeift; hinter ihm steigt Nivaris auf, die Augen glühen beim Faden.
-     * 2. Stille von oben: die Risse laufen über das Plateau.
-     * 3. Der Sturzflug von unten, das Sichtfeld weitet sich.
-     * 4. Weite Totale von außen, während die Ringe in die Tiefe brechen.
-     * 5. Im Gewölbe, Blick nach oben durch das Loch: Trümmer und Fallende.
+     * 2. Sie kreist weit über dem Plateau, der Sturm zieht zu (Totale von unten).
+     * 3. Tiefflug dicht über die Spieler, ihr Lichtstrom hebt sie auf (kein Einsturz mehr, seit 1.4.2).
+     * 4. Flug hinaus aufs Feld im Hochland, Solvane zieht voraus.
      * 6. Verwandlung: Detail, dann ein Seitenschwenk, der Nivaris hinter ihm zeigt; Rückweg zur Spielerkamera.
      */
     fun collapse(): Script = script {
@@ -477,64 +476,52 @@ class Scenes(private val f: EirholmFight) {
             }
             yield(Unit)
         }
-        // 2) Stille von oben: die Risse laufen über das Plateau (nur Information, kein Schaden).
-        scene.line(center.add(-4.0, 15.0, 10.0), center.add(-3.0, 12.5, 8.0), center, center.add(0.0, 0.0, -1.0), 24 + 10, 62.0, 66.0)
-        for ((i, r) in ArenaLayout.COLLAPSE_RINGS.withIndex()) {
-            shown { Vfx.rune(f.world, Vfx.Style.STORM, center.add(0.0, 0.05, 0.0), r.toFloat(), 60 - i * 10) }
-            cue("glacier.crack", center.add(r, 0.0, 0.0), 4f, 0.8f + i * 0.1f)
-            wait(8)
-        }
-        for (p in f.players()) {
-            p.addStatusEffect(StatusEffectInstance(StatusEffects.SLOW_FALLING, 200, 0, false, false, true))
-        }
-        // 3) Der Sturzflug von unten, das Sichtfeld weitet sich.
-        scene.line(center.add(11.0, 1.2, 9.0), center.add(12.5, 1.0, 10.5), center.add(0.0, 14.0, 0.0), center, 24, 58.0, 76.0, lookAt = d, lookOffset = 1.5)
-        d.play(NivarisPose.CRASH_DIVE, 24)
-        val dive = d.entityPos
-        for (i in 1..24) {
-            f.place(d, dive.lerp(center, i / 24.0))
+        // Seit 1.4.2 kein Einsturz mehr (Crix: das Loch im Boden ergab keinen Sinn). Solvane trägt alle hinaus aufs offene
+        // Feld im Hochland: erst kreist sie weit über dem Plateau, dann fliegt sie tief über die Spieler hinweg, und ihr
+        // Lichtstrom hebt sie mit.
+        // 2) Sie kreist weit über dem Plateau, der Sturm zieht zu: Totale von unten, die Kamera dreht mit.
+        val orbitR = 24.0
+        scene.orbit(center, 30.0, 3.0, 200.0, 290.0, 54, 70.0, 64.0, lookAt = d, lookOffset = 1.0, radiusTo = 26.0, heightTo = 8.0)
+        d.play(NivarisPose.GLIDE)
+        cue("nivaris.roar", high, 4f, 1.05f)
+        for (i in 1..54) {
+            val ang = i / 54.0 * PI * 1.6
+            val pos = center.add(sin(ang) * orbitR, 15.0 + sin(i * 0.21) * 1.5, cos(ang) * orbitR)
+            f.place(d, d.entityPos.lerp(pos, 0.3))
+            f.face(d, pos.add(cos(ang) * 6.0, 0.0, -sin(ang) * 6.0))
+            if (i % 9 == 0) shown { Vfx.shockwave(f.world, Vfx.Style.STORM, Vec3d(d.x, center.y, d.z), 5f, 14, 1.2f) }
             yield(Unit)
         }
-        // 4) Weite Totale von außen: der Sturm reißt im Aufprall auf, die Ringe brechen in die Tiefe.
-        f.atmos(dev.henny.hha_arius.net.AtmosMode.SNOW, 12)
-        scene.line(center.add(-24.0, 12.0, 20.0), center.add(-28.0, 16.0, 24.0), center.add(0.0, -2.0, 0.0), center.add(0.0, -8.0, 0.0), 40, 62.0, 68.0)
-        shown { f.sceneText("collapse", 60) }
-        cue("glacier.collapse", center, 6f)
-        cue("nivaris.crash", center, 5f)
-        f.calls.roomShake(center, 7f, 90f)
-        for (ring in 0..2) {
-            val falling = ArenaBuilder.collapseRing(f.world, f.origin, ring)
-            // Sichtbarer Absturz: eine Auswahl der Blöcke stürzt taumelnd in die Tiefe (nur Darstellung).
-            val sample = falling.filter { !f.world.getBlockState(it).isAir }.shuffled(java.util.Random(ring.toLong())).take(420)
-            if (sample.isNotEmpty() && !Cine.muted) {
-                val payload = dev.henny.hha_arius.gear.art.ArtCutS2C(
-                    LongArray(sample.size) { sample[it].asLong() },
-                    IntArray(sample.size) { net.minecraft.block.Block.getRawIdFromState(f.world.getBlockState(sample[it])) }, 3,
-                )
-                for (p in f.audience()) dev.henny.hha_arius.net.AriusNet.send(p, payload)
-            }
-            shown {
-                val chunkFrom = center.add(rnd.nextGaussian() * 6, 1.0, rnd.nextGaussian() * 6)
-                f.fx(FxKind.ICE_CHUNK, chunkFrom, chunkFrom.add(rnd.nextGaussian() * 4, -30.0, rnd.nextGaussian() * 4), a = 1.6f, life = 30)
-            }
-            for (pos in falling) {
-                if (!Cine.muted && rnd.nextInt(40) == 0) f.world.spawnParticles(BlockStateParticleEffect(ParticleTypes.BLOCK, f.world.getBlockState(pos)), pos.x + 0.5, pos.y + 0.5, pos.z + 0.5, 6, 0.5, 0.5, 0.5, 0.1)
-                f.edits.clear(pos)
-            }
-            wait(10)
+        shown { f.sceneText("lift", 60) }
+        for (p in f.players()) p.addStatusEffect(StatusEffectInstance(StatusEffects.SLOW_FALLING, 240, 0, false, false, true))
+        // 3) Tiefflug: Sie stürzt sich heran und streicht dicht über die Spieler; Windstoß und Lichtfaden.
+        val swoopFrom = d.entityPos
+        val swoopTo = center.add(0.0, 3.5, 0.0)
+        scene.line(center.add(13.0, 1.4, 17.0), center.add(9.0, 2.2, 11.0), swoopFrom, swoopTo, 24, 62.0, 78.0, lookAt = d, lookOffset = 1.2)
+        d.play(NivarisPose.DIVE, 24)
+        cue("nivaris.wing", center, 4f, 0.8f)
+        for (i in 1..24) {
+            val k = i / 24.0
+            f.place(d, swoopFrom.lerp(swoopTo, k * k * (3 - 2 * k)))
+            f.face(d, swoopTo)
+            yield(Unit)
         }
-        // Solvane fängt sie auf (seit 1.2.2): Statt ins Gewölbe zu stürzen, trägt ein weißer Lichtstrom alle hinauf auf den
-        // Himmelsbalkon an der Nadel – das Ende spielt hoch oben im Sturm, nicht unten im Gletscher.
+        f.calls.roomShake(center, 4f, 40f)
+        shown {
+            Vfx.shockwave(f.world, Vfx.Style.HEAVEN, center, 14f, 20, 2f)
+            for (p in f.players()) f.fx(FxKind.THREAD, p.entityPos, life = 50, e1 = p, e2 = d)
+        }
+        cue("resonance.chime", center, 4f, 1.2f)
+        for (p in f.players()) dev.henny.hha.logic.Fx.launchPlayer(p, Vec3d(0.0, 1.1, 0.0))
+        wait(6)
         yieldAll(waitForFar())
         val vault = f.abs(Vec3d.of(ArenaLayout.VAULT)).add(0.5, 0.0, 0.5)
-        for (p in f.players()) p.addStatusEffect(StatusEffectInstance(StatusEffects.SLOW_FALLING, 200, 0, false, false, true))
         d.flying = true
         d.play(NivarisPose.HOVER)
-        cue("resonance.chime", center, 4f, 1.2f)
-        // 5) Steil hinauf: aus dem Einsturz an der Nadel entlang, bis der Balkon im Sturm auftaucht; Solvane zieht voraus.
+        // 4) Der Flug hinaus aufs Feld im Hochland: Solvane zieht voraus, der Lichtstrom trägt alle mit.
         val camFrom = center.add(-6.0, 4.0, 14.0)
         val camTo = vault.add(-22.0, 9.0, -24.0)
-        scene.line(camFrom, camTo, center.add(0.0, 20.0, 40.0), vault.add(0.0, 2.0, 0.0), 80, 64.0, 58.0)
+        scene.line(camFrom, camTo, center.add(20.0, 14.0, 0.0), vault.add(0.0, 2.0, 0.0), 80, 64.0, 58.0)
         shown { Entrance.storyFx(f, FxKind.BLADE_STREAM, center.add(0.0, 1.0, 0.0), vault.add(0.0, 2.0, 0.0), a = 60f, b = 0f, life = 80) }
         val dFrom = d.entityPos
         val dTo = vault.add(-6.0, 12.0, -20.0)
@@ -1275,12 +1262,12 @@ class Scenes(private val f: EirholmFight) {
             scene.line(eye.add(side.multiply(5.0)).add(dir.multiply(-2.0)).add(0.0, -0.4, 0.0), eye.add(side.multiply(4.0)).add(dir.multiply(-1.0)),
                 start.add(0.0, 1.2, 0.0), eye, 30, 62.0, 54.0)
             f.ambient("iai.glint", start, 3f, 0.7f)
-            val r1 = beat(Qte.Kind.JUMP, 24, 1, "hha_arius.qte.dodge")
+            val r1 = beat(Qte.Kind.JUMP, 36, 1, "hha_arius.qte.dodge")
             a.sheathed = false
             a.play(AriusPose.IAI_DRAW, 1)
             val rushTo = t.entityPos.add(dir.multiply(3.0)).let { Vec3d(it.x, f.floorY, it.z) }
-            for (i in 1..24) {
-                f.place(a, start.lerp(rushTo, (i / 24.0) * (i / 24.0) * 0.55))   // Zeitlupe: langsam heran
+            for (i in 1..36) {
+                f.place(a, start.lerp(rushTo, (i / 36.0) * (i / 36.0) * 0.55))   // Zeitlupe: langsam heran
                 if (r1.done()) break
                 yield(Unit)
             }
@@ -1305,9 +1292,9 @@ class Scenes(private val f: EirholmFight) {
             scene.line(mid.add(s2.multiply(3.2)).add(0.0, 0.2, 0.0), mid.add(s2.multiply(2.2)).add(0.0, 0.1, 0.0), mid, mid, 64, 44.0, 32.0)
             f.ambient("arius.parry", mid, 3.5f, 0.6f)
             Vfx.flare(f.world, Vfx.Style.GOLD, mid, 2.2f, 10)
-            val r2 = beat(Qte.Kind.MASH, 60, 9, "hha_arius.qte.clash")
+            val r2 = beat(Qte.Kind.MASH, 70, 8, "hha_arius.qte.clash")
             var n = 0
-            while (!r2.done() && n++ < 64) {
+            while (!r2.done() && n++ < 74) {
                 if (n % 3 == 0) f.world.spawnParticles(net.minecraft.particle.ParticleTypes.ELECTRIC_SPARK, mid.x, mid.y, mid.z, 6, 0.15, 0.15, 0.15, 0.25)
                 if (n % 8 == 0) f.ambient("arius.parry", mid, 1.6f, 0.9f + n * 0.01f)
                 yield(Unit)
@@ -1320,8 +1307,8 @@ class Scenes(private val f: EirholmFight) {
             // --- Takt 3: Konter. Über die Schulter des Spielers auf Arius, der taumelt.
             val over = tgt.entityPos.add(0.0, 1.7, 0.0).subtract(d2.multiply(-1.6)).add(s2.multiply(0.8))
             scene.line(over, over.add(d2.multiply(0.6)), a.entityPos.add(0.0, 1.3, 0.0), a.entityPos.add(0.0, 1.1, 0.0), 30, 50.0, 40.0)
-            val r3 = beat(Qte.Kind.USE, 18, 1, "hha_arius.qte.counter")
-            waitUntil(20) { r3.done() }
+            val r3 = beat(Qte.Kind.USE, 30, 1, "hha_arius.qte.counter")
+            waitUntil(32) { r3.done() }
             Qte.close(r3)
             if (!r3.anySuccess()) return@script
             ok = true
@@ -1469,7 +1456,6 @@ class Scenes(private val f: EirholmFight) {
 
     private fun prepareVault() {
         split(animate = false)
-        for (ring in 0..2) for (pos in ArenaBuilder.collapseRing(f.world, f.origin, ring)) f.edits.clear(pos)
         val a = f.arius ?: return
         f.setPhase(P.VAULT)
         val vault = f.abs(Vec3d.of(ArenaLayout.VAULT)).add(0.5, 0.0, 0.5)

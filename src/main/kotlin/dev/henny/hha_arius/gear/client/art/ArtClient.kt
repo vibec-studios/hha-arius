@@ -98,6 +98,8 @@ object ArtClient {
         // Bau-Blöcke der Zauber sind durchscheinend.
         net.fabricmc.fabric.api.client.rendering.v1.BlockRenderLayerMap.putBlock(dev.henny.hha_arius.gear.art.Constructs.FROST, net.minecraft.client.render.BlockRenderLayer.TRANSLUCENT)
         net.fabricmc.fabric.api.client.rendering.v1.BlockRenderLayerMap.putBlock(dev.henny.hha_arius.gear.art.Constructs.YANG, net.minecraft.client.render.BlockRenderLayer.TRANSLUCENT)
+        net.fabricmc.fabric.api.client.rendering.v1.BlockRenderLayerMap.putBlock(dev.henny.hha_arius.gear.art.Constructs.YANG_BRICKS, net.minecraft.client.render.BlockRenderLayer.TRANSLUCENT)
+        net.fabricmc.fabric.api.client.rendering.v1.BlockRenderLayerMap.putBlock(dev.henny.hha_arius.gear.art.Constructs.YANG_WALL, net.minecraft.client.render.BlockRenderLayer.TRANSLUCENT)
 
         ClientPlayNetworking.registerGlobalReceiver(ArtSelfS2C.ID) { p, _ ->
             val now = ArtAnims.ticks
@@ -381,6 +383,32 @@ object ArtClient {
         context.fill(x, y, x + (w * f).toInt(), y + 2, c)
         val m = x + (w * (min / max)).toInt()
         context.fill(m, y - 1, m + 1, y + 3, 0xC0FFFFFF.toInt())
+    }
+
+    // ------------------------------------------------------------------------------------------------- Brückenmaße
+
+    /**
+     * Mausrad beim Zielen der Yang-Brücke: Länge ±2 (Schleichen: Breite ±2). true = Rad verbraucht. Die Maße gelten
+     * sofort für die Vorschau und gehen an den Server.
+     */
+    @JvmStatic
+    fun bridgeScroll(amount: Double): Boolean {
+        val client = MinecraftClient.getInstance()
+        val player = client.player ?: return false
+        if (client.currentScreen != null || amount == 0.0) return false
+        if (selected != Spell.YANG_BRIDGE || ArtAnims.get(player.id)?.anim != Anim.PLACE_AIM || !holdsGauntlets(player)) return false
+        val step = if (amount > 0) 1 else -1
+        val id = player.uuid
+        var len = dev.henny.hha_arius.gear.art.BridgeShape.length(id)
+        var wid = dev.henny.hha_arius.gear.art.BridgeShape.width(id)
+        if (player.isSneaking) wid += 2 * step else len += 2 * step
+        dev.henny.hha_arius.gear.art.BridgeShape.set(id, len, wid)
+        len = dev.henny.hha_arius.gear.art.BridgeShape.length(id)
+        wid = dev.henny.hha_arius.gear.art.BridgeShape.width(id)
+        send(ArtAction.BRIDGE_DIMS, dev.henny.hha_arius.gear.art.BridgeShape.pack(len, wid))
+        player.sendMessage(net.minecraft.text.Text.translatable("hha_arius.msg.art.bridge_dims", len, wid), true)
+        player.playSound(net.minecraft.sound.SoundEvents.UI_BUTTON_CLICK.value(), 0.2f, 1.4f + step * 0.1f)
+        return true
     }
 
     // ------------------------------------------------------------------------------------------------- Bauvorschau

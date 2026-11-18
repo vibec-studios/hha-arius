@@ -17,6 +17,13 @@ object GearConfig {
     private val NUMBERS = linkedMapOf(
         // Frostresonanz (10.1)
         "resonance_max" to 100.0,
+        // Frostspeicher / Manabank (seit 1.4.2) und Litematica-Baupläne
+        "bank_capacity" to 100000.0,
+        "bank_per_kill" to 2.0,
+        "bank_per_kill_health" to 0.2,
+        "blueprint_max_blocks" to 20000.0,
+        "blueprint_cost_mult" to 1.0,
+        "blueprint_blocks_per_tick" to 300.0,
         "resonance_gain_solvane" to 10.0,
         "resonance_gain_melee" to 4.0,
         "resonance_gain_counter" to 25.0,
@@ -99,7 +106,7 @@ object GearConfig {
         "spell_yang_platform_max" to 3.0,
         "spell_yang_bridge_cost" to 20.0,
         "spell_yang_bridge_cooldown" to 100.0,
-        "spell_yang_bridge_ticks" to 300.0,
+        "spell_yang_bridge_ticks" to 160.0, // seit 1.4.2 nur ein paar Sekunden (Crix)
         "spell_yang_glide_cost" to 10.0,
         "spell_yang_glide_drain" to 4.0,
         "spell_yang_glide_max_ticks" to 160.0,
@@ -165,6 +172,10 @@ object GearConfig {
         "breath_damage" to 1.8,
         "breath_slow_ticks" to 50.0,
         "breath_cooldown" to 300.0,
+        "tail_cost" to 25.0,
+        "tail_radius" to 5.5,
+        "tail_damage" to 8.0,
+        "tail_cooldown" to 160.0,
         "wing_leap_cost" to 20.0,
         "wing_leap_forward" to 1.15,
         "wing_leap_up" to 0.8,

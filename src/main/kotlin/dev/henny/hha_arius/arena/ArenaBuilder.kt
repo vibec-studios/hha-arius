@@ -117,6 +117,7 @@ object ArenaBuilder {
             Blocks.SEA_LANTERN.defaultState,
             Blocks.LIGHT_BLUE_STAINED_GLASS.defaultState,
             Blocks.SMOOTH_QUARTZ.defaultState,
+            Blocks.STONE.defaultState,
         )
     }
 
@@ -201,44 +202,19 @@ object ArenaBuilder {
     }
 
     /**
-     * Plateau-Eis eines Einsturzrings ([ArenaLayout.COLLAPSE_RINGS], 0 = innen) von der Lauffläche (samt allem, was bis
-     * 8 Blöcke darüber steht, z. B. Eiskämme) bis durch die Gewölbedecke. Von oben nach unten.
-     */
-    fun collapseRing(world: ServerWorld, origin: BlockPos, ring: Int): List<BlockPos> {
-        val range = ArenaPlan.collapseRange(ring)
-        val out = ArrayList<BlockPos>()
-        val p = BlockPos.Mutable()
-        val n = ArenaLayout.COLLAPSE_R + 1
-        val cols = ArrayList<IntArray>()
-        for (x in -n..n) for (z in -n..n) {
-            val r = sqrt((x * x + z * z).toDouble())
-            if (r >= range[0] && r < range[1]) cols.add(intArrayOf(x, z, floor(ArenaPlan.vaultTop(r)).toInt() + 1))
-        }
-        for (y in 8 downTo ArenaLayout.ICE_BOTTOM - 10) {
-            for (c in cols) {
-                if (y < c[2]) continue
-                p.set(origin.x + c[0], origin.y + y, origin.z + c[1])
-                if (!world.getBlockState(p).isAir) out.add(p.toImmutable())
-            }
-        }
-        return out
-    }
-
-    /**
      * Blöcke einer Säule (Tempel: 3 × 3 × [ArenaLayout.PILLAR_H] ab Laufhöhe; Gewölbe: 3 × 3 vom Boden bis unter die
      * Kuppel), die gerade nicht Luft sind. [pillarCenter] ist der absolute Mittelpunkt auf Laufhöhe.
      */
     fun pillarBlocks(world: ServerWorld, origin: BlockPos, pillarCenter: BlockPos): List<BlockPos> {
         val out = ArrayList<BlockPos>()
         val rel = pillarCenter.subtract(origin)
-        val vault = rel.y <= (ArenaLayout.ICE_BOTTOM + ArenaLayout.VAULT.y) / 2
         val p = BlockPos.Mutable()
-        val h = ArenaLayout.PILLAR_HALF
+        // Seit 1.4.2 Steinklingen: Parierstange reicht ±4 quer, Knauf bis 14 über den Boden.
+        val h = 4
         for (ox in -h..h) for (oz in -h..h) {
             val x = rel.x + ox
             val z = rel.z + oz
-            val top = if (vault) floor(ArenaPlan.vaultTop(sqrt((x * x + z * z).toDouble()))).toInt()
-            else rel.y + ArenaLayout.PILLAR_H - 1
+            val top = rel.y + 14
             for (y in rel.y..top) {
                 p.set(origin.x + x, origin.y + y, origin.z + z)
                 if (!world.getBlockState(p).isAir) out.add(p.toImmutable())

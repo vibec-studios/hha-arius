@@ -23,24 +23,25 @@ LEGEND = {
     'd': H.hexc('#2a2f40'),
 }
 
-# Eine Faust im Profil (Handrücken zum Betrachter), Unterarmschiene nach rechts oben, Schwinge oben, Eisband am Gelenk.
+# Seit 1.4.2: gepanzerte Faust von vorn – vier Fingerplatten mit Goldnieten, Daumen quer davor, Eis-Juwel auf dem
+# Handrücken, goldenes Gelenkband, ausgestellte Stulpe mit Goldsaum (Crix: alte Profilfaust „sieht kacke aus“).
 GAUNTLET = [
     '................',
-    '....kkkkkkk.....',
-    '...k4343434k....',
-    '...k3GgGgGgk....',
-    '..kk3333332kk...',
-    '.k43k333322k3k..',
-    '.k32k332221k2k..',
-    '.k22kk22211k2k..',
-    '..k2kk22211kk...',
-    '...kkIIIIIIk....',
-    '...k2iI44Ii2k...',
-    '...k23I44I32k...',
-    '..k223i44i322k..',
-    '..k2233ii3322k..',
-    '..kgGgGgGgGgGk..',
-    '..kkkkkkkkkkkk..',
+    '...kk.kk.kk.kk..',
+    '..k44k44k44k34k.',
+    '..k43143143132k.',
+    '..kG31G31G31G2k.',
+    '..k33133133122k.',
+    '.kk1111111111kk.',
+    '.k444443333321k.',
+    '.k43333IIi2221k.',
+    '.k3333IiIi2211k.',
+    '..k333iIi22211k.',
+    '...kk2222211kk..',
+    '...kGgGgGgGgk...',
+    '..k4333332211kk.',
+    '.k433333222111k.',
+    '.kgGgGgGgGgGgkk.',
 ]
 LEGEND['w'] = H.hexc('#ffffff')
 
@@ -82,15 +83,32 @@ SWORD_COL = {
 
 
 def solvane_icon():
-    """Solvane: Vanilla-Schwertstruktur in Perlweiß/Eis mit Goldparierstange, Eisjuwel und dunklem Griff."""
+    """Solvane (seit 1.4.2): diagonale Bastardklinge mit breiter perlweißer Schneide und leuchtender Eis-Hohlkehle,
+    Parierstange als goldene Drachenschwingen mit Eisjuwel, dunkle Griffwicklung, Goldknauf mit Eisstein."""
     im = H.Img()
-    for y, row in enumerate(SWORD):
-        for x, ch in enumerate(row):
-            if ch != '.':
-                im.set(x, y, H.hexc(SWORD_COL[ch]))
-    im.set(5, 8, H.hexc('#bfeaff'))   # Eisjuwel in der Parierstange
-    im.set(4, 9, H.hexc('#3e8fd0'))
-    return im
+    W = H.hexc('#ffffff'); B = H.hexc('#8fd8ff'); B2 = H.hexc('#d4f2ff'); S = H.hexc('#a9bdd6'); S2 = H.hexc('#cdd9e8')
+    for y in range(0, 10):
+        c = 15 - y
+        if y == 0:
+            im.set(15, 0, W)
+            continue
+        im.set(c - 1, y, W)
+        im.set(c, y, B2 if y % 3 == 1 else B)
+        if c + 1 < 16:
+            im.set(c + 1, y, S if y > 2 else S2)
+    gold = [H.hexc('#8a6228'), H.hexc('#c99a3e'), H.hexc('#f1d58c')]
+    guard = [((5, 10), -1), ((4, 9), 2), ((3, 8), 2), ((2, 7), 1), ((2, 6), 1), ((1, 5), 0),
+             ((6, 11), 2), ((7, 12), 2), ((8, 13), 1), ((9, 13), 1), ((10, 14), 0)]
+    for (x, y), k in guard:
+        im.set(x, y, H.hexc('#4fb0f0') if k < 0 else gold[k])
+    im.set(3, 9, gold[1]); im.set(6, 12, gold[1])
+    im.set(6, 10, H.hexc('#d9f4ff'))
+    D = H.hexc('#262335'); d = H.hexc('#5a5478')
+    for (x, y, c) in ((4, 11, d), (5, 11, D), (3, 12, D), (4, 12, d), (2, 13, d), (3, 13, D)):
+        im.set(x, y, c)
+    for (x, y, c) in ((1, 14, H.hexc('#8fd8ff')), (0, 14, gold[2]), (1, 15, gold[1]), (0, 15, gold[0]), (2, 14, gold[1]), (1, 13, gold[2])):
+        im.set(x, y, c)
+    return im.outline()
 
 
 def scale_icon():

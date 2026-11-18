@@ -541,6 +541,7 @@ class NivarisBody {
     private var groundY = Double.NaN
     private var ground = -1f
     private var raise = -1f
+    private var smoothHead: Vec? = null
 
     fun update(e: dev.henny.hha_arius.boss.NivarisEntity, s: NivarisRenderState, tickDelta: Float) {
         val now = s.age
@@ -603,7 +604,14 @@ class NivarisBody {
                 val f = Vec(-kotlin.math.sin(yaw), 0.0, kotlin.math.cos(yaw))
                 val spine = base.add(0.0, NivarisShape.SPINE_UP + p[NivarisModel.REAR] * 0.5, 0.0)
                 val h = base.add(f.multiply(p[NivarisModel.FWD].toDouble())).add(0.0, p[NivarisModel.UP].toDouble(), 0.0)
-                headFwd = yawPitch(s.bodyYaw * MathHelper.RADIANS_PER_DEGREE + p[NivarisModel.YAW], p[NivarisModel.PITCH])
+                // Blickrichtung weich nachführen: dreht die Entity schlagartig (Wende, Teleport), schwenkt der Kopf statt zu springen.
+                val wantHead = yawPitch(s.bodyYaw * MathHelper.RADIANS_PER_DEGREE + p[NivarisModel.YAW], p[NivarisModel.PITCH])
+                val prevHead = smoothHead
+                headFwd = if (prevHead == null) wantHead else {
+                    val k = 1.0 - kotlin.math.exp(-dt * 0.3)
+                    prevHead.lerp(wantHead, k).normalizeOr(wantHead)
+                }
+                smoothHead = headFwd
 
                 // Sprung der Entity (Teleport, Neu-Spawn an anderer Stelle): Körper mitnehmen und überblenden.
                 lastE?.let { prev ->
@@ -663,7 +671,10 @@ class NivarisBody {
             var up = ups[i]
             if (air[i] > 0.01f && i in 1 until POINTS - 1) {
                 val k = pts[i - 1].add(pts[i + 1]).subtract(pts[i].multiply(2.0))
-                up = up.add(Vec(k.x, 0.0, k.z).multiply(2.0 * air[i]))
+                // Schräglage begrenzt (höchstens ~30°): enge Kurven kippen den Körper nicht mehr um 90°.
+                var bank = Vec(k.x, 0.0, k.z).multiply(2.0 * air[i])
+                if (bank.length() > 0.55) bank = bank.normalize().multiply(0.55)
+                up = up.add(bank)
             }
             val back = max(0f, 1f - i / 6f) * 0.5
             ups[i] = up.subtract(headFwd.multiply(back)).normalizeOr(UP_V)
@@ -691,28 +702,8 @@ class NivarisBody {
             pts[i] = pts[i].add(l.multiply(lat)).add(u.multiply(ver))
         }
 
-        // Herzgewölbe: eng winden, nicht durch Wand oder Decke (Teile dürfen in den Boden tauchen).
-        // Himmelsbalkon (seit 1.2.2 hoch an der Nadel): im Rund halten, nicht durch die Nadel.
-        if (eirholm && mode == NivarisModeC.NORMAL && base.y > o.y + 60.0) {
-            val vc = o.add(ArenaLayout.VAULT.x + 0.5, ArenaLayout.VAULT.y.toDouble(), ArenaLayout.VAULT.z + 0.5)
-            val ceil = o.y + ArenaLayout.VAULT_CEIL
-            for (i in 0 until POINTS) {
-                val rad = radius(i)
-                val q = pts[i]
-                val dx = q.x - vc.x
-                val dz = q.z - vc.z
-                val d = kotlin.math.sqrt(dx * dx + dz * dz)
-                val maxR = ArenaLayout.VAULT_R - 1.2 - rad
-                var x = q.x
-                var z = q.z
-                if (d > maxR && d > 1e-6) {
-                    x = vc.x + dx / d * maxR
-                    z = vc.z + dz / d * maxR
-                }
-                val y = q.y.coerceIn(vc.y - 0.6, ceil - 0.6 - rad)
-                pts[i] = Vec(x, y, z)
-            }
-        }
+        // Kein Glied durchdringt ein anderes (enge Wenden, Schwanzfeger, Kriechen im Kreis).
+        if (mode == NivarisModeC.NORMAL) separate(pts, groundY)
 
         // Überblendung nach Wechsel/Sprung.
         fadeFrom?.let { from ->
@@ -785,6 +776,61 @@ class NivarisBody {
         val poly = Poly()
         for (i in 0 until POINTS) poly.add(tmp[i], ups[i])
         sample(poly, pts, ups)
+        limitBend(pts)
+        if (groundY.isNaN()) return
+        for (i in 0 until POINTS) {
+            val floor = groundY + radius(i) * 0.9
+            if (pts[i].y < floor) pts[i] = Vec(pts[i].x, floor, pts[i].z)
+        }
+    }
+
+    /**
+     * Biegegrenze (seit 1.4.2): Zwischen zwei Gliedern höchstens 22° (am Hals 40°). Macht die Spur einen Haken oder eine
+     * Kehrtwende, folgt der Körper in einem Bogen (Wenderadius ≈ 6 Blöcke) statt zu knicken oder sich zu falten.
+     */
+    private fun limitBend(pts: Array<Vec>) {
+        for (i in 2 until POINTS) {
+            val maxBend = if (i <= 4) 0.70 else 0.38
+            val prev = pts[i - 1].subtract(pts[i - 2]).normalizeOr(Vec(0.0, 0.0, 1.0))
+            var cur = pts[i].subtract(pts[i - 1]).normalizeOr(prev)
+            val dot = prev.dotProduct(cur).coerceIn(-1.0, 1.0)
+            val ang = kotlin.math.acos(dot)
+            if (ang > maxBend) {
+                // Drehachse; bei fast genauer Umkehr waagerecht zur Seite drehen.
+                var axis = prev.crossProduct(cur)
+                if (axis.lengthSquared() < 1e-6) axis = prev.crossProduct(UP_V).let { if (it.lengthSquared() < 1e-6) Vec(1.0, 0.0, 0.0) else it }
+                cur = rotate(prev, axis.normalize(), maxBend)
+            }
+            pts[i] = pts[i - 1].add(cur.multiply(NivarisShape.SEGMENT))
+        }
+    }
+
+    /** Rodrigues-Drehung von [v] um die Einheitsachse [k] um [a] (Bogenmaß). */
+    private fun rotate(v: Vec, k: Vec, a: Double): Vec {
+        val c = kotlin.math.cos(a)
+        val sn = kotlin.math.sin(a)
+        return v.multiply(c).add(k.crossProduct(v).multiply(sn)).add(k.multiply(k.dotProduct(v) * (1 - c)))
+    }
+
+    /** Glieder, die sich zu nah kommen (nicht Nachbarn), auseinanderschieben; Kopf und Hals bleiben stehen. */
+    private fun separate(pts: Array<Vec>, groundY: Double) {
+        repeat(3) {
+            for (i in 0 until POINTS) {
+                for (j in i + 6 until POINTS) {
+                    val d = pts[j].subtract(pts[i])
+                    val min = (radius(i) + radius(j)) * 1.05
+                    val l2 = d.lengthSquared()
+                    if (l2 >= min * min) continue
+                    val l = kotlin.math.sqrt(l2)
+                    // Waagerecht auseinander (bei Deckung übereinander: das hintere Glied darüber legen).
+                    val dir = if (l < 1e-4) UP_V else Vec(d.x, d.y * 0.5, d.z).normalizeOr(UP_V)
+                    val push = min - l
+                    val wi = if (i < 4) 0.0 else 0.35
+                    pts[j] = pts[j].add(dir.multiply(push * (1.0 - wi)))
+                    if (wi > 0.0) pts[i] = pts[i].subtract(dir.multiply(push * wi))
+                }
+            }
+        }
         if (groundY.isNaN()) return
         for (i in 0 until POINTS) {
             val floor = groundY + radius(i) * 0.9

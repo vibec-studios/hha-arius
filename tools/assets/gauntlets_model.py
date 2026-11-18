@@ -496,16 +496,17 @@ def side(right):
     # Seit 1.2.2 (Crix: „Modell ist kacke“): schlanker, kein Eimer mehr. Flache Stulpe, außen eine geschwungene
     # Drachenschwinge (stufig, Spitze über dem Ellbogen), Ellbogendorn, Eisband am Handgelenk, Knöcheldornen an der Faust.
     base = Part(f'{s}_base', cubes=[
-        C(-3.75, 2.5, -2.5, 5.0, 1.0, 5.0, flare()),                         # Stulpe: flach, x -3,75..1,25
-        C(-1.75, 2.0, -2.75, 1.0, 0.5, 0.5, crest()),                        # Spitzbogen vorn
-        C(-4.25, 4.0, -0.75, 0.5, 3.0, 1.5, fin()),                          # Schwinge 1 (am Grat)
-        C(-4.75, 2.5, -0.5, 0.5, 2.0, 1.0, fin()),                           # Schwinge 2
-        C(-5.25, 1.0, -0.25, 0.5, 2.0, 0.5, fin()),                          # Schwinge 3
-        C(-5.75, 0.0, 0.0, 0.5, 1.5, 0.5, fin(tip=True)),                    # Schwingenspitze über dem Ellbogen
-        C(-4.75, 3.5, 0.5, 0.5, 1.5, 1.0, fin()),                            # hintere Feder
-        C(-2.0, 2.75, 2.5, 1.5, 1.0, 0.5, spike()),                          # Ellbogendorn (Fuß)
-        C(-1.75, 3.0, 3.0, 1.0, 0.5, 0.5, spike()),                          # Ellbogendorn (Spitze)
-        C(-3.5, 3.5, -2.0, 4.5, 3.5, 4.0, brace(), 0.34),                    # Schiene: x -3.84..1.34, y bis 7.34
+        # Seit 1.4.2 (Crix: „das 3D-Modell ist kacke“): Stulpe schmaler, keine Hörner mehr über dem Ellbogen; die
+        # Schwinge liegt flach an der Außenseite und schwingt nach hinten aus, die Schiene trägt weniger auf.
+        C(-3.5, 2.5, -2.25, 4.5, 1.0, 4.5, flare()),                          # Stulpe: x -3,5..1
+        C(-1.75, 2.0, -2.5, 1.0, 0.5, 0.5, crest()),                         # Spitzbogen vorn
+        C(-4.25, 4.0, -1.25, 0.5, 3.0, 1.5, fin()),                          # Schwinge (am Grat)
+        C(-4.25, 3.0, 0.25, 0.5, 3.0, 1.0, fin()),                           # Schwinge, nach hinten gezogen
+        C(-4.25, 2.5, 1.25, 0.5, 2.5, 1.0, fin()),
+        C(-4.25, 2.5, 2.25, 0.5, 1.5, 0.5, fin(tip=True)),                   # Schwingenspitze hinten am Ellbogen
+        C(-2.0, 2.75, 2.25, 1.5, 1.0, 0.5, spike()),                         # Ellbogendorn (Fuß)
+        C(-1.75, 3.0, 2.75, 1.0, 0.5, 0.5, spike()),                         # Ellbogendorn (Spitze)
+        C(-3.5, 3.5, -2.0, 4.5, 3.5, 4.0, brace(), 0.2),                     # Schiene: x -3.7..1.2, y bis 7.2
         C(-4.3, 4.0, -0.5, 0.5, 2.5, 1.0, ridge()),                          # Grat außen
         C(-3.5, 7.0, -2.0, 4.5, 1.0, 4.0, band(), 0.2),                      # untere Lamelle, schmaler (Verjüngung)
         C(-3.25, 7.75, -1.75, 4.0, 0.5, 3.5, wrist_ice(), 0.3),              # Eisband am Handgelenk
@@ -514,13 +515,14 @@ def side(right):
         C(-4.15, 8.5, -0.75, 0.5, 1.5, 1.5, sun_disc()),                     # Yang-Sonne auf dem Handrücken
     ])
     fist = Part(f'{s}_fist', cubes=[
-        C(-3.0, 10.0, -2.0, 4.0, 1.0, 4.0, fist_block(), 0.28),             # eingerollte Finger, y bis 11.28
-        C(-3.8, 10.0, -2.0, 0.5, 1.0, 4.0, knuckle_guard(), 0.02),          # Knöchelschutz außen
-        C(-2.5, 9.5, -2.75, 3.0, 1.0, 0.5, thumb_fist()),                    # Daumen quer vor der Faust
-        C(-4.3, 10.25, -1.75, 0.5, 0.5, 0.5, spike()),                       # Knöcheldornen (vier, außen)
-        C(-4.3, 10.25, -0.75, 0.5, 0.5, 0.5, spike()),
-        C(-4.3, 10.25, 0.25, 0.5, 0.5, 0.5, spike()),
-        C(-4.3, 10.25, 1.25, 0.5, 0.5, 0.5, spike()),
+        # Seit 1.4.2 eine richtige Faust (zwei Einheiten hoch statt einer flachen Scheibe).
+        C(-3.0, 10.0, -2.0, 4.0, 2.0, 4.0, fist_block(), 0.2),              # eingerollte Finger, y bis 12.2
+        C(-3.75, 10.0, -2.0, 0.5, 1.5, 4.0, knuckle_guard(), 0.02),         # Knöchelschutz außen
+        C(-2.5, 10.5, -2.75, 3.0, 1.0, 0.5, thumb_fist()),                   # Daumen quer vor der Faust
+        C(-4.25, 10.5, -1.75, 0.5, 0.5, 0.5, spike()),                       # Knöcheldornen (vier, außen)
+        C(-4.25, 10.5, -0.75, 0.5, 0.5, 0.5, spike()),
+        C(-4.25, 10.5, 0.25, 0.5, 0.5, 0.5, spike()),
+        C(-4.25, 10.5, 1.25, 0.5, 0.5, 0.5, spike()),
     ])
     open_cubes = []
     for z0, segs, end in FINGERS:

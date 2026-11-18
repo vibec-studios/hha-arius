@@ -265,6 +265,46 @@ def dragon_breath(f):
     return im.outline()
 
 
+def dragon_tail(f):
+    """Drachenschweif: ein Geisterschwanz peitscht im Kreis um einen Mittelpunkt (Spirale, Spitze voraus, Fächer an der
+    Spitze), dahinter ein Frostbogen; dreht sich von Bild zu Bild weiter."""
+    im = Img()
+    lead = f / FRAMES * 2 * math.pi
+    # Frostbogen (hinter der Spitze, gestrichelt)
+    for i in range(22):
+        a = lead - i * 0.22
+        r = 6.6
+        x = int(round(7.5 + math.sin(a) * r))
+        y = int(round(7.5 + math.cos(a) * r * 0.85))
+        if i % 3 != 2:
+            im.set(x, y, ICE[3] if i < 8 else ICE[2])
+    # Schwanz: Spirale von der Mitte zur Spitze, dicker innen
+    n = 18
+    for k in range(n):
+        s = k / (n - 1)
+        a = lead - (1 - s) * 2.6
+        r = 1.2 + 4.6 * s ** 0.8
+        cx = 7.5 + math.sin(a) * r
+        cy = 7.5 + math.cos(a) * r * 0.85
+        w = 1.5 * (1 - s) + 0.5
+        for y in range(16):
+            for x in range(16):
+                d = math.hypot(x + 0.5 - cx, y + 0.5 - cy)
+                if d <= w:
+                    im.set(x, y, ICE[4] if d < w * 0.5 else ICE[3])
+    # Fächer an der Spitze
+    a = lead
+    tx = 7.5 + math.sin(a) * 5.8
+    ty = 7.5 + math.cos(a) * 5.8 * 0.85
+    for j in (-1, 0, 1):
+        b = a + math.pi / 2 + j * 0.5
+        for q in range(1, 3):
+            im.set(int(tx + math.sin(b) * q), int(ty + math.cos(b) * q * 0.85), ICE[5])
+    # Kern (Wurzel) in Gold
+    im.set(7, 7, GOLD[3]); im.set(8, 8, GOLD[2]); im.set(8, 7, GOLD[2]); im.set(7, 8, GOLD[1])
+    return im.outline()
+
+
 def wing_leap(f):
     """Schwingensprung: zwei Lichtschwingen, darunter ein gestrichelter Sprungbogen, am Ende ein wachsender Aufprallring."""
     im = Img()
@@ -335,11 +375,11 @@ def glacier_lance(f):
 
 ICONS = {
     'white_core': dragon_breath,
-    'frost_step': wing_leap,
+    'frost_step': dragon_tail,
     'counter': counter,
     'wingscale': wingscale,
     'art/white_core': dragon_breath,
-    'art/frost_step': wing_leap,
+    'art/frost_step': dragon_tail,
     'art/clear_cut': clear_cut,
     'art/white_hole': white_hole,
     'art/tornado': tornado,

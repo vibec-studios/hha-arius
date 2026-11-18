@@ -57,6 +57,9 @@ object GearItems {
     /** Modus der Kampfhandschuhe (0 Nahkampf, 1 Magie), am Stapel, damit alle Spieler ihn sehen. */
     lateinit var GAUNTLET_MODE: ComponentType<Int> private set
 
+    /** Inhalt des Frostspeichers (Manabank) in Resonanz. */
+    lateinit var BANK_AMOUNT: ComponentType<Int> private set
+
     /** Abklinggruppen ohne eigenes Item (HUD über `use_cooldown`-Stapel): Klarer Schnitt, Weißes Loch. */
     val CLEAR_CUT_GROUP: Identifier = HhaArius.id("clear_cut")
     val WHITE_HOLE_GROUP: Identifier = HhaArius.id("white_hole")
@@ -74,6 +77,7 @@ object GearItems {
     lateinit var NIVARIS_SCALE: Item private set
     lateinit var EIRHOLM_UPGRADE_TEMPLATE: Item private set
     lateinit var WHITE_BLADE_TRIM_TEMPLATE: Item private set
+    lateinit var FROST_BANK: Item private set
 
     private var initialized = false
 
@@ -89,6 +93,11 @@ object GearItems {
         GAUNTLET_MODE = Registry.register(
             Registries.DATA_COMPONENT_TYPE, HhaArius.id("gauntlet_mode"),
             ComponentType.builder<Int>().codec(Codec.intRange(0, 1)).packetCodec(PacketCodecs.VAR_INT).build(),
+        )
+
+        BANK_AMOUNT = Registry.register(
+            Registries.DATA_COMPONENT_TYPE, HhaArius.id("bank_amount"),
+            ComponentType.builder<Int>().codec(Codec.intRange(0, Int.MAX_VALUE)).packetCodec(PacketCodecs.VAR_INT).build(),
         )
 
         EIRHOLM_HELMET = armor("eirholm_helmet", EquipmentType.HELMET)
@@ -125,6 +134,17 @@ object GearItems {
         }
         WHITE_BLADE_TRIM_TEMPLATE = HhaItemHelpers.register(HhaArius.id("white_blade_armor_trim_smithing_template")) {
             SmithingTemplateItem.of(it.rarity(Rarity.EPIC))
+        }
+        FROST_BANK = HhaItemHelpers.register(HhaArius.id("frost_bank")) {
+            FrostBankItem(
+                it.maxCount(1).fireproof().rarity(Rarity.RARE).component(BANK_AMOUNT, 0).component(
+                    DataComponentTypes.LORE,
+                    net.minecraft.component.type.LoreComponent(listOf(
+                        Text.translatable("item.hha_arius.frost_bank.lore1").styled { st -> st.withColor(net.minecraft.util.Formatting.GRAY).withItalic(false) },
+                        Text.translatable("item.hha_arius.frost_bank.lore2").styled { st -> st.withColor(net.minecraft.util.Formatting.GRAY).withItalic(false) },
+                    )),
+                ),
+            )
         }
         dev.henny.hha_arius.gear.art.Constructs.registerBlocks()
         registerItemGroup()
@@ -174,6 +194,7 @@ object GearItems {
                     entries.add(NIVARIS_SCALE)
                     entries.add(EIRHOLM_UPGRADE_TEMPLATE)
                     entries.add(WHITE_BLADE_TRIM_TEMPLATE)
+                    entries.add(FROST_BANK)
                 }
                 .build(),
         )

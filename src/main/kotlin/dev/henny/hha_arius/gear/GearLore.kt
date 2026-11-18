@@ -24,8 +24,8 @@ object GearLore {
         }
         context.registerLore(GearItems.EIRHOLM_LEGGINGS) {
             line("$P.eirholm.lore.set")
-            line("$P.eirholm_leggings.lore1", num(k("wing_leap_cost")), seconds(k("wing_leap_cooldown")))
-            line("$P.eirholm_leggings.lore2", num(k("wing_leap_radius")), num(k("wing_leap_damage")))
+            line("$P.eirholm_leggings.lore1", num(k("tail_cost")), seconds(k("tail_cooldown")))
+            line("$P.eirholm_leggings.lore2", num(k("tail_radius")), num(k("tail_damage")))
         }
         context.registerLore(GearItems.EIRHOLM_BOOTS) {
             line("$P.eirholm.lore.set")

@@ -278,7 +278,10 @@ object SpellCasting {
         Focus.end(player)
         val world = player.entityWorld
         val target = Placement.target(world, player, spell)
-        val need = cost(spell, 0f)
+        // Brücke: Kosten wachsen mit der Größe (16 × 3 = Grundkosten, bis zum Fünffachen).
+        val need = cost(spell, 0f) * if (spell == Spell.YANG_BRIDGE) {
+            (BridgeShape.length(player.uuid) * BridgeShape.width(player.uuid) / 48f).coerceIn(1f, 5f)
+        } else 1f
         val allowed = target?.cells?.filter { canBuild(player, world, it) }
         if (target == null || (spell != Spell.FROST_FIELD && allowed.isNullOrEmpty())) {
             ArtNet.anim(player, Anim.NONE, 0)
@@ -301,29 +304,25 @@ object SpellCasting {
                 while (list.size > num(spell, "max").toInt().coerceAtLeast(1)) clear(world, list.removeFirst())
             }
             Spell.YANG_BRIDGE -> {
-                // Seit 1.3.1 eine richtige Brücke: Mittelbahn plus Seitenbahnen, Geländerpfosten alle 2 Blöcke, dazu
-                // ein leuchtender Bogen darunter und Licht-Geländer (Client-Effekt BRIDGE).
-                val path = allowed!!
+                // Seit 1.4.2 eine steinerne Bogenbrücke in Yang-Weiß ([BridgeShape]): Fahrbahn über die eingestellte
+                // Breite, Brüstung mit Lichtpfosten, Bögen und Pfeiler bis zum Boden; Länge/Breite per Mausrad.
+                val path = Placement.bridgePath(world, player) ?: allowed!!
                 val ticks = num(spell, "ticks").toInt()
-                val dir = if (path.size >= 2) Vec3d.of(path[1].subtract(path[0])) else Vec3d(0.0, 0.0, 1.0)
-                val side = BlockPos.ofFloored(-dir.z, 0.0, dir.x)
-                val deck = ArrayList<BlockPos>(path)
-                val posts = ArrayList<BlockPos>()
-                for ((i, c) in path.withIndex()) {
-                    for (sg in intArrayOf(1, -1)) {
-                        val sp = c.add(side.x * sg, 0, side.z * sg)
-                        if (canBuild(player, world, sp)) deck.add(sp)
-                        if (i % 2 == 0) {
-                            val post = sp.up()
-                            if (canBuild(player, world, post)) posts.add(post)
+                val side = Placement.bridgeSide(player)
+                val width = BridgeShape.width(player.uuid)
+                val plan = BridgeShape.plan(path, side, width) { canBuild(player, world, it) }
+                for ((pos, block, order) in plan.parts) {
+                    val place = {
+                        if (world.getBlockState(pos).isAir) {
+                            world.setBlockState(pos, block.defaultState)
+                            world.scheduleBlockTick(pos, block, ticks)
                         }
                     }
+                    if (order <= 0) place() else GearTasks.later(order, place)
                 }
-                build(world, deck, Constructs.YANG, ticks) { p -> (path.indexOfFirst { it.x == p.x && it.z == p.z || it.add(side).let { q -> q.x == p.x && q.z == p.z } || it.subtract(side).let { q -> q.x == p.x && q.z == p.z } }).coerceAtLeast(0) / 2 }
-                build(world, posts, Constructs.YANG, ticks) { p -> path.size / 2 }
                 val a0 = Vec3d.ofCenter(path.first()).add(0.0, 0.5, 0.0)
                 val a1 = Vec3d.ofCenter(path.last()).add(0.0, 0.5, 0.0)
-                ArtFx.send(world, FxKind.BRIDGE, a0, a1.subtract(a0), a = 3f, life = ticks)
+                ArtFx.send(world, FxKind.BRIDGE, a0, a1.subtract(a0), a = width.toFloat(), life = ticks)
             }
             Spell.FROST_FIELD -> frostField(player, world, target.center)
             else -> {}

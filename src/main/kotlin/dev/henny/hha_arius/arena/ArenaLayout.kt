@@ -149,7 +149,7 @@ object ArenaLayout {
      * Blöcke: die Spitze ist ab etwa 10 Chunks Sichtweite zu sehen. Kameras und Flugbahn des Auftritts hängen an
      * diesem Punkt ([dev.henny.hha_arius.boss.EntrancePath.near]).
      */
-    val SPIRE = BlockPos(0, -40, 128)
+    val SPIRE = BlockPos(0, -40, 200)
     const val SPIRE_TOP = 185
     const val SPIRE_BASE_R = 38.0
 
@@ -159,10 +159,6 @@ object ArenaLayout {
         return (SPIRE_BASE_R * Math.pow(1.0 - t, 1.35)).coerceAtLeast(0.0)
     }
 
-    /** Schlucht zwischen Plateau und Nadel: von z [CANYON_Z_FROM] bis [CANYON_Z_TO], Grund bei y [CANYON_FLOOR]. */
-    const val CANYON_Z_FROM = 56
-    const val CANYON_Z_TO = 92
-    const val CANYON_FLOOR = -70
 
     /** Länge des Drachenkörpers (Kopf bis Schwanzspitze) in Blöcken und Zahl der Glieder (Vertrag Modell/Renderer). */
     const val NIVARIS_LENGTH = 96.0
@@ -183,8 +179,8 @@ object ArenaLayout {
 
     // --- Sonstiges ----------------------------------------------------------------------------------------------------
 
-    /** Zuschauerpunkt (k. o., Nachzügler) in Abschnitt I/II: kleine Galerie auf der Westmauer des Tempels. */
-    val WATCH_UPPER = Vec3d(-21.5, 13.0, -50.5)
+    /** Zuschauerpunkt (k. o., Nachzügler) in Abschnitt I/II: Fels westlich des Klingengrabs (seit 1.4.2). */
+    val WATCH_UPPER = Vec3d(-24.5, 4.0, -49.5)
 
     /** Zuschauerpunkt in Abschnitt III: kleiner Eisvorsprung westlich neben dem Balkon (erhöht). */
     val WATCH_VAULT = Vec3d(VAULT.x + 0.5, VAULT.y + 6.0, VAULT.z + 30.5)
@@ -195,12 +191,12 @@ object ArenaLayout {
      */
     const val BOUND_XZ = 52
     const val BOUND_Z_MIN = -80
-    const val BOUND_Y_MIN = -40
+    const val BOUND_Y_MIN = -8
     const val BOUND_Y_MAX = 30
 
     /** Fernlandschaft (Nadel, Schlucht, Gletscherzüge) reicht weiter: bis z [FAR_Z_MAX], x ±[FAR_X], y [FAR_Y_MIN]..[SPIRE_TOP]. */
-    const val FAR_X = 140
-    const val FAR_Z_MAX = 200
+    const val FAR_X = 132
+    const val FAR_Z_MAX = 332
     const val FAR_Y_MIN = -80
 
     fun at(origin: BlockPos, rel: BlockPos): BlockPos = origin.add(rel)

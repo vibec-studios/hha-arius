@@ -241,6 +241,12 @@ enum class FxKind {
 
     /** Wirbelsturm (seit 1.3.1): Mitte pos, a = Radius, e1 = Wirker (folgt nicht), life = Dauer. */
     TORNADO,
+
+    /** Drachenatem der Brustplatte (seit 1.4.2): e1 = Wirker, a = Reichweite, life = Gesamtdauer. */
+    DRAGON_BREATH,
+
+    /** Drachenschweif der Beinschienen (seit 1.4.2): e1 = Wirker, a = Radius, b = Startwinkel (atan2(x, z)). */
+    DRAGON_TAIL,
 }
 
 /**

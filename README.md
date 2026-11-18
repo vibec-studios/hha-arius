@@ -71,6 +71,25 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.5.0
+- **World:**
+  - The arena is an endless snow plain with no rising edges (a new dimension, `hha_arius:highland`).
+  - A giant mountain massif with a 650-block spiral path up to its shoulder, lit by lanterns.
+  - Phase I takes place in the **Blade Grave**, an open terrace ringed by stone swords, instead of the domed temple.
+  - From phase II to III, Solvane carries everyone to the field instead of breaking a hole in the ground.
+- **Fight:**
+  - The QTE prompt now shows during cutscenes. Before, HHA hid the whole HUD, so the QTE could not work.
+  - Dragon body with a bend limit and self-separation, so no more folding or 90° kinks.
+  - Reworked hair and head for Arius.
+- **Gear:**
+  - Elden Ring–style **Dragon Breath**: a ghostly Solvane head breathes rolling frost.
+  - **Dragon Tail** replaces Wing Leap.
+  - Rebuilt **White Hole** and a lively white **Yang Orb**.
+  - **Yang Bridge** as a glowing arch bridge: length (up to 50) and width by mouse wheel, lasts 8 s.
+  - New Solvane and gauntlet icons and a slimmer gauntlet model.
+- **Frost Reservoir (mana bank):** stores resonance from every kill and from overflow. It pays for missing resonance and for
+  **Litematica blueprints** (`/ariusc schematic list|build|confirm|cancel`), which are built from real blocks for resonance.
+
 ### New in 1.4.1
 The final stage now takes place on an open field in the highland east of the plateau, in a snowstorm with the rock horn
 behind it. The Sky Balcony is gone. Yang magic is pure white: the orb is a shaded white sphere with small orbiting

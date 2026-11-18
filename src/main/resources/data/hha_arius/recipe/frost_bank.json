@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    " G ",
+    "AHA",
+    " G "
+  ],
+  "key": {
+    "G": "minecraft:glass",
+    "A": "minecraft:amethyst_shard",
+    "H": "hha_arius:heartfrost"
+  },
+  "result": {
+    "id": "hha_arius:frost_bank",
+    "count": 1
+  }
+}
