@@ -71,6 +71,22 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.6.5
+- **Elden Ring-style Frostbite:** a frost bar builds up from frost attacks. When it fills, it deals burst damage and inflicts Frostbite for 30 s: +20 % damage taken and slower attacks.
+- **World:**
+  - The mountain is no longer hollow.
+  - An ice-spike forest fills the endless plain.
+  - The phase III arena was redesigned: a frozen lake pattern, giant leaning ice crystals, a broken pillar ring and a great stone blade.
+- **Fight:**
+  - Dragon damage is reduced to about two thirds.
+  - The Yang Shield blocks everything from the front, including the Warden's sonic boom. Arius and Solvane break it the way an axe breaks a shield.
+  - Ground attacks no longer hit players high above the arena.
+  - QTEs last much longer and show the key and the action in plain text.
+- **Gear:**
+  - The Yang Bridge can slope up or down by looking up or down, its pillars always reach the ground, and an on-screen hint shows how to set length and width.
+  - New glider pose and effects, and a round Yang Platform.
+  - Dryleaf Dane-style melee: a flying kick while sprinting, a dive kick in the air and an airborne whirlwind kick.
+
 ### New in 1.6.4
 Animated gauntlet fingers in spell mode:
 - **Idle:** the fingers ripple slowly.

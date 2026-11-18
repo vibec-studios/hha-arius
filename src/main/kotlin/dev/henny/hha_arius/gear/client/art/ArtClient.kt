@@ -264,6 +264,12 @@ object ArtClient {
         useHeld = pressed
         if (!gauntlets) castHeld = false
 
+        // Brücke: beim Zielen dauerhaft anzeigen, wie man Länge und Breite einstellt (seit 1.6.5).
+        if (gauntlets && selected == Spell.YANG_BRIDGE && ArtAnims.get(player.id)?.anim == Anim.PLACE_AIM && client.world!!.time % 10L == 0L) {
+            val id = player.uuid
+            player.sendMessage(net.minecraft.text.Text.translatable("hha_arius.msg.art.bridge_dims",
+                dev.henny.hha_arius.gear.art.BridgeShape.length(id), dev.henny.hha_arius.gear.art.BridgeShape.width(id)), true)
+        }
         val modeNow = modeK.isPressed
         if (modeNow && !modeDown && gauntlets && inGame) send(ArtAction.MODE_TOGGLE)
         modeDown = modeNow

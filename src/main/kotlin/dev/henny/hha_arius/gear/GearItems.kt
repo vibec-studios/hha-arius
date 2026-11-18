@@ -147,6 +147,7 @@ object GearItems {
             )
         }
         dev.henny.hha_arius.gear.art.Constructs.registerBlocks()
+        Frostbite.register()
         registerItemGroup()
     }
 

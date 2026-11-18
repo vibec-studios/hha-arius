@@ -5,6 +5,7 @@ import net.minecraft.block.Blocks
 import net.minecraft.server.world.ServerWorld
 import net.minecraft.util.math.BlockPos
 import net.minecraft.util.math.ChunkPos
+import net.minecraft.util.math.Vec3d as Vec
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -26,7 +27,7 @@ import kotlin.math.sin
  */
 internal object FarPlan {
 
-    const val VERSION = 9 // 9: Ranken nur als schmaler Streifen an echten Stufen; 8: 8: Massiv größer, Kletterweg mit Ranken; 7: 7: endloses Schneefeld, Riesenmassiv mit Spiralweg (neue Dimension); 6: 6: Feld im Hochland statt Balkon, kein Massiv; 5: Bergmassiv mit Terrasse statt schwebendem Balkon; 4: Balkon als Felsschelf mit Strebe, Schneebänder am Horn; 2: Himmelsbalkon an der Nadel; 3: Alpen (Felshorn, Fels/Schnee, offenes Hochland)
+    const val VERSION = 10 // 10: Berg massiv/dicke Haut, Eisspitzen-Weite, Phase-III-Arena; 9: 9: Ranken nur als schmaler Streifen an echten Stufen; 8: 8: Massiv größer, Kletterweg mit Ranken; 7: 7: endloses Schneefeld, Riesenmassiv mit Spiralweg (neue Dimension); 6: 6: Feld im Hochland statt Balkon, kein Massiv; 5: Bergmassiv mit Terrasse statt schwebendem Balkon; 4: Balkon als Felsschelf mit Strebe, Schneebänder am Horn; 2: Himmelsbalkon an der Nadel; 3: Alpen (Felshorn, Fels/Schnee, offenes Hochland)
 
     const val X_MIN = -ArenaLayout.FAR_X
     const val X_MAX = ArenaLayout.FAR_X
@@ -295,6 +296,9 @@ internal object FarPlan {
     const val TUFF = 12
     const val WALL = 13
     const val LANTERN = 14
+    const val STONEBRICK = 15
+    const val GOLD = 16
+    const val LBLUE = 17
 
     /**
      * Seit 1.3.1 alpin (Crix: „ein Berg wie in den Alpen, nicht aus Eis“): Fels in Schichten (Stein, Andesit, Tuff,
@@ -329,31 +333,123 @@ internal object FarPlan {
 
     private val VX = ArenaLayout.VAULT.x
     private val VY = ArenaLayout.VAULT.y
+    private val VZ0 = 0
     private val VZ = ArenaLayout.VAULT.z
 
-    /** Block des Feldes an (x, y, z) relativ, oder -1 (nichts): Kristallsäulen und Zuschauerhügel. */
+    /**
+     * Die Arena von Abschnitt III (seit 1.6.5 neu, Crix: „die dritte Phase ist immer noch tot“): ein zugefrorener See
+     * mit Ringmuster (hellblauer Beton, Kalzitadern – nicht rutschig), am Rand Schneewehen; acht riesige, schräg wachsende Eiskristalle; ein
+     * zerbrochener Kreis aus Steinpfeilern mit Bögen (r 37–41); im Norden steckt eine gewaltige Steinklinge im Eis, an
+     * der Solvane ruht; der Zuschauerhügel im Süden. Lauffläche bleibt eben (y −1).
+     */
+    fun fieldFloor(x: Int, z: Int): Int {
+        val dx = (x - VX).toDouble()
+        val dz = (z - VZ).toDouble()
+        val r = hypot(dx, dz)
+        if (r > ArenaLayout.VAULT_R + 3.0) return -1
+        val ring = (r / 3.0).toInt()
+        val vein = abs(vnoise(x, z, 4, 801) - 0.5) < 0.05
+        // Nicht rutschig (kein Eis als Lauffläche): Schnee mit Ringen aus hellblauem Beton und Kalzitadern.
+        return when {
+            r > ArenaLayout.VAULT_R - 1.5 -> SNOW
+            vein -> CALCITE
+            ring % 3 == 0 && r % 3.0 < 0.9 -> LBLUE
+            r < 3.5 -> LBLUE
+            else -> SNOW
+        }
+    }
+
     fun balcony(x: Int, y: Int, z: Int): Int {
         // Zuschauerhügel südlich des Feldes (Lauffläche 6 über dem Feld)
         val wx = ArenaLayout.WATCH_VAULT.x.toInt()
         val wz = ArenaLayout.WATCH_VAULT.z.toInt()
-        if (abs(x - wx) <= 2 && abs(z - wz) <= 2 && y in VY until VY + 6) return if (y == VY + 5) SNOW else PACKED
+        if (abs(x - wx) <= 2 && abs(z - wz) <= 2 && y in VY until VY + 6) return if (y == VY + 5) SNOW else STONE
         val dx = (x - VX).toDouble()
         val dz = (z - VZ).toDouble()
-        if (hypot(dx, dz) > ArenaLayout.VAULT_R + 4.0) return -1
-        // Säulen: Kristall, Höhe 6–9, Kern blau
-        for (p in ArenaLayout.VAULT_PILLARS) {
-            val pr = hypot((x - p.x).toDouble(), (z - p.z).toDouble())
-            if (pr <= 1.6 && y >= VY) {
-                val hgt = 6 + (h32(p.x, 0, p.z, 707) * 4).toInt()
-                val taper = if (y - VY > hgt - 3) 1.6 - (y - VY - (hgt - 3)) * 0.45 else 1.6
-                if (y < VY + hgt && pr <= taper) return if (pr < 0.8) BLUE else PACKED
+        val r = hypot(dx, dz)
+        if (r > ArenaLayout.VAULT_R + 10.0) return -1
+        val hy = y - VY
+        // Riesige Eiskristalle: schräg nach außen geneigt, 12–20 hoch, Kern blau
+        for ((i, p) in ArenaLayout.VAULT_PILLARS.withIndex()) {
+            val hgt = 12 + (h32(p.x, 0, p.z, 707) * 9).toInt()
+            if (hy < 0 || hy >= hgt) continue
+            val out = Vec(p.x - VX.toDouble(), 0.0, p.z - VZ.toDouble()).normalize()
+            val lean = hy * 0.22
+            val cx = p.x + out.x * lean
+            val cz = p.z + out.z * lean
+            val pr = hypot(x + 0.5 - cx - 0.5, z + 0.5 - cz - 0.5)
+            val rad = 2.2 * (1.0 - hy / hgt.toDouble()) + 0.4 + (if (i % 2 == 0) 0.4 else 0.0)
+            if (pr <= rad) return if (pr < rad * 0.45) BLUE else PACKED
+        }
+        // Zerbrochener Pfeilerkreis mit Bögen (r 39)
+        if (r in 37.5..40.5) {
+            val ang = Math.toDegrees(kotlin.math.atan2(dz, dx))
+            val seg = Math.floorMod(Math.floorDiv((ang + 180.0).toInt(), 15), 24)
+            val inSeg = Math.floorMod((ang + 180.0).toInt(), 15)
+            val broken = h32(seg, 0, 0, 811) < 0.3
+            val pillarH = if (broken) 3 + (h32(seg, 1, 0, 813) * 3).toInt() else 9
+            if (inSeg < 3 && hy in 0 until pillarH) return if (hy == pillarH - 1 && !broken) CALCITE else STONEBRICK
+            if (!broken && h32(seg + 1, 0, 0, 811) >= 0.3 && hy in 8..9 && r in 38.0..40.0) return if (hy == 9) CALCITE else STONEBRICK
+            if (inSeg < 3 && hy == -1) return STONEBRICK
+        }
+        // Die große Steinklinge im Norden (bei VAULT_REST), Schneide in x-Richtung, 30 hoch
+        val bx = ArenaLayout.VAULT_REST.x.toInt()
+        val bz = ArenaLayout.VAULT_REST.z.toInt() - 6
+        val u = x - bx
+        val v = z - bz
+        if (abs(v) <= 1 && abs(u) <= 9 && hy >= 0) {
+            val bladeH = 22
+            if (v == 0 && abs(u) <= 3 && hy < bladeH) {
+                if (hy < 2 && abs(u) == 3) return -1
+                return if (abs(u) == 3) CALCITE else if (u == 0) BLUE else STONE
             }
+            if (hy == bladeH && v == 0 && abs(u) <= 8) return if (abs(u) == 8) GOLD else DEEP
+            if (hy == bladeH && abs(v) == 1 && abs(u) <= 1) return DEEP
+            if (v == 0 && u == 0 && hy in bladeH + 1..bladeH + 4) return DEEP
+            if (v == 0 && u == 0 && hy == bladeH + 5) return GOLD
         }
         return -1
     }
 
+    /**
+     * Eisspitzen der endlosen Weite (seit 1.6.5, Crix: „diesen unendlichen Bereich hast du gar nicht visuell
+     * verändert“): im ganzen Fernbereich außerhalb der Kampfflächen ein lichter Wald aus Eisnadeln (8–34 hoch, schmal,
+     * blauer Kern). Weiter draußen setzt der Weltgenerator dasselbe Biom-Merkmal fort.
+     * Liefert für (x, z) Oberkante und Radius-Anteil (Kern) oder null.
+     */
+    fun iceSpike(x: Int, z: Int): IntArray? {
+        if (keepClear(x, z) || !massifTop(x, z).let { it == Int.MIN_VALUE }) return null
+        val cell = 11
+        val cx = Math.floorDiv(x, cell)
+        val cz = Math.floorDiv(z, cell)
+        for (ix in cx - 1..cx + 1) for (iz in cz - 1..cz + 1) {
+            if (h32(ix, 0, iz, 901) > 0.42) continue
+            val sx = ix * cell + (h32(ix, 1, iz, 903) * cell).toInt()
+            val sz = iz * cell + (h32(ix, 2, iz, 905) * cell).toInt()
+            if (keepClear(sx, sz)) continue
+            val hgt = 8 + (h32(ix, 3, iz, 907) * 26).toInt()
+            val r0 = 1.4 + h32(ix, 4, iz, 909) * 2.2
+            val d = hypot((x - sx).toDouble(), (z - sz).toDouble())
+            if (d > r0) continue
+            val h = (hgt * (1.0 - d / r0) * (1.0 - d / r0 * 0.3)).toInt()
+            if (h < 1) continue
+            return intArrayOf(h - 1, if (d < r0 * 0.4) 1 else 0)
+        }
+        return null
+    }
+
+    /** Freizuhaltende Kampfflächen (Eisspitzen der endlosen Weite werden dort entfernt). */
+    fun keepClear(x: Int, z: Int): Boolean {
+        if (hypot(x.toDouble(), z.toDouble()) <= 112.0) return true
+        if (hypot((x - VX).toDouble(), (z - VZ).toDouble()) <= ArenaLayout.VAULT_R + 26.0) return true
+        return !pathAt(x, z).isNaN()
+    }
+
     fun state(id: Int): BlockState = when (id) {
         WALL -> Blocks.STONE_BRICK_WALL.defaultState
+        STONEBRICK -> Blocks.STONE_BRICKS.defaultState
+        LBLUE -> Blocks.LIGHT_BLUE_CONCRETE.defaultState
+        GOLD -> Blocks.GOLD_BLOCK.defaultState
         LANTERN -> Blocks.LANTERN.defaultState
         BLUE -> Blocks.BLUE_ICE.defaultState
         SNOW -> Blocks.SNOW_BLOCK.defaultState
@@ -464,7 +560,10 @@ class FarBuild(private val world: ServerWorld, private val origin: BlockPos) {
                 slope = max(slope, abs(top - vv))
             }
             val path = FarPlan.pathAt(x, z)
-            val bottom = max(-1, min(top - 4, lowest - 1))
+            // Seit 1.6.5 nicht mehr hohl (Crix: „in den Cutscenes sehe ich den Berg von innen“): dickere Haut (12), und
+            // entlang der Schnittebene (±14) ganz massiv bis zum Boden, damit die Kluft nach dem Schnitt Fels zeigt.
+            val solidBand = abs(x + 0.5 - ArenaLayout.CUT_X) <= 14.0
+            val bottom = if (solidBand) -1 else max(-1, min(top - 12, lowest - 1))
             val spire = FarPlan.spireTop(x, z).let { it != Int.MIN_VALUE && it >= FarPlan.massifTop(x, z) }
             for (y in bottom..top) {
                 val id = if (!path.isNaN() && y >= top - 1) FarPlan.SNOW else FarPlan.material(x, y, z, top, slope, spire)
@@ -491,9 +590,45 @@ class FarBuild(private val world: ServerWorld, private val origin: BlockPos) {
                 }
             }
         }
-        // Feld von Abschnitt III: Säulen und Zuschauerhügel.
+        // Eisspitzen und Eisflecken der endlosen Weite (Biom-Merkmale) auf den Kampfflächen und am Weg entfernen.
+        if (FarPlan.keepClear(x, z)) {
+            val from = if (FarPlan.inCore(x, z)) ArenaPlan.Y_MAX + 1 else maxOf(top, -1) + 1
+            for (y in from..from + 56) {
+                pos.set(ax, origin.y + y, az)
+                val st = chunk.getBlockState(pos)
+                if (st.isOf(Blocks.PACKED_ICE) || st.isOf(Blocks.ICE) || st.isOf(Blocks.BLUE_ICE)) {
+                    world.setBlockState(pos, Blocks.AIR.defaultState, ArenaBuilder.FLAGS)
+                    sets++
+                }
+            }
+            if (FarPlan.inCore(x, z)) {
+                // Im Kern: alles, was der Bauplan als Luft vorsieht, aber Eis ist (Eisspitzen), wegnehmen.
+                for (i in core.indices) {
+                    if (core[i] != ArenaPlan.AIR) continue
+                    val y = ArenaPlan.Y_MIN + i
+                    if (y < 0) continue
+                    pos.set(ax, origin.y + y, az)
+                    val st = chunk.getBlockState(pos)
+                    if (st.isOf(Blocks.PACKED_ICE) || st.isOf(Blocks.ICE)) {
+                        world.setBlockState(pos, Blocks.AIR.defaultState, ArenaBuilder.FLAGS)
+                        sets++
+                    }
+                }
+            } else if (top <= -1) {
+                // Eisflecken auf der Lauffläche wieder zu Schnee
+                pos.set(ax, origin.y - 1, az)
+                if (chunk.getBlockState(pos).isOf(Blocks.PACKED_ICE)) put(-1, Blocks.SNOW_BLOCK.defaultState)
+            }
+        }
+        // Eisspitzen der endlosen Weite
+        FarPlan.iceSpike(x, z)?.let { sp ->
+            if (top <= -1) for (y in 0..sp[0]) put(y, FarPlan.state(if (sp[1] == 1 && y < sp[0] - 1) FarPlan.BLUE else FarPlan.PACKED))
+        }
+        // Arena von Abschnitt III: zugefrorener See, Kristalle, Pfeilerkreis, große Klinge, Zuschauerhügel.
         if (abs(x - ArenaLayout.VAULT.x) <= ArenaLayout.VAULT_R + 40 && abs(z - ArenaLayout.VAULT.z) <= ArenaLayout.VAULT_R + 40) {
-            for (y in ArenaLayout.VAULT.y..ArenaLayout.VAULT.y + 12) {
+            val floorId = FarPlan.fieldFloor(x, z)
+            if (floorId >= 0) put(-1, FarPlan.state(floorId))
+            for (y in ArenaLayout.VAULT.y - 1..ArenaLayout.VAULT.y + 28) {
                 val id = FarPlan.balcony(x, y, z)
                 if (id >= 0) put(y, FarPlan.state(id))
             }

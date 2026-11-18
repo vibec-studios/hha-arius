@@ -36,7 +36,10 @@
     [],
     [],
     [],
-    [],
+    [
+      "hha_arius:ice_spike_sparse",
+      "minecraft:ice_patch"
+    ],
     [],
     [],
     [],

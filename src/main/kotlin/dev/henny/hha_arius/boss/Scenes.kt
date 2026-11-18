@@ -1283,12 +1283,12 @@ class Scenes(private val f: EirholmFight) {
             scene.line(eye.add(side.multiply(5.0)).add(dir.multiply(-2.0)).add(0.0, -0.4, 0.0), eye.add(side.multiply(4.0)).add(dir.multiply(-1.0)),
                 start.add(0.0, 1.2, 0.0), eye, 30, 62.0, 54.0)
             f.ambient("iai.glint", start, 3f, 0.7f)
-            val r1 = beat(Qte.Kind.JUMP, 36, 1, "hha_arius.qte.dodge")
+            val r1 = beat(Qte.Kind.JUMP, 70, 1, "hha_arius.qte.dodge")
             a.sheathed = false
             a.play(AriusPose.IAI_DRAW, 1)
             val rushTo = t.entityPos.add(dir.multiply(3.0)).let { Vec3d(it.x, f.floorY, it.z) }
-            for (i in 1..36) {
-                f.place(a, start.lerp(rushTo, (i / 36.0) * (i / 36.0) * 0.55))   // Zeitlupe: langsam heran
+            for (i in 1..70) {
+                f.place(a, start.lerp(rushTo, (i / 70.0) * (i / 70.0) * 0.55))   // Zeitlupe: langsam heran
                 if (r1.done()) break
                 yield(Unit)
             }
@@ -1313,9 +1313,9 @@ class Scenes(private val f: EirholmFight) {
             scene.line(mid.add(s2.multiply(3.2)).add(0.0, 0.2, 0.0), mid.add(s2.multiply(2.2)).add(0.0, 0.1, 0.0), mid, mid, 64, 44.0, 32.0)
             f.ambient("arius.parry", mid, 3.5f, 0.6f)
             Vfx.flare(f.world, Vfx.Style.GOLD, mid, 2.2f, 10)
-            val r2 = beat(Qte.Kind.MASH, 70, 8, "hha_arius.qte.clash")
+            val r2 = beat(Qte.Kind.MASH, 120, 8, "hha_arius.qte.clash")
             var n = 0
-            while (!r2.done() && n++ < 74) {
+            while (!r2.done() && n++ < 124) {
                 if (n % 3 == 0) f.world.spawnParticles(net.minecraft.particle.ParticleTypes.ELECTRIC_SPARK, mid.x, mid.y, mid.z, 6, 0.15, 0.15, 0.15, 0.25)
                 if (n % 8 == 0) f.ambient("arius.parry", mid, 1.6f, 0.9f + n * 0.01f)
                 yield(Unit)
@@ -1328,8 +1328,8 @@ class Scenes(private val f: EirholmFight) {
             // --- Takt 3: Konter. Über die Schulter des Spielers auf Arius, der taumelt.
             val over = tgt.entityPos.add(0.0, 1.7, 0.0).subtract(d2.multiply(-1.6)).add(s2.multiply(0.8))
             scene.line(over, over.add(d2.multiply(0.6)), a.entityPos.add(0.0, 1.3, 0.0), a.entityPos.add(0.0, 1.1, 0.0), 30, 50.0, 40.0)
-            val r3 = beat(Qte.Kind.USE, 30, 1, "hha_arius.qte.counter")
-            waitUntil(32) { r3.done() }
+            val r3 = beat(Qte.Kind.USE, 60, 1, "hha_arius.qte.counter")
+            waitUntil(62) { r3.done() }
             Qte.close(r3)
             if (!r3.anySuccess()) return@script
             ok = true

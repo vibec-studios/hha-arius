@@ -156,6 +156,7 @@ object EirholmAbilities {
                     target.damage(world, world.damageSources.playerAttack(player), dmg)
                     target.addStatusEffect(StatusEffectInstance(StatusEffects.SLOWNESS, GearConfig.ticks("breath_slow_ticks"), 2, false, true, true), player)
                     target.frozenTicks = (target.frozenTicks + 12).coerceAtMost(target.minFreezeDamageTicks + 40)
+                    Frostbite.add(target, 6f)
                     Resonance.markCombat(player)
                 }
             }
@@ -209,6 +210,7 @@ object EirholmAbilities {
                     if (!GearCombat.isHeavy(target)) GearCombat.push(target, at, 0.9, 0.45)
                     target.addStatusEffect(StatusEffectInstance(StatusEffects.SLOWNESS, 60, 2, false, true, true), player)
                     target.frozenTicks = (target.frozenTicks + 40).coerceAtMost(target.minFreezeDamageTicks + 60)
+                    Frostbite.add(target, 22f)
                     world.spawnParticles(ParticleTypes.SNOWFLAKE, e.x, e.y + e.height * 0.6, e.z, 12, 0.3, 0.3, 0.3, 0.1)
                     GearSounds.play(world, e.entityPos, "frost_step", SoundEvents.BLOCK_GLASS_BREAK, 0.6f, 1.4f)
                     Resonance.markCombat(player)

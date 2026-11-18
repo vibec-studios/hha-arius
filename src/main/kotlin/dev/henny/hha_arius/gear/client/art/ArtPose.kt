@@ -403,7 +403,7 @@ internal object ArtPose {
         return when (anim.anim) {
             Anim.JAB, Anim.CROSS -> minOf(1.6f, w * 0.8f)
             Anim.HOOK -> minOf(2f, w * 0.5f)
-            Anim.SIDE_KICK, Anim.SPIN_KICK -> minOf(2.5f, w * 0.5f)
+            Anim.SIDE_KICK, Anim.SPIN_KICK, Anim.FLYING_KICK, Anim.WHIRL_KICK, Anim.DIVE_KICK -> minOf(2.5f, w * 0.5f)
             Anim.PARRY -> 1.5f
             Anim.COUNTER -> 1.2f
             Anim.ART_RELEASE -> 1.2f
@@ -580,8 +580,8 @@ internal object ArtPose {
                 e.rLeg(0.26f, -0.15f, 0.06f); e.lLegP = -0.32f; e.legW = 1f - 0.6f * c.walk; e.headP = 0.1f
             }
             Anim.HOOK -> hook(p, c, t, a, s)
-            Anim.SIDE_KICK -> sideKick(p, c, t, a, s)
-            Anim.SPIN_KICK -> spinKick(p, c, t, a, s)
+            Anim.SIDE_KICK, Anim.FLYING_KICK -> sideKick(p, c, t, a, s)
+            Anim.SPIN_KICK, Anim.WHIRL_KICK -> spinKick(p, c, t, a, s)
             Anim.PARRY -> {
                 val window = s.param.coerceAtLeast(1).toFloat()
                 guard(keyA, c, t); parry(keyB, c, t)
@@ -657,11 +657,14 @@ internal object ArtPose {
             }
             Anim.GLIDE -> {
                 idle(keyA, c, t)
+                // Seit 1.6.5 wie ein Surfer auf der Lichtscheibe (vorher starre T-Haltung): Oberkörper vorgeneigt, rechte
+                // Hand vorn tief, linke weit hinten zum Ausbalancieren, Beine versetzt und gebeugt; sanftes Wiegen.
+                val sway = breathe(t, 0.07f)
                 keyB.reset().apply {
-                    tPitch = 0.12f; tRoll = 0.06f * breathe(t, 0.06f)
-                    rHand.set(-14f, 6.5f, -1.5f); rPalm.set(0f, 1f, 0f)
-                    lHand.set(14f, 6.5f, -1.5f); lPalm.set(0f, 1f, 0f)
-                    rLeg(0.12f, 0.05f, 0.04f); lLeg(-0.16f, -0.05f, -0.04f); legW = 1f; headP = 0.1f
+                    tPitch = 0.3f; tRoll = 0.1f * sway
+                    rHand.set(-5f, 9f + sway, -9f); rPalm.set(0f, 1f, 0f)
+                    lHand.set(10f, 7.5f - sway, 7f); lPalm.set(0f, 1f, 0f)
+                    rLeg(0.45f, 0.12f, 0.06f); lLeg(-0.5f, -0.12f, -0.06f); legW = 1f; headP = -0.2f
                 }
                 p.mix(keyA, keyB, easeOut(a / 5f))
             }
@@ -669,7 +672,7 @@ internal object ArtPose {
             Anim.ART_RELEASE -> artRelease(p, c, t, a, ArtParam.horizontal(s.param), ArtParam.charge(s.param))
             Anim.WHITE_HOLE -> whiteHole(p, c, t, a)
             Anim.UPPERCUT -> uppercut(p, c, t, a, s)
-            Anim.AXE_KICK -> axeKick(p, c, t, a, s)
+            Anim.AXE_KICK, Anim.DIVE_KICK -> axeKick(p, c, t, a, s)
             Anim.NONE -> idle(p, c, t)
         }
     }

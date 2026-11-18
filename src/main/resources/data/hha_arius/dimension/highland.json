@@ -4,12 +4,21 @@
     "type": "minecraft:flat",
     "settings": {
       "biome": "hha_arius:eirholm",
-      "features": false,
+      "features": true,
       "lakes": false,
       "layers": [
-        { "block": "minecraft:bedrock", "height": 1 },
-        { "block": "minecraft:stone", "height": 154 },
-        { "block": "minecraft:snow_block", "height": 5 }
+        {
+          "block": "minecraft:bedrock",
+          "height": 1
+        },
+        {
+          "block": "minecraft:stone",
+          "height": 154
+        },
+        {
+          "block": "minecraft:snow_block",
+          "height": 5
+        }
       ],
       "structure_overrides": []
     }

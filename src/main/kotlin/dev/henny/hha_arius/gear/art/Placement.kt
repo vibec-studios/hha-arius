@@ -89,8 +89,10 @@ object Placement {
                 BlockPos.ofFloored(p.x, p.y - 1.0, p.z)
             }
         }
+        // Seit 1.6.5 eine runde Scheibe (Radius 2, 21 Felder) statt 3 × 3.
         val cells = ArrayList<BlockPos>()
-        for (dx in -1..1) for (dz in -1..1) {
+        for (dx in -2..2) for (dz in -2..2) {
+            if (dx * dx + dz * dz > 5) continue
             val p = center.add(dx, 0, dz)
             if (free(world, p)) cells.add(p.toImmutable())
         }
@@ -103,8 +105,10 @@ object Placement {
         // Unter den Füßen beginnend, ein Block vor dem Spieler; leicht nach oben/unten schauen ändert die Höhe nicht.
         val start = BlockPos.ofFloored(player.x, player.y - 0.5, player.z).offset(dir)
         val cells = ArrayList<BlockPos>()
+        // Seit 1.6.5 schräg: Blick nach oben/unten neigt die Bahn (bis ±30°), in Stufen.
+        val slope = (-kotlin.math.tan(Math.toRadians(player.pitch.toDouble()))).coerceIn(-0.58, 0.58).let { if (kotlin.math.abs(it) < 0.12) 0.0 else it }
         for (i in 0 until BridgeShape.length(player.uuid)) {
-            val p = start.offset(dir, i)
+            val p = start.offset(dir, i).up(kotlin.math.round(i * slope).toInt())
             val state = world.getBlockState(p)
             if (!state.isAir) {
                 if (cells.isEmpty() && i == 0) continue                       // direkt vor einem stehender Block: weiter

@@ -46,7 +46,7 @@ object Damage {
         if (amount <= 0f) return 0f
         val source = if (attacker != null) world.damageSources.create(kind.key, attacker) else world.damageSources.create(kind.key)
         player.timeUntilRegen = 0
-        player.damage(world, source, amount)
-        return amount
+        // Abgefangen (z. B. Yang-Schild)? Dann zählt der Treffer nicht (kein Frostaufbau).
+        return if (player.damage(world, source, amount)) amount else 0f
     }
 }

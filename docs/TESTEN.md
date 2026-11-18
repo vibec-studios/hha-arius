@@ -88,6 +88,20 @@ Client-Welt und Spieler sind vorhanden. Geprüft mit Minecraft 1.21.11, Fabric L
 - [ ] Rüstung „Drachenherz-Wacht“: an Spieler, Rüstungsständer, Mannequin, Zombie; Leuchten Tag/Nacht, Verzauberungsglanz, Umhang, Federn beim Laufen/Springen, schmale Arme, mit und ohne Handschuhe
 - [ ] Solvane-Item: länger, Lichtfluss in der Hohlkehle, Sitz in erster und dritter Person
 
+## 1.6.5
+- [ ] Berg in Cutscenes nie hohl: dicke Haut, entlang der Schnittebene massiv (Kluft zeigt Fels); Fernlandschaft baut neu (Version 10)
+- [ ] Endlose Weite: Wald aus Eisnadeln im Fernbereich, weiter draußen Eisspitzen/Eisflecken aus dem Biom; Kampfflächen (Plateau r 112, Feld, Weg) frei
+- [ ] Phase-III-Arena: Ringmuster (nicht rutschig), acht große schräge Eiskristalle, zerbrochener Pfeilerkreis mit Bögen, große Steinklinge im Norden
+- [ ] Erfrierung wie in Elden Ring: Frostbalken über der Hotbar füllt sich bei Treffern von Arius/Solvane (Atem stärker); bei 100: 10 % max. Leben + 3 Schaden, 30 s „Erfrierung“ (+20 % Schaden, −15 % Angriffstempo), Effekt-Icon; Frost-Techniken bauen Frost bei Gegnern auf
+- [ ] Drache: alle Treffer ~⅔ so stark
+- [ ] Yang-Schild fängt von vorn alles ab (auch Wärter-Schallstrahl, Explosionen); Arius/Solvane zerschlagen ihn (Treffer abgefangen, Schild bricht, 5 s Abklingzeit)
+- [ ] Wer mehr als 12 Blöcke über der Arena ist, wird von Boden-Angriffen nicht getroffen
+- [ ] QTE: Fenster deutlich länger; unter der Taste steht im Klartext, was zu drücken ist (z. B. „Drück Linke Maustaste so schnell du kannst: 3 / 8“)
+- [ ] Brücke: beim Zielen Hinweis „Mausrad: Länge · Schleichen + Mausrad: Breite“; nach oben/unten schauen = schräge Brücke (bis 30°); Pfeiler bis 64 tief zum Boden; endet an festem Boden
+- [ ] Gleiter: Surfer-Haltung, größere Scheibe mit Runen und Lichtschweifen
+- [ ] Plattform: runde Scheibe (Radius 2), leuchtendes Kreuz, wächst von innen nach außen
+- [ ] Nahkampf (Dryleaf Dane): im Sprint Angriff = Flugtritt; in der Luft Angriff = Sturztritt mit Schockwelle; in der Luft Tritt = Wirbeltritt rundum
+
 ## 1.6.4
 - [ ] Zaubermodus, Ego- und dritte Person: Finger einzeln beweglich; Ruhe = langsame Fingerwelle, Aufladen = zitternde Klaue, Wirken/Freigabe = Finger schnellen auf, Bauwerk zielen = Zeigefinger zeigt, Schild = flache gespreizte Hand, Moduswechsel = Faust öffnet sich; helle Handfläche mit leuchtender Eisrune, leuchtende Fingerspitzen
 

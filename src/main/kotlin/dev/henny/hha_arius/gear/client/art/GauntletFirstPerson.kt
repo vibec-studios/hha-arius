@@ -250,7 +250,7 @@ internal object GauntletFirstPerson {
         return when (anim.anim) {
             Anim.JAB, Anim.CROSS -> minOf(1.4f, w * 0.7f)
             Anim.HOOK, Anim.COUNTER -> minOf(1.6f, w * 0.5f)
-            Anim.SIDE_KICK, Anim.SPIN_KICK, Anim.AXE_KICK -> 2f
+            Anim.SIDE_KICK, Anim.SPIN_KICK, Anim.AXE_KICK, Anim.FLYING_KICK, Anim.DIVE_KICK, Anim.WHIRL_KICK -> 2f
             Anim.UPPERCUT -> minOf(1.6f, w * 0.5f)
             Anim.PARRY, Anim.CAST_TAP, Anim.CAST_RELEASE -> 1.4f
             else -> 2.5f
@@ -327,7 +327,7 @@ internal object GauntletFirstPerson {
                 }
                 sink(p, a, w, 0.022f)
             }
-            Anim.SIDE_KICK -> {
+            Anim.SIDE_KICK, Anim.FLYING_KICK -> {
                 // Tritt: Arme fangen das Gleichgewicht ab, die Hand-Anordnung neigt sich leicht.
                 guard(a1, t)
                 a2.set(a1).apply { rH.set(0.48f, -0.46f, -0.72f); lH.set(-0.24f, -0.22f, -0.82f); roll = 0.05f }
@@ -341,7 +341,7 @@ internal object GauntletFirstPerson {
                 }
                 sink(p, a, w, 0.015f)
             }
-            Anim.SPIN_KICK -> {
+            Anim.SPIN_KICK, Anim.WHIRL_KICK -> {
                 guard(a1, t)
                 a2.set(a1).apply { rH.set(0.25f, -0.40f, -0.62f); lH.set(-0.20f, -0.38f, -0.64f); roll = -0.04f; dy = -0.02f }
                 a3.set(a1).apply { rH.set(0.85f, -0.55f, -0.55f); rN.set(0f, -1f, 0f); lH.set(-0.60f, -0.30f, -0.75f); lN.set(0f, -1f, 0f); roll = 0.06f }
@@ -367,7 +367,7 @@ internal object GauntletFirstPerson {
                 }
                 sink(p, a, w, -0.015f)
             }
-            Anim.AXE_KICK -> {
+            Anim.AXE_KICK, Anim.DIVE_KICK -> {
                 // Sprung: Arme öffnen sich zum Gleichgewicht, Blick hebt sich; Ferse herab: alles sackt tief ein.
                 guard(a1, t)
                 a2.set(a1).apply { rH.set(0.80f, -0.30f, -0.62f); rN.set(0f, -1f, 0f); lH.set(-0.80f, -0.30f, -0.62f); lN.set(0f, -1f, 0f); dy = 0.05f; roll = -0.03f }

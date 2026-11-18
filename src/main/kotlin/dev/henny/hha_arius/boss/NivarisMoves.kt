@@ -21,6 +21,7 @@ import kotlin.math.sqrt
  * Rumpf vorn (Entity, Trefferbox) und setzt die Pose, Kopf und Körper ergeben sich daraus ([NivarisShape], Renderer).
  */
 class NivarisMoves(private val f: EirholmFight) {
+    // Seit 1.6.5 alle Treffer der Drachin auf etwa zwei Drittel gesenkt (Crix: „fixe den Schaden des Drachen“).
 
     enum class Zone { HEAD, THROAT, BODY, TAIL }
 
@@ -320,7 +321,7 @@ class NivarisMoves(private val f: EirholmFight) {
         d.throatGlow = 100
         d.play(NivarisPose.BREATH)
         f.sound("nivaris.breath", d.entityPos, 3.5f)
-        for (p in line.hits(f.players())) if (!f.coveredFrom(d.entityPos.add(0.0, 2.0, 0.0), p)) f.hurt(p, 14f, Damage.Kind.FROST_BREATH, d)
+        for (p in line.hits(f.players())) if (!f.coveredFrom(d.entityPos.add(0.0, 2.0, 0.0), p)) f.hurt(p, 9f, Damage.Kind.FROST_BREATH, d)
         // Sichtbar aus dem Maul (Kopf des Schlangenkörpers); Treffer und Deckung wie bisher über die Bahn.
         Vfx.beam(f.world, style, mouth(), Vec3d(b.x, f.floorY + 0.5, b.z), 2.2f, 16)
         // Sie gleitet die Bahn entlang.
@@ -384,7 +385,7 @@ class NivarisMoves(private val f: EirholmFight) {
             d.play(NivarisPose.IDLE)
             return@script
         }
-        for (p in line.hits(f.players())) f.hurt(p, 16f, Damage.Kind.IMPACT, d)
+        for (p in line.hits(f.players())) f.hurt(p, 10f, Damage.Kind.IMPACT, d)
         f.sound("nivaris.land", to, 3f)
         Vfx.shockwave(f.world, style, to, 4f, 12, 1.2f)
         d.play(NivarisPose.LAND, 1)
@@ -421,7 +422,7 @@ class NivarisMoves(private val f: EirholmFight) {
         vel = null
         d.flying = false
         for (p in ring.hits(f.players())) {
-            f.hurt(p, 18f, Damage.Kind.IMPACT, d)
+            f.hurt(p, 12f, Damage.Kind.IMPACT, d)
             Fx.launchPlayer(p, flatDir(spot, p.entityPos).multiply(0.9).add(0.0, 0.45, 0.0))
         }
         f.sound("nivaris.crash", spot, 4f, 0.9f)
@@ -451,7 +452,7 @@ class NivarisMoves(private val f: EirholmFight) {
             for (p in f.players()) {
                 val dd = sqrt((p.x - center.x) * (p.x - center.x) + (p.z - center.z) * (p.z - center.z))
                 if (kotlin.math.abs(dd - rr) < 1.6 && hit.add(p.uuid)) {
-                    f.hurt(p, 8f, Damage.Kind.IMPACT, f.nivaris)
+                    f.hurt(p, 5f, Damage.Kind.IMPACT, f.nivaris)
                     Fx.launchPlayer(p, Vec3d(0.0, 0.6, 0.0))
                 }
             }
@@ -480,7 +481,7 @@ class NivarisMoves(private val f: EirholmFight) {
                 f.fx(FxKind.ICE_CHUNK, mouth(), at, a = 1.6f, life = ring.ticks)
                 f.task(script {
                     wait(ring.ticks)
-                    for (p in ring.hits(f.players())) f.hurt(p, 8f, Damage.Kind.IMPACT, f.nivaris)
+                    for (p in ring.hits(f.players())) f.hurt(p, 5f, Damage.Kind.IMPACT, f.nivaris)
                     Vfx.shockwave(f.world, style, at, 3f, 10, 1f)
                     f.sound("glacier.crack", at, 2f, 1.3f)
                 })
@@ -501,7 +502,7 @@ class NivarisMoves(private val f: EirholmFight) {
         wait((line.ticks - 8).coerceAtLeast(1))
         flyTo(end, 2.4, 24, faceTarget = end.add(dir.multiply(10.0)))
         for (p in line.hits(f.players())) {
-            f.hurt(p, 14f, Damage.Kind.IMPACT, d)
+            f.hurt(p, 9f, Damage.Kind.IMPACT, d)
             Fx.launchPlayer(p, Vec3d(-dir.z, 0.0, dir.x).multiply(if (rnd.nextBoolean()) 0.8 else -0.8).add(0.0, 0.5, 0.0))
         }
         Vfx.shockwave(f.world, style, Vec3d(end.x, f.floorY, end.z), 5f, 12, 1f)
@@ -532,7 +533,7 @@ class NivarisMoves(private val f: EirholmFight) {
         d.flying = false
         f.sound("nivaris.land", spot, 3.5f)
         for (p in ring.hits(f.players())) {
-            f.hurt(p, 12f, Damage.Kind.IMPACT, d)
+            f.hurt(p, 8f, Damage.Kind.IMPACT, d)
             Fx.launchPlayer(p, flatDir(spot, p.entityPos).multiply(0.7).add(0.0, 0.3, 0.0))
         }
         Vfx.shockwave(f.world, style, spot, 6f, 16, 1.5f)
@@ -565,7 +566,7 @@ class NivarisMoves(private val f: EirholmFight) {
         d.play(NivarisPose.CLAW, cone.ticks)
         wait(cone.ticks)
         f.sound("nivaris.claw", apex, 3f)
-        for (p in cone.hits(f.players())) f.hurt(p, 12f, Damage.Kind.IMPACT, d)
+        for (p in cone.hits(f.players())) f.hurt(p, 8f, Damage.Kind.IMPACT, d)
         Vfx.crescent(f.world, style, apex.add(0.0, 1.0, 0.0), dir, 6f, 4f, 8)
         wait(AriusTimings.NIVARIS_RECOVER[NivarisPose.CLAW])
     }
@@ -577,7 +578,7 @@ class NivarisMoves(private val f: EirholmFight) {
         wait(ring.ticks)
         f.sound("nivaris.tail", d.entityPos, 3f)
         for (p in ring.hits(f.players())) {
-            f.hurt(p, 10f, Damage.Kind.IMPACT, d)
+            f.hurt(p, 6f, Damage.Kind.IMPACT, d)
             Fx.launchPlayer(p, flatDir(d.entityPos, p.entityPos).multiply(0.9).add(0.0, 0.35, 0.0))
         }
         Vfx.shockwave(f.world, style, d.entityPos, 9f, 12, 0.8f)
@@ -625,7 +626,7 @@ class NivarisMoves(private val f: EirholmFight) {
         f.fx(FxKind.ICE_CHUNK, mouth(), to.add(0.0, 0.5, 0.0), a = 2f, life = 8)
         wait(8)
         f.sound("ridge.break", to, 3f, 0.6f)
-        for (p in line.hits(f.players())) f.hurt(p, 14f, Damage.Kind.IMPACT, d)
+        for (p in line.hits(f.players())) f.hurt(p, 9f, Damage.Kind.IMPACT, d)
         Vfx.shockwave(f.world, style, to, 2.5f, 10, 1f)
         wait(AriusTimings.NIVARIS_RECOVER[NivarisPose.THROW])
     }

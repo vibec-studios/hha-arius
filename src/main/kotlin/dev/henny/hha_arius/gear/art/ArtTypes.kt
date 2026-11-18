@@ -106,7 +106,17 @@ enum class Move(
     UPPERCUT(4, 9, 1.15f, 2.9, 40.0, 1, 0.15, 0.75, "melee_gain_uppercut", 0.55, Anim.UPPERCUT),
 
     /** Axttritt (Tritt nach dem Aufwärtshaken): Sprung, Ferse kracht herab, Frost-Schockwelle trifft im Halbkreis vorn. */
-    AXE_KICK(9, 14, 1.7f, 3.6, 80.0, 3, 0.7, 0.0, "melee_gain_axe", 0.3, Anim.AXE_KICK);
+    AXE_KICK(9, 14, 1.7f, 3.6, 80.0, 3, 0.7, 0.0, "melee_gain_axe", 0.3, Anim.AXE_KICK),
+
+    // Seit 1.6.5 nach Dryleaf Dane (Elden Ring, Shadow of the Erdtree): Kampfkunst mit Sprung- und Drehtritten.
+    /** Im Sprint: Flugtritt – Sprung nach vorn, das Bein voraus, trifft alles auf der Bahn. */
+    FLYING_KICK(5, 10, 1.4f, 4.4, 40.0, 3, 0.95, 0.15, "melee_gain_kick", 1.0, Anim.FLYING_KICK),
+
+    /** In der Luft (Angriff): Sturztritt schräg nach unten, Frost-Schockwelle beim Aufprall. */
+    DIVE_KICK(5, 12, 1.6f, 3.8, 120.0, 4, 0.6, 0.15, "melee_gain_axe", 1.0, Anim.DIVE_KICK),
+
+    /** In der Luft (Tritt): Dryleaf-Wirbelwind – Drehtritt einmal herum, Windsichel, trifft alle im Kreis. */
+    WHIRL_KICK(6, 12, 1.3f, 3.6, 180.0, 5, 0.85, 0.35, "melee_gain_spin", 1.0, Anim.WHIRL_KICK);
 
     val total: Int get() = windup + recover
 }
@@ -164,7 +174,16 @@ enum class Anim(val loop: Boolean = false) {
     UPPERCUT,
 
     /** Axttritt: Sprung, Bein hoch über den Kopf, Ferse herab (param = Ausholzeit). */
-    AXE_KICK;
+    AXE_KICK,
+
+    /** Flugtritt (param = Ausholzeit). */
+    FLYING_KICK,
+
+    /** Sturztritt aus der Luft (param = Ausholzeit). */
+    DIVE_KICK,
+
+    /** Wirbeltritt in der Luft (param = Ausholzeit). */
+    WHIRL_KICK;
 
     companion object {
         fun of(raw: Int): Anim = entries.getOrElse(raw) { NONE }

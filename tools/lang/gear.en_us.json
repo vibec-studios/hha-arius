@@ -87,5 +87,7 @@
   "hha_arius.blueprint.no_server": "The server does not have HHA Arius.",
   "hha_arius.blueprint.sent": "Blueprint \"%s\" sent to the server.",
   "item.hha_arius.frost_bank.lore1": "Stores resonance: every creature you kill and any overflow of your bar",
-  "item.hha_arius.frost_bank.lore2": "Covers missing resonance automatically · right-click fills the bar · pays for Litematica blueprints"
+  "item.hha_arius.frost_bank.lore2": "Covers missing resonance automatically · right-click fills the bar · pays for Litematica blueprints",
+  "effect.hha_arius.frostbite": "Frostbite",
+  "hha_arius.hud.frostbite": "Frostbite · %s s"
 }

@@ -149,6 +149,15 @@ object QteClient {
             val t = Text.translatable(text)
             ctx.drawText(tr, t, cx - tr.getWidth(t) / 2, cy - 34, withAlpha(0xFFE8F2FF.toInt(), fade), true)
         }
+        // Was genau zu tun ist (seit 1.6.5, Crix: „ich hab keinen Plan, was smash sein soll“): Taste und Handlung im Klartext.
+        val how = when (kind) {
+            Qte.Kind.JUMP -> Text.translatable("hha_arius.qte.how.jump", keyText)
+            Qte.Kind.USE -> Text.translatable("hha_arius.qte.how.use", keyText)
+            Qte.Kind.SNEAK -> Text.translatable("hha_arius.qte.how.sneak", keyText)
+            Qte.Kind.ATTACK -> Text.translatable("hha_arius.qte.how.attack", keyText)
+            Qte.Kind.MASH -> Text.translatable("hha_arius.qte.how.mash", keyText, presses.coerceAtMost(need), need)
+        }
+        ctx.drawText(tr, how, cx - tr.getWidth(how) / 2, cy + 36, withAlpha(0xFFFFD98A.toInt(), fade), true)
         // Sich schließender Kreis um die Taste (Erfolg: Kreis springt golden auf)
         val tRing = if (result == 0) (left - td).coerceAtLeast(0f) / total else 0f
         val baseR = 22f

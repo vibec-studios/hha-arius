@@ -298,7 +298,25 @@ object SpellCasting {
         when (spell) {
             Spell.ICE_WALL -> build(world, allowed!!, Constructs.FROST, num(spell, "ticks").toInt(), stagger = { p -> p.y - allowed.minOf { it.y } })
             Spell.YANG_PLATFORM -> {
-                build(world, allowed!!, Constructs.YANG, num(spell, "ticks").toInt()) { 0 }
+                // Seit 1.6.5: runde Scheibe aus Yang-Ziegeln, Mitte und vier Strahlen leuchten; wächst von innen nach
+                // außen, ein Runenkreis blüht darunter auf.
+                val c = target.center
+                val ticks = num(spell, "ticks").toInt()
+                for (pos in allowed!!) {
+                    val dx = pos.x + 0.5 - c.x
+                    val dz = pos.z + 0.5 - c.z
+                    val glow = (kotlin.math.abs(dx) < 0.6 || kotlin.math.abs(dz) < 0.6)
+                    val block = if (glow) Constructs.YANG else Constructs.YANG_BRICKS
+                    val delay = (kotlin.math.sqrt(dx * dx + dz * dz) * 1.5).toInt()
+                    GearTasks.later(delay) {
+                        if (world.getBlockState(pos).isAir) {
+                            world.setBlockState(pos, block.defaultState)
+                            world.scheduleBlockTick(pos, block, ticks)
+                        }
+                    }
+                }
+                ArtFx.send(world, FxKind.CLEAR_WAVE, c.add(0.0, 0.6, 0.0), a = 3.5f, life = 14)
+                GearSounds.play(world, c, "art.platform", SoundEvents.BLOCK_AMETHYST_BLOCK_RESONATE, 0.8f, 1.2f)
                 val list = platforms.getOrPut(player.uuid) { ArrayDeque() }
                 list.addLast(allowed)
                 while (list.size > num(spell, "max").toInt().coerceAtLeast(1)) clear(world, list.removeFirst())
@@ -496,7 +514,10 @@ object SpellCasting {
                     val dir = Vec3d(look.x * cos(a) - look.z * sin(a), look.y, look.x * sin(a) + look.z * cos(a)).normalize()
                     Bolts.launch(Bolts.Bolt(player.uuid, world, eyeStart(player), dir.multiply(1.4), num(spell, "range"), 0.35, 0, School.ICE,
                         onHit = { p, t, _ ->
-                            if (damage(p, t, dmg)) t.addStatusEffect(StatusEffectInstance(StatusEffects.SLOWNESS, slow, 0, false, true, true), p)
+                            if (damage(p, t, dmg)) {
+                                t.addStatusEffect(StatusEffectInstance(StatusEffects.SLOWNESS, slow, 0, false, true, true), p)
+                                dev.henny.hha_arius.gear.Frostbite.add(t, 12f)
+                            }
                         }))
                 }
                 GearSounds.play(world, player.entityPos, "art.frost_shards", SoundEvents.BLOCK_GLASS_BREAK, 0.5f, 1.7f)
@@ -619,7 +640,10 @@ object SpellCasting {
         val burst = 3.0 + 2.0 * charge
         Bolts.launch(Bolts.Bolt(player.uuid, world, eyeStart(player), player.rotationVector.multiply(1.9), num(spell, "range"), 0.7 + 0.35 * charge, 99, School.ICE,
             onHit = { p, t, _ ->
-                if (damage(p, t, dmg)) t.addStatusEffect(StatusEffectInstance(StatusEffects.SLOWNESS, 60, 2, false, true, true), p)
+                if (damage(p, t, dmg)) {
+                    t.addStatusEffect(StatusEffectInstance(StatusEffects.SLOWNESS, 60, 2, false, true, true), p)
+                    dev.henny.hha_arius.gear.Frostbite.add(t, 34f)
+                }
             },
             onEnd = { p, at ->
                 if (p != null) {
@@ -682,22 +706,34 @@ object SpellCasting {
     }
 
     /**
-     * Yang-Schild: nur Treffer von vorn (±60°). Jeder abgefangene Treffer kostet Resonanz (2 je Schadenspunkt); reicht
-     * sie nicht, bricht der Schild und der Treffer geht durch. Explosionen und „ignoriert Schilde“ gehen immer durch.
+     * Yang-Schild: Treffer von vorn (±60°) werden abgefangen – seit 1.6.5 **alle**, auch solche, die Schilde sonst
+     * ignorieren (z. B. der Schallstrahl des Wärters) und Explosionen. Jeder abgefangene Treffer kostet Resonanz (2 je
+     * Schadenspunkt); reicht sie nicht, bricht der Schild und der Treffer geht durch. Arius und Solvane zerschlagen den
+     * Schild wie eine Axt einen Schild: Der Treffer wird noch abgefangen, dann bricht er, 5 s Abklingzeit.
      */
     private fun shieldBlocks(player: ServerPlayerEntity, source: DamageSource, amount: Float): Boolean {
         val s = states[player.uuid] ?: return false
         if (s.active != Spell.YANG_SHIELD) return false
-        if (source.isIn(DamageTypeTags.BYPASSES_SHIELD) || source.isIn(DamageTypeTags.IS_EXPLOSION)) return false
-        val from = source.position ?: return false
+        val from = source.position ?: source.attacker?.entityPos ?: return false
         val look = player.rotationVector
         val dir = from.subtract(player.eyePos)
         val flat = Vec3d(dir.x, 0.0, dir.z)
         val lookFlat = Vec3d(look.x, 0.0, look.z)
         if (flat.lengthSquared() < 1e-6 || lookFlat.lengthSquared() < 1e-6) return false
         if (flat.normalize().dotProduct(lookFlat.normalize()) < cos(Math.toRadians(ArtTimings.SHIELD_HALF_ANGLE))) return false
-        val price = amount * 2f
         val world = player.entityWorld
+        val boss = source.attacker is dev.henny.hha_arius.boss.AriusEntity || source.attacker is dev.henny.hha_arius.boss.NivarisEntity ||
+            source.typeRegistryEntry.key.map { it.value.namespace == "hha_arius" }.orElse(false)
+        if (boss) {
+            stopActive(player, cancelled = false)
+            Focus.end(player)
+            setCooldown(player, Spell.YANG_SHIELD, maxOf(100, num(Spell.YANG_SHIELD, "cooldown").toInt()))
+            GearSounds.play(world, player.entityPos, "art.shield_break", SoundEvents.ITEM_SHIELD_BREAK.value(), 1.2f, 0.8f)
+            GearSounds.play(world, player.entityPos, "art.shield_break", SoundEvents.BLOCK_GLASS_BREAK, 1f, 0.7f)
+            dev.henny.hha.logic.Fx.launchPlayer(player, flat.normalize().multiply(-0.6).add(0.0, 0.2, 0.0))
+            return true
+        }
+        val price = amount * 2f
         if (!Resonance.spend(player, price)) {
             stopActive(player, cancelled = false)
             Focus.end(player)

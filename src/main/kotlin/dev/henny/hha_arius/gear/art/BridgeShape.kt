@@ -20,7 +20,7 @@ object BridgeShape {
     const val DEFAULT_LENGTH = 16
     const val DEFAULT_WIDTH = 5
     private const val SPAN = 8
-    private const val PILLAR_DEPTH = 24
+    private const val PILLAR_DEPTH = 64 // seit 1.6.5: Pfeiler reichen immer bis zum Boden
 
     private val dims = HashMap<UUID, IntArray>()
 

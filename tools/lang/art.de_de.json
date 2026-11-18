@@ -73,7 +73,7 @@
   "hha_arius.keys.unbound": "Arius: „%s“ ist nicht belegt. Belege die Taste unter Optionen → Steuerung → HHA, sonst fehlen Zauberrad, Moduswechsel bzw. Klarer Schnitt.",
   "item.hha_arius.arius_gauntlets.lore5": "Folge: Gerade · Gerade · Haken · Aufwärtshaken (schleudert hoch) – Tritt nach dem Haken = Drehtritt, nach dem Aufwärtshaken = Axttritt mit Frostwelle",
   "hha_arius.qte.clash": "Die Klingen sind gebunden – drück dagegen!",
-  "hha_arius.qte.mash": "%s  ×  hämmern",
+  "hha_arius.qte.mash": "%s  ×  schnell drücken",
   "hha_arius.qte.clash_won": "Du brichst seine Deckung!",
   "hha_arius.qte.clash_won_other": "Seine Deckung bricht!",
   "hha_arius.qte.clash_lost": "Er stößt dich zurück.",
@@ -84,5 +84,10 @@
   "hha_arius.spell.tornado.desc": "Wandernder Wirbelsturm (5 s): saugt Gegner ein, hebt sie hoch, 1,5 Schaden je 0,5 s, zerreißt Geschosse · 11 s",
   "hha_arius.spell.glacier_lance": "Gletscherlanze",
   "hha_arius.spell.glacier_lance.desc": "Halten zum Laden (bis 1,8 s): riesiger Eisspeer (30 Blöcke), durchschlägt alles, 8–18 Schaden, zerbirst in eine Frostexplosion · 7 s",
-  "hha_arius.msg.art.bridge_dims": "Brücke: Länge %s · Breite %s (Mausrad; Schleichen + Mausrad: Breite)"
+  "hha_arius.msg.art.bridge_dims": "Brücke: Länge %s · Breite %s (Mausrad; Schleichen + Mausrad: Breite)",
+  "hha_arius.qte.how.jump": "Drück %s (Springen)",
+  "hha_arius.qte.how.use": "Drück %s (Benutzen / Rechtsklick)",
+  "hha_arius.qte.how.sneak": "Drück %s (Schleichen)",
+  "hha_arius.qte.how.attack": "Drück %s (Angriff / Linksklick)",
+  "hha_arius.qte.how.mash": "Drück %s so schnell du kannst: %s / %s"
 }

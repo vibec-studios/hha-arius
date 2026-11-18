@@ -349,10 +349,22 @@ internal object ArtVisuals {
     private fun glide(d: VfxDraw, p: PlayerEntity, a: Float, td: Float, fx: Float) {
         val k = easeOut(a / 4f) * fx
         val c = p.getLerpedPos(td).add(0.0, 0.04, 0.0)
-        val r = 0.8
-        d.disc(VfxLayers.GLOW_ADD, c, X, Z, r * 1.2, withAlpha(YANG_CORE, 0.3f * k))
-        d.ring(VfxLayers.GLOW_ADD, c, X, Z, r - 0.06, r + 0.06, withAlpha(YANG, 0.6f * k), withAlpha(YANG, 0.6f * k), segments = 48, uTile = 0f, uOffset = 0.5f)
-        d.disc(VfxLayers.RUNE_ADD, c, X, Z, r * 0.9, withAlpha(YANG, 0.22f * k), rotation = (-a * 0.015).toDouble())
+        // Seit 1.6.5 größere Lichtscheibe mit doppeltem Ring, Runen und Lichtschweifen, die hinter der Bewegung herziehen.
+        val r = 1.25
+        d.disc(VfxLayers.GLOW_ADD, c, X, Z, r * 1.3, withAlpha(YANG_CORE, 0.35f * k))
+        d.ring(VfxLayers.GLOW_ADD, c, X, Z, r - 0.07, r + 0.07, withAlpha(YANG, 0.75f * k), withAlpha(YANG, 0.75f * k), segments = 64, uTile = 0f, uOffset = 0.5f)
+        d.ring(VfxLayers.FLOW_ADD, c, X, Z, r * 0.55, r * 0.7, withAlpha(YANG, 0.5f * k), withAlpha(YANG, 0.2f * k), segments = 48, uTile = 4f, uOffset = a * 0.05f)
+        d.disc(VfxLayers.RUNE_ADD, c, X, Z, r * 0.95, withAlpha(YANG, 0.3f * k), rotation = (-a * 0.02).toDouble())
+        val v = p.velocity.let { net.minecraft.util.math.Vec3d(it.x, 0.0, it.z) }
+        if (v.lengthSquared() > 1e-3) {
+            val back = v.normalize().multiply(-1.0)
+            val side = net.minecraft.util.math.Vec3d(-back.z, 0.0, back.x)
+            for (sg in doubleArrayOf(-1.0, 0.0, 1.0)) {
+                val from = c.add(side.multiply(sg * r * 0.8))
+                val path = (0..8).map { i -> from.add(back.multiply(i * 0.45)).add(0.0, kotlin.math.sin(a * 0.3 + i * 0.6 + sg) * 0.05, 0.0) }
+                d.ribbon(VfxLayers.GLOW_ADD, path, { f -> 0.12 * (1.0 - f) }, { f -> withAlpha(YANG, (1f - f) * 0.6f * k) }, uScale = 1f, uOffset = 0f)
+            }
+        }
     }
 
     /**

@@ -47,6 +47,7 @@ object Gear {
         GearTasks.init()
         Resonance.init()
         FrostBank.init()
+        Frostbite.init()
         dev.henny.hha_arius.gear.art.Blueprints.init()
         SolvaneEdge.init()
         SolvaneCounter.init()

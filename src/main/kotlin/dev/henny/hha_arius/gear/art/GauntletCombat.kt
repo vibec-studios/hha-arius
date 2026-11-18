@@ -89,7 +89,11 @@ object GauntletCombat {
         val linked = now <= s.chainUntil
         val chain = if (linked) s.chain else 0
         var windupOverride = -1
+        val airborne = !player.isOnGround && !player.isTouchingWater && player.fallDistance > 0.2
         val move = when (action) {
+            ArtAction.ATTACK if airborne && chain == 0 -> Move.DIVE_KICK
+            ArtAction.ATTACK if player.isSprinting && chain == 0 -> Move.FLYING_KICK
+            ArtAction.KICK if !player.isOnGround && !player.isTouchingWater -> Move.WHIRL_KICK
             ArtAction.ATTACK -> when (chain) {
                 1 -> Move.CROSS
                 2 -> Move.HOOK
@@ -136,6 +140,14 @@ object GauntletCombat {
             // Absprung: kurz hoch, die Ferse kommt zum Treffer herab.
             dev.henny.hha.logic.Fx.launchPlayer(player, player.velocity.add(0.0, 0.42, 0.0))
         }
+        val look = horizontalLook(player)
+        when (move) {
+            Move.FLYING_KICK -> dev.henny.hha.logic.Fx.launchPlayer(player, Vec3d(look.x * 1.15, 0.3, look.z * 1.15))
+            Move.DIVE_KICK -> dev.henny.hha.logic.Fx.launchPlayer(player, Vec3d(look.x * 0.7, -1.1, look.z * 0.7))
+            Move.WHIRL_KICK -> dev.henny.hha.logic.Fx.launchPlayer(player, Vec3d(player.velocity.x, 0.32, player.velocity.z))
+            else -> {}
+        }
+        if (move == Move.FLYING_KICK || move == Move.DIVE_KICK || move == Move.WHIRL_KICK) player.fallDistance = 0.0
         if (move != Move.PARRY) {
             GearSounds.play(world, player.entityPos, "gauntlet.swing", SoundEvents.ENTITY_PLAYER_ATTACK_WEAK, 0.5f, pitch)
         } else {
@@ -205,7 +217,7 @@ object GauntletCombat {
             any = true
             if (move.knock > 0 && !GearCombat.isHeavy(target)) {
                 val last = knockGuard[target.id] ?: Long.MIN_VALUE
-                val strong = move == Move.SIDE_KICK || move == Move.SPIN_KICK || move == Move.COUNTER
+                val strong = move == Move.SIDE_KICK || move == Move.SPIN_KICK || move == Move.COUNTER || move == Move.FLYING_KICK || move == Move.WHIRL_KICK
                 if (!strong || GearTasks.now - last >= GearConfig.ticks("melee_knock_guard_ticks")) {
                     if (strong) knockGuard[target.id] = GearTasks.now
                     GearCombat.push(target, player.entityPos, move.knock, move.lift)
@@ -219,7 +231,8 @@ object GauntletCombat {
             Resonance.markCombat(player)
             stack.damage(1, player, EquipmentSlot.MAINHAND)
             val (sound, pitch) = when (move) {
-                Move.SIDE_KICK, Move.SPIN_KICK -> SoundEvents.ENTITY_PLAYER_ATTACK_KNOCKBACK to 0.9f
+                Move.SIDE_KICK, Move.SPIN_KICK, Move.FLYING_KICK, Move.WHIRL_KICK -> SoundEvents.ENTITY_PLAYER_ATTACK_KNOCKBACK to 0.9f
+                Move.DIVE_KICK -> SoundEvents.ENTITY_PLAYER_ATTACK_CRIT to 0.8f
                 Move.COUNTER -> SoundEvents.ENTITY_PLAYER_ATTACK_CRIT to 1.2f
                 else -> SoundEvents.ENTITY_PLAYER_ATTACK_STRONG to 1.25f
             }
@@ -265,6 +278,23 @@ object GauntletCombat {
                 world.spawnParticles(ParticleTypes.CLOUD, chest.x + look.x * 1.4, chest.y - 0.6, chest.z + look.z * 1.4, 8, 0.2, 0.6, 0.2, 0.08)
             }
             Move.SPIN_KICK -> GearVfx.crescent(world, Vfx.Style.STORM, player.entityPos.add(0.0, 0.7, 0.0), look, 3.2f, 2.6f, 6)
+            Move.FLYING_KICK -> {
+                GearVfx.crescent(world, Vfx.Style.STORM, chest.add(look.multiply(1.2)), look, 2.4f, 2.0f, 6)
+                world.spawnParticles(ParticleTypes.CLOUD, chest.x, chest.y - 0.6, chest.z, 10, 0.4, 0.2, 0.4, 0.06)
+            }
+            Move.DIVE_KICK -> {
+                val at = player.entityPos
+                GearVfx.shockwave(world, Vfx.Style.HEAVEN, at, 4.0f, 14, 1.3f)
+                world.spawnParticles(ParticleTypes.SNOWFLAKE, at.x, at.y + 0.2, at.z, 36, 1.6, 0.15, 1.6, 0.14)
+                world.spawnParticles(ParticleTypes.EXPLOSION, at.x, at.y + 0.3, at.z, 1, 0.0, 0.0, 0.0, 0.0)
+                GearSounds.play(world, at, "gauntlet.slam", SoundEvents.ENTITY_GENERIC_EXPLODE.value(), 0.6f, 1.5f)
+            }
+            Move.WHIRL_KICK -> {
+                // Dryleaf-Wirbelwind: zwei gegenläufige Windsicheln rundum, Blätterwirbel aus Schnee
+                GearVfx.crescent(world, Vfx.Style.STORM, player.entityPos.add(0.0, 0.9, 0.0), look, 3.6f, 3.0f, 7)
+                GearVfx.crescent(world, Vfx.Style.STORM, player.entityPos.add(0.0, 0.9, 0.0), look.multiply(-1.0), 3.6f, 3.0f, 7)
+                world.spawnParticles(ParticleTypes.CLOUD, player.x, player.y + 0.8, player.z, 16, 1.2, 0.3, 1.2, 0.1)
+            }
             Move.AXE_KICK -> {
                 val at = player.entityPos.add(look.multiply(1.8))
                 GearVfx.shockwave(world, Vfx.Style.HEAVEN, at, 3.6f, 14, 1.2f)

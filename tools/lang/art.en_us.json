@@ -73,7 +73,7 @@
   "hha_arius.keys.unbound": "Arius: \"%s\" is not bound. Bind it under Options → Controls → HHA, otherwise the spell wheel, mode switch or Clear Cut are missing.",
   "item.hha_arius.arius_gauntlets.lore5": "Chain: jab · cross · hook · uppercut (launches) – kick after the hook = spin kick, after the uppercut = axe kick with a frost wave",
   "hha_arius.qte.clash": "Blades locked – push back!",
-  "hha_arius.qte.mash": "%s  ×  mash",
+  "hha_arius.qte.mash": "%s  ×  press rapidly",
   "hha_arius.qte.clash_won": "You break his guard!",
   "hha_arius.qte.clash_won_other": "His guard breaks!",
   "hha_arius.qte.clash_lost": "He throws you back.",
@@ -84,5 +84,10 @@
   "hha_arius.spell.tornado.desc": "Travelling tornado (5 s): pulls enemies in and lifts them, 1.5 damage every 0.5 s, shreds projectiles · 11 s",
   "hha_arius.spell.glacier_lance": "Glacier Lance",
   "hha_arius.spell.glacier_lance.desc": "Hold to charge (up to 1.8 s): giant ice spear (30 blocks), pierces everything, 8–18 damage, bursts into a frost explosion · 7 s",
-  "hha_arius.msg.art.bridge_dims": "Bridge: length %s · width %s (scroll; sneak + scroll: width)"
+  "hha_arius.msg.art.bridge_dims": "Bridge: length %s · width %s (scroll; sneak + scroll: width)",
+  "hha_arius.qte.how.jump": "Press %s (Jump)",
+  "hha_arius.qte.how.use": "Press %s (Use / right click)",
+  "hha_arius.qte.how.sneak": "Press %s (Sneak)",
+  "hha_arius.qte.how.attack": "Press %s (Attack / left click)",
+  "hha_arius.qte.how.mash": "Press %s as fast as you can: %s / %s"
 }

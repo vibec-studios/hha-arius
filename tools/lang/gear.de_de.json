@@ -87,5 +87,7 @@
   "hha_arius.blueprint.no_server": "Der Server hat HHA Arius nicht.",
   "hha_arius.blueprint.sent": "Bauplan „%s“ an den Server geschickt.",
   "item.hha_arius.frost_bank.lore1": "Sammelt Resonanz: jedes getötete Wesen und jeder Überschuss des Balkens",
-  "item.hha_arius.frost_bank.lore2": "Deckt fehlende Resonanz automatisch · Rechtsklick füllt den Balken · bezahlt Litematica-Baupläne"
+  "item.hha_arius.frost_bank.lore2": "Deckt fehlende Resonanz automatisch · Rechtsklick füllt den Balken · bezahlt Litematica-Baupläne",
+  "effect.hha_arius.frostbite": "Erfrierung",
+  "hha_arius.hud.frostbite": "Erfrierung · %s s"
 }

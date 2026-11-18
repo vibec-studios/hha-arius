@@ -696,8 +696,22 @@ class EirholmFight(
     fun hurt(player: ServerPlayerEntity, base: Float, kind: Damage.Kind = Damage.Kind.SOLVANE, attacker: Entity? = arius): Float {
         if (player.uuid !in fighters || fighters[player.uuid]?.ko == true || player.entityWorld !== world) return 0f
         if (Hold.isHeld(player) || Hold.inGrace(player)) return 0f
+        // Seit 1.6.5: Bodenangriffe treffen niemanden, der hoch über der Arena ist (Crix: „hitten dich auch 100 Blöcke über ihm“).
+        if (player.y - floorY > 12.0) return 0f
         if (phase == Phase.CUT && kind == Damage.Kind.NULL_CUT) cutSurvivors.remove(player.uuid)
-        return Damage.hit(player, attacker, kind, base, BossConfig.damageScale())
+        val dealt = Damage.hit(player, attacker, kind, base, BossConfig.damageScale())
+        // Frostaufbau wie in Elden Ring (Erfrierung): Atem baut am stärksten auf, Schläge und Aufpralle weniger.
+        if (dealt > 0f) {
+            val factor = when (kind) {
+                Damage.Kind.FROST_BREATH -> 3.0f
+                Damage.Kind.PRESSURE -> 2.0f
+                Damage.Kind.SOLVANE -> 1.6f
+                Damage.Kind.IMPACT -> 1.3f
+                Damage.Kind.NULL_CUT -> 0f
+            }
+            dev.henny.hha_arius.gear.Frostbite.add(player, base * factor)
+        }
+        return dealt
     }
 
     /** Treffer, der zu einer Sequenz gehört (darf den gehaltenen Spieler treffen). */
