@@ -230,6 +230,7 @@ class Scenes(private val f: EirholmFight) {
         // Seit 1.5.1 (nach Crix' Bild): Er lädt eine riesige Klinge aus Licht auf, hoch über sich; der Himmel hinter ihm
         // füllt sich mit Licht. Mit dem Schlag spaltet sie den Berg im Süden.
         f.fx(FxKind.GIANT_BLADE, stand, a = 38f, b = AriusTimings.CUT_LINE_TICKS.toFloat(), life = AriusTimings.CUT_LINE_TICKS + 22, e1 = a)
+        for (p in f.audience()) dev.henny.hha.logic.boss.Cine.title(listOf(p), "hha_arius.feat.white_horizon", "hha_arius.feat.white_horizon.sub", 60)
         cue("cut.charge", stand, 5f, 0.6f)
         val group = f.calls.boss(pace = Telegraph.Pace.ROOM)
         val line = group.line(f.abs(ArenaLayout.CUT_FROM), f.abs(ArenaLayout.CUT_TO), ArenaLayout.CUT_WIDTH.toFloat(), AriusTimings.CUT_LINE_TICKS)
@@ -299,7 +300,12 @@ class Scenes(private val f: EirholmFight) {
                 val x = kotlin.math.floor(ArenaLayout.CUT_X).toInt() + dx
                 val top = dev.henny.hha_arius.arena.FarPlan.top(x, z)
                 if (top < 0) continue
+                val pathY = dev.henny.hha_arius.arena.FarPlan.pathAt(x, z)
+                val dAxis = kotlin.math.hypot(x + 0.5 - (ArenaLayout.SPIRE.x + 0.5), z + 0.5 - (ArenaLayout.SPIRE.z + 0.5))
                 for (y in 0..top + 1) {
+                    // Seit 1.7.0: Der Weg überspannt die Kluft als Felsbrücke, und der Gipfel bleibt heil (Finale oben).
+                    if (!pathY.isNaN() && y >= pathY - 6) continue
+                    if (dAxis <= dev.henny.hha_arius.arena.FarPlan.SHOULDER_R + 8.0 && y >= dev.henny.hha_arius.arena.FarPlan.SHOULDER_Y - 14) continue
                     val hw = 1.5 + y / 50.0
                     if (kotlin.math.abs(x + 0.5 - ArenaLayout.CUT_X) > hw) continue
                     pos.set(f.origin.x + x, f.origin.y + y, f.origin.z + z)
@@ -711,7 +717,81 @@ class Scenes(private val f: EirholmFight) {
             f.victory()
             return@script
         }
+        yieldAll(chase())
         yieldAll(finale())
+    }
+
+    /**
+     * Die Jagd (seit 1.7.0, Crix): Arius geht in einen Supermodus und jagt die Spieler den Spiralberg hinauf. Er taucht
+     * immer wieder hinter einem von ihnen auf (Lichtblitz), eine kurze Ringansage, dann ein Schlag mit genau drei Herzen
+     * Schaden (nicht skaliert, durch Rüstung nicht gemindert). Enderperlen und Chorusfrüchte gehen währenddessen nicht.
+     * Sobald jemand die Gipfelschulter erreicht, endet die Jagd; alle werden hinaufgeholt und das Finale spielt oben.
+     */
+    private fun chase(): Script = script {
+        val a = f.arius ?: return@script
+        f.ariusVulnerable = false
+        f.dragonVulnerable = false
+        f.chasing = true
+        a.form = AriusForm.WHITE
+        a.eyeGlow = 100
+        a.bladeState = AriusBlade.ICE
+        f.music("music.transform", 30)
+        f.atmos(dev.henny.hha_arius.net.AtmosMode.BLIZZARD, 40)
+        for (p in f.players()) {
+            p.sendMessage(net.minecraft.text.Text.translatable("hha_arius.msg.chase").formatted(net.minecraft.util.Formatting.AQUA, net.minecraft.util.Formatting.BOLD), false)
+            dev.henny.hha.logic.boss.Cine.title(listOf(p), "hha_arius.cine.chase", "hha_arius.cine.chase.sub", 70)
+        }
+        shown { Vfx.shockwave(f.world, Vfx.Style.HEAVEN, a.entityPos, 10f, 20, 2f) }
+        cue("transform.pulse", a.entityPos, 5f, 1.4f)
+        wait(40)
+        val top = f.summit
+        var next = f.now + 60
+        while (true) {
+            val players = f.players()
+            if (players.isEmpty()) return@script
+            val up = players.firstOrNull { it.y >= top.y - 3.0 && sqrt((it.x - top.x) * (it.x - top.x) + (it.z - top.z) * (it.z - top.z)) <= dev.henny.hha_arius.arena.FarPlan.SHOULDER_R + 4.0 }
+            if (up != null) break
+            if (f.now >= next) {
+                val t = players.minByOrNull { it.squaredDistanceTo(a) } ?: break
+                val back = t.rotationVector.let { Vec3d(it.x, 0.0, it.z) }.let { if (it.lengthSquared() < 1e-4) Vec3d(0.0, 0.0, 1.0) else it.normalize() }
+                val spot = t.entityPos.subtract(back.multiply(3.0))
+                shown { Vfx.flare(f.world, Vfx.Style.HEAVEN, a.entityPos.add(0.0, 1.0, 0.0), 2.4f, 8) }
+                f.place(a, spot)
+                f.face(a, t.entityPos)
+                a.play(AriusPose.IAI_DRAW, 6)
+                cue("arius.wind_step", spot, 3f, 1.3f)
+                shown { Vfx.flare(f.world, Vfx.Style.HEAVEN, spot.add(0.0, 1.0, 0.0), 2.4f, 8) }
+                val center = t.entityPos
+                val ring = f.calls.ring(center, 2.6f, 16)
+                f.task(script {
+                    wait(ring.ticks)
+                    cue("arius.slash", center, 3f, 1.1f)
+                    shown { Vfx.crescent(f.world, Vfx.Style.HEAVEN, center.add(0.0, 1.0, 0.0), flatDir(spot, center), 4f, 1.6f, 6) }
+                    for (p in ring.hits(f.players())) {
+                        if (kotlin.math.abs(p.y - center.y) > 3.0) continue
+                        val red = Damage.reduction(p)
+                        Damage.hit(p, a, Damage.Kind.SOLVANE, (6.0 / (1.0 - red)).toFloat(), 1f)
+                    }
+                })
+                next = f.now + 55 + rnd.nextInt(35)
+            }
+            yield(Unit)
+        }
+        f.chasing = false
+        // Oben angekommen: alle auf die Gipfelschulter, Arius vor ihnen, Solvane am Rand – das Finale beginnt.
+        f.onSummit = true
+        val spots = f.finaleSpots()
+        for ((i, p) in f.players().withIndex()) {
+            val sp = f.abs(spots[i % spots.size])
+            p.teleport(f.world, sp.x, sp.y, sp.z, emptySet(), 0f, 0f, false)
+            p.onLanding()
+        }
+        f.place(a, f.summit.add(0.0, 0.0, -24.0).let { Vec3d(it.x, f.floorY, it.z) })
+        f.face(a, f.summit)
+        a.eyeGlow = 40
+        f.atmos(dev.henny.hha_arius.net.AtmosMode.REVEAL, 40)
+        cue("resonance.chime", f.summit, 5f, 0.8f)
+        wait(30)
     }
 
     private fun checkTaktBreak() {
@@ -1094,7 +1174,7 @@ class Scenes(private val f: EirholmFight) {
     fun finale(): Script = script {
         val a = f.arius ?: return@script
         f.setPhase(P.FINALE)
-        f.reviveAll(ArenaLayout.VAULT_LANDING)
+        f.reviveAll(f.finaleSpots())
         // Treffer zählen im Finale nur als Konter im offenen Fenster (siehe EirholmFight.hitArius).
         f.ariusVulnerable = true
         f.dragonVulnerable = false
@@ -1103,7 +1183,7 @@ class Scenes(private val f: EirholmFight) {
             d.flying = false
             d.resonance = false
             d.lead = false
-            f.place(d, f.abs(ArenaLayout.VAULT_REST))
+            f.place(d, if (f.onSummit) f.summit.add(14.0, 0.0, -4.0) else f.abs(ArenaLayout.VAULT_REST))
             f.face(d, f.arenaCenter)
             d.play(NivarisPose.LIE_DOWN)
         }

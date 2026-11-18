@@ -97,7 +97,43 @@ class ArtBolt(val boltId: Int, private val start: Vec3d, private val vel: Vec3d,
                 d.arc(VfxLayers.GLOW_ADD, p.subtract(fwd.multiply(0.5)), fwd, axisB, 0.66, 0.74, -1.1, 1.1, withAlpha(0xFFFFFFFF.toInt(), 0.9f * k), withAlpha(ArtColors.WIND, 0f), segments = 18)
                 d.band(VfxLayers.FLOW_ADD, p.subtract(fwd.multiply(2.2)), p, axisB, 0.35, withAlpha(ArtColors.WIND, 0f), withAlpha(ArtColors.WIND, 0.35f * k), uScale = 0.4f, uOffset = t * 0.1f)
             }
-            1 -> {
+            1 -> if (radius >= 0.6) {
+                // Gletscherlanze (seit 1.7.0 aufgewertet): riesiger, kantiger Eisspeer aus drei gedrehten Kristallen,
+                // gleißende Spitze, Frostspiralen um den Schaft, eine lange Reifspur und Splitter, die sich lösen.
+                val cam = d.cam
+                val len = 2.6 + radius * 1.8
+                val yaw = Math.toDegrees(Math.atan2(fwd.x, fwd.z)).toFloat()
+                val pitch = Math.toDegrees(Math.asin(-fwd.y.coerceIn(-1.0, 1.0))).toFloat()
+                for (k in 0 until 3) {
+                    matrices.push()
+                    matrices.translate(p.x - cam.x, p.y - cam.y, p.z - cam.z)
+                    matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(yaw))
+                    matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(pitch))
+                    matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(t * 6f + k * 30f))
+                    val w = (radius * (0.55 - k * 0.12)).toFloat()
+                    val l = (len * (1.0 - k * 0.18)).toFloat()
+                    matrices.translate(0.0, 0.0, -l * 0.5 + k * 0.2)
+                    matrices.scale(w, w, l)
+                    matrices.translate(-0.5, -0.5, -0.5)
+                    MinecraftClient.getInstance().blockRenderManager.renderBlockAsEntity(
+                        if (k == 1) Blocks.PACKED_ICE.defaultState else Blocks.BLUE_ICE.defaultState, matrices, d.consumers, IceChunk.LIGHT, OverlayTexture.DEFAULT_UV)
+                    matrices.pop()
+                }
+                val tip = p.add(fwd.multiply(len * 0.35))
+                d.billboard(VfxLayers.FLARE_ADD, tip, radius * 1.6, withAlpha(0xFFFFFFFF.toInt(), 0.95f * k))
+                d.billboard(VfxLayers.GLOW_ADD, p, radius * 4.5, withAlpha(ArtColors.ICE, 0.45f * k))
+                val side0 = fwd.crossProduct(UP).let { if (it.lengthSquared() < 1e-4) X else it.normalize() }
+                val up0 = side0.crossProduct(fwd).normalize()
+                for (sp in 0 until 2) {
+                    val path = (0..14).map { i ->
+                        val f = i / 14.0
+                        val ang = t * 0.5 + f * 9.0 + sp * PI
+                        p.subtract(fwd.multiply(f * len * 1.3)).add(side0.multiply(cos(ang) * radius * 0.9)).add(up0.multiply(sin(ang) * radius * 0.9))
+                    }
+                    d.ribbon(VfxLayers.GLOW_ADD, path, { f -> 0.14 * (1.0 - f) }, { f -> withAlpha(0xFFDFF6FF.toInt(), (1f - f) * 0.8f * k) }, uScale = 1f, uOffset = 0f)
+                }
+                d.band(VfxLayers.FLOW_ADD, p.subtract(fwd.multiply(len * 3.0)), p, d.camUp, radius * 0.9, withAlpha(ArtColors.ICE, 0f), withAlpha(0xFFFFFFFF.toInt(), 0.6f * k), uScale = 0.3f, uOffset = -t * 0.15f)
+            } else {
                 // Eissplitter: langer Kristall entlang der Flugbahn, Reifspur dahinter.
                 val cam = d.cam
                 matrices.push()

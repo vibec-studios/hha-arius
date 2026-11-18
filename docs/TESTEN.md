@@ -88,6 +88,18 @@ Client-Welt und Spieler sind vorhanden. Geprüft mit Minecraft 1.21.11, Fabric L
 - [ ] Rüstung „Drachenherz-Wacht“: an Spieler, Rüstungsständer, Mannequin, Zombie; Leuchten Tag/Nacht, Verzauberungsglanz, Umhang, Federn beim Laufen/Springen, schmale Arme, mit und ohne Handschuhe
 - [ ] Solvane-Item: länger, Lichtfluss in der Hohlkehle, Sitz in erster und dritter Person
 
+## 1.7.0
+- [ ] HUD: Aktionsleisten-Meldungen stehen über Resonanzleiste und Abklingzeit-Icons (34 px höher, sobald man Ausrüstung trägt); Frostbalken darüber
+- [ ] Normaler Schild blockt Arius/Solvane von vorn (±70°), Haltbarkeit sinkt; schwere Treffer (≥ 8, Null-Schnitt) schlagen ihn 5 s weg
+- [ ] Solvane-Konter (Rechtsklick, 14 Ticks): wirkt gegen Bosse (voller Gegenschlag auf Arius/Solvane in Reichweite) und Mobs (1,5 × Schaden, Rückstoß, Frost)
+- [ ] Neue Techniken: Klingensturm (Wind, ersetzt Windzug), Eisgefängnis (Eis), Full-Pot (Stärke II, Schnelligkeit II, Feuerresistenz, Regeneration II), Tank-Mode (Resistenz IV, Langsamkeit IV); Icons im Rad
+- [ ] Frostfeld: beißt (Schaden + Frostaufbau), am Ende Eisdornen; Gletscherlanze als großer gedrehter Eisspeer mit Frostspiralen
+- [ ] Brücke 30 s, Plattform 45 s
+- [ ] Zauber-Aufladen: Hände weiter auseinander, Finger ruhig (kein Kribbeln)
+- [ ] Nahkampf zusätzlich: Schleichen + Angriff Schlaghagel (5 Schläge), Sprint + Rechtsklick Handflächenstoß
+- [ ] Phase „Die Jagd“ nach Abschnitt III: Titel, Arius im Supermodus taucht hinter Spielern auf, Ring-Ansage, Treffer genau 3 Herzen; Enderperlen/Chorusfrüchte gesperrt; Weg überspannt die Kluft als Felsbrücke; wer die Gipfelschulter erreicht, beendet die Jagd → alle oben, Finale (Austausche, QTE, Ende) auf dem Gipfel
+- [ ] Feats: „Der Weiße Horizont“ (Titel beim Schnitt), „Der gefrorene Stern“ (Stern über dem Ziel, gefriert, stürzt, Kreis r 9), „Absoluter Nullpunkt: Seele“ (Kegel, sofortige Erfrierung)
+
 ## 1.6.5
 - [ ] Berg in Cutscenes nie hohl: dicke Haut, entlang der Schnittebene massiv (Kluft zeigt Fels); Fernlandschaft baut neu (Version 10)
 - [ ] Endlose Weite: Wald aus Eisnadeln im Fernbereich, weiter draußen Eisspitzen/Eisflecken aus dem Biom; Kampfflächen (Plateau r 112, Feld, Weg) frei

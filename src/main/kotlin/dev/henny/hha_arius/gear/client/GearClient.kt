@@ -31,7 +31,9 @@ object GearClient {
     private var shown = 0f
     private var rest = 0
     private var mark = -1
-    private var bearer = false
+    @JvmStatic
+    var bearer = false
+        private set
 
     /** Stellvertreter-Stapel für die HHA-Leiste: Abklingzeit über die `use_cooldown`-Gruppe (kein eigenes Item). */
     private val CLEAR_CUT_STACK: ItemStack by lazy { cooldownStack(GearItems.SOLVANE, GearItems.CLEAR_CUT_GROUP) }

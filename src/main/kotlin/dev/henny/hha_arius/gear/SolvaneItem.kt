@@ -211,7 +211,10 @@ object SolvaneCounter {
         val window = windows[player.uuid] ?: return false
         if (GearTasks.now > window.until) return false
         if (!player.isUsingItem || !player.activeItem.isOf(GearItems.SOLVANE)) return false
-        if (source.isIn(DamageTypeTags.BYPASSES_SHIELD) || source.isIn(DamageTypeTags.IS_EXPLOSION)) return false
+        // Seit 1.7.0 auch gegen Bosse (deren Treffer „ignorieren Schilde“) und jeden Mob; nur Explosionen nicht.
+        if (source.isIn(DamageTypeTags.IS_EXPLOSION)) return false
+        val boss = dev.henny.hha_arius.boss.BossGuard.isBoss(source)
+        if (!boss && source.isIn(DamageTypeTags.BYPASSES_SHIELD)) return false
 
         val direct = source.source
         val attacker = source.attacker
@@ -222,10 +225,19 @@ object SolvaneCounter {
                 direct.discard()
                 world.spawnParticles(ParticleTypes.SNOWFLAKE, at.x, at.y, at.z, 6, 0.15, 0.15, 0.15, 0.03)
             }
-            direct != null && direct === attacker && attacker is LivingEntity -> {
-                GearCombat.push(attacker, player.entityPos, GearConfig.num("solvane_counter_knockback"), 0.25)
+            attacker is LivingEntity -> {
+                // Gegenschlag: Wer in Reichweite ist, bekommt einen vollen Hieb (Bosse über den normalen Angriffsweg).
+                if (attacker.squaredDistanceTo(player) <= 36.0) {
+                    if (boss) player.attack(attacker)
+                    else {
+                        attacker.timeUntilRegen = 0
+                        attacker.damage(world, world.damageSources.playerAttack(player), (player.getAttributeValue(net.minecraft.entity.attribute.EntityAttributes.ATTACK_DAMAGE) * 1.5).toFloat())
+                        GearCombat.push(attacker, player.entityPos, GearConfig.num("solvane_counter_knockback"), 0.25)
+                        Frostbite.add(attacker, 25f)
+                    }
+                }
             }
-            else -> return false
+            else -> if (!boss) return false
         }
 
         val stack = player.activeItem

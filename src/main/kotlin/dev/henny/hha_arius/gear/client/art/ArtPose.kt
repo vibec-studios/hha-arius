@@ -994,7 +994,7 @@ internal object ArtPose {
         p.tPitch = 0.06f; p.drop = 0.8f
         p.rLeg(0.1f, 0.2f, 0.14f); p.lLeg(-0.18f, -0.1f, -0.14f); p.legW = 1f - c.walk * 0.7f
         // Starre Arme laufen spitz zusammen: unter ±2,8 px würden sich die Fingerspitzen kreuzen.
-        val sep = 3.6f - 0.8f * clamp01(a / 40f)
+        val sep = 5.2f - 0.8f * clamp01(a / 40f) // seit 1.7.0 weiter, wie um eine Energiekugel
         var cy = 4.5f
         var ox = 0f
         var oy = 0f

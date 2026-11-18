@@ -484,26 +484,81 @@ object SpellCasting {
                 GearVfx.shockwave(world, Vfx.Style.STORM, player.entityPos, 2.2f, 8, 0.6f)
                 GearSounds.play(world, player.entityPos, "art.wind_leap", SoundEvents.ENTITY_BREEZE_JUMP, 0.8f, 1.2f)
             }
-            Spell.WIND_PULL -> {
-                val r = num(spell, "radius")
-                val box = Box.of(player.entityPos, r * 2, r * 2, r * 2)
-                val items = world.getEntitiesByClass(ItemEntity::class.java, box) { it.squaredDistanceTo(player) <= r * r } +
-                    world.getEntitiesByClass(ExperienceOrbEntity::class.java, box) { it.squaredDistanceTo(player) <= r * r }
-                for (i in 0 until 14) {
-                    GearTasks.later(i + 1) {
+            Spell.BLADE_STORM -> {
+                // Klingensturm: bis zu fünf Windklingen fächern auf und fliegen je auf eines der nächsten Ziele vor dir.
+                val range = num(spell, "range")
+                val dmg = num(spell, "damage").toFloat()
+                val look = player.rotationVector
+                val eye = player.eyePos
+                val targets = world.getOtherEntities(player, player.boundingBox.expand(range)) { GearCombat.canHit(player, it) }
+                    .filter { val d = it.entityPos.add(0.0, it.height * 0.5, 0.0).subtract(eye); d.length() <= range && d.normalize().dotProduct(look) > 0.25 }
+                    .sortedBy { it.squaredDistanceTo(player) }.take(5)
+                for (k in 0 until 5) {
+                    val t = targets.getOrNull(k % targets.size.coerceAtLeast(1))
+                    val dir = if (t != null) t.entityPos.add(0.0, t.height * 0.5, 0.0).subtract(eye).normalize()
+                    else {
+                        val ang = Math.toRadians((k - 2) * 12.0)
+                        Vec3d(look.x * cos(ang) - look.z * sin(ang), look.y, look.x * sin(ang) + look.z * cos(ang)).normalize()
+                    }
+                    GearTasks.later(k * 2) {
                         if (!GearCombat.stillThere(player, world)) return@later
-                        for (e in items) {
-                            if (e.isRemoved) continue
-                            val d = player.entityPos.add(0.0, 0.5, 0.0).subtract(e.entityPos)
-                            if (d.lengthSquared() < 0.4) continue
-                            e.velocity = d.normalize().multiply(0.45)
-                            e.velocityDirty = true
-                        }
+                        Bolts.launch(Bolts.Bolt(player.uuid, world, eyeStart(player), dir.multiply(1.5), range + 4, 0.55, 0, School.WIND,
+                            onHit = { p, tt, _ ->
+                                if (damage(p, tt, dmg) && !GearCombat.isHeavy(tt)) GearCombat.push(tt, p.entityPos, 0.35, 0.15)
+                            }))
+                        GearSounds.play(world, player.entityPos, "art.wind_blade", SoundEvents.ENTITY_BREEZE_SHOOT, 0.6f, 1.2f + k * 0.1f)
                     }
                 }
-                if (player.isOnFire) player.extinguish()
-                ArtFx.send(world, FxKind.PULL, player.entityPos, a = r.toFloat(), life = 14, e1 = player.id)
-                GearSounds.play(world, player.entityPos, "art.wind_pull", SoundEvents.ENTITY_BREEZE_INHALE, 0.7f, 1.3f)
+            }
+            Spell.ICE_PRISON -> {
+                // Eisgefängnis: das Ziel im Blick (bis 22 Blöcke) wird in einen Käfig aus Frostblöcken gesperrt.
+                val range = num(spell, "range")
+                val eye = player.eyePos
+                val look = player.rotationVector
+                val target = world.getOtherEntities(player, player.boundingBox.expand(range)) { GearCombat.canHit(player, it) }
+                    .filter { val d = it.entityPos.add(0.0, it.height * 0.5, 0.0).subtract(eye); d.length() <= range && d.normalize().dotProduct(look) > 0.93 }
+                    .minByOrNull { it.squaredDistanceTo(player) } as? LivingEntity ?: return false
+                val ticks = num(spell, "ticks").toInt()
+                val base = target.blockPos
+                val h = kotlin.math.ceil(target.height).toInt().coerceIn(2, 4)
+                val cells = ArrayList<BlockPos>()
+                for (dx in -1..1) for (dz in -1..1) for (dy in -1..h) {
+                    val edge = dx != 0 || dz != 0 || dy == -1 || dy == h
+                    if (!edge) continue
+                    val pos = base.add(dx, dy, dz)
+                    if (canBuild(player, world, pos)) cells.add(pos)
+                }
+                build(world, cells, Constructs.FROST, ticks) { p -> (p.y - base.y + 1).coerceAtLeast(0) }
+                if (!GearCombat.isHeavy(target)) {
+                    target.addStatusEffect(StatusEffectInstance(StatusEffects.SLOWNESS, ticks, 6, false, true, true), player)
+                    target.velocity = Vec3d.ZERO
+                    target.velocityDirty = true
+                }
+                target.frozenTicks = (target.frozenTicks + 80).coerceAtMost(target.minFreezeDamageTicks + 120)
+                dev.henny.hha_arius.gear.Frostbite.add(target, 40f)
+                ArtFx.send(world, FxKind.FROST_SHELL, target.entityPos, life = 16, e1 = target.id)
+                GearSounds.play(world, target.entityPos, "art.ice_prison", SoundEvents.BLOCK_GLASS_PLACE, 1f, 0.6f)
+            }
+            Spell.FULL_POT -> {
+                // „Full-Pot“: Stärke II, Schnelligkeit II, Feuerresistenz, Regeneration II.
+                val t = num(spell, "ticks").toInt()
+                player.addStatusEffect(StatusEffectInstance(StatusEffects.STRENGTH, t, 1, false, true, true))
+                player.addStatusEffect(StatusEffectInstance(StatusEffects.SPEED, t, 1, false, true, true))
+                player.addStatusEffect(StatusEffectInstance(StatusEffects.FIRE_RESISTANCE, t, 0, false, true, true))
+                player.addStatusEffect(StatusEffectInstance(StatusEffects.REGENERATION, t / 4, 1, false, true, true))
+                GearVfx.nova(world, Vfx.Style.GOLD, player.entityPos.add(0.0, 1.0, 0.0), 1.6f, 12)
+                GearVfx.shockwave(world, Vfx.Style.GOLD, player.entityPos, 3f, 12, 0.8f)
+                GearSounds.play(world, player.entityPos, "art.full_pot", SoundEvents.ENTITY_PLAYER_LEVELUP, 0.8f, 1.4f)
+            }
+            Spell.TANK_MODE -> {
+                // „Tank-Mode“: Schildkrötenmeister mit Resistenz IV (und der dazugehörigen Langsamkeit).
+                val t = num(spell, "ticks").toInt()
+                player.addStatusEffect(StatusEffectInstance(StatusEffects.RESISTANCE, t, 3, false, true, true))
+                player.addStatusEffect(StatusEffectInstance(StatusEffects.SLOWNESS, t, 3, false, true, true))
+                GearVfx.nova(world, Vfx.Style.HEAVEN, player.entityPos.add(0.0, 1.0, 0.0), 1.8f, 14)
+                ArtFx.send(world, FxKind.ICE_ARMOR, player.entityPos, life = t, e1 = player.id)
+                GearSounds.play(world, player.entityPos, "art.tank_mode", SoundEvents.ITEM_ARMOR_EQUIP_NETHERITE.value(), 1f, 0.6f)
+                GearSounds.play(world, player.entityPos, "art.tank_mode", SoundEvents.BLOCK_ANVIL_LAND, 0.4f, 0.8f)
             }
             Spell.FROST_SHARDS -> {
                 val dmg = num(spell, "damage").toFloat()
@@ -697,10 +752,36 @@ object SpellCasting {
                 if (player.isRemoved) return@later
                 for (e in world.getOtherEntities(player, Box.of(center, r * 2, 3.0, r * 2))) {
                     if (e.squaredDistanceTo(center) > r * r + 1 || !GearCombat.canHit(player, e)) continue
-                    (e as LivingEntity).addStatusEffect(StatusEffectInstance(StatusEffects.SLOWNESS, 25, 1, false, true, true), player)
+                    val le = e as LivingEntity
+                    le.addStatusEffect(StatusEffectInstance(StatusEffects.SLOWNESS, 25, 2, false, true, true), player)
+                    // Seit 1.7.0: beißende Kälte – etwas Schaden und Frostaufbau je halbe Sekunde.
+                    damage(player, le, 1.5f)
+                    dev.henny.hha_arius.gear.Frostbite.add(le, 9f)
                 }
+                world.spawnParticles(ParticleTypes.SNOWFLAKE, center.x, center.y + 0.3, center.z, 14, r * 0.5, 0.2, r * 0.5, 0.02)
             }
             t += 10
+        }
+        // Am Ende brechen Eisdornen aus dem Feld (Bauwerk-Blöcke, vergehen nach 2 s) und treffen alle darin.
+        GearTasks.later(ticks) {
+            val rnd = java.util.Random()
+            val spikes = ArrayList<BlockPos>()
+            val ground = BlockPos.ofFloored(center)
+            for (i in 0 until 14) {
+                val a = rnd.nextDouble() * Math.PI * 2
+                val d = kotlin.math.sqrt(rnd.nextDouble()) * r
+                val b = ground.add((kotlin.math.cos(a) * d).toInt(), 0, (kotlin.math.sin(a) * d).toInt())
+                for (y in 0 until 1 + rnd.nextInt(3)) if (canBuild(player, world, b.up(y))) spikes.add(b.up(y))
+            }
+            build(world, spikes, Constructs.FROST, 40) { p -> p.y - ground.y }
+            for (e in world.getOtherEntities(player, Box.of(center, r * 2, 3.0, r * 2))) {
+                if (e.squaredDistanceTo(center) > r * r + 1 || !GearCombat.canHit(player, e)) continue
+                val le = e as LivingEntity
+                damage(player, le, 6f)
+                dev.henny.hha_arius.gear.Frostbite.add(le, 30f)
+                if (!GearCombat.isHeavy(le)) GearCombat.push(le, center, 0.2, 0.6)
+            }
+            GearSounds.play(world, center, "art.frost_field", SoundEvents.BLOCK_GLASS_BREAK, 1.2f, 0.7f)
         }
         GearSounds.play(world, center, "art.frost_field", SoundEvents.BLOCK_POWDER_SNOW_PLACE, 1f, 0.8f)
     }

@@ -47,7 +47,8 @@ enum class Spell(val school: School, val kind: CastKind, val role: Role, val key
     WIND_BLADE(School.WIND, CastKind.TAP, Role.ATTACK, "wind_blade"),
     WIND_LEAP(School.WIND, CastKind.TAP, Role.MOVEMENT, "wind_leap"),
     GALE(School.WIND, CastKind.CHARGE, Role.DEFENSE, "gale"),
-    WIND_PULL(School.WIND, CastKind.TAP, Role.UTILITY, "wind_pull"),
+    /** Seit 1.7.0 statt Windzug: fünf Windklingen suchen sich die nächsten Gegner. */
+    BLADE_STORM(School.WIND, CastKind.TAP, Role.ATTACK, "blade_storm"),
 
     FROST_SHARDS(School.ICE, CastKind.TAP, Role.ATTACK, "frost_shards"),
     ICE_WALL(School.ICE, CastKind.PLACE, Role.DEFENSE, "ice_wall"),
@@ -64,7 +65,16 @@ enum class Spell(val school: School, val kind: CastKind, val role: Role, val key
     TORNADO(School.WIND, CastKind.TAP, Role.CONTROL, "tornado"),
 
     /** Seit 1.3.1: aufgeladener riesiger Eisspeer, durchschlägt alles, zerbirst am Ende in eine Frostexplosion. */
-    GLACIER_LANCE(School.ICE, CastKind.CHARGE, Role.ATTACK, "glacier_lance");
+    GLACIER_LANCE(School.ICE, CastKind.CHARGE, Role.ATTACK, "glacier_lance"),
+
+    /** Seit 1.7.0: schließt das anvisierte Ziel in einen Eiskäfig (3,5 s gebannt, Frostaufbau). */
+    ICE_PRISON(School.ICE, CastKind.TAP, Role.CONTROL, "ice_prison"),
+
+    /** Seit 1.7.0 (Crix): „Full-Pot“ – Stärke II, Schnelligkeit II, Feuerresistenz, Regeneration II. */
+    FULL_POT(School.YANG, CastKind.TAP, Role.UTILITY, "full_pot"),
+
+    /** Seit 1.7.0 (Crix): „Tank-Mode“ – Schildkrötenmeister mit Resistenz IV. */
+    TANK_MODE(School.YANG, CastKind.TAP, Role.DEFENSE, "tank_mode");
 
     companion object {
         fun of(raw: Int): Spell? = entries.getOrNull(raw)
@@ -116,7 +126,13 @@ enum class Move(
     DIVE_KICK(5, 12, 1.6f, 3.8, 120.0, 4, 0.6, 0.15, "melee_gain_axe", 1.0, Anim.DIVE_KICK),
 
     /** In der Luft (Tritt): Dryleaf-Wirbelwind – Drehtritt einmal herum, Windsichel, trifft alle im Kreis. */
-    WHIRL_KICK(6, 12, 1.3f, 3.6, 180.0, 5, 0.85, 0.35, "melee_gain_spin", 1.0, Anim.WHIRL_KICK);
+    WHIRL_KICK(6, 12, 1.3f, 3.6, 180.0, 5, 0.85, 0.35, "melee_gain_spin", 1.0, Anim.WHIRL_KICK),
+
+    /** Seit 1.7.0, Schleichen + Angriff: Schlaghagel – fünf blitzschnelle Schläge hintereinander (je 0,45 ×). */
+    FLURRY(3, 12, 0.45f, 3.0, 40.0, 2, 0.08, 0.0, "melee_gain_jab", 0.5, Anim.JAB),
+
+    /** Seit 1.7.0, Sprint + Rechtsklick: Handflächenstoß mit Windexplosion, schleudert alles vor dir weit weg. */
+    PALM_BLAST(7, 14, 1.8f, 3.4, 70.0, 4, 1.7, 0.45, "melee_gain_parry", 0.4, Anim.COUNTER);
 
     val total: Int get() = windup + recover
 }

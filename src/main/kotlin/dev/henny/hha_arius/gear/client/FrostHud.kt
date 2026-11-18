@@ -45,7 +45,8 @@ object FrostHud {
         val h = ctx.scaledWindowHeight
         val bw = 82
         val x = w / 2 - bw / 2
-        val y = h - 66
+        // über Resonanzleiste, Abklingzeit-Icons (h − 90 … h − 64) und der angehobenen Aktionsleiste (h − 102)
+        val y = h - 118
         val a = visible
         // Rahmen
         ctx.fill(x - 2, y - 2, x + bw + 2, y + 5, withAlpha(0xFF0B1020.toInt(), 0.8f * a))

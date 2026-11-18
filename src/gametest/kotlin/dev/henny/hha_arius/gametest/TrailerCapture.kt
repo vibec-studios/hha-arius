@@ -739,7 +739,7 @@ class TrailerCapture : FabricClientGameTest {
         }
         cineOn()
         castShot(Spell.GALE, "cat_gale", 50, 4, 28, Vec3d(3.5, 1.6, -1.5), Vec3d(3.2, 1.8, 0.5))
-        castShot(Spell.WIND_PULL, "cat_wind_pull", 40, 4, 5, Vec3d(-3.5, 2.0, -2.0), Vec3d(-3.0, 2.2, 0.0))
+        castShot(Spell.BLADE_STORM, "cat_blade_storm", 40, 4, 5, Vec3d(-3.5, 2.0, -2.0), Vec3d(-3.0, 2.2, 0.0))
         castShot(Spell.ICE_ARMOR, "cat_ice_armor", 40, 4, 5, Vec3d(2.6, 1.4, 2.6), Vec3d(2.2, 1.6, 2.2))
         castShot(Spell.YANG_SHIELD, "cat_yang_shield", 50, 4, 44, Vec3d(2.0, 1.5, 4.5), Vec3d(1.5, 1.6, 4.0))
         castShot(Spell.YANG_ORB, "cat_yang_orb", 60, 4, 34, Vec3d(3.0, 1.4, 0.0), Vec3d(2.5, 1.6, 3.0))

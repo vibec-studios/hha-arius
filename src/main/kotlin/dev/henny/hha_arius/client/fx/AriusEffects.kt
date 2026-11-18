@@ -81,6 +81,7 @@ abstract class AriusFx(val life: Int) {
                 FxKind.DRAGON_TAIL -> e1?.let { DragonTailFx(it, p.b.toDouble(), p.a.toDouble(), p.life) }
                 FxKind.ICE_ARMOR -> e1?.let { IceArmorFx(it, p.life) }
                 FxKind.GIANT_BLADE -> e1?.let { GiantBladeFx(it, p.a.toDouble(), p.b.toInt(), p.life) }
+                FxKind.FROZEN_STAR -> FrozenStarFx(pos, p.a.toDouble(), p.b.toInt(), p.life)
                 FxKind.CUT_PLANE -> CutPlaneFx(pos, dir, p.a.toDouble(), p.b >= 0.5f, p.life)
                 FxKind.PULL -> e1?.let { PullFx(it, p.a.toDouble(), p.life) }
                 FxKind.GALE -> GaleFx(pos, dir, p.a, p.life)
@@ -643,5 +644,36 @@ class GiantBladeFx(private val arius: Entity, private val length: Double, privat
         if (s > 0f && fade > 0f) {
             d.arc(VfxLayers.GLOW_ADD, hilt, UP, fwd, len * 0.6, len, 0.0, Math.toRadians(125.0 * s), withAlpha(0xFFFFFFFF.toInt(), 0f), withAlpha(0xFFE6F6FF.toInt(), 0.7f * fade), segments = 24)
         }
+    }
+}
+
+/**
+ * „Der gefrorene Stern“ (Feat, seit 1.7.0): Hoch über dem Ziel entsteht ein gleißender Stern (gold-weiß, Strahlen),
+ * gefriert von außen nach innen zu einem Eisstern mit Kristallzacken und stürzt dann herab.
+ */
+class FrozenStarFx(private val ground: Vec3d, private val radius: Double, private val impactAt: Int, life: Int) : AriusFx(life) {
+    override fun render(d: VfxDraw, matrices: MatrixStack, t: Float) {
+        if (t > impactAt + 2) return
+        val form = (t / (impactAt * 0.35f)).coerceIn(0f, 1f)
+        val freeze = ((t - impactAt * 0.35f) / (impactAt * 0.4f)).coerceIn(0f, 1f)
+        val fall = ((t - impactAt * 0.75f) / (impactAt * 0.25f)).coerceIn(0f, 1f)
+        val h = 34.0 * (1.0 - fall * fall)
+        val c = ground.add(0.0, h + 1.0, 0.0)
+        val r = radius * 0.55 * form
+        val warm = 0xFFFFE8B0.toInt()
+        val cold = 0xFFBFE8FF.toInt()
+        val col = lerpColor(warm, cold, freeze)
+        d.sphere(VfxLayers.SHARD_ALPHA, c, r, { up -> withAlpha(lerpColor(col, 0xFFFFFFFF.toInt(), (0.5f + 0.5f * up).coerceIn(0f, 1f)), form) }, lat = 12, lon = 20)
+        d.billboard(VfxLayers.GLOW_ADD, c, r * 4.0, withAlpha(col, 0.5f * form))
+        d.billboard(VfxLayers.RAYS_ADD, c, r * 7.0 * (1.0 - freeze * 0.6), withAlpha(warm, 0.5f * form * (1f - freeze)), t * 1.2)
+        // Kristallzacken wachsen beim Gefrieren aus der Oberfläche
+        if (freeze > 0f) for (i in 0 until 14) {
+            val a = i * 2.39996
+            val e = (i * 0.618 % 1.0) * 2 - 1
+            val dir = Vec3d(cos(a) * kotlin.math.sqrt(1 - e * e), e, sin(a) * kotlin.math.sqrt(1 - e * e))
+            d.band(VfxLayers.GLOW_ADD, c.add(dir.multiply(r * 0.9)), c.add(dir.multiply(r * (1.0 + 0.9 * freeze))), d.camUp, r * 0.18, withAlpha(0xFFFFFFFF.toInt(), 0.8f * freeze), withAlpha(cold, 0.2f * freeze))
+        }
+        // Fallspur
+        if (fall > 0f) d.band(VfxLayers.FLOW_ADD, c, c.add(0.0, 18.0 * fall, 0.0), d.camRight, r * 0.8, withAlpha(cold, 0.6f), withAlpha(cold, 0f), uScale = 0.3f, uOffset = -t * 0.2f)
     }
 }

@@ -316,6 +316,75 @@ def dragon_tail(f):
     return im.outline()
 
 
+def blade_storm(f):
+    """Klingensturm: fünf kleine Windsicheln fächern von links unten nach rechts oben aus und fliegen weiter."""
+    im = Img()
+    for k in range(5):
+        ang = -0.9 + k * 0.45
+        dist = 3 + ((f + k) % FRAMES) * 1.6
+        cx = 2.5 + math.cos(ang) * dist
+        cy = 13.5 - math.sin(ang + 0.8) * dist
+        for j in range(5):
+            a = ang + 1.2 - j * 0.6
+            x = int(round(cx + math.cos(a) * 1.6))
+            y = int(round(cy - math.sin(a) * 1.6))
+            im.set(x, y, ICE[5] if j in (1, 2) else ICE[3])
+    im.set(2, 13, GOLD[3]); im.set(3, 13, GOLD[2])
+    return im.outline()
+
+
+def ice_prison(f):
+    """Eisgefängnis: Käfig aus Eisstäben um eine dunkle Gestalt, Frost kriecht von unten hoch."""
+    im = Img()
+    for x in (3, 6, 9, 12):
+        for y in range(2, 14):
+            im.set(x, y, ICE[4] if (y + f) % 4 else ICE[5])
+    for x in range(3, 13):
+        im.set(x, 2, ICE[3]); im.set(x, 13, ICE[3])
+    for y in range(5, 12):
+        im.set(7, y, STEEL[0]); im.set(8, y, STEEL[1])
+    im.set(7, 4, STEEL[1]); im.set(8, 4, STEEL[1])
+    lvl = 13 - f
+    for x in range(3, 13):
+        for y in range(lvl, 13):
+            if im.get(x, y) is None:
+                im.set(x, y, ICE[2])
+    return im.outline()
+
+
+def full_pot(f):
+    """Full-Pot: Trankflasche, darüber kreisen vier farbige Funken (Stärke, Tempo, Feuer, Leben)."""
+    im = Img()
+    red = hexc('#d04848'); blue = hexc('#6fc3f0'); org = hexc('#f0a040'); pink = hexc('#f080b8')
+    for y in range(8, 15):
+        half = 3 if y > 9 else 2
+        for x in range(8 - half, 8 + half):
+            im.set(x, y, GOLD[3] if y == 8 else (red if (x + y) % 3 else pink))
+    for y in range(5, 8):
+        im.set(7, y, STEEL[3]); im.set(8, y, STEEL[2])
+    im.set(7, 4, GOLD[2]); im.set(8, 4, GOLD[2])
+    for k, c in enumerate((red, blue, org, pink)):
+        a = (f / FRAMES + k / 4) * 2 * math.pi
+        im.set(int(8 + math.cos(a) * 6), int(7 + math.sin(a) * 4), c)
+    return im.outline()
+
+
+def tank_mode(f):
+    """Tank-Mode: Schildkrötenpanzer (grün-grau) vor einem Eisschild, pulsierender Rand."""
+    im = Img()
+    g1 = hexc('#4f7a4a'); g2 = hexc('#7fb070'); g3 = hexc('#a8d898')
+    for y in range(3, 14):
+        for x in range(2, 14):
+            d = math.hypot((x + 0.5 - 8) / 6.0, (y + 0.5 - 8.5) / 5.4)
+            if d <= 1.0:
+                hexo = ((x // 3) + (y // 3)) % 2
+                c = g3 if d < 0.4 else (g2 if hexo else g1)
+                if d > 0.86:
+                    c = ICE[5] if (x + y + f) % 3 == 0 else ICE[3]
+                im.set(x, y, c)
+    return im.outline()
+
+
 def wing_leap(f):
     """Schwingensprung: zwei Lichtschwingen, darunter ein gestrichelter Sprungbogen, am Ende ein wachsender Aufprallring."""
     im = Img()
@@ -395,6 +464,10 @@ ICONS = {
     'art/white_hole': white_hole,
     'art/tornado': tornado,
     'art/glacier_lance': glacier_lance,
+    'art/blade_storm': blade_storm,
+    'art/ice_prison': ice_prison,
+    'art/full_pot': full_pot,
+    'art/tank_mode': tank_mode,
 }
 
 # Namen, die gear_art.py (hud/) und spell_art.py (hud/art/) nicht mehr selbst schreiben.

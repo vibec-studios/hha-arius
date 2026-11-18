@@ -155,6 +155,61 @@ class AriusMoves(private val f: EirholmFight) {
     }
 
     /** Ein Zug als Taktgeber in Abschnitt III (weiße Form). */
+    private var nextStar = 0L
+    private var nextSoul = 0L
+
+    /**
+     * Feat „Der gefrorene Stern“: Er hebt die Hand, hoch über dem Ziel entsteht ein gleißender Stern, gefriert und
+     * stürzt herab. Großer angesagter Kreis (r 9), 14 Grundschaden und starker Frostaufbau, danach ein Dornenring.
+     */
+    fun frozenStar(t: ServerPlayerEntity): Script = script {
+        val a = f.arius ?: return@script
+        f.face(a, t.entityPos)
+        a.play(AriusPose.CORE_RAISE)
+        val spot = Vec3d(t.x, f.floorY, t.z)
+        val ticks = 70
+        for (p in f.audience()) dev.henny.hha.logic.boss.Cine.title(listOf(p), "hha_arius.feat.frozen_star", "hha_arius.feat.frozen_star.sub", 50)
+        f.fx(FxKind.FROZEN_STAR, spot, a = 9f, b = ticks.toFloat(), life = ticks + 6)
+        f.ambient("core.form", spot.add(0.0, 30.0, 0.0), 5f, 0.6f)
+        val ring = f.calls.ring(spot, 9f, ticks)
+        wait(ring.ticks)
+        for (p in ring.hits(f.players())) {
+            if (f.hurt(p, 14f, Damage.Kind.IMPACT) > 0f) dev.henny.hha_arius.gear.Frostbite.add(p, 45f)
+        }
+        f.ambient("glacier.collapse", spot, 6f, 1.2f)
+        Vfx.shockwave(f.world, Vfx.Style.HEAVEN, spot, 12f, 18, 2f)
+        f.fx(FxKind.CLEAR_WAVE, spot, a = 14f, life = 20)
+        f.calls.roomShake(spot, 6f, 40f)
+        a.play(AriusPose.IDLE)
+        wait(10)
+    }
+
+    /**
+     * Feat „Absoluter Nullpunkt: Seele“: Er friert die Seele ein, nicht den Körper – Schilde und Rüstung helfen nicht.
+     * Ein schmaler Kegel vor ihm; wer darin steht, erfriert sofort (voller Frostaufbau), dazu wenig Schaden.
+     */
+    fun absoluteZeroSoul(t: ServerPlayerEntity): Script = script {
+        val a = f.arius ?: return@script
+        f.face(a, t.entityPos)
+        a.play(AriusPose.GUARD)
+        for (p in f.audience()) dev.henny.hha.logic.boss.Cine.title(listOf(p), "hha_arius.feat.zero_soul", "hha_arius.feat.zero_soul.sub", 45)
+        val from = a.entityPos
+        val dir = flatDir(from, t.entityPos)
+        val to = from.add(dir.multiply(14.0))
+        val line = f.calls.line(from, to, 5f, 40, Telegraph.Pace.HEAVY)
+        f.ambient("cut.charge", from, 3f, 0.5f)
+        wait(line.ticks)
+        a.play(AriusPose.IAI_DRAW, 1)
+        f.fx(FxKind.SEAM, from.add(0.0, 0.2, 0.0), to.add(0.0, 0.2, 0.0), a = 4f, life = 20)
+        Vfx.crescent(f.world, Vfx.Style.HEAVEN, from.add(0.0, 1.2, 0.0), dir, 14f, 2.4f, 8)
+        for (p in line.hits(f.players())) {
+            f.hurt(p, 4f, Damage.Kind.NULL_CUT)
+            dev.henny.hha_arius.gear.Frostbite.add(p, 100f)
+        }
+        wait(12)
+        a.play(AriusPose.IDLE)
+    }
+
     fun turnWhite(): Script = script {
         val a = f.arius ?: return@script
         val t = f.target() ?: return@script wait(10)
@@ -166,6 +221,15 @@ class AriusMoves(private val f: EirholmFight) {
                 now >= nextNull && rnd.nextFloat() < 0.35f -> {
                     nextNull = now + 300
                     yieldAll(nullCut(t))
+                }
+                // Seit 1.7.0 zwei seiner Feats als Angriffe der weißen Form
+                now >= nextStar && rnd.nextFloat() < 0.3f -> {
+                    nextStar = now + 520
+                    yieldAll(frozenStar(t))
+                }
+                now >= nextSoul && rnd.nextFloat() < 0.3f -> {
+                    nextSoul = now + 460
+                    yieldAll(absoluteZeroSoul(t))
                 }
                 now >= nextBlade && rnd.nextFloat() < 0.4f -> {
                     nextBlade = now + 420

@@ -88,8 +88,18 @@ object Encounters {
             if (world.registryKey == WORLD && !player.isCreative && (item is BlockItem || item is BucketItem)) ActionResult.FAIL else ActionResult.PASS
         }
         UseItemCallback.EVENT.register { player, world, hand ->
-            val item = player.getStackInHand(hand).item
-            if (world.registryKey == WORLD && !player.isCreative && item is BucketItem) ActionResult.FAIL else ActionResult.PASS
+            val stack = player.getStackInHand(hand)
+            val item = stack.item
+            if (world.registryKey == WORLD && !player.isCreative && item is BucketItem) return@register ActionResult.FAIL
+            // Seit 1.7.0: während der Jagd den Berg hinauf keine Enderperlen und Chorusfrüchte.
+            if (world.registryKey == WORLD && player is net.minecraft.server.network.ServerPlayerEntity &&
+                (stack.isOf(net.minecraft.item.Items.ENDER_PEARL) || stack.isOf(net.minecraft.item.Items.CHORUS_FRUIT)) &&
+                fightOf(player)?.chasing == true
+            ) {
+                player.sendMessage(Text.translatable("hha_arius.msg.chase_no_pearl").formatted(Formatting.RED), true)
+                return@register ActionResult.FAIL
+            }
+            ActionResult.PASS
         }
         // Während eines Halte-Moments keine aktiven Fähigkeiten (HHA-Tasten schicken sonst trotz Eingabesperre Pakete).
         HhaEvents.ABILITY_CAST.register { player, _ -> !Hold.isHeld(player) }

@@ -19,7 +19,8 @@
     "client.CameraKickMixin",
     "client.AriusRendererHitStopMixin",
     "client.QteHudMixin",
-    "client.BridgeScrollMixin"
+    "client.BridgeScrollMixin",
+    "client.OverlayMessageMixin"
   ],
   "injectors": {
     "defaultRequire": 1

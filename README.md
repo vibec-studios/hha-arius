@@ -71,6 +71,29 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.7.0
+- **The Hunt:** after phase III, a powered-up Arius chases you up the spiral mountain.
+  - Each of his hits deals exactly three hearts, and ender pearls are blocked.
+  - The finale takes place on the summit.
+- **Arius' feats** appear as attacks and title cards:
+  - **The White Horizon:** the Cut.
+  - **The Frozen Star:** a star appears above the target, freezes and falls.
+  - **Absolute Zero: Soul:** a cone that freezes your soul and ignores shields.
+- **Blocking:**
+  - Vanilla shields can block Arius and Solvane. Heavy hits knock the shield away for 5 s.
+  - Solvane's counter works against bosses and mobs and strikes back.
+- **New gauntlet techniques:**
+  - Blade Storm, which replaces Wind Pull;
+  - Ice Prison;
+  - Full-Pot (Strength II, Speed II, Fire Resistance, Regeneration II);
+  - Tank Mode (Resistance IV).
+- **Improved techniques:** a stronger Frost Field and a new Glacier Lance visual.
+- **Constructs:** bridges last 30 s and platforms 45 s.
+- **Melee:** new flurry and palm blast moves.
+- **Fixes:**
+  - calmer casting hands;
+  - action bar texts are no longer covered by the resonance bar and cooldown icons.
+
 ### New in 1.6.5
 - **Elden Ring-style Frostbite:** a frost bar builds up from frost attacks. When it fills, it deals burst damage and inflicts Frostbite for 30 s: +20 % damage taken and slower attacks.
 - **World:**

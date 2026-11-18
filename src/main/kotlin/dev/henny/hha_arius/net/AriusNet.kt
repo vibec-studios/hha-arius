@@ -253,6 +253,9 @@ enum class FxKind {
 
     /** Lichtklinge beim Schnitt (seit 1.5.1): e1 = Arius, a = Länge, b = Ticks bis zum Schlag, life = Dauer. */
     GIANT_BLADE,
+
+    /** Der gefrorene Stern (seit 1.7.0): pos = Ziel am Boden, a = Radius, b = Ticks bis zum Einschlag. */
+    FROZEN_STAR,
 }
 
 /**

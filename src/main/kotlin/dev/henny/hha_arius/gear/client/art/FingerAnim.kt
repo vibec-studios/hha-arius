@@ -19,7 +19,7 @@ object FingerAnim {
 
     fun pose(anim: ArtAnims.State?, td: Float, time: Float, lead: Boolean, out: FloatArray) {
         // Ruhe: Welle über die Finger
-        for (i in 0 until 4) out[i] = 0.24f + 0.09f * sin(time * 0.11f + i * 0.75f)
+        for (i in 0 until 4) out[i] = 0.24f + 0.05f * sin(time * 0.07f + i * 0.75f)
         out[4] = 0.1f + 0.04f * sin(time * 0.06f)
         out[5] = 0.35f + 0.05f * sin(time * 0.09f + 1f)
         if (anim == null) return
@@ -27,9 +27,10 @@ object FingerAnim {
         when (anim.anim) {
             Anim.CAST_CHARGE -> {
                 val c = ArtParam.castCharge(anim.param, a)
-                for (i in 0 until 4) out[i] = 0.5f + 0.4f * c + 0.05f * sin(time * 2.1f + i * 1.3f)
-                out[4] = 0.2f + 0.15f * c
-                out[5] = 0.7f
+                // Seit 1.7.0 ruhig: die Finger legen sich weich um die Kugel, kein Zittern.
+                for (i in 0 until 4) out[i] = 0.35f + 0.25f * c + 0.03f * i
+                out[4] = 0.22f + 0.08f * c
+                out[5] = 0.45f
             }
             Anim.CAST_TAP, Anim.CAST_RELEASE -> {
                 val dur = if (anim.anim == Anim.CAST_TAP) 6f else 8f
@@ -46,7 +47,7 @@ object FingerAnim {
                 out[5] = 0.9f
             }
             Anim.SHIELD -> {
-                for (i in 0 until 4) out[i] = 0.02f + 0.03f * sin(time * 0.3f + i)
+                for (i in 0 until 4) out[i] = 0.04f
                 out[4] = 0.32f
                 out[5] = 0.05f
             }
@@ -56,7 +57,7 @@ object FingerAnim {
                 for (i in 0 until 4) out[i] = if (toMagic) mix(1.3f, out[i], k + i * 0.08f) else mix(out[i], 1.3f, k + i * 0.08f)
             }
             Anim.WHITE_HOLE -> {
-                for (i in 0 until 4) out[i] = 0.55f + 0.04f * sin(time * 1.5f + i)
+                for (i in 0 until 4) out[i] = 0.5f
                 out[4] = 0.28f
                 out[5] = 0.6f
             }

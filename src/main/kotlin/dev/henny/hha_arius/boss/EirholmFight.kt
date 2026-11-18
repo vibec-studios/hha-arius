@@ -122,6 +122,22 @@ class EirholmFight(
         const val END = 8
     }
 
+    /** Seit 1.7.0: Arius jagt die Spieler den Spiralberg hinauf (Supermodus, keine Enderperlen). */
+    var chasing = false
+
+    /** Seit 1.7.0: das Finale spielt auf der Gipfelschulter des Massivs. */
+    var onSummit = false
+
+    /** Mitte der Gipfelschulter (absolut, Laufhöhe). */
+    val summit: Vec3d
+        get() = abs(Vec3d(ArenaLayout.SPIRE.x + 0.5, dev.henny.hha_arius.arena.FarPlan.SHOULDER_Y + 1.0, ArenaLayout.SPIRE.z + 0.5))
+
+    /** Landeplätze im Finale: auf dem Feld oder auf dem Gipfel (Ring nördlich des Horns). */
+    fun finaleSpots(): List<Vec3d> = if (!onSummit) ArenaLayout.VAULT_LANDING else (0 until 6).map { i ->
+        val a = Math.PI + (i - 2.5) * 0.28
+        Vec3d(ArenaLayout.SPIRE.x + 0.5 + kotlin.math.sin(a) * 16.0, dev.henny.hha_arius.arena.FarPlan.SHOULDER_Y + 1.0, ArenaLayout.SPIRE.z + 0.5 + kotlin.math.cos(a) * 16.0)
+    }
+
     var phase = Phase.BUILD
         private set
     var phaseAge = 0
@@ -235,12 +251,13 @@ class EirholmFight(
 
     /** Laufhöhe des aktuellen Schauplatzes. */
     val floorY: Double
-        get() = if (phase >= Phase.VAULT || (phase == Phase.COLLAPSE && phaseAge > 60)) origin.y + ArenaLayout.VAULT.y.toDouble() else origin.y.toDouble()
+        get() = if (onSummit) summit.y else if (phase >= Phase.VAULT || (phase == Phase.COLLAPSE && phaseAge > 60)) origin.y + ArenaLayout.VAULT.y.toDouble() else origin.y.toDouble()
 
     val arenaCenter: Vec3d
         get() = when {
             phase <= Phase.CUT -> abs(Vec3d.of(ArenaLayout.TEMPLE)).add(0.5, 0.0, 0.5)
             phase <= Phase.COLLAPSE -> abs(Vec3d.of(ArenaLayout.PLATEAU)).add(0.5, 0.0, 0.5)
+            onSummit -> summit.add(0.0, 0.0, -14.0)
             else -> abs(Vec3d.of(ArenaLayout.VAULT)).add(0.5, 0.0, 0.5)
         }
 
@@ -248,6 +265,8 @@ class EirholmFight(
         get() = when {
             phase <= Phase.CUT -> ArenaLayout.TEMPLE_R + 10.0 // offenes Klingengrab (seit 1.4.2)
             phase <= Phase.COLLAPSE -> 100.0 // offenes Hochland ab dem Drachenkampf (seit 1.3.1)
+            chasing -> 600.0
+            onSummit -> 10.0 // Gipfelschulter (Ring um das Horn, seit 1.7.0)
             else -> 70.0 // offenes Feld (seit 1.4.2)
         }
 
@@ -697,7 +716,7 @@ class EirholmFight(
         if (player.uuid !in fighters || fighters[player.uuid]?.ko == true || player.entityWorld !== world) return 0f
         if (Hold.isHeld(player) || Hold.inGrace(player)) return 0f
         // Seit 1.6.5: Bodenangriffe treffen niemanden, der hoch über der Arena ist (Crix: „hitten dich auch 100 Blöcke über ihm“).
-        if (player.y - floorY > 12.0) return 0f
+        if (!chasing && player.y - floorY > 12.0) return 0f
         if (phase == Phase.CUT && kind == Damage.Kind.NULL_CUT) cutSurvivors.remove(player.uuid)
         val dealt = Damage.hit(player, attacker, kind, base, BossConfig.damageScale())
         // Frostaufbau wie in Elden Ring (Erfrierung): Atem baut am stärksten auf, Schläge und Aufpralle weniger.

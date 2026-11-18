@@ -429,8 +429,9 @@ internal object GauntletFirstPerson {
             Anim.CAST_CHARGE -> {
                 magicIdle(a1, t)
                 val school = School.entries.getOrElse(ArtParam.school(s.param)) { School.WIND }
-                // ≥ 0,22: sonst kreuzen sich die Fingerspitzen der zusammenlaufenden Arme.
-                val sep = 0.26f - 0.03f * clamp01(a / 40f)
+                // Seit 1.7.0 weiter auseinander, als hielten die Hände eine Energiekugel (vorher berührten sich die
+                // Finger fast und wirkten wie ein Kribbeln, Crix).
+                val sep = 0.42f - 0.04f * clamp01(a / 40f)
                 var ox = 0f; var oy = 0f
                 if (school == School.WIND) { ox = 0.02f * sin(t * 0.15f); oy = 0.02f * cos(t * 0.15f) }
                 val cy = if (school == School.YANG) -0.30f else -0.36f

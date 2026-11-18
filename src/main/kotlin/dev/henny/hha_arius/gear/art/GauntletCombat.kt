@@ -94,6 +94,8 @@ object GauntletCombat {
             ArtAction.ATTACK if airborne && chain == 0 -> Move.DIVE_KICK
             ArtAction.ATTACK if player.isSprinting && chain == 0 -> Move.FLYING_KICK
             ArtAction.KICK if !player.isOnGround && !player.isTouchingWater -> Move.WHIRL_KICK
+            ArtAction.KICK if player.isSprinting && chain == 0 -> Move.PALM_BLAST
+            ArtAction.ATTACK if player.isSneaking && chain == 0 -> Move.FLURRY
             ArtAction.ATTACK -> when (chain) {
                 1 -> Move.CROSS
                 2 -> Move.HOOK
@@ -148,6 +150,15 @@ object GauntletCombat {
             else -> {}
         }
         if (move == Move.FLYING_KICK || move == Move.DIVE_KICK || move == Move.WHIRL_KICK) player.fallDistance = 0.0
+        if (move == Move.FLURRY) {
+            // Vier weitere Schläge im Abstand von 2 Ticks nach dem ersten Treffer (Schlaghagel).
+            for (k in 1..4) GearTasks.later(windup + k * 2) {
+                if (s.move == Move.FLURRY && player.isAlive) {
+                    strike(player, Move.FLURRY)
+                    ArtNet.anim(player, if (k % 2 == 0) Anim.JAB else Anim.CROSS, 4, 1)
+                }
+            }
+        }
         if (move != Move.PARRY) {
             GearSounds.play(world, player.entityPos, "gauntlet.swing", SoundEvents.ENTITY_PLAYER_ATTACK_WEAK, 0.5f, pitch)
         } else {
@@ -288,6 +299,14 @@ object GauntletCombat {
                 world.spawnParticles(ParticleTypes.SNOWFLAKE, at.x, at.y + 0.2, at.z, 36, 1.6, 0.15, 1.6, 0.14)
                 world.spawnParticles(ParticleTypes.EXPLOSION, at.x, at.y + 0.3, at.z, 1, 0.0, 0.0, 0.0, 0.0)
                 GearSounds.play(world, at, "gauntlet.slam", SoundEvents.ENTITY_GENERIC_EXPLODE.value(), 0.6f, 1.5f)
+            }
+            Move.FLURRY -> GearVfx.crescent(world, Vfx.Style.STORM, chest.add(look.multiply(0.9)), player.rotationVector, 1.3f, 0.9f, 3)
+            Move.PALM_BLAST -> {
+                val at = chest.add(look.multiply(1.2))
+                GearVfx.nova(world, Vfx.Style.STORM, at, 1.8f, 10)
+                GearVfx.shockwave(world, Vfx.Style.STORM, player.entityPos.add(look.multiply(1.5)), 3.4f, 10, 1f)
+                world.spawnParticles(ParticleTypes.CLOUD, at.x, at.y, at.z, 24, 0.5, 0.5, 0.5, 0.25)
+                GearSounds.play(world, at, "gauntlet.slam", SoundEvents.ENTITY_BREEZE_WIND_BURST.value(), 1f, 0.8f)
             }
             Move.WHIRL_KICK -> {
                 // Dryleaf-Wirbelwind: zwei gegenläufige Windsicheln rundum, Blätterwirbel aus Schnee
