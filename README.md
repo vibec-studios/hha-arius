@@ -71,6 +71,11 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.4.1
+The final stage now takes place on an open field in the highland east of the plateau, in a snowstorm with the rock horn
+behind it. The Sky Balcony is gone. Yang magic is pure white: the orb is a shaded white sphere with small orbiting
+spheres and a curved white "fish" tail, and the shield, bridge, platform and icons are white as well.
+
 ### New in 1.4.0
 An alpine rock horn and an open highland arena from the dragon fight on, a slow-motion QTE action scene in the finale,
 a White Hole that rips up and hurls real blocks, new armour abilities (Dragon Breath, Wing Leap), Tornado and Glacier

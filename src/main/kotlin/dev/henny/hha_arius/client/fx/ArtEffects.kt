@@ -17,6 +17,7 @@ import net.minecraft.particle.ParticleTypes
 import net.minecraft.util.math.BlockPos
 import net.minecraft.util.math.RotationAxis
 import net.minecraft.util.math.Vec3d
+import dev.henny.hha.client.vfx.lerpColor
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.min
@@ -26,7 +27,7 @@ import kotlin.math.sin
 object ArtColors {
     const val WIND = 0xFFD8E4F0.toInt()
     const val ICE = 0xFFA8E2FF.toInt()
-    const val YANG = 0xFFFFE6A8.toInt()
+    const val YANG = 0xFFF4F8FF.toInt() // seit 1.4.1 perlweiß (Yang = Weiß)
     fun of(school: Int): Int = when (school) {
         0 -> WIND
         1 -> ICE
@@ -114,13 +115,28 @@ class ArtBolt(val boltId: Int, private val start: Vec3d, private val vel: Vec3d,
                 d.band(VfxLayers.GLOW_ADD, p.subtract(fwd.multiply(2.4)), p, d.camUp, 0.09, withAlpha(ArtColors.ICE, 0f), withAlpha(0xFFFFFFFF.toInt(), 0.6f * k))
             }
             else -> {
-                // Yang-Kugel: gleissender Kern, drehender Runenring, Strahlen, Lichtschweif.
-                val r = radius * 0.7
-                d.sphere(VfxLayers.GLOW_ADD, p, r, { withAlpha(0xFFFFFFFF.toInt(), k) })
-                d.disc(VfxLayers.RING_ADD, p, d.camRight, d.camUp, r * 2.6, withAlpha(ArtColors.YANG, 0.8f * k), t * 0.12)
-                d.billboard(VfxLayers.RAYS_ADD, p, r * 4.0, withAlpha(ArtColors.YANG, 0.45f * k), -t * 0.05)
-                d.billboard(VfxLayers.FLARE_ADD, p, r * 5.0, withAlpha(ArtColors.YANG, 0.6f * k))
-                d.band(VfxLayers.FLOW_ADD, p.subtract(fwd.multiply(2.6)), p, d.camUp, r * 0.8, withAlpha(ArtColors.YANG, 0f), withAlpha(ArtColors.YANG, 0.5f * k), uScale = 0.5f, uOffset = t * 0.12f)
+                // Yang-Kugel (seit 1.4.1, nach den Wahrheitssucherkugeln, aber Yang = Weiß): massive, glatte weiße Kugel,
+                // von oben beleuchtet mit Glanzlicht, drei kleine weiße Kugeln umkreisen sie, dahinter ein geschwungener
+                // weißer Schweif wie die Yang-Hälfte des Yin-Yang-Fischs, weicher weißer Hof.
+                val r = radius * 0.62
+                d.sphere(VfxLayers.SHARD_ALPHA, p, r, { up -> withAlpha(lerpColor(0xFFC9D2E0.toInt(), 0xFFFFFFFF.toInt(), (0.55f + 0.45f * up).coerceIn(0f, 1f)), k) })
+                d.billboard(VfxLayers.FLARE_ADD, p.add(d.camUp.multiply(r * 0.45)).add(d.camRight.multiply(-r * 0.35)), r * 0.7, withAlpha(0xFFFFFFFF.toInt(), 0.9f * k))
+                d.billboard(VfxLayers.GLOW_ADD, p, r * 3.2, withAlpha(0xFFFFFFFF.toInt(), 0.35f * k))
+                val side = fwd.crossProduct(Vec3d(0.0, 1.0, 0.0)).let { if (it.lengthSquared() < 1e-4) d.camRight else it.normalize() }
+                val upv = side.crossProduct(fwd).normalize()
+                for (m in 0 until 3) {
+                    val ang = t * 0.35 + m * 2.094
+                    val q = p.add(side.multiply(cos(ang) * r * 2.1)).add(upv.multiply(sin(ang) * r * 2.1))
+                    d.sphere(VfxLayers.SHARD_ALPHA, q, r * 0.28, { up -> withAlpha(lerpColor(0xFFCFD7E4.toInt(), 0xFFFFFFFF.toInt(), (0.55f + 0.45f * up).coerceIn(0f, 1f)), k) }, lat = 6, lon = 10)
+                }
+                // Fischschweif: S-förmig geschwungen, wird nach hinten schmaler
+                var prev = p
+                for (i in 1..10) {
+                    val f = i / 10.0
+                    val q = p.subtract(fwd.multiply(f * 3.0)).add(side.multiply(sin(f * PI * 1.5 + t * 0.2) * r * 1.2 * f))
+                    d.band(VfxLayers.GLOW_ADD, prev, q, upv, r * (1.0 - f * 0.85), withAlpha(0xFFFFFFFF.toInt(), 0.8f * k * (1f - f.toFloat())), withAlpha(0xFFFFFFFF.toInt(), 0.8f * k * (1f - f.toFloat())))
+                    prev = q
+                }
             }
         }
     }

@@ -26,7 +26,7 @@ import kotlin.math.sin
  */
 internal object FarPlan {
 
-    const val VERSION = 3 // 2: Himmelsbalkon an der Nadel; 3: Alpen (Felshorn, Fels/Schnee, offenes Hochland)
+    const val VERSION = 6 // 6: Feld im Hochland statt Balkon, kein Massiv; 5: Bergmassiv mit Terrasse statt schwebendem Balkon; 4: Balkon als Felsschelf mit Strebe, Schneebänder am Horn; 2: Himmelsbalkon an der Nadel; 3: Alpen (Felshorn, Fels/Schnee, offenes Hochland)
 
     const val X_MIN = -ArenaLayout.FAR_X
     const val X_MAX = ArenaLayout.FAR_X
@@ -152,11 +152,33 @@ internal object FarPlan {
         return floor(h).toInt()
     }
 
-    /** Oberkante der Fernlandschaft (Gelände oder Nadel). */
+    /**
+     * Breites Bergmassiv unter der Gipfelpyramide (seit 1.4.1): Grate wie die Pyramide (Superellipse), Flanken fallen
+     * mit ~1,25 je Block nach außen, ein Gratrauschen bricht sie auf. Nur jenseits der Schlucht (z ≥ 60).
+     */
+    fun massifTop(x: Int, z: Int): Int {
+        if (z < 60) return Int.MIN_VALUE
+        val dx = x + 0.5 - (ArenaLayout.SPIRE.x + 0.5)
+        val dz = z + 0.5 - (ArenaLayout.SPIRE.z + 0.5)
+        val u = abs(dx * 0.866 - dz * 0.5)
+        val v = abs(dx * 0.5 + dz * 0.866)
+        val m = Math.pow(Math.pow(u, 1.3) + Math.pow(v, 1.3), 1.0 / 1.3)
+        if (m > 120.0) return Int.MIN_VALUE
+        val h = 112.0 - max(0.0, m - 20.0) * 1.25 + (ridged(x, z, 26, 81) - 0.5) * 14.0
+        return floor(h).toInt()
+    }
+
+    /** Liegt (x, z) auf der Terrasse des Himmelsbalkons (zerklüfteter Rand)? */
+    fun onTerrace(x: Int, z: Int): Boolean =
+        hypot((x - ArenaLayout.VAULT.x).toDouble(), (z - ArenaLayout.VAULT.z).toDouble()) <= balconyEdge(x, z)
+
+    /** Oberkante der Fernlandschaft (Gelände, Massiv, Gipfelpyramide; auf der Terrasse eben). */
     fun top(x: Int, z: Int): Int {
         var t = ground(x, z)
         val s = spireTop(x, z)
         if (s > t) t = s
+        // Terrasse: flach auf Balkonhöhe (in den Berg geschnitten bzw. auf der Schulter aufgefüllt).
+        if (onTerrace(x, z)) t = ArenaLayout.VAULT.y - 1
         return t.coerceIn(Y_MIN, ArenaLayout.SPIRE_TOP)
     }
 
@@ -185,6 +207,11 @@ internal object FarPlan {
         // Schnee: flache Oberflächen immer, steilere oberhalb der Schneegrenze teilweise
         if (depth == 0 && (slope <= 2 || (y > snowLine && slope <= 5 && h32(x, y, z, 67) < 0.75))) return SNOW
         if (depth <= 1 && slope <= 1) return SNOW
+        // Horn: Schneebänder auf Simsen und eine verschneite Gipfelkappe (wie das Matterhorn)
+        if (spire && depth <= 1) {
+            if (y > 150 && h32(x, y, z, 75) < 0.7) return SNOW
+            if (Math.floorMod(y + (4 * vnoise(x, z, 9, 77)).toInt(), 14) < 2) return SNOW
+        }
         // Eisrinnen (Couloirs) in steilen Flanken
         if (slope >= 4 && vnoise(x, z, 6, 69) > 0.78) return if (h32(x, y, z, 71) < 0.3) BLUE else PACKED
         // Felsschichten, leicht geneigt
@@ -207,16 +234,23 @@ internal object FarPlan {
     /** Zerklüfteter Rand: Radius je Richtung. */
     fun balconyEdge(x: Int, z: Int): Double = ArenaLayout.VAULT_R + 1.5 + (vnoise(x, z, 5, 701) - 0.5) * 4.0
 
-    /** Dicke des Schelfs (zur Nadel hin dicker). */
+    /**
+     * Dicke des Schelfs: außen dünn (4), zur Bergflanke hin wächst die Unterseite als Strebe schräg in den Berg hinein
+     * (bis ~60 tief). So wirkt der Balkon wie aus der Flanke gewachsen, nicht wie eine schwebende Scheibe (Pilzhut).
+     */
     private fun balconyThick(x: Int, z: Int): Int {
-        val k = ((z - (VZ - ArenaLayout.VAULT_R)).toDouble() / (2.0 * ArenaLayout.VAULT_R)).coerceIn(0.0, 1.0)
-        return 3 + (k * 6.0 + vnoise(x, z, 4, 703) * 2.0).toInt()
+        val ds = hypot((x - ArenaLayout.SPIRE.x).toDouble(), (z - ArenaLayout.SPIRE.z).toDouble())
+        val face = ArenaLayout.spireRadius(VY.toDouble())
+        val k = (1.0 - (ds - face) / 46.0).coerceIn(0.0, 1.0)
+        return 4 + (k * k * 58.0 + vnoise(x, z, 4, 703) * 3.0).toInt()
     }
 
     /** Block des Balkons an (x, y, z) relativ, oder -1 (nichts). Säulen, Lauffläche, Unterseite, Eiszapfen, Zuschauervorsprung. */
     fun balcony(x: Int, y: Int, z: Int): Int {
-        // Zuschauervorsprung im Westen (Lauffläche y 104)
-        if (x in -37..-32 && z in 92..97 && y in 101..103) return if (y == 103) SNOW else PACKED
+        // Zuschauerhügel südlich des Feldes (Lauffläche 6 über dem Feld)
+        val wx = ArenaLayout.WATCH_VAULT.x.toInt()
+        val wz = ArenaLayout.WATCH_VAULT.z.toInt()
+        if (abs(x - wx) <= 2 && abs(z - wz) <= 2 && y in VY until VY + 6) return if (y == VY + 5) SNOW else PACKED
         val dx = (x - VX).toDouble()
         val dz = (z - VZ).toDouble()
         val r = hypot(dx, dz)
@@ -230,9 +264,9 @@ internal object FarPlan {
                 if (y < VY + hgt && pr <= taper) return if (pr < 0.8) BLUE else PACKED
             }
         }
-        if (r > balconyEdge(x, z)) return -1
+        // Lauffläche und Unterbau liefert seit 1.4.1 das Gelände (Terrasse auf dem Massiv), hier nur Säulen.
+        if (y >= VY || r >= 0.0) return -1
         val th = balconyThick(x, z)
-        if (y >= VY) return -1
         if (y == VY - 1) {
             val vein = vnoise(x, z, 3, 709)
             return if (r > balconyEdge(x, z) - 1.2) STONE else if (vein > 0.8) PACKED else SNOW
@@ -241,10 +275,10 @@ internal object FarPlan {
             val k = h32(x, y, z, 711)
             return if (k < 0.45) STONE else if (k < 0.75) ANDESITE else if (k < 0.9) TUFF else DEEP
         }
-        // Eiszapfen unter dem Schelf
+        // Wenige kurze Eiszapfen am dünnen Außenrand
         val icicle = h32(x, 0, z, 713)
-        if (icicle < 0.2) {
-            val len = 2 + (h32(x, 1, z, 715) * 8).toInt()
+        if (icicle < 0.04 && th <= 8) {
+            val len = 1 + (h32(x, 1, z, 715) * 3).toInt()
             if (y >= VY - th - len) return if (y == VY - th - len) BLUE else PACKED
         }
         return -1
@@ -361,12 +395,12 @@ class FarBuild(private val world: ServerWorld, private val origin: BlockPos) {
             }
         }
         // Himmelsbalkon (über der Schlucht an der Nadel): Lauffläche, Säulen, Unterseite, Eiszapfen.
-        for (y in ArenaLayout.VAULT.y - 20..ArenaLayout.VAULT.y + 10) {
+        for (y in ArenaLayout.VAULT.y - 2..ArenaLayout.VAULT.y + 12) {
             val id = FarPlan.balcony(x, y, z)
             pos.set(ax, origin.y + y, az)
             if (id < 0) {
                 // Luft über der Lauffläche freihalten (außer der Nadel selbst).
-                if (y >= ArenaLayout.VAULT.y && y > top && !chunk.getBlockState(pos).isAir) {
+                if (y >= ArenaLayout.VAULT.y && y > top && !FarPlan.inCore(x, z) && !chunk.getBlockState(pos).isAir) {
                     world.setBlockState(pos, net.minecraft.block.Blocks.AIR.defaultState, ArenaBuilder.FLAGS)
                     sets++
                 }

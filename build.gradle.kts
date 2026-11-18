@@ -81,7 +81,7 @@ loom {
         if (System.getProperty("arius.trailer") == "true") {
             vmArg("-Darius.trailer=true")
             vmArg("-Xmx6G")
-            for (key in listOf("arius.trailer.out", "arius.trailer.parts", "arius.trailer.sub", "arius.trailer.ffmpeg", "arius.trailer.skip", "arius.trailer.subtitles")) {
+            for (key in listOf("arius.trailer.out", "arius.trailer.parts", "arius.trailer.sub", "arius.trailer.ffmpeg", "arius.trailer.skip", "arius.trailer.subtitles", "arius.trailer.stills")) {
                 System.getProperty(key)?.let { vmArg("-D$key=$it") }
             }
         }

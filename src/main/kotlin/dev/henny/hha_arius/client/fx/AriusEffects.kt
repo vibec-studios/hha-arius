@@ -414,7 +414,7 @@ class BridgeFx(private val start: Vec3d, private val span: Vec3d, private val wi
         side = side.normalize()
         val grow = (t / 12f).coerceIn(0f, 1f)
         val n = (len * 2).toInt().coerceAtLeast(4)
-        val gold = 0xFFFFE7B0.toInt()
+        val gold = 0xFFEFF4FF.toInt() // Yang = Weiß (seit 1.4.1)
         // Bogen unter der Bahn
         var prev: Vec3d? = null
         for (i in 0..n) {

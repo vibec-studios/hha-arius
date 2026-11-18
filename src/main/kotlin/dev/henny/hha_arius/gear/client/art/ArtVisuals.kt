@@ -142,8 +142,8 @@ internal object ArtVisualGlow {
  */
 internal object ArtVisuals {
 
-    private const val YANG = 0xFFFFE3A0.toInt()
-    private const val YANG_CORE = 0xFFFFF6DC.toInt()
+    private const val YANG = 0xFFF2F6FF.toInt() // seit 1.4.1 perlweiß
+    private const val YANG_CORE = 0xFFFFFFFF.toInt()
     private const val ICE = 0xFFB8E8FF.toInt()
     private const val WHITE = 0xFFFFFFFF.toInt()
     private val UP = Vec3d(0.0, 1.0, 0.0)

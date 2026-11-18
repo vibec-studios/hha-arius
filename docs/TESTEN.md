@@ -88,6 +88,11 @@ Client-Welt und Spieler sind vorhanden. Geprüft mit Minecraft 1.21.11, Fabric L
 - [ ] Rüstung „Drachenherz-Wacht“: an Spieler, Rüstungsständer, Mannequin, Zombie; Leuchten Tag/Nacht, Verzauberungsglanz, Umhang, Federn beim Laufen/Springen, schmale Arme, mit und ohne Handschuhe
 - [ ] Solvane-Item: länger, Lichtfluss in der Hohlkehle, Sitz in erster und dritter Person
 
+## 1.4.1
+- [ ] Abschnitt III und Finale auf dem offenen Feld im Hochland östlich des Plateaus (kein Himmelsbalkon mehr): flacher Grund, Säulen am Rand, Zuschauerhügel im Süden, Felshorn im Hintergrund; Gletschersturz/Lichtstrom landet dort
+- [ ] Fernlandschaft baut sich einmal neu (Version 6); Feld eben
+- [ ] Yang weiß: Kugel als schattierte weiße Sphäre mit kreisenden Kugeln und weißem Fischschweif; Schild, Brücke, Plattform, Gleiter, Brückenlicht und Icons weiß/perlmutt
+
 ## 1.4.0
 - [ ] Landschaft: Felshorn statt Eisnadel (Grate, Fels, Schneebänder, Eisrinnen), Fels/Schnee statt Eis; Auftritt: Solvane windet sich weiter frei ums Horn
 - [ ] Arena ab dem Drachenkampf offen: keine Gletscherwände mehr ums Plateau (außer hinter dem Tempel), weites Hochland, Kampfbereich Radius 100; Himmelsbalkon größer (R 40) aus Fels

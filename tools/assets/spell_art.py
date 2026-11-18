@@ -30,7 +30,7 @@ OUT = hexc('#0d1220')              # Umriss wie die vorhandenen HUD-Sprites
 # Farbwelten (hell -> dunkel)
 W0, W1, W2, W3 = hexc('#f4f7fc'), hexc('#cfd9e8'), hexc('#a3b4cc'), hexc('#71839f')      # Wind
 I0, I1, I2, I3 = hexc('#eefaff'), hexc('#a8e8ff'), hexc('#5fb8e6'), hexc('#2f74b0')      # Eis
-Y0, Y1, Y2, Y3 = hexc('#fffcf2'), hexc('#ffecb8'), hexc('#f2c766'), hexc('#c08a32')      # Yang
+Y0, Y1, Y2, Y3 = hexc('#ffffff'), hexc('#eef2f8'), hexc('#cdd6e4'), hexc('#8d9ab0')      # Yang (seit 1.4.1 perlweiß)
 P0, P1, P2 = hexc('#ffffff'), hexc('#dde4ef'), hexc('#a9b4c8')                          # Perlweiß (Handschuh)
 GD = hexc('#d2a654')
 
@@ -448,7 +448,7 @@ def frost_construct():
 def yang_construct():
     """Warmweißes Licht mit feinem goldenem Wabenmuster und hellerem Rand; die Mittelwabe ist eine kleine Sonne."""
     t = Tex(16, 16)
-    light = hexc('#fff3d8')
+    light = hexc('#f7f9fd')
     centers = [(7.5 + i * 5 + (j % 2) * 2.5, 7.5 + j * 4.33) for i in range(-3, 4) for j in range(-3, 4)]
     for y in range(16):
         for x in range(16):
@@ -456,13 +456,13 @@ def yang_construct():
             (d1, k1), (d2, _) = ds[0], ds[1]
             col, a = light, 0.42 + 0.1 * math.exp(-((x - 7.5) ** 2 + (y - 7.5) ** 2) / 26.0)
             if d2 - d1 < 0.9:
-                col, a = hexc('#eec062'), 0.66                               # goldene Wabenkante
+                col, a = hexc('#c9d3e3'), 0.66                               # perlgraue Wabenkante (Yang = Weiß)
             elif centers[k1] == (7.5, 7.5) and d1 < 1.6:
-                col, a = hexc('#fffaee'), 0.66                               # Sonnenkern
+                col, a = hexc('#ffffff'), 0.7                               # Sonnenkern
             if x in (0, 15) or y in (0, 15):
-                col, a = hexc('#fffaf0'), 0.8
+                col, a = hexc('#ffffff'), 0.8
             elif x in (1, 14) or y in (1, 14):
-                col, a = mix(light, hexc('#ffe7a8'), 0.55), max(a, 0.6)
+                col, a = mix(light, hexc('#dde4ef'), 0.55), max(a, 0.6)
             t.set(x, y, col[:3] + (int(a * 255),))
     return t
 

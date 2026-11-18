@@ -54,6 +54,9 @@ class TrailerCapture : FabricClientGameTest {
     /** Clips, die schon gut im Kasten sind: der Ablauf läuft durch, aber ohne Bilder (schnell). */
     private val skipClips = System.getProperty("arius.trailer.skip", "").split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
     private val clearSubtitles = System.getProperty("arius.trailer.subtitles", "off") == "off"
+
+    /** Standbilder statt Video (-Darius.trailer.stills=true): je Einstellung zwei PNGs bei 40 % und 75 %. */
+    private val stills = System.getProperty("arius.trailer.stills") == "true"
     private var clock = 0L
 
     override fun runTest(context: ClientGameTestContext) {
@@ -76,6 +79,7 @@ class TrailerCapture : FabricClientGameTest {
                 if ("land" in parts) landscape()
                 if ("gear" in parts || "spells" in parts) gear()
                 if ("cut" in parts) overworldCut()
+                if ("catalog" in parts) catalog()
                 if ("fight" in parts) fight()
             } finally {
                 File(out, "timeline.txt").writeText(timeline.toString())
@@ -168,6 +172,28 @@ class TrailerCapture : FabricClientGameTest {
                 tick()
                 i++
                 if (until != null && i % 5 == 0 && until()) break
+            }
+            return
+        }
+        if (stills) {
+            log("STILLS $name")
+            val marks = setOf((ticks * 0.4).toInt(), (ticks * 0.75).toInt())
+            var j = 0
+            while (j < ticks) {
+                step(j)
+                keepAlive()
+                ctx.waitTick()
+                clock++
+                if (j in marks) {
+                    val file = File(out, "${name}_${if (j == marks.min()) "a" else "b"}.png")
+                    ctx.runOnClient<RuntimeException> { c ->
+                        if (clearSubtitles) dev.henny.hha_arius.client.fx.Subtitles.clear()
+                        c.gameRenderer.render(DeltaTrackerDefaultValueAccessor.create(1f), true)
+                        ScreenshotRecorder.takeScreenshot(c.framebuffer) { img -> img.use { it.writeTo(file) } }
+                    }
+                }
+                j++
+                if (until != null && j % 5 == 0 && until()) break
             }
             return
         }
@@ -309,8 +335,9 @@ class TrailerCapture : FabricClientGameTest {
         cmd("effect give @p minecraft:saturation infinite 10 true")
         for ((k, v) in listOf(
             "boss_damage_scale" to "0.05", "boss_build_budget" to "100000",
-            "resonance_rest" to "100", "resonance_rest_set" to "100", "resonance_rest_per_second" to "100",
         )) cmd("hha set hha_arius.$k $v")
+        // Seit 1.2.1: Testmodus statt Ruhepunkt-Werten (unendliche Resonanz, kurze Abklingzeiten).
+        cmd("execute as @p run hhaarius test on")
         // Bauwerke (Eiswand, Brücke, Plattform) und Gleiter sind in der Arena-Dimension sonst aus (Toggle, kein Zahlenwert).
         cmd("hha toggle hha_arius.art_constructs_in_arena true")
         equip()
@@ -434,12 +461,16 @@ class TrailerCapture : FabricClientGameTest {
             // Zauberrad: Taste halten, Maus kreist.
             gauntletMode(GauntletMode.MAGIC)
             tick(4)
-            ctx.getInput().holdKey(ArtClient.keyTechnique)
+            client { _ ->
+                ArtClient.techKey()!!.setBoundKey(net.minecraft.client.util.InputUtil.Type.KEYSYM.createFromCode(org.lwjgl.glfw.GLFW.GLFW_KEY_R))
+                net.minecraft.client.option.KeyBinding.updateKeysByCode()
+            }
+            ctx.getInput().holdKey(ArtClient.techKey()!!)
             rec("gear_wheel", 50, step = { i ->
                 val a = i / 50.0 * Math.PI * 2.0
                 ctx.getInput().setCursorPos(960.0 + cos(a) * 300.0, 540.0 + sin(a) * 300.0)
             })
-            ctx.getInput().releaseKey(ArtClient.keyTechnique)
+            ctx.getInput().releaseKey(ArtClient.techKey()!!)
             tick(10)
             client { it.currentScreen?.close() }
             tick(4)
@@ -469,6 +500,11 @@ class TrailerCapture : FabricClientGameTest {
         cast(Spell.FROST_SHARDS, "gear_frost_shards", 60, 8, 9)
         cam(p.add(3.2, 1.2, 1.2), p.add(2.6, 1.5, 3.4), p.add(0.0, 1.4, 2.0), p.add(0.0, 1.3, 9.0), 90, 56.0, 60.0)
         cast(Spell.YANG_ORB, "gear_yang_orb", 90, 6, 40)
+        // Seit 1.3.1/1.4.0: Wirbelsturm und Gletscherlanze
+        cam(p.add(4.5, 2.0, 1.0), p.add(4.0, 2.6, 3.5), p.add(0.0, 1.5, 5.0), p.add(0.0, 2.0, 9.0), 90, 60.0, 58.0)
+        cast(Spell.TORNADO, "gear_tornado", 90, 6, 7)
+        cam(p.add(-2.4, 1.8, -2.6), p.add(-1.8, 1.7, -1.8), p.add(0.2, 1.4, 6.0), p.add(0.0, 1.2, 12.0), 80, 58.0, 54.0)
+        cast(Spell.GLACIER_LANCE, "gear_glacier_lance", 80, 6, 44)
         cineOff()
         killDummies()
         tick(30)
@@ -562,6 +598,24 @@ class TrailerCapture : FabricClientGameTest {
         killDummies()
         tick(20)
 
+        // Seit 1.4.0: Drachenatem (Ability 1) und Schwingensprung (Ability 2) der Rüstung
+        summonDummies(3, p.x, p.z + 5.0, 1.8)
+        tick(10)
+        client { c -> nearest(c, EntityType.HUSK)?.let { face(c, it, 99.0, move = false, turn = 1f) } }
+        cineOn()
+        cam(p.add(4.0, 1.6, -1.0), p.add(3.5, 2.0, 1.0), p.add(0.0, 1.4, 3.0), p.add(0.0, 1.3, 5.0), 60, 58.0, 52.0)
+        rec("gear_dragon_breath", 60) { i ->
+            client { c -> nearest(c, EntityType.HUSK)?.let { face(c, it, 99.0, move = false, turn = 0.6f) } }
+            if (i == 4) server { dev.henny.hha.api.ability.HhaAbilities.dispatch(player(it), dev.henny.hha.api.ability.AbilitySlot.ABILITY_1) }
+        }
+        cam(p.add(-6.0, 2.5, 2.0), p.add(-7.0, 3.5, 6.0), p.add(0.0, 2.0, 3.0), p.add(0.0, 1.0, 7.0), 70, 62.0, 58.0)
+        rec("gear_wing_leap", 70) { i ->
+            if (i == 4) server { dev.henny.hha.api.ability.HhaAbilities.dispatch(player(it), dev.henny.hha.api.ability.AbilitySlot.ABILITY_2) }
+        }
+        cineOff()
+        killDummies()
+        tick(30)
+
         if (all) {
             // Weißes Loch als Setfähigkeit, Husks im Ring.
             summonDummies(6, p.x, p.z + 8.0, 4.0)
@@ -610,6 +664,128 @@ class TrailerCapture : FabricClientGameTest {
         }
         cineOff()
         tick(20)
+    }
+
+    // --- Katalog (Website „Leaks / Gameplay“): alle Schauplätze, Modelle, Zauber -------------------------------------
+
+    private fun catalog() {
+        log("catalog")
+        val vb = dev.henny.hha_arius.arena.ArenaLayout.VAULT
+        // 1) Schauplätze ohne Kampf, Spieler unsichtbar
+        enterArena("spectator", 0.5, 2.0, -2.5, settleTicks = 600)
+        cmd("effect give @p minecraft:invisibility infinite 0 true")
+        atmos(1)
+        tick(40)
+        cineOn()
+        // Tempel innen: durchs Tor zum Altar
+        cam(at(2.5, 3.0, -36.0), at(1.5, 3.5, -46.0), at(0.0, 3.0, -64.0), at(0.0, 3.5, -64.0), 60, 64.0, 58.0)
+        rec("cat_temple_inside", 60)
+        // Plateau mit Obelisken und Ruinenbogen
+        cam(at(-26.0, 6.0, -2.0), at(-20.0, 8.0, 10.0), at(31.0, 4.0, -4.0), at(30.0, 4.0, 0.0), 60, 66.0, 60.0)
+        rec("cat_plateau", 60)
+        // Das offene Hochland
+        cam(at(60.0, 14.0, -30.0), at(70.0, 18.0, 10.0), at(0.0, 5.0, 0.0), at(0.0, 30.0, 128.0), 60, 70.0, 64.0)
+        rec("cat_highland", 60)
+        // Das Feld im Hochland (Abschnitt III und Finale)
+        atmos(4)
+        cam(at(vb.x - 40.0, vb.y + 10.0, vb.z - 30.0), at(vb.x - 34.0, vb.y + 14.0, vb.z - 18.0), at(vb.x.toDouble(), vb.y + 1.0, vb.z.toDouble()), at(vb.x + 2.0, vb.y + 2.0, vb.z + 4.0), 60, 66.0, 60.0)
+        rec("cat_field", 60)
+        cam(at(vb.x.toDouble(), vb.y + 40.0, vb.z - 44.0), at(vb.x + 6.0, vb.y + 36.0, vb.z - 36.0), at(vb.x.toDouble(), vb.y.toDouble(), vb.z.toDouble()), at(vb.x.toDouble(), vb.y.toDouble(), vb.z + 2.0), 60, 62.0, 58.0)
+        rec("cat_field_top", 60)
+        // Das Felshorn bis zum Gipfel
+        cam(at(-70.0, 140.0, 60.0), at(-60.0, 160.0, 80.0), at(0.0, 120.0, 128.0), at(0.0, 175.0, 128.0), 60, 60.0, 54.0)
+        rec("cat_horn", 60)
+        cineOff()
+        cmd("effect clear @p minecraft:invisibility")
+        atmos(0)
+
+        // 2) Ausrüstung: Rüstungsständer und alle Items als schwebende Anzeigen
+        enterArena("survival", 0.5, 0.0, 6.5, 0f)
+        val p = server { player(it).entityPos }
+        cmd("execute in $eir run summon minecraft:armor_stand ${p.x + 2.5} ${p.y} ${p.z + 3.0} {ShowArms:1b,NoGravity:1b,Rotation:[200f,0f],equipment:{head:{id:\"hha_arius:eirholm_helmet\"},chest:{id:\"hha_arius:eirholm_chestplate\"},legs:{id:\"hha_arius:eirholm_leggings\"},feet:{id:\"hha_arius:eirholm_boots\"},mainhand:{id:\"hha_arius:solvane\"}}}")
+        val items = listOf("solvane", "arius_gauntlets", "eirholm_helmet", "eirholm_chestplate", "eirholm_leggings", "eirholm_boots", "heartfrost", "nivaris_scale", "nivaris_wingscale", "eirholm_seal", "echo_of_eirholm")
+        for ((i, it) in items.withIndex()) {
+            val x = p.x - 4.0 + i * 0.8
+            cmd("execute in $eir run summon minecraft:item_display $x ${p.y + 1.6} ${p.z + 4.0} {item:{id:\"hha_arius:$it\"},item_display:\"gui\",transformation:{left_rotation:[0f,0f,0f,1f],right_rotation:[0f,0f,0f,1f],translation:[0f,0f,0f],scale:[0.6f,0.6f,0.6f]}}")
+        }
+        tick(10)
+        cineOn()
+        cam(p.add(0.5, 1.8, -0.5), p.add(0.2, 1.7, 0.2), p.add(-0.2, 1.4, 4.0), p.add(0.0, 1.5, 4.0), 40, 54.0, 50.0)
+        rec("cat_items", 40)
+        cam(p.add(4.6, 1.5, 1.0), p.add(4.0, 1.7, 1.6), p.add(2.5, 1.1, 3.0), p.add(2.5, 1.2, 3.0), 40, 44.0, 40.0)
+        rec("cat_armor_stand", 40)
+        cineOff()
+        cmd("kill @e[type=minecraft:item_display]")
+        cmd("kill @e[type=minecraft:armor_stand]")
+
+        // 3) Alle übrigen Zauber
+        gauntletMode(GauntletMode.MAGIC)
+        summonDummies(3, p.x, p.z + 7.0, 2.0)
+        tick(10)
+        fun aim(c: MinecraftClient) { nearest(c, EntityType.HUSK)?.let { face(c, it, 99.0, move = false, turn = 0.5f) } }
+        fun castShot(spell: Spell, name: String, ticks: Int, pressAt: Int, releaseAt: Int, camFrom: Vec3d, camTo: Vec3d) {
+            select(spell)
+            fillResonance()
+            val q = server { player(it).entityPos }
+            cam(q.add(camFrom), q.add(camTo), q.add(0.0, 1.4, 3.0), q.add(0.0, 1.3, 5.0), ticks, 60.0, 56.0)
+            rec(name, ticks) { i ->
+                client { c ->
+                    aim(c)
+                    if (i == pressAt) ArtClient.send(ArtAction.CAST_PRESS)
+                    if (i == releaseAt) ArtClient.send(ArtAction.CAST_RELEASE)
+                }
+            }
+            tick(10)
+        }
+        cineOn()
+        castShot(Spell.GALE, "cat_gale", 50, 4, 28, Vec3d(3.5, 1.6, -1.5), Vec3d(3.2, 1.8, 0.5))
+        castShot(Spell.WIND_PULL, "cat_wind_pull", 40, 4, 5, Vec3d(-3.5, 2.0, -2.0), Vec3d(-3.0, 2.2, 0.0))
+        castShot(Spell.ICE_ARMOR, "cat_ice_armor", 40, 4, 5, Vec3d(2.6, 1.4, 2.6), Vec3d(2.2, 1.6, 2.2))
+        castShot(Spell.YANG_SHIELD, "cat_yang_shield", 50, 4, 44, Vec3d(2.0, 1.5, 4.5), Vec3d(1.5, 1.6, 4.0))
+        castShot(Spell.YANG_ORB, "cat_yang_orb", 60, 4, 34, Vec3d(3.0, 1.4, 0.0), Vec3d(2.5, 1.6, 3.0))
+        castShot(Spell.FROST_FIELD, "cat_frost_field", 70, 6, 30, Vec3d(-5.0, 4.0, -3.0), Vec3d(-4.0, 5.0, 0.0))
+        castShot(Spell.WIND_LEAP, "cat_wind_leap", 40, 4, 5, Vec3d(-5.0, 1.5, 2.0), Vec3d(-5.0, 3.0, 5.0))
+        cineOff()
+        killDummies()
+        tick(20)
+
+        // 4) Arius in allen Formen und Solvane, nah (Training, Kampf ruht)
+        cmd("gamemode survival @p")
+        cmd("execute in minecraft:overworld run tp @p 0.5 -60 0.5 0 0")
+        tick(40)
+        cmd("execute as @p at @s run hhaarius stage 1")
+        waitUntil(3000, 5) { phase() >= EirholmFight.Phase.TEMPLE }
+        tick(40)
+        server { fightNow()?.let { it.ariusVulnerable = false } }
+        cmd("gamemode spectator @p")
+        for ((form, name) in listOf(dev.henny.hha_arius.boss.AriusForm.DARK to "cat_arius_dark", dev.henny.hha_arius.boss.AriusForm.SERIOUS to "cat_arius_serious", dev.henny.hha_arius.boss.AriusForm.WHITE to "cat_arius_white")) {
+            server { fightNow()?.arius?.let { a -> a.form = form; if (form == dev.henny.hha_arius.boss.AriusForm.WHITE) a.bladeState = dev.henny.hha_arius.boss.AriusBlade.ICE } }
+            val ap = serverPos(ariusS) ?: break
+            cineOn()
+            orbit(ap, 3.2, 2.8, 1.5, 1.7, 20.0, 70.0, 50, 46.0, 40.0, ariusS, 1.5)
+            rec(name, 50)
+            cineOff()
+        }
+        cmd("hhaarius stop")
+        tick(60)
+        cmd("gamemode survival @p")
+        cmd("execute in minecraft:overworld run tp @p 0.5 -60 0.5 0 0")
+        tick(40)
+        cmd("execute as @p at @s run hhaarius stage 2")
+        waitUntil(4000, 5) { server { fightNow()?.nivaris != null } }
+        tick(160)
+        cmd("gamemode spectator @p")
+        val dp = serverPos(dragonS)
+        if (dp != null) {
+            cineOn()
+            orbit(dp, 9.0, 7.0, 4.0, 6.0, 0.0, 80.0, 60, 60.0, 52.0, dragonS, 3.0)
+            rec("cat_solvane", 60)
+            cam(dp.add(18.0, 12.0, -18.0), dp.add(22.0, 16.0, -10.0), dp, dp.add(0.0, 2.0, 0.0), 60, 70.0, 64.0)
+            rec("cat_solvane_wide", 60)
+            cineOff()
+        }
+        cmd("hhaarius stop")
+        tick(40)
     }
 
     // --- Der Kampf ------------------------------------------------------------------------------------------------------
