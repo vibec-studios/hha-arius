@@ -131,8 +131,8 @@ object AriusTimings {
 
     // --- Nivaris ------------------------------------------------------------------------------------------------------
 
-    const val AIR_MAX = 180
-    const val AIR_MAX_VAULT = 120
+    const val AIR_MAX = 320 // seit 1.5.1 länger in der Luft (Kang-Jin Loong)
+    const val AIR_MAX_VAULT = 180
     const val DOWNED_TICKS = 90
     const val CHOKE_STAGGER = 70
     const val EXHAUSTED_TICKS = 40

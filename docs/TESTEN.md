@@ -88,6 +88,18 @@ Client-Welt und Spieler sind vorhanden. Geprüft mit Minecraft 1.21.11, Fabric L
 - [ ] Rüstung „Drachenherz-Wacht“: an Spieler, Rüstungsständer, Mannequin, Zombie; Leuchten Tag/Nacht, Verzauberungsglanz, Umhang, Federn beim Laufen/Springen, schmale Arme, mit und ohne Handschuhe
 - [ ] Solvane-Item: länger, Lichtfluss in der Hohlkehle, Sitz in erster und dritter Person
 
+## 1.6.0
+- [ ] Der Schnitt: riesige Lichtklinge über Arius während der Ansage, blauer Schein hinter ihm, Schlag nach vorn; Naht bis zum Berg, der Berg bricht der Länge nach auf (Kluft, Brocken), Klingengrab bleibt ganz; am Kampfende ist der Berg wieder heil
+- [ ] Auftritt Solvane: Kamera nie im Berg, Windung über der Schulter, Kopf über dem Gipfel (y 220)
+- [ ] Massiv: Fuß 170, Schulter y 172; Weg mit 27 Felsstufen (4 hoch) und Ranken zum Klettern, dazwischen einzelne Blockstufen; Laternen
+- [ ] Wolkenmeer am Horizont und warmes Himmelslicht (nur in der Arena, `/ariusc fx` skaliert)
+- [ ] Solvane: Körper fließt ohne Stufen, keine Durchdringung, Treffer am Körper aus etwas größerer Reichweite
+- [ ] Luftphase: Himmelssturz (kreist hoch, senkrecht herab, drei Eisdornenringe), Eisregen im Kreis (angesagte Kreise), Tiefflug quer über das Feld (breite Linie)
+- [ ] Eispanzer: kreisende Eisplatten die ganze Dauer, 5 Herzen Absorption, zerspringt bei 0
+- [ ] Wirbelsturm: 14 hoch, Wolken, Bänder, Blitze, Brocken; hebt Ziele hoch und schleudert sie am Ende weg
+- [ ] Weißes Loch wie Gargantua in Weiß (weiße Scheibe, dunkler Ring, heller Lichtring, flache wolkige Scheibe, Sterne)
+- [ ] Abklingzeit-Icon der Hose: Drachenschweif
+
 ## 1.5.0
 - [ ] Neue Dimension `hha_arius:highland`: endloses Schneefeld (auch weit draußen), nirgends ansteigende Ränder; alte Welten bauen alles neu
 - [ ] Riesenmassiv im Süden mit Spiralweg (Start im Norden am Fuß, Steigung 1 : 5, Schneeschichten, Laternen alle 22 Blöcke) bis zur Schulter (y 128); das Felshorn ragt darüber

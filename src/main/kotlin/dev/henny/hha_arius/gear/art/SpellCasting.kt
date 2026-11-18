@@ -369,6 +369,11 @@ object SpellCasting {
         if (s.noFall && player.isOnGround && GearTasks.now - s.start > 3) s.noFall = false
         if (s.leapAirborne && player.isOnGround) s.leapAirborne = false
         if (s.absorbUntil in 1..GearTasks.now) endAbsorb(player)
+        // Eispanzer zerbricht, sobald seine Absorption aufgebraucht ist (seit 1.5.1).
+        if (s.absorbUntil > 0L && GearTasks.now - s.start > 2 && player.absorptionAmount <= 0.01f) {
+            endAbsorb(player)
+            GearSounds.play(player.entityWorld, player.entityPos, "art.ice_armor", SoundEvents.BLOCK_GLASS_BREAK, 1f, 0.9f)
+        }
         val spell = s.active ?: return
         if (!holdsMagic(player)) {
             Focus.cancel(player)
@@ -506,7 +511,8 @@ object SpellCasting {
                 player.absorptionAmount = maxOf(player.absorptionAmount, absorb)
                 s.absorbGranted = absorb
                 s.absorbUntil = GearTasks.now + num(spell, "ticks").toLong()
-                ArtFx.send(world, FxKind.FROST_SHELL, player.entityPos, life = 20, e1 = player.id)
+                ArtFx.send(world, FxKind.FROST_SHELL, player.entityPos, life = 12, e1 = player.id)
+                ArtFx.send(world, FxKind.ICE_ARMOR, player.entityPos, life = num(spell, "ticks").toInt(), e1 = player.id)
                 GearSounds.play(world, player.entityPos, "art.ice_armor", SoundEvents.BLOCK_AMETHYST_BLOCK_RESONATE, 0.8f, 1.4f)
             }
             else -> return false
@@ -571,21 +577,33 @@ object SpellCasting {
                 repeat(4) { if (world.getBlockState(ground.down()).isAir) ground = ground.down() }
                 repeat(4) { if (!world.getBlockState(ground).isAir) ground = ground.up() }
                 pos = Vec3d(pos.x + look.x * 0.22, ground.y.toDouble(), pos.z + look.z * 0.22)
-                for (e in world.getOtherEntities(player, Box.of(pos.add(0.0, 2.0, 0.0), r * 2, 5.0, r * 2))) {
+                for (e in world.getOtherEntities(player, Box.of(pos.add(0.0, 6.0, 0.0), r * 3, 14.0, r * 3))) {
                     if (e is ProjectileEntity && GearCombat.isHostileProjectile(player, e)) { GearCombat.discardProjectile(world, e); continue }
                     if (!GearCombat.canHit(player, e)) continue
                     val target = e as LivingEntity
                     val to = pos.subtract(target.entityPos).let { Vec3d(it.x, 0.0, it.z) }
                     val d = to.length()
-                    if (d > r) continue
+                    // Seit 1.5.1: der Trichter weitet sich nach oben; wer drin ist, kreist hinauf (bis ~10 Blöcke).
+                    val hgt = target.y - pos.y
+                    if (d > r * (1.0 + (hgt / 14.0).coerceIn(0.0, 1.0) * 1.2)) continue
                     if (!GearCombat.isHeavy(target)) {
                         val swirl = Vec3d(-to.z, 0.0, to.x).normalize()
-                        target.velocity = target.velocity.multiply(0.6).add(to.normalize().multiply(0.12)).add(swirl.multiply(0.25)).add(0.0, 0.16, 0.0)
+                        val lift = if (hgt < 10.0) 0.22 else 0.02
+                        target.velocity = target.velocity.multiply(0.5).add(to.normalize().multiply(0.18)).add(swirl.multiply(0.4)).add(0.0, lift, 0.0)
                         target.velocityDirty = true
                         if (target is ServerPlayerEntity) Fx.launchPlayer(target, target.velocity)
                     }
                     if (t % 10 == 0) damage(player, target, dmg)
+                    // Am Ende schleudert er alles nach außen.
+                    if (t == ticks && !GearCombat.isHeavy(target)) {
+                        val out = to.normalize().multiply(-1.4).add(0.0, 0.5, 0.0)
+                        target.velocity = out
+                        target.velocityDirty = true
+                        if (target is ServerPlayerEntity) Fx.launchPlayer(target, out)
+                        damage(player, target, dmg * 2f)
+                    }
                 }
+                if (t == ticks) GearSounds.play(world, pos, "art.gale", SoundEvents.ENTITY_BREEZE_WIND_BURST.value(), 1.2f, 0.6f)
                 if (t % 20 == 0) GearSounds.play(world, pos, "art.gale", SoundEvents.ENTITY_BREEZE_IDLE_GROUND, 0.7f, 0.8f)
             }
         }

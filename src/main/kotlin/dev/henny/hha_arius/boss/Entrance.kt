@@ -64,7 +64,8 @@ object EntrancePath {
 
     fun near(x: Double, y: Double, z: Double): Vec3d {
         val k = ((z - 20.0) / 72.0).coerceIn(0.0, 1.0)
-        return Vec3d(x, y, z + (ArenaLayout.SPIRE.z - DESIGN_SPIRE_Z) * k)
+        // Seit 1.5.1 auch in der Höhe: der Gipfel liegt [ArenaLayout.SPIRE_TOP] − 185 höher als im Entwurf.
+        return Vec3d(x, y + (ArenaLayout.SPIRE_TOP - 185.0) * k, z + (ArenaLayout.SPIRE.z - DESIGN_SPIRE_Z) * k)
     }
 
     /** Kopfgelenk in der Windung, aufgerichtet über dem Gipfel ([ArenaLayout.SPIRE_TOP] = 185). */
@@ -179,7 +180,7 @@ internal object Entrance {
 
     /** Punkt relativ zur Achse der Nadel ([ArenaLayout.SPIRE], Mitte des Fußblocks), Höhe relativ zur Lauffläche. */
     private fun spire(f: EirholmFight, dx: Double, y: Double, dz: Double) =
-        f.abs(Vec3d(ArenaLayout.SPIRE.x + 0.5 + dx, y, ArenaLayout.SPIRE.z + 0.5 + dz))
+        f.abs(Vec3d(ArenaLayout.SPIRE.x + 0.5 + dx, y + (ArenaLayout.SPIRE_TOP - 185.0) * (y / 185.0).coerceIn(0.0, 1.0), ArenaLayout.SPIRE.z + 0.5 + dz))
 
     /** Endzustand (Training, Überspringen ohne Nadel, Abbruch): gelandet am Kampfplatz, Arius sitzt ohne Klinge. */
     fun landed(f: EirholmFight, spot: Vec3d) {
@@ -336,10 +337,10 @@ internal object Entrance {
         if (a != null) {
             val face = a.entityPos.add(0.0, 1.65, 0.0)
             val front = f.facing(a)
-            scene.shot {
-                Cine.camera(it, face.add(front.multiply(2.6)).add(0.35, -0.15, 0.0), face.add(front.multiply(1.9)).add(0.25, -0.1, 0.0),
-                    face, face.add(0.0, 0.1, 0.0), 50, 58.0, 48.0)
-            }
+            scene.line(
+                face.add(front.multiply(2.6)).add(0.35, -0.15, 0.0), face.add(front.multiply(1.9)).add(0.25, -0.1, 0.0),
+                    face, face.add(0.0, 0.1, 0.0), 50, 58.0, 48.0,
+            )
         }
         wait(14)
         if (!Cine.muted) f.say("dragon.wake", 64)
@@ -353,7 +354,7 @@ internal object Entrance {
         //    erst dann verdichtet sich der Sturm, und im Weiß legen sich die Windungen um die Nadel.
         val stormFrom = rel(f, 1.5, 8.0, 18.0)
         val stormTo = rel(f, 1.0, 11.0, 34.0)
-        scene.shot { Cine.camera(it, stormFrom, stormTo, spire(f, 0.0, 60.0, 0.0), spire(f, 0.0, 110.0, 0.0), 70, 70.0, 56.0) }
+        scene.line(stormFrom, stormTo, spire(f, 0.0, 60.0, 0.0), spire(f, 0.0, 110.0, 0.0), 70, 70.0, 56.0)
         wait(RELEASE_ARRIVAL - RELEASE_TICKS)
         f.atmos(AtmosMode.BLIZZARD, 36)
         sound(f, "seal.blizzard", stormTo, 2.5f, 0.7f)
@@ -376,9 +377,9 @@ internal object Entrance {
             val r = sqrt((c.x - axis.x) * (c.x - axis.x) + (c.z - axis.z) * (c.z - axis.z)) + 6.5
             val center = Vec3d(axis.x, c.y, axis.z)
             val drop = coilAt(f, s1).y - c.y
-            scene.shot {
-                Cine.orbit(it, center, r, 1.5, orbitDeg(s0) + 14.0, orbitDeg(s1) + 6.0, 60, 52.0, 46.0, null, 0.6, r - 1.0, 1.5 + drop)
-            }
+            scene.orbit(
+                center, r, 1.5, orbitDeg(s0) + 14.0, orbitDeg(s1) + 6.0, 60, 52.0, 46.0, null, 0.6, r - 1.0, 1.5 + drop,
+            )
             sound(f, "seal.blizzard", c, 3f, 0.55f)
             fxAll(f, FxKind.BLIZZARD, c, 9f, 60)
         }
@@ -393,9 +394,9 @@ internal object Entrance {
             val c = coilAt(f, s0)
             val r = sqrt((c.x - axis.x) * (c.x - axis.x) + (c.z - axis.z) * (c.z - axis.z)) + 3.0
             val drop = coilAt(f, s1).y - c.y
-            scene.shot {
-                Cine.orbit(it, Vec3d(axis.x, c.y, axis.z), r, 6.0, orbitDeg(s0) - 10.0, orbitDeg(s1) - 18.0, 60, 48.0, 44.0, null, -3.0, r + 1.0, 6.0 + drop)
-            }
+            scene.orbit(
+                Vec3d(axis.x, c.y, axis.z), r, 6.0, orbitDeg(s0) - 10.0, orbitDeg(s1) - 18.0, 60, 48.0, 44.0, null, -3.0, r + 1.0, 6.0 + drop,
+            )
             sound(f, "nivaris.wing", c, 2f, 0.45f)
             fxAll(f, FxKind.BLIZZARD, c, 8f, 60)
         }
@@ -407,9 +408,9 @@ internal object Entrance {
         f.atmos(AtmosMode.REVEAL, 70)
         val revealFrom = spire(f, -34.0, 118.0, -70.0)
         val revealTo = spire(f, -44.0, 132.0, -80.0)
-        scene.shot {
-            Cine.camera(it, revealFrom, revealTo, spire(f, 0.0, 138.0, 0.0), spire(f, 0.0, 152.0, 0.0), 110, 64.0, 70.0)
-        }
+        scene.line(
+            revealFrom, revealTo, spire(f, 0.0, 138.0, 0.0), spire(f, 0.0, 152.0, 0.0), 110, 64.0, 70.0,
+        )
         sound(f, "glacier.crack", near(f, -10.0, 40.0, 80.0), 3f, 0.5f)
         wait(30)
         d.play(NivarisPose.IDLE)
@@ -419,9 +420,9 @@ internal object Entrance {
 
         // 6) Nah am Kopf über dem Gipfel: Brüllen, Augen glühen, Name (60 Ticks).
         val head = f.abs(EntrancePath.HEAD_RAISED)
-        scene.shot {
-            Cine.camera(it, near(f, -15.0, 181.0, 127.0), near(f, -11.0, 184.5, 131.0), head.add(0.0, -1.5, -2.0), head.add(0.0, 0.5, -1.5), 60, 62.0, 54.0)
-        }
+        scene.line(
+            near(f, -15.0, 181.0, 127.0), near(f, -11.0, 184.5, 131.0), head.add(0.0, -1.5, -2.0), head.add(0.0, 0.5, -1.5), 60, 62.0, 54.0,
+        )
         d.play(NivarisPose.ROAR)
         wait(AriusTimings.NIVARIS_WINDUP[NivarisPose.ROAR])
         d.eyeGlow = 100
@@ -440,8 +441,8 @@ internal object Entrance {
         }
         for (t in 0..EntrancePath.TICKS) {
             when (t) {
-                0 -> scene.shot { Cine.camera(it, near(f, -62.0, 172.0, 116.0), near(f, -66.0, 158.0, 98.0), look(0, 25.0), look(85, 25.0), 85, 66.0, 74.0) }
-                85 -> scene.shot { Cine.camera(it, near(f, -14.0, 128.0, 98.0), near(f, -22.0, 76.0, 48.0), look(85, 30.0), look(165, 30.0), 80, 76.0, 80.0) }
+                0 -> scene.line(near(f, -62.0, 172.0, 116.0), near(f, -66.0, 158.0, 98.0), look(0, 25.0), look(85, 25.0), 85, 66.0, 74.0)
+                85 -> scene.line(near(f, -14.0, 128.0, 98.0), near(f, -22.0, 76.0, 48.0), look(85, 30.0), look(165, 30.0), 80, 76.0, 80.0)
                 165 -> scene.line(rel(f, -7.0, 5.0, -25.0), rel(f, -4.0, 4.0, -21.0), look(165, 20.0), spot.add(0.0, 4.0, -2.0), 105, 74.0, 66.0)
             }
             when (t) {
@@ -563,16 +564,32 @@ class CineScene(private val f: EirholmFight, private val onAbort: () -> Unit) {
 
     private fun ease(t: Double): Double = t.coerceIn(0.0, 1.0).let { it * it * (3 - 2 * it) }
 
+    /** Wie tief liegt [p] unter dem Gelände (Fernlandschaft samt Berg, plus Abstand)? 0 = frei. */
+    private fun below(p: Vec3d, margin: Double = 4.0): Double {
+        val rx = kotlin.math.floor(p.x).toInt() - f.origin.x
+        val rz = kotlin.math.floor(p.z).toInt() - f.origin.z
+        if (rx !in dev.henny.hha_arius.arena.FarPlan.X_MIN..dev.henny.hha_arius.arena.FarPlan.X_MAX ||
+            rz !in dev.henny.hha_arius.arena.FarPlan.Z_MIN..dev.henny.hha_arius.arena.FarPlan.Z_MAX) return 0.0
+        val top = f.origin.y + dev.henny.hha_arius.arena.FarPlan.top(rx, rz) + 1.0
+        if (top <= f.origin.y + 0.5) return 0.0                     // flaches Feld: die Szenen planen selbst über dem Boden
+        return (top + margin - p.y).coerceAtLeast(0.0)
+    }
+
     /** Gerade Kamerafahrt (siehe [Cine.camera]); merkt sich den Verlauf für [home]. */
     fun line(
         from: Vec3d, to: Vec3d, lookFrom: Vec3d, lookTo: Vec3d, ticks: Int, fovFrom: Double = 70.0, fovTo: Double = fovFrom,
         lookAt: net.minecraft.entity.Entity? = null, lookOffset: Double = 1.6,
     ) {
-        shot { Cine.camera(it, from, to, lookFrom, lookTo, ticks, fovFrom, fovTo, lookAt, lookOffset) }
+        // Seit 1.5.1: Kamera nie im Berg (Crix: beim Auftritt war die Kamera im Massiv). Die ganze Fahrt wird angehoben.
+        var lift = 0.0
+        for (i in 0..8) lift = maxOf(lift, below(from.lerp(to, i / 8.0)))
+        val a0 = from.add(0.0, lift, 0.0)
+        val a1 = to.add(0.0, lift, 0.0)
+        shot { Cine.camera(it, a0, a1, lookFrom, lookTo, ticks, fovFrom, fovTo, lookAt, lookOffset) }
         camStart = f.server.ticks
         camAt = { age ->
             val k = ease(age / ticks.coerceAtLeast(1).toDouble())
-            Triple(from.lerp(to, k), lookAt?.takeIf { !it.isRemoved }?.entityPos?.add(0.0, lookOffset, 0.0) ?: lookFrom.lerp(lookTo, k), fovFrom + (fovTo - fovFrom) * k)
+            Triple(a0.lerp(a1, k), lookAt?.takeIf { !it.isRemoved }?.entityPos?.add(0.0, lookOffset, 0.0) ?: lookFrom.lerp(lookTo, k), fovFrom + (fovTo - fovFrom) * k)
         }
     }
 
@@ -582,13 +599,22 @@ class CineScene(private val f: EirholmFight, private val onAbort: () -> Unit) {
         fovFrom: Double = 70.0, fovTo: Double = fovFrom, lookAt: net.minecraft.entity.Entity? = null, lookOffset: Double = 1.6,
         radiusTo: Double = radius, heightTo: Double = height,
     ) {
-        shot { Cine.orbit(it, center, radius, height, angleFrom, angleTo, ticks, fovFrom, fovTo, lookAt, lookOffset, radiusTo, heightTo) }
+        var lift = 0.0
+        for (i in 0..16) {
+            val k = i / 16.0
+            val ang = Math.toRadians(angleFrom + (angleTo - angleFrom) * k)
+            val r = radius + (radiusTo - radius) * k
+            lift = maxOf(lift, below(center.add(cos(ang) * r, height + (heightTo - height) * k, sin(ang) * r)))
+        }
+        val h0 = height + lift
+        val h1 = heightTo + lift
+        shot { Cine.orbit(it, center, radius, h0, angleFrom, angleTo, ticks, fovFrom, fovTo, lookAt, lookOffset, radiusTo, h1) }
         camStart = f.server.ticks
         camAt = { age ->
             val k = ease(age / ticks.coerceAtLeast(1).toDouble())
             val ang = Math.toRadians(angleFrom + (angleTo - angleFrom) * k)
             val r = radius + (radiusTo - radius) * k
-            val pos = center.add(cos(ang) * r, height + (heightTo - height) * k, sin(ang) * r)
+            val pos = center.add(cos(ang) * r, h0 + (h1 - h0) * k, sin(ang) * r)
             Triple(pos, lookAt?.takeIf { !it.isRemoved }?.entityPos?.add(0.0, lookOffset, 0.0) ?: center.add(0.0, lookOffset, 0.0), fovFrom + (fovTo - fovFrom) * k)
         }
     }

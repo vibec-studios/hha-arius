@@ -212,14 +212,32 @@ class NivarisMoves(private val f: EirholmFight) {
         wait(30)
     }
 
-    private fun airPhase(attacks: Int): Script = script {
+    /**
+     * Luftphase. Seit 1.5.1 nach Kang-Jin Loong (Black Myth: Wukong, Kapitel 3): sie bleibt länger oben und wechselt
+     * zwischen Atem, Sturzflug, Himmelssturz (hoch kreisen, senkrecht herab, Eisdornenring), kreisendem Eisregen und
+     * einem Tiefflug, bei dem ihr ganzer Körper über das Feld fegt.
+     */
+    private fun airPhase(attacks0: Int): Script = script {
         takeoff()
+        val attacks = attacks0 + 1
         val limit = f.now + (if (f.phase >= EirholmFight.Phase.VAULT) AriusTimings.AIR_MAX_VAULT else AriusTimings.AIR_MAX)
         var done = 0
+        var last = -1
         while (done < attacks && f.now < limit) {
             val t = f.target() ?: break
             val canDive = f.ridgeCount() > 0 || rnd.nextFloat() < 0.4f
-            if (done > 0 && canDive) yieldAll(dive(t)) else yieldAll(breath(t))
+            var pick = rnd.nextInt(5)
+            if (pick == last) pick = (pick + 1) % 5
+            last = pick
+            when {
+                done == 0 && pick == 1 -> yieldAll(breath(t))
+                pick == 0 -> yieldAll(breath(t))
+                pick == 1 && canDive -> yieldAll(dive(t))
+                pick == 1 -> yieldAll(bodySweep(t))
+                pick == 2 -> yieldAll(skyPlunge(t))
+                pick == 3 -> yieldAll(iceVolley())
+                else -> yieldAll(bodySweep(t))
+            }
             done++
             val d = f.nivaris ?: return@script
             if (!d.flying) return@script
@@ -371,6 +389,122 @@ class NivarisMoves(private val f: EirholmFight) {
         Vfx.shockwave(f.world, style, to, 4f, 12, 1.2f)
         d.play(NivarisPose.LAND, 1)
         wait(14)
+    }
+
+    // --- Kang-Jin-Loong-Angriffe (seit 1.5.1) -------------------------------------------------------------------------
+
+    /** Himmelssturz: im weiten Bogen hoch hinauf, über dem Ziel senkrecht herab; Aufprall mit drei Eisdornenringen. */
+    fun skyPlunge(t: ServerPlayerEntity): Script = script {
+        val d = f.nivaris ?: return@script
+        val c = f.arenaCenter
+        val r = 24.0
+        var a = kotlin.math.atan2(d.z - c.z, d.x - c.x)
+        f.sound("nivaris.wing", d.entityPos, 3f, 0.6f)
+        for (k in 1..3) {
+            a += 0.9
+            flyTo(Vec3d(c.x + kotlin.math.cos(a) * r, f.floorY + 14.0 + k * 7.0, c.z + kotlin.math.sin(a) * r), 1.2, 16)
+        }
+        f.sound("nivaris.roar", d.entityPos, 4f, 0.9f)
+        val tt = f.target() ?: t
+        val spot = Vec3d(tt.x, f.floorY, tt.z)
+        val ring = f.calls.ring(spot, 7f, 34, style = style)
+        flyTo(spot.add(flatDir(spot, d.entityPos).multiply(5.0)).add(0.0, 34.0, 0.0), 1.4, (ring.ticks - 12).coerceAtLeast(6), faceTarget = spot)
+        d.play(NivarisPose.DIVE, 10)
+        val from = d.entityPos
+        val left = ring.remaining.coerceAtLeast(6)
+        for (i in 1..left) {
+            val k = i / left.toDouble()
+            f.place(d, from.lerp(spot.add(0.0, 1.0, 0.0), k * k))
+            f.face(d, spot.add(flatDir(from, spot)))
+            yield(Unit)
+        }
+        vel = null
+        d.flying = false
+        for (p in ring.hits(f.players())) {
+            f.hurt(p, 18f, Damage.Kind.IMPACT, d)
+            Fx.launchPlayer(p, flatDir(spot, p.entityPos).multiply(0.9).add(0.0, 0.45, 0.0))
+        }
+        f.sound("nivaris.crash", spot, 4f, 0.9f)
+        Vfx.shockwave(f.world, style, spot, 10f, 18, 2f)
+        f.fx(FxKind.CLEAR_WAVE, spot, a = 14f, life = 20)
+        f.calls.roomShake(spot, 6f, 40f)
+        d.play(NivarisPose.LAND, 1)
+        yieldAll(thornRings(spot, doubleArrayOf(5.0, 9.0, 13.0)))
+        wait(16)
+    }
+
+    /** Eisdornen wachsen ringförmig nach außen (Welle für Welle), treffen, wer im Ring steht, und schmelzen nach 3 s. */
+    private fun thornRings(center: Vec3d, radii: DoubleArray): Script = script {
+        val placed = ArrayList<BlockPos>()
+        val hit = HashSet<java.util.UUID>()
+        for (rr in radii) {
+            val n = (rr * 2.2).toInt()
+            val cells = ArrayList<Pair<BlockPos, net.minecraft.block.BlockState>>()
+            for (i in 0 until n) {
+                val a = i / n.toDouble() * Math.PI * 2 + rr
+                val base = BlockPos.ofFloored(center.x + kotlin.math.cos(a) * rr, f.floorY, center.z + kotlin.math.sin(a) * rr)
+                val h = 1 + rnd.nextInt(3)
+                for (y in 0 until h) cells += base.up(y) to (if (y == h - 1) net.minecraft.block.Blocks.BLUE_ICE else net.minecraft.block.Blocks.PACKED_ICE).defaultState
+            }
+            placed += f.edits.fill(cells)
+            f.sound("glacier.crack", center, 3f, 1.0f + rr.toFloat() * 0.03f)
+            for (p in f.players()) {
+                val dd = sqrt((p.x - center.x) * (p.x - center.x) + (p.z - center.z) * (p.z - center.z))
+                if (kotlin.math.abs(dd - rr) < 1.6 && hit.add(p.uuid)) {
+                    f.hurt(p, 8f, Damage.Kind.IMPACT, f.nivaris)
+                    Fx.launchPlayer(p, Vec3d(0.0, 0.6, 0.0))
+                }
+            }
+            wait(4)
+        }
+        f.task(script {
+            wait(60)
+            f.edits.revert(placed)
+        })
+    }
+
+    /** Kreisender Eisregen: sie zieht einen weiten Kreis um die Kämpfer und wirft Eisbrocken auf angesagte Stellen. */
+    fun iceVolley(): Script = script {
+        val d = f.nivaris ?: return@script
+        val c = f.arenaCenter
+        val r = 22.0
+        var a = kotlin.math.atan2(d.z - c.z, d.x - c.x)
+        f.sound("nivaris.inhale", d.entityPos, 3f, 0.8f)
+        for (step in 0 until 12) {
+            a += Math.PI / 6
+            flyTo(Vec3d(c.x + kotlin.math.cos(a) * r, f.floorY + 11.0, c.z + kotlin.math.sin(a) * r), 1.0, 10)
+            if (step % 2 == 1) {
+                val t = f.target() ?: continue
+                val at = Vec3d(t.x + (rnd.nextDouble() - 0.5) * 3.0, f.floorY, t.z + (rnd.nextDouble() - 0.5) * 3.0)
+                val ring = f.calls.ring(at, 2.8f, 18, style = style)
+                f.fx(FxKind.ICE_CHUNK, mouth(), at, a = 1.6f, life = ring.ticks)
+                f.task(script {
+                    wait(ring.ticks)
+                    for (p in ring.hits(f.players())) f.hurt(p, 8f, Damage.Kind.IMPACT, f.nivaris)
+                    Vfx.shockwave(f.world, style, at, 3f, 10, 1f)
+                    f.sound("glacier.crack", at, 2f, 1.3f)
+                })
+            }
+        }
+    }
+
+    /** Tiefflug: dicht über dem Boden fegt ihr ganzer Körper in gerader Bahn über das Feld (breite Ansage). */
+    fun bodySweep(t: ServerPlayerEntity): Script = script {
+        val d = f.nivaris ?: return@script
+        val dir = flatDir(d.entityPos, t.entityPos).let { if (it.lengthSquared() < 1e-6) Vec3d(0.0, 0.0, 1.0) else it }
+        val start = airPoint(f.clampToArena(t.entityPos.subtract(dir.multiply(26.0)), 2.0), 2.5)
+        val end = airPoint(f.clampToArena(t.entityPos.add(dir.multiply(26.0)), 2.0), 2.5)
+        flyTo(start, 1.1, 34, faceTarget = end)
+        val line = f.calls.line(Vec3d(start.x, f.floorY, start.z), Vec3d(end.x, f.floorY, end.z), 6f, 26, Telegraph.Pace.PROJECTILE, style = style)
+        d.play(NivarisPose.GLIDE)
+        f.sound("nivaris.roar", d.entityPos, 3f, 1.1f)
+        wait((line.ticks - 8).coerceAtLeast(1))
+        flyTo(end, 2.4, 24, faceTarget = end.add(dir.multiply(10.0)))
+        for (p in line.hits(f.players())) {
+            f.hurt(p, 14f, Damage.Kind.IMPACT, d)
+            Fx.launchPlayer(p, Vec3d(-dir.z, 0.0, dir.x).multiply(if (rnd.nextBoolean()) 0.8 else -0.8).add(0.0, 0.5, 0.0))
+        }
+        Vfx.shockwave(f.world, style, Vec3d(end.x, f.floorY, end.z), 5f, 12, 1f)
     }
 
     // --- D3: Landung -----------------------------------------------------------------------------------------------------

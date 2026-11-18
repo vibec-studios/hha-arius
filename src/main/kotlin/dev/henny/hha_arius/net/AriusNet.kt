@@ -247,6 +247,12 @@ enum class FxKind {
 
     /** Drachenschweif der Beinschienen (seit 1.4.2): e1 = Wirker, a = Radius, b = Startwinkel (atan2(x, z)). */
     DRAGON_TAIL,
+
+    /** Eispanzer der Handschuhe (seit 1.5.1): e1 = Träger, life = Dauer; endet früher, wenn die Absorption weg ist. */
+    ICE_ARMOR,
+
+    /** Lichtklinge beim Schnitt (seit 1.5.1): e1 = Arius, a = Länge, b = Ticks bis zum Schlag, life = Dauer. */
+    GIANT_BLADE,
 }
 
 /**

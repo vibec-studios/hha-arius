@@ -70,6 +70,7 @@ object AriusFxClient {
             CutHalves.render(matrices, consumers, camera.cameraPos, tickDelta)
             val draw = VfxDraw(consumers, camera, tickDelta)
             Atmos.render(draw)
+            CloudSea.render(draw)
             DragonVeil.render(draw)
             if (effects.isEmpty()) return@register
             for (fx in effects) fx.render(draw, matrices, fx.age + tickDelta)

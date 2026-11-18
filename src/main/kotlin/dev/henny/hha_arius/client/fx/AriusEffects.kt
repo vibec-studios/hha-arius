@@ -1,5 +1,6 @@
 package dev.henny.hha_arius.client.fx
 
+import dev.henny.hha.client.vfx.lerpColor
 import dev.henny.hha.client.vfx.VfxDraw
 import dev.henny.hha.client.vfx.VfxLayers
 import dev.henny.hha.client.vfx.withAlpha
@@ -78,6 +79,8 @@ abstract class AriusFx(val life: Int) {
                 FxKind.TORNADO -> TornadoFx(pos, Vec3d(p.dx, p.dy, p.dz), p.a.toDouble(), p.life)
                 FxKind.DRAGON_BREATH -> e1?.let { DragonBreathFx(it, p.a.toDouble(), p.life) }
                 FxKind.DRAGON_TAIL -> e1?.let { DragonTailFx(it, p.b.toDouble(), p.a.toDouble(), p.life) }
+                FxKind.ICE_ARMOR -> e1?.let { IceArmorFx(it, p.life) }
+                FxKind.GIANT_BLADE -> e1?.let { GiantBladeFx(it, p.a.toDouble(), p.b.toInt(), p.life) }
                 FxKind.CUT_PLANE -> CutPlaneFx(pos, dir, p.a.toDouble(), p.b >= 0.5f, p.life)
                 FxKind.PULL -> e1?.let { PullFx(it, p.a.toDouble(), p.life) }
                 FxKind.GALE -> GaleFx(pos, dir, p.a, p.life)
@@ -442,31 +445,203 @@ class BridgeFx(private val start: Vec3d, private val span: Vec3d, private val wi
     }
 }
 
+/**
+ * Wirbelsturm (seit 1.5.1 krasser, Crix): ein 14 Blöcke hoher Trichter, unten schmal, oben weit ausladend, aus dichten
+ * Wolkenschwaden, die spiralig aufsteigen, gestreiften Windbändern, Blitzen aus Eislicht und echten Schnee- und
+ * Eisbrocken, die mitgerissen werden und oben herumgeschleudert werden; am Boden ein Staubring. Am Ende reißt er auf.
+ */
 class TornadoFx(private val origin: Vec3d, private val vel: Vec3d, private val radius: Double, life: Int) : AriusFx(life) {
     private fun at(t: Float): Vec3d = origin.add(vel.multiply(t.toDouble()))
+    private val rng = java.util.Random(origin.hashCode().toLong())
+
+    private class Debris(val state: net.minecraft.block.BlockState, val h0: Double, val a0: Double, val speed: Double, val size: Float)
+    private val debris = List(14) { i ->
+        Debris(if (i % 3 == 0) net.minecraft.block.Blocks.PACKED_ICE.defaultState else net.minecraft.block.Blocks.SNOW_BLOCK.defaultState,
+            rng.nextDouble(), rng.nextDouble() * PI * 2, 0.08 + rng.nextDouble() * 0.06, 0.25f + rng.nextFloat() * 0.3f)
+    }
+
+    private fun funnelR(h: Double): Double = 0.6 + Math.pow(h / HEIGHT, 1.6) * radius * 1.9
 
     override fun tick(world: ClientWorld) {
         val r = random()
         val c = at(age.toFloat())
-        repeat((8 * particlesAllowed()).toInt()) {
-            val h = r.nextDouble() * 6.0
-            val rr = 0.4 + h / 6.0 * radius
+        repeat((16 * particlesAllowed()).toInt()) {
+            val h = r.nextDouble() * HEIGHT
+            val rr = funnelR(h)
             val a = r.nextDouble() * PI * 2
             val p = c.add(cos(a) * rr, h, sin(a) * rr)
-            val v = Vec3d(-sin(a), 0.25, cos(a)).multiply(0.35)
-            world.addParticleClient(if (h < 1.0) ParticleTypes.CLOUD else ParticleTypes.SNOWFLAKE, p.x, p.y, p.z, v.x, v.y, v.z)
+            val v = Vec3d(-sin(a), 0.35, cos(a)).multiply(0.55)
+            world.addParticleClient(if (h < 1.5) ParticleTypes.CLOUD else if (it % 3 == 0) ParticleTypes.WHITE_ASH else ParticleTypes.SNOWFLAKE, p.x, p.y, p.z, v.x, v.y, v.z)
+        }
+        repeat((4 * particlesAllowed()).toInt()) {
+            val a = r.nextDouble() * PI * 2
+            world.addParticleClient(ParticleTypes.CLOUD, c.x + cos(a) * radius, c.y + 0.1, c.z + sin(a) * radius, -sin(a) * 0.3, 0.02, cos(a) * 0.3)
         }
     }
 
     override fun render(d: VfxDraw, matrices: MatrixStack, t: Float) {
-        val k = fadeInOut(t, 6f, 14f)
+        val k = fadeInOut(t, 8f, 16f)
         val c = at(t)
-        for (i in 0 until 9) {
-            val h = i * 0.7
-            val rr = 0.5 + i / 8.0 * radius
-            val spin = t * (0.35 + i * 0.03) * (if (i % 2 == 0) 1 else -1)
-            d.ring(VfxLayers.FLOW_ADD, c.add(0.0, h, 0.0), X, Z, rr * 0.75, rr, withAlpha(0xFFE8F6FF.toInt(), 0f), withAlpha(0xFFE8F6FF.toInt(), 0.35f * k), segments = 40)
-            d.arc(VfxLayers.GLOW_ADD, c.add(0.0, h + 0.2, 0.0), X, Z, rr - 0.12, rr, spin.toDouble(), (spin + 2.4).toDouble(), withAlpha(0xFFFFFFFF.toInt(), 0f), withAlpha(0xFFFFFFFF.toInt(), 0.5f * k), segments = 16)
+        val burst = ((t - (life - 12)) / 12f).coerceIn(0f, 1f)
+        // Wolkenschwaden, die spiralig aufsteigen
+        val n = 70
+        for (i in 0 until n) {
+            val f = ((i / n.toDouble()) + t * 0.012) % 1.0
+            val h = f * HEIGHT
+            val rr = funnelR(h) * (1.0 + burst * 1.5)
+            val a = i * 2.39996 + t * (0.42 - f * 0.15)
+            val p = c.add(cos(a) * rr, h, sin(a) * rr)
+            val size = 0.9 + f * 2.6
+            d.billboard(VfxLayers.CLOUD_ALPHA, p, size, withAlpha(lerpColor(0xFFDDE8F2.toInt(), 0xFFFFFFFF.toInt(), f.toFloat()), 0.55f * k * (1f - burst)), (a * 40.0) % 360.0)
+        }
+        // Gestreifte Windbänder (Ringe, die gegeneinander laufen)
+        for (i in 0 until 12) {
+            val h = i * HEIGHT / 11.0
+            val rr = funnelR(h)
+            val spin = t * (0.5 + i * 0.03) * (if (i % 2 == 0) 1 else -1)
+            d.ring(VfxLayers.FLOW_ADD, c.add(0.0, h, 0.0), X, Z, rr * 0.8, rr * 1.05, withAlpha(0xFFE8F6FF.toInt(), 0f), withAlpha(0xFFE8F6FF.toInt(), 0.4f * k), segments = 40, uTile = 3f, uOffset = spin.toFloat() * 0.1f)
+            d.arc(VfxLayers.GLOW_ADD, c.add(0.0, h + 0.3, 0.0), X, Z, rr - 0.15, rr + 0.05, spin.toDouble(), (spin + 2.2).toDouble(), withAlpha(0xFFFFFFFF.toInt(), 0f), withAlpha(0xFFFFFFFF.toInt(), 0.6f * k), segments = 16)
+        }
+        // Eislicht-Blitze zucken im Trichter
+        if ((t.toInt() / 3) % 4 == 0) {
+            val path = ArrayList<Vec3d>()
+            val seed = t.toInt() / 12
+            for (j in 0..8) {
+                val h = j * HEIGHT / 8.0
+                val a = seed * 1.7 + j * 0.9
+                path += c.add(cos(a) * funnelR(h) * 0.6, h, sin(a) * funnelR(h) * 0.6)
+            }
+            d.ribbon(VfxLayers.GLOW_ADD, path, { 0.12 }, { f -> withAlpha(0xFFBFE8FF.toInt(), 0.8f * k) }, uScale = 1f, uOffset = 0f)
+        }
+        // Mitgerissene Brocken
+        for (b in debris) {
+            val h = ((b.h0 + t * 0.012) % 1.0) * HEIGHT
+            val rr = funnelR(h) * 0.85 * (1.0 + burst * 2.0)
+            val a = b.a0 + t * b.speed * 3.0
+            val pos = c.add(cos(a) * rr, h, sin(a) * rr)
+            val cam = d.cam
+            matrices.push()
+            matrices.translate(pos.x - cam.x, pos.y - cam.y, pos.z - cam.z)
+            matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(t * 21f))
+            matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(t * 13f))
+            matrices.scale(b.size, b.size, b.size)
+            matrices.translate(-0.5, -0.5, -0.5)
+            MinecraftClient.getInstance().blockRenderManager.renderBlockAsEntity(b.state, matrices, d.consumers, IceChunk.LIGHT, OverlayTexture.DEFAULT_UV)
+            matrices.pop()
+        }
+        // Staubring am Boden
+        d.ring(VfxLayers.FLOW_ADD, c.add(0.0, 0.1, 0.0), X, Z, radius * 0.6, radius * 1.6, withAlpha(0xFFFFFFFF.toInt(), 0.35f * k), withAlpha(0xFFFFFFFF.toInt(), 0f), segments = 48, uTile = 4f, uOffset = t * 0.08f)
+    }
+
+    private companion object {
+        const val HEIGHT = 14.0
+    }
+}
+
+/**
+ * Eispanzer (seit 1.5.1, Crix: „funktioniert nicht richtig“ – vorher nur ein kurzer Eisklotz an den Füßen): Für die ganze
+ * Dauer kreisen sechs Eisplatten um den Körper, Raureif glimmt, auf den Schultern sitzen Kristalle. Ist die Absorption
+ * verbraucht, zerspringt der Panzer.
+ */
+class IceArmorFx(private val e: Entity, life: Int) : AriusFx(life) {
+    private var broken = -1f
+
+    override fun tick(world: ClientWorld) {
+        val le = e as? net.minecraft.entity.LivingEntity ?: return
+        if (broken < 0f && age > 3 && le.absorptionAmount <= 0.01f) {
+            broken = age.toFloat()
+            val p = e.entityPos.add(0.0, 1.0, 0.0)
+            repeat(24) {
+                val r = random()
+                world.addParticleClient(net.minecraft.particle.BlockStateParticleEffect(ParticleTypes.BLOCK, net.minecraft.block.Blocks.PACKED_ICE.defaultState),
+                    p.x + (r.nextDouble() - 0.5), p.y + (r.nextDouble() - 0.5) * 1.4, p.z + (r.nextDouble() - 0.5), (r.nextDouble() - 0.5) * 0.4, 0.2, (r.nextDouble() - 0.5) * 0.4)
+            }
+        }
+        if (broken < 0f && age % 3 == 0 && random().nextFloat() < particlesAllowed()) {
+            val p = e.entityPos
+            world.addParticleClient(ParticleTypes.SNOWFLAKE, p.x + (random().nextDouble() - 0.5) * 1.2, p.y + random().nextDouble() * 1.8, p.z + (random().nextDouble() - 0.5) * 1.2, 0.0, -0.02, 0.0)
+        }
+    }
+
+    override fun render(d: VfxDraw, matrices: MatrixStack, t: Float) {
+        if (e.isRemoved) return
+        val k = if (broken >= 0f) (1f - (t - broken) / 4f).coerceIn(0f, 1f) else fadeInOut(t, 4f, 10f)
+        if (k <= 0.01f) return
+        val base = e.getLerpedPos(d.tickDelta)
+        val h = e.height.toDouble()
+        val col = withAlpha(0xFFBFE8FF.toInt(), 0.55f * k)
+        for (i in 0 until 6) {
+            val a = t * 0.05 + i * PI / 3
+            val y = base.y + h * (0.25 + 0.5 * ((i % 3) / 2.0)) + 0.05 * sin(t * 0.2 + i)
+            val r = 0.62
+            val c = Vec3d(base.x + cos(a) * r, y, base.z + sin(a) * r)
+            val out = Vec3d(cos(a), 0.0, sin(a))
+            val side = Vec3d(-sin(a), 0.0, cos(a))
+            d.box(VfxLayers.SHARD_ALPHA, c, side.multiply(0.22), UP.multiply(0.3), out.multiply(0.04), col)
+            d.billboard(VfxLayers.FLARE_ADD, c.add(out.multiply(0.06)).add(0.0, 0.25, 0.0), 0.18, withAlpha(0xFFFFFFFF.toInt(), 0.7f * k))
+        }
+        // Schulterkristalle und Raureif-Hof
+        for (sg in intArrayOf(-1, 1)) {
+            val yaw = Math.toRadians((e as? net.minecraft.entity.LivingEntity)?.bodyYaw?.toDouble() ?: 0.0)
+            val right = Vec3d(-cos(yaw), 0.0, -sin(yaw)).multiply(sg * 0.42)
+            val c = base.add(right).add(0.0, h * 0.82, 0.0)
+            d.box(VfxLayers.SHARD_ALPHA, c, X.multiply(0.08), UP.multiply(0.22), Z.multiply(0.08), withAlpha(0xFFD6F2FF.toInt(), 0.75f * k))
+        }
+        d.billboard(VfxLayers.GLOW_ADD, base.add(0.0, h * 0.55, 0.0), h * 1.3, withAlpha(0xFFA8E2FF.toInt(), 0.22f * k))
+    }
+}
+
+/**
+ * Die Lichtklinge beim Schnitt (seit 1.5.1, nach Crix' Bild): Arius hält eine riesige Klinge aus weißem Licht hoch über
+ * sich, sie wächst, um sie flimmern blaue Lichtfunken und der Himmel dahinter füllt sich mit Licht; im Schlag fährt sie
+ * in einem Bogen nach vorn hinab und verglüht.
+ */
+class GiantBladeFx(private val arius: Entity, private val length: Double, private val strikeAt: Int, life: Int) : AriusFx(life) {
+    override fun tick(world: ClientWorld) {
+        if (age > strikeAt) return
+        val r = random()
+        val c = arius.entityPos.add(0.0, 2.0, 0.0)
+        repeat((10 * particlesAllowed()).toInt()) {
+            val a = r.nextDouble() * PI * 2
+            val dist = 4.0 + r.nextDouble() * 10.0
+            val p = c.add(cos(a) * dist, (r.nextDouble() - 0.3) * 8.0, sin(a) * dist)
+            val v = c.subtract(p).multiply(0.04)
+            world.addParticleClient(ParticleTypes.END_ROD, p.x, p.y, p.z, v.x, v.y, v.z)
+        }
+    }
+
+    override fun render(d: VfxDraw, matrices: MatrixStack, t: Float) {
+        if (arius.isRemoved) return
+        val yaw = Math.toRadians((arius as? net.minecraft.entity.LivingEntity)?.bodyYaw?.toDouble() ?: 0.0)
+        val fwd = Vec3d(-sin(yaw), 0.0, cos(yaw))
+        val right = Vec3d(-cos(yaw), 0.0, -sin(yaw))
+        val base = arius.getLerpedPos(d.tickDelta)
+        val hilt = base.add(0.0, 2.3, 0.0).add(right.multiply(0.25))
+        val grow = (t / (strikeAt * 0.6f)).coerceIn(0f, 1f)
+        // Richtung: erhoben und leicht nach hinten geneigt; im Schlag in 5 Ticks nach vorn hinab.
+        val s = ((t - strikeAt) / 5f).coerceIn(0f, 1f)
+        val ang = Math.toRadians(-20.0 + s * 125.0)
+        val dir = UP.multiply(cos(ang)).add(fwd.multiply(sin(ang))).normalize()
+        val len = length * (0.15 + 0.85 * grow * grow)
+        val fade = if (t > strikeAt + 5) (1f - (t - strikeAt - 5) / 10f).coerceIn(0f, 1f) else 1f
+        val tip = hilt.add(dir.multiply(len))
+        val across = right
+        val pulse = 0.9f + 0.1f * sin(t * 1.3f)
+        // Klingenkörper: breiter weißer Kern, blauer Saum, weicher Schein
+        d.band(VfxLayers.GLOW_ADD, hilt, tip, across, 1.1 + 0.6 * grow, withAlpha(0xFFFFFFFF.toInt(), 0.95f * fade * pulse), withAlpha(0xFFE6F6FF.toInt(), 0.85f * fade))
+        d.band(VfxLayers.GLOW_ADD, hilt, tip, across, 2.0 + 1.0 * grow, withAlpha(0xFF8FC8FF.toInt(), 0.45f * fade), withAlpha(0xFF6FB0FF.toInt(), 0.3f * fade))
+        d.band(VfxLayers.FLOW_ADD, hilt, tip, across, 2.6 + 1.2 * grow, withAlpha(0xFFBFE6FF.toInt(), 0.3f * fade), withAlpha(0xFFBFE6FF.toInt(), 0.15f * fade), uScale = 0.2f, uOffset = -t * 0.1f)
+        d.billboard(VfxLayers.FLARE_ADD, tip, 3.0 + 2.0 * grow, withAlpha(0xFFFFFFFF.toInt(), 0.8f * fade))
+        d.billboard(VfxLayers.GLOW_ADD, hilt, 4.0, withAlpha(0xFFBFE6FF.toInt(), 0.6f * fade))
+        // Der Himmel dahinter lädt sich auf: großer blauer Schein und Strahlen hinter ihm
+        if (t < strikeAt + 8) {
+            val sky = base.add(fwd.multiply(-20.0)).add(0.0, 18.0, 0.0)
+            d.billboard(VfxLayers.GLOW_ADD, sky, 40.0 * grow, withAlpha(0xFF4F8FE0.toInt(), 0.35f * grow * fade))
+            d.billboard(VfxLayers.RAYS_ADD, sky, 55.0 * grow, withAlpha(0xFFBFE6FF.toInt(), 0.3f * grow * fade), t * 0.4)
+        }
+        // Schweifbogen im Schlag
+        if (s > 0f && fade > 0f) {
+            d.arc(VfxLayers.GLOW_ADD, hilt, UP, fwd, len * 0.6, len, 0.0, Math.toRadians(125.0 * s), withAlpha(0xFFFFFFFF.toInt(), 0f), withAlpha(0xFFE6F6FF.toInt(), 0.7f * fade), segments = 24)
         }
     }
 }

@@ -31,7 +31,7 @@ object DragonHits {
         for (i in 0 until NivarisShape.SEGMENTS) {
             // Halbe Breite des Glieds (±7 Einheiten × SCALE / 16) mal Verjüngung, aufgelöste Glieder fallen weg.
             val visible = s.shrink.getOrElse(i + 1) { 1f }
-            body.radii[i] = if (visible < 0.35f) 0.0 else s.girth[i] * 7.0 * NivarisShape.SCALE / 16.0 + 0.25
+            body.radii[i] = if (visible < 0.35f) 0.0 else s.girth[i] * 7.0 * NivarisShape.SCALE / 16.0 + 0.4
         }
         body.frame = ++frameCounter
         if (bodies.size > 8) bodies.entries.removeIf { frameCounter - it.value.frame > 200 }
@@ -54,7 +54,8 @@ object DragonHits {
         }
         val eye = player.getCameraPosVec(1f)
         val look = player.getRotationVec(1f)
-        val reach = maxOf(player.entityInteractionRange, 3.0) + 1.0
+        // Seit 1.5.1 großzügiger: der Körper ist riesig, eine Kugel mehr Reichweite und vier Prüfpunkte je Glied.
+        val reach = maxOf(player.entityInteractionRange, 3.0) + 1.75
         val limit = if (target != null && target.type != HitResult.Type.MISS) eye.distanceTo(target.pos) else reach
         var best = Double.MAX_VALUE
         var bestId = -1
@@ -66,7 +67,7 @@ object DragonHits {
                 if (r <= 0.0) continue
                 val a = body.points[i]
                 val b = body.points[i + 1]
-                for (c in arrayOf(a, a.lerp(b, 0.5))) {
+                for (c in arrayOf(a, a.lerp(b, 0.25), a.lerp(b, 0.5), a.lerp(b, 0.75))) {
                     val t = hit(eye, look, c, r) ?: continue
                     if (t <= reach && t < limit && t < best) {
                         best = t

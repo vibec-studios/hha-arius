@@ -266,42 +266,53 @@ def dragon_breath(f):
 
 
 def dragon_tail(f):
-    """Drachenschweif: ein Geisterschwanz peitscht im Kreis um einen Mittelpunkt (Spirale, Spitze voraus, Fächer an der
-    Spitze), dahinter ein Frostbogen; dreht sich von Bild zu Bild weiter."""
+    """Drachenschweif (seit 1.5.1 deutlicher): ein geschuppter Drachenschwanz mit Rückenstacheln windet sich als
+    Bogen von links unten nach rechts oben, an der Spitze ein Flossenfächer; dahinter peitschen Bewegungsbögen. Die
+    Spitze schlägt von Bild zu Bild aus."""
     im = Img()
-    lead = f / FRAMES * 2 * math.pi
-    # Frostbogen (hinter der Spitze, gestrichelt)
-    for i in range(22):
-        a = lead - i * 0.22
-        r = 6.6
-        x = int(round(7.5 + math.sin(a) * r))
-        y = int(round(7.5 + math.cos(a) * r * 0.85))
-        if i % 3 != 2:
-            im.set(x, y, ICE[3] if i < 8 else ICE[2])
-    # Schwanz: Spirale von der Mitte zur Spitze, dicker innen
-    n = 18
-    for k in range(n):
-        s = k / (n - 1)
-        a = lead - (1 - s) * 2.6
-        r = 1.2 + 4.6 * s ** 0.8
-        cx = 7.5 + math.sin(a) * r
-        cy = 7.5 + math.cos(a) * r * 0.85
-        w = 1.5 * (1 - s) + 0.5
+    k = f / FRAMES
+    swing = math.sin(k * 2 * math.pi) * 0.35
+    # Bewegungsbögen hinter dem Schweif
+    for i in range(3):
+        rr = 9.5 - i * 1.6
+        for s_ in range(14):
+            a = math.pi * (0.95 + 0.5 * s_ / 13) + swing
+            x = int(round(2 + math.cos(a) * -rr + 6))
+            y = int(round(13 + math.sin(a) * rr * 0.9))
+            if (s_ + f + i) % 3 != 0:
+                im.set(x, y, ICE[3] if i == 0 else ICE[2])
+    # Schwanz: Mittellinie als Bogen, Breite nimmt zur Spitze ab
+    n = 22
+    pts = []
+    for j in range(n):
+        t = j / (n - 1)
+        a = math.pi * (1.0 - 0.62 * t) + swing * t
+        r = 8.5
+        cx = 11.5 + math.cos(a) * r * (1.0 - 0.15 * t)
+        cy = 13.5 - math.sin(a) * r * 1.1
+        pts.append((cx, cy, t))
+    for cx, cy, t in pts:
+        w = 1.9 * (1 - t) + 0.6
         for y in range(16):
             for x in range(16):
                 d = math.hypot(x + 0.5 - cx, y + 0.5 - cy)
                 if d <= w:
-                    im.set(x, y, ICE[4] if d < w * 0.5 else ICE[3])
-    # Fächer an der Spitze
-    a = lead
-    tx = 7.5 + math.sin(a) * 5.8
-    ty = 7.5 + math.cos(a) * 5.8 * 0.85
+                    shade = ICE[4] if d < w * 0.45 else ICE[3]
+                    if int((t * 9) + 0.5) % 2 == 0 and d > w * 0.45:
+                        shade = ICE[2]                      # Schuppenbänder
+                    im.set(x, y, shade)
+    # Rückenstacheln (Gold) auf der Außenseite
+    for idx in (3, 7, 11, 15):
+        cx, cy, t = pts[idx]
+        a = math.pi * (1.0 - 0.62 * t) + swing * t
+        ox, oy = -math.cos(a), math.sin(a)
+        w = 1.9 * (1 - t) + 0.6
+        im.set(int(cx + ox * (w + 0.6)), int(cy - oy * (w + 0.6) * -1), GOLD[3])
+    # Flossenfächer an der Spitze
+    tx, ty, _ = pts[-1]
     for j in (-1, 0, 1):
-        b = a + math.pi / 2 + j * 0.5
-        for q in range(1, 3):
-            im.set(int(tx + math.sin(b) * q), int(ty + math.cos(b) * q * 0.85), ICE[5])
-    # Kern (Wurzel) in Gold
-    im.set(7, 7, GOLD[3]); im.set(8, 8, GOLD[2]); im.set(8, 7, GOLD[2]); im.set(7, 8, GOLD[1])
+        for q in range(1, 4):
+            im.set(int(tx + q * 0.8 + j * 0.3), int(ty - q * 0.6 + j * 1.0), ICE[5])
     return im.outline()
 
 

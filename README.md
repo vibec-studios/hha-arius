@@ -71,6 +71,21 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.6.0
+- **The Cut:** Arius charges a giant blade of light while the sky behind him fills with light, then cleaves the
+  mountain in the south lengthwise (no more splitting the sanctum).
+- **Mountain:** much bigger (foot 170, shoulder at 172), with a climbing path: about three turns, 27 rock steps with
+  vines to climb, lanterns.
+- **Arena:** a sea of clouds on the horizon with warm sky light, like a battlefield above the clouds.
+- **Solvane:** smooth body motion (no more stepping), stronger self-separation, larger hit areas.
+  - Kang-Jin-Loong-style air phase: longer flights, Sky Plunge with ice thorn rings, circling ice volley, low body sweep.
+- Cutscene cameras never end up inside the mountain.
+- **Gear:**
+  - Ice Armor works properly (visible for its whole duration, 5 hearts, shatters when used up).
+  - Much bigger Tornado that lifts and flings.
+  - White Hole in the style of a white Gargantua.
+  - New Dragon Tail cooldown icon.
+
 ### New in 1.5.0
 - **World:**
   - The arena is an endless snow plain with no rising edges (a new dimension, `hha_arius:highland`).

@@ -26,7 +26,7 @@ import kotlin.math.sin
  */
 internal object FarPlan {
 
-    const val VERSION = 7 // 7: endloses Schneefeld, Riesenmassiv mit Spiralweg (neue Dimension); 6: 6: Feld im Hochland statt Balkon, kein Massiv; 5: Bergmassiv mit Terrasse statt schwebendem Balkon; 4: Balkon als Felsschelf mit Strebe, Schneebänder am Horn; 2: Himmelsbalkon an der Nadel; 3: Alpen (Felshorn, Fels/Schnee, offenes Hochland)
+    const val VERSION = 8 // 8: Massiv größer, Kletterweg mit Ranken; 7: 7: endloses Schneefeld, Riesenmassiv mit Spiralweg (neue Dimension); 6: 6: Feld im Hochland statt Balkon, kein Massiv; 5: Bergmassiv mit Terrasse statt schwebendem Balkon; 4: Balkon als Felsschelf mit Strebe, Schneebänder am Horn; 2: Himmelsbalkon an der Nadel; 3: Alpen (Felshorn, Fels/Schnee, offenes Hochland)
 
     const val X_MIN = -ArenaLayout.FAR_X
     const val X_MAX = ArenaLayout.FAR_X
@@ -124,11 +124,16 @@ internal object FarPlan {
      * (Richtung Plateau) hinauf bis auf die Schulter; Schneeschichten glätten ihn, Laternen stehen alle [POST_EVERY]
      * Blöcke am Außenrand.
      */
-    const val MASSIF_R = 120.0
-    const val SHOULDER_R = 22.0
-    const val SHOULDER_Y = 128.0
-    const val PATH_W = 7.0
-    private const val GRADE = 0.2
+    // Seit 1.5.1 größer (Crix: „größer, und man soll ihn hochklettern müssen“): Fuß 170, Schulter auf y 172. Der Weg ist
+    // fast eben, steigt aber alle CLIMB_EVERY Blöcke an einer Felsstufe um CLIMB_H Blöcke – dort hängen Ranken zum
+    // Hochklettern; dazwischen einzelne Blockstufen (springen). Rund drei Umläufe, 27 Kletterstellen.
+    const val MASSIF_R = 170.0
+    const val SHOULDER_R = 26.0
+    const val SHOULDER_Y = 172.0
+    const val PATH_W = 6.0
+    private const val GRADE = 0.05
+    const val CLIMB_EVERY = 50.0
+    const val CLIMB_H = 4.0
     private const val POST_EVERY = 22.0
     private const val PHI_STEP = 0.003
 
@@ -146,19 +151,23 @@ internal object FarPlan {
     private const val A0 = PI // Wegbeginn im Norden (Blick zum Plateau)
     private val pathY: DoubleArray
     private val pathR: DoubleArray
+    private val pathArc: DoubleArray
     private val posts = HashMap<Long, Int>()
 
     init {
         val ys = ArrayList<Double>()
         val rs = ArrayList<Double>()
+        val arcs = ArrayList<Double>()
         var y = -1.0
         var arc = 0.0
         var nextPost = 8.0
         var i = 0
+        var climbs = 0
         while (y < SHOULDER_Y) {
             val r = massifR(y)
             ys.add(y)
             rs.add(r)
+            arcs.add(arc)
             val ds = r * PHI_STEP
             arc += ds
             if (arc >= nextPost) {
@@ -170,27 +179,57 @@ internal object FarPlan {
                 posts[key(px, pz)] = floor(y).toInt()
             }
             y += GRADE * ds
+            val k = (arc / CLIMB_EVERY).toInt()
+            if (k > climbs) {
+                climbs = k
+                y += CLIMB_H
+            }
             i++
         }
         pathY = ys.toDoubleArray()
         pathR = rs.toDoubleArray()
+        pathArc = arcs.toDoubleArray()
     }
 
     private fun key(x: Int, z: Int): Long = (x.toLong() shl 32) or (z.toLong() and 0xFFFFFFFFL)
 
-    /** Höhe der Wegfläche über (x, z) (mit Bruchteil, für Schneeschichten) oder NaN. */
+    /** Höhe der Wegfläche über (x, z) (mit Bruchteil) oder NaN. */
     fun pathAt(x: Int, z: Int): Double {
+        val i = pathIndex(x, z)
+        return if (i < 0) Double.NaN else pathY[i]
+    }
+
+    /**
+     * Kletterstelle: liegt (x, z) auf dem Weg direkt vor einer Felsstufe, die Richtung, in der die Wand steht (Ranken
+     * hängen an ihr), sonst null.
+     */
+    fun climbFace(x: Int, z: Int): net.minecraft.util.math.Direction? {
+        val i = pathIndex(x, z)
+        if (i < 0) return null
+        val frac = pathArc[i] % CLIMB_EVERY
+        if (frac < CLIMB_EVERY - 1.6) return null
+        val a = A0 + i * PHI_STEP
+        val fx = kotlin.math.cos(a)
+        val fz = -sin(a)
+        return if (abs(fx) > abs(fz)) {
+            if (fx > 0) net.minecraft.util.math.Direction.EAST else net.minecraft.util.math.Direction.WEST
+        } else {
+            if (fz > 0) net.minecraft.util.math.Direction.SOUTH else net.minecraft.util.math.Direction.NORTH
+        }
+    }
+
+    private fun pathIndex(x: Int, z: Int): Int {
         val dx = x + 0.5 - (ArenaLayout.SPIRE.x + 0.5)
         val dz = z + 0.5 - (ArenaLayout.SPIRE.z + 0.5)
         val d = hypot(dx, dz)
-        if (d > MASSIF_R + PATH_W || d < SHOULDER_R - 1.0) return Double.NaN
+        if (d > MASSIF_R + PATH_W || d < SHOULDER_R - 1.0) return -1
         var phi = atan2(dx, dz) - A0
         while (phi < 0.0) phi += 2 * PI
         while (phi >= 2 * PI) phi -= 2 * PI
         while (true) {
             val i = (phi / PHI_STEP).toInt()
-            if (i >= pathY.size) return Double.NaN
-            if (abs(d - pathR[i]) <= PATH_W / 2) return pathY[i]
+            if (i >= pathY.size) return -1
+            if (abs(d - pathR[i]) <= PATH_W / 2) return i
             phi += 2 * PI
         }
     }
@@ -435,8 +474,12 @@ class FarBuild(private val world: ServerWorld, private val origin: BlockPos) {
                     put(top + 2, FarPlan.state(FarPlan.WALL))
                     put(top + 3, FarPlan.state(FarPlan.LANTERN))
                 } else {
-                    val layers = ((path - floor(path)) * 8.0).toInt()
-                    if (layers > 0) put(top + 1, Blocks.SNOW.defaultState.with(net.minecraft.block.SnowBlock.LAYERS, layers))
+                    // Kletterstelle: Ranken an der Felsstufe (bis zur nächsten Weghöhe).
+                    val face = FarPlan.climbFace(x, z)
+                    if (face != null) {
+                        val vine = Blocks.VINE.defaultState.with(net.minecraft.block.VineBlock.getFacingProperty(face), true)
+                        for (h in 1..FarPlan.CLIMB_H.toInt()) put(top + h, vine)
+                    }
                 }
             }
         }

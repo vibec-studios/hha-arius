@@ -633,7 +633,11 @@ class NivarisBody {
                 if (trail.isEmpty()) {
                     for (k in 1..60) trail.addLast(spine.subtract(f.multiply(k * 2.0)).add(f.crossUp().multiply(kotlin.math.sin(k * 0.15) * 2.0)))
                 }
-                if (spine.squaredDistanceTo(trail.first()) >= 0.25) trail.addFirst(spine)
+                // Seit 1.5.1 fließend (Crix: „bewegt sich in 16 Frames“): Der vorderste Spurpunkt folgt der Rumpfmitte in
+                // jedem Frame; erst wenn sie 0,5 Blöcke vom vorigen Punkt weg ist, entsteht ein neuer. Vorher sprang der
+                // Körper in 0,5-Block-Schritten.
+                if (trail.size >= 2 && spine.squaredDistanceTo(trail[1]) < 0.25) trail[0] = spine
+                else if (spine.squaredDistanceTo(trail.first()) > 1e-6) trail.addFirst(spine)
                 trimTrail()
 
                 // Am Boden sinkt die liegende Spur langsam auf die Lauffläche (Rumpfmitte über dem Boden), Glied für Glied
@@ -814,11 +818,12 @@ class NivarisBody {
 
     /** Glieder, die sich zu nah kommen (nicht Nachbarn), auseinanderschieben; Kopf und Hals bleiben stehen. */
     private fun separate(pts: Array<Vec>, groundY: Double) {
-        repeat(3) {
+        repeat(5) {
             for (i in 0 until POINTS) {
-                for (j in i + 6 until POINTS) {
+                for (j in i + 4 until POINTS) {
                     val d = pts[j].subtract(pts[i])
-                    val min = (radius(i) + radius(j)) * 1.05
+                    // Querschnitt inklusive Rückenkamm und Schuppen: großzügig, damit nichts sichtbar ineinanderragt.
+                    val min = (radius(i) + radius(j)) * 1.45 + 0.3
                     val l2 = d.lengthSquared()
                     if (l2 >= min * min) continue
                     val l = kotlin.math.sqrt(l2)

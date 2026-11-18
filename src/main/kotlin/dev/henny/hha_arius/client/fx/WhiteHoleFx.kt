@@ -216,59 +216,46 @@ class WhiteHoleFx(val center: Vec3d, private val radius: Double, private var pul
                 drawBlock(d, if (c[5].toInt() % 3 == 0) net.minecraft.block.Blocks.BLUE_ICE.defaultState else net.minecraft.block.Blocks.PACKED_ICE.defaultState,
                     pos, org.joml.Vector3f(0.3f, 1f, 0.2f).normalize(), time * 0.08f + c[1], c[4] * (core / coreMax).toFloat())
             }
-            // Seit 1.4.2 (Crix: „sieht immer noch nicht cool aus“) klar lesbar aufgebaut wie ein echtes Schwarzes Loch in
-            // Weiß: harte, gleißende Kugel, Photonenring, breite gebänderte Akkretionsscheibe, die nach außen strömt,
-            // Spiralarme als Lichtbänder, Polar-Jets als pulsierende Lichtröhren; beim Kollaps eine Lichtkuppel.
-            val pullK = pull(d.tickDelta)
-            // Akkretionsscheibe: 8 Bänder, innen weiß-golden, außen eisblau und durchscheinend; jedes strömt nach außen.
-            val diskR = radius * 0.95
-            val bands = 8
-            for (bnd in 0 until bands) {
-                val f = bnd / (bands - 1f)
-                val r0 = core * 1.7 + (diskR - core * 1.7) * f
-                val r1 = r0 + (diskR - core * 1.7) / bands * 0.85
-                val col = dev.henny.hha.client.vfx.lerpColor(if (bnd < 2) 0xFFFFF1C8.toInt() else 0xFFFFFFFF.toInt(), AriusFx.ICE, f)
-                val a = (1f - f * 0.8f) * 0.62f * k
-                d.ring(VfxLayers.FLOW_ADD, center, u, v, r0, r1, withAlpha(col, a), withAlpha(col, a * 0.35f), segments = 72,
-                    uTile = 3f + bnd, uOffset = -time * (0.05f + 0.012f * bnd))
+            // Seit 1.5.1 nach Crix' Vorlage (Gargantua in Weiß): eine große, gleißend weiße Scheibe, darum ein dunkler
+            // Schattenring, dann ein dicker heller Lichtring (die gebogene Rückseite der Scheibe) und eine riesige, flach
+            // gekippte, wolkig-weiße Akkretionsscheibe, die weit zu beiden Seiten ausläuft; funkelnde Sterne darum.
+            // Die Scheibe ist zur Kamera ausgerichtet (fast von der Kante, leicht gekippt und gedreht), damit das Bild aus
+            // jeder Richtung so aussieht.
+            val camF = d.camForward
+            val tilt = Math.toRadians(14.0)
+            val roll = Math.toRadians(-18.0)
+            val upR = d.camUp.multiply(cos(roll)).add(d.camRight.multiply(sin(roll)))
+            val rightR = d.camRight.multiply(cos(roll)).subtract(d.camUp.multiply(sin(roll)))
+            val dn = upR.multiply(cos(tilt)).subtract(camF.multiply(sin(tilt))).normalize()
+            val du = rightR
+            val dv = dn.crossProduct(du).normalize()
+            val R = core * 2.2
+            // Akkretionsscheibe: weit, wolkig, innen hell, außen bläulich
+            val diskR = radius * 1.9 + R * 2.0
+            for (bnd in 0 until 10) {
+                val f = bnd / 9f
+                val r0 = R * 1.05 + (diskR - R) * f
+                val r1 = r0 + (diskR - R) / 10.0 * 1.1
+                val col = dev.henny.hha.client.vfx.lerpColor(0xFFFFFFFF.toInt(), 0xFFAFC8E8.toInt(), f)
+                val a = (1f - f * 0.75f) * 0.55f * k
+                d.ring(VfxLayers.FLOW_ADD, center, du, dv, r0, r1, withAlpha(col, a), withAlpha(col, a * 0.5f), segments = 96,
+                    uTile = 5f + bnd, uOffset = -time * (0.03f + 0.006f * bnd))
             }
-            // Heller Innenrand der Scheibe (Lichtkante) und Photonenring um den Kern, zur Kamera gedreht.
-            d.ring(VfxLayers.GLOW_ADD, center, u, v, core * 1.45, core * 1.95, withAlpha(0xFFFFFFFF.toInt(), 0.95f * k), withAlpha(0xFFFFE7B0.toInt(), 0f), segments = 64)
-            d.ring(VfxLayers.GLOW_ADD, center, d.camRight, d.camUp, core * 1.12, core * 1.32, withAlpha(0xFFFFF4D6.toInt(), 0f), withAlpha(0xFFFFFFFF.toInt(), 0.9f * k), segments = 64)
-            d.ring(VfxLayers.GLOW_ADD, center, d.camRight, d.camUp, core * 1.32, core * 1.6, withAlpha(0xFFFFFFFF.toInt(), 0.9f * k), withAlpha(0xFFFFE7B0.toInt(), 0f), segments = 64)
-            // Drei Spiralarme als Lichtbänder in der Scheibe (nach außen gedreht, laufen weiter)
-            for (arm in 0 until 3) {
-                val path = ArrayList<Vec3d>(30)
-                for (i in 0 until 30) {
-                    val f = i / 29.0
-                    val rr = core * 1.6 + f * diskR
-                    val ang = arm * 2.094 + f * 3.6 - time * 0.07
-                    path += center.add(u.multiply(cos(ang) * rr)).add(v.multiply(sin(ang) * rr)).add(nrm.multiply(sin(f * 9.0 + time * 0.2) * 0.08))
-                }
-                d.ribbon(VfxLayers.FLOW_ADD, path, { f -> 0.15 + 0.55 * f }, { f -> withAlpha(if (f < 0.3f) 0xFFFFFFFF.toInt() else 0xFFE8F6FF.toInt(), (1f - f) * 0.75f * k) },
-                    uScale = 0.4f, uOffset = -time * 0.1f)
+            // Wolkige Schwaden in der Scheibe
+            for (j in 0 until 48) {
+                val f = ((j * 0.618) % 1.0)
+                val ang = j * 2.39996 - time * 0.02 * (1.5 - f)
+                val rr = R * 1.2 + f * (diskR - R)
+                val pos = center.add(du.multiply(cos(ang) * rr)).add(dv.multiply(sin(ang) * rr))
+                d.billboard(VfxLayers.CLOUD_ALPHA, pos, 1.2 + f * 2.8, withAlpha(dev.henny.hha.client.vfx.lerpColor(0xFFFFFFFF.toInt(), 0xFFC8DAF0.toInt(), f.toFloat()), (0.55f - f.toFloat() * 0.35f) * k), (ang * 57.0) % 360.0)
             }
-            // Funken strömen entlang der Arme nach außen
-            for (j in 0 until 24) {
-                val f = ((time * 0.025 + j / 24.0) % 1.0)
-                val rr = core * 1.6 + f * diskR
-                val ang = (j % 3) * 2.094 + f * 3.6 - time * 0.07 + (j / 3) * 0.13
-                val pos = center.add(u.multiply(cos(ang) * rr)).add(v.multiply(sin(ang) * rr))
-                d.billboard(VfxLayers.FLARE_ADD, pos, 0.22 + 0.2 * (1 - f), withAlpha(if (j % 4 == 0) 0xFFFFE7B0.toInt() else 0xFFFFFFFF.toInt(), (1 - f).toFloat() * 0.85f * k))
-            }
-            // Polar-Jets: Lichtröhren entlang der Achse, schmal zulaufend, mit Pulswellen, die nach außen wandern
-            val len = radius * 2.6 * pullK
-            if (len > 0.3) for (sg in intArrayOf(-1, 1)) {
-                val path = (0..16).map { i -> center.add(nrm.multiply(len * sg * i / 16.0)) }
-                d.tube(VfxLayers.GLOW_ADD, path, { f -> core * (0.55 - 0.4 * f) * (1.0 + 0.25 * sin(f * 18.0 - time * 0.9)) },
-                    { f -> withAlpha(dev.henny.hha.client.vfx.lerpColor(0xFFFFFFFF.toInt(), AriusFx.ICE, f), (1f - f) * 0.9f * k) }, sides = 10, uScale = 1f, uOffset = 0f)
-                d.tube(VfxLayers.FLOW_ADD, path, { f -> core * (1.1 - 0.7 * f) }, { f -> withAlpha(AriusFx.ICE, (1f - f) * 0.35f * k) }, sides = 12, uScale = 0.6f, uOffset = -time * 0.15f)
-                for (j in 0 until 5) {
-                    val f = ((time * 0.05 + j / 5.0) % 1.0)
-                    val at = center.add(nrm.multiply(len * sg * f))
-                    d.ring(VfxLayers.GLOW_ADD, at, u, v, core * (0.5 + f * 0.6), core * (0.62 + f * 0.7), withAlpha(0xFFFFFFFF.toInt(), 0f), withAlpha(0xFFFFFFFF.toInt(), (1 - f).toFloat() * 0.6f * k), segments = 24)
-                }
-            }
+            // Dunkler Schattenring direkt um die Scheibe, dann der dicke helle Lichtring
+            d.ring(VfxLayers.SMOKE_ALPHA, center, d.camRight, d.camUp, R * 0.98, R * 1.22, withAlpha(0xFF1E232E.toInt(), 0.85f * k), withAlpha(0xFF3A4252.toInt(), 0.6f * k), segments = 72)
+            d.ring(VfxLayers.GLOW_ADD, center, d.camRight, d.camUp, R * 1.22, R * 1.75, withAlpha(0xFFFFFFFF.toInt(), 0.95f * k), withAlpha(0xFFFFFFFF.toInt(), 0f), segments = 72)
+            d.ring(VfxLayers.FLOW_ADD, center, d.camRight, d.camUp, R * 1.2, R * 1.6, withAlpha(0xFFFFFFFF.toInt(), 0.6f * k), withAlpha(0xFFE8F2FF.toInt(), 0.2f * k), segments = 72, uTile = 6f, uOffset = time * 0.04f)
+            // Vorderer Scheibenrand läuft über die untere Hälfte der Kugel (wie im Bild)
+            d.arc(VfxLayers.GLOW_ADD, center.subtract(camF.multiply(R * 0.2)), du, dv, R * 1.05, R * 1.6, Math.PI * 0.05, Math.PI * 0.95,
+                withAlpha(0xFFFFFFFF.toInt(), 0.7f * k), withAlpha(0xFFFFFFFF.toInt(), 0.1f * k), segments = 40)
             // Lichtfesseln zu Wesen in der Nähe (nicht zum eigenen Spieler): geschwungene Lichtbänder
             val world = MinecraftClient.getInstance().world
             if (world != null && age < pullTicks) {
@@ -278,7 +265,7 @@ class WhiteHoleFx(val center: Vec3d, private val radius: Double, private var pul
                     val to = e.getLerpedPos(d.tickDelta).add(0.0, e.height * 0.55, 0.0)
                     val path = (0..10).map { i ->
                         val f = i / 10.0
-                        center.lerp(to, f).add(nrm.multiply(sin(f * PI) * 0.8)).add(u.multiply(sin(f * 7.0 + time * 0.5 + e.id) * 0.15 * sin(f * PI)))
+                        center.lerp(to, f).add(nrm.multiply(sin(f * PI) * 0.8))
                     }
                     d.ribbon(VfxLayers.GLOW_ADD, path, { 0.12 }, { f -> withAlpha(0xFFFFF4D6.toInt(), (0.85f - f * 0.4f) * k) }, uScale = 1f, uOffset = 0f)
                 }
@@ -286,13 +273,19 @@ class WhiteHoleFx(val center: Vec3d, private val radius: Double, private var pul
             // Frostrunenkreis am Boden
             ground?.let { g ->
                 d.disc(VfxLayers.RUNE_ADD, g.add(0.0, 0.06, 0.0), X, Z, radius * 0.9, withAlpha(AriusFx.ICE, 0.55f * k), time * 0.01)
-                d.disc(VfxLayers.GLOW_ADD, g.add(0.0, 0.05, 0.0), X, Z, radius * 0.7, withAlpha(0xFFFFFFFF.toInt(), 0.18f * k), 0.0)
             }
-            // Der Kern selbst: harte, gleißend weiße Kugel mit Korona (zuletzt, damit er über allem liegt)
-            d.sphere(VfxLayers.SHARD_ALPHA, center, core, { _ -> withAlpha(0xFFFFFFFF.toInt(), k) }, lat = 12, lon = 20)
-            d.billboard(VfxLayers.FLARE_ADD, center, core * 3.6, withAlpha(0xFFFFFFFF.toInt(), 0.95f * k), time * 2.0)
-            d.billboard(VfxLayers.RAYS_ADD, center, core * 8.0, withAlpha(0xFFFFF4D6.toInt(), 0.45f * k), time * 0.6)
-            d.billboard(VfxLayers.GLOW_ADD, center, core * 11.0, withAlpha(AriusFx.ICE, 0.3f * k))
+            // Funkelnde Sterne um das Loch
+            for (j in 0 until 18) {
+                val a1 = j * 2.39996
+                val dist = R * 2.5 + ((j * 0.37) % 1.0) * radius * 2.0
+                val pos = center.add(d.camRight.multiply(cos(a1) * dist)).add(d.camUp.multiply(sin(a1) * dist * 0.6))
+                val tw = 0.5f + 0.5f * sin(time * 0.4f + j * 1.3f)
+                d.billboard(VfxLayers.FLARE_ADD, pos, 0.25 + 0.35 * tw, withAlpha(0xFFFFFFFF.toInt(), 0.8f * tw * k))
+            }
+            // Die Scheibe selbst: harte, gleißend weiße Kugel mit Korona
+            d.sphere(VfxLayers.SHARD_ALPHA, center, R, { _ -> withAlpha(0xFFFFFFFF.toInt(), k) }, lat = 14, lon = 24)
+            d.billboard(VfxLayers.GLOW_ADD, center, R * 2.4, withAlpha(0xFFFFFFFF.toInt(), 0.6f * k))
+            d.billboard(VfxLayers.GLOW_ADD, center, R * 6.0, withAlpha(0xFFDDEBFF.toInt(), 0.25f * k))
         }
         // Nach dem Kollaps: Lichtkuppel, die sich aufbläht und verblasst, dazu heller Ring am Boden
         val (sr, _, ss) = shock(d.tickDelta)

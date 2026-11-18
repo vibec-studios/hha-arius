@@ -227,6 +227,10 @@ class Scenes(private val f: EirholmFight) {
         }))
         f.cutSurvivors.clear()
         f.cutSurvivors.addAll(f.players().map { it.uuid })
+        // Seit 1.5.1 (nach Crix' Bild): Er lädt eine riesige Klinge aus Licht auf, hoch über sich; der Himmel hinter ihm
+        // füllt sich mit Licht. Mit dem Schlag spaltet sie den Berg im Süden.
+        f.fx(FxKind.GIANT_BLADE, stand, a = 38f, b = AriusTimings.CUT_LINE_TICKS.toFloat(), life = AriusTimings.CUT_LINE_TICKS + 22, e1 = a)
+        cue("cut.charge", stand, 5f, 0.6f)
         val group = f.calls.boss(pace = Telegraph.Pace.ROOM)
         val line = group.line(f.abs(ArenaLayout.CUT_FROM), f.abs(ArenaLayout.CUT_TO), ArenaLayout.CUT_WIDTH.toFloat(), AriusTimings.CUT_LINE_TICKS)
         wait(line.ticks)
@@ -244,17 +248,10 @@ class Scenes(private val f: EirholmFight) {
             shown { Vfx.crescent(f.world, Vfx.Style.HEAVEN, stand.add(0.0, 1.5, 0.0), Vec3d(0.0, 0.0, 1.0), 110f, 5f, 12) }
             f.fx(FxKind.SEAM, f.abs(ArenaLayout.CUT_FROM).add(0.0, 0.2, 0.0), f.abs(ArenaLayout.CUT_TO).add(0.0, 0.2, 0.0), a = 14f, life = AriusTimings.CUT_SILENCE + 16)
             wait(AriusTimings.CUT_SILENCE)
-            // Weite Totale: hoch im Südwesten über dem Plateau, die Osthälfte gleitet ab, die Kamera schwenkt langsam mit.
-            val temple = f.abs(Vec3d.of(ArenaLayout.TEMPLE))
-            post.line(rel(-44.0, 30.0, -12.0), rel(-50.0, 34.0, -20.0), temple.add(2.0, 8.0, 0.0), temple.add(12.0, 6.0, 0.0), AriusTimings.CUT_SLIDE + 20, 60.0, 66.0)
+            // Weite Totale über das Plateau nach Süden: die Naht läuft bis zum Berg, das Massiv bricht der Länge nach auf.
+            val mountain = f.abs(Vec3d(ArenaLayout.CUT_X, 70.0, ArenaLayout.SPIRE.z - 60.0))
+            post.line(rel(-30.0, 26.0, -40.0), rel(-38.0, 34.0, -30.0), mountain, mountain.add(0.0, 25.0, 0.0), AriusTimings.CUT_SLIDE + 20, 58.0, 64.0)
             split()
-            f.task(script {
-                wait(AriusTimings.CUT_SLIDE)
-                for ((pos, state) in ArenaBuilder.cutRubble(f.world, f.origin)) {
-                    if (f.world.getBlockState(pos).isAir) f.edits.set(pos, state)
-                }
-                cue("ridge.break", f.abs(Vec3d.of(ArenaLayout.TEMPLE)).add(18.0, 2.0, 0.0), 4f, 0.5f)
-            })
             wait(40)
             shown { f.sceneText("cut_after") }
             for (id in f.cutSurvivors) f.server.playerManager.getPlayer(id)?.let { Advancements.grant(it, "under_the_line") }
@@ -264,37 +261,59 @@ class Scenes(private val f: EirholmFight) {
         yieldAll(arrival())
     }
 
-    /** Der Tempel trennt sich: Momentaufnahme an alle, echte Blöcke weg, Kluft im Süden. */
+    /**
+     * Seit 1.5.1 (Crix: „den Tempel in zwei Hälften spalten macht keinen Sinn – wenn, dann wird ein Berg geteilt“): Der
+     * Schnitt spaltet das Massiv im Süden der Länge nach. Entlang der Schnittebene (x ≈ [ArenaLayout.CUT_X]) entsteht
+     * eine Kluft, oben breiter als unten, quer durch Berg und Horn; sichtbare Brocken stürzen hinein. Gebaut wird in
+     * Scheiben über mehrere Ticks; am Kampfende stellt [ArenaEdits] alles wieder her.
+     */
     fun split(animate: Boolean = true) {
-        val blocks = ArenaBuilder.templeEastHalf(f.world, f.origin)
-        if (animate && blocks.isNotEmpty()) {
-            val center = f.abs(Vec3d.of(ArenaLayout.TEMPLE))
-            val payload = SliceS2C(
-                f.slot, f.origin.x + ArenaLayout.CUT_X, f.origin.y.toDouble(), center.z, 1.0, 0.0,
-                0, AriusTimings.CUT_SLIDE,
-                LongArray(blocks.size) { blocks[it].first.asLong() },
-                IntArray(blocks.size) { Block.getRawIdFromState(blocks[it].second) },
-            )
-            AriusNet.near(f.world, center, payload)
+        val z0 = (ArenaLayout.SPIRE.z - dev.henny.hha_arius.arena.FarPlan.MASSIF_R - 6).toInt()
+        val z1 = (ArenaLayout.SPIRE.z + dev.henny.hha_arius.arena.FarPlan.MASSIF_R + 6).toInt()
+        if (animate) {
+            val from = f.abs(Vec3d(ArenaLayout.CUT_X, 0.2, ArenaLayout.CUT_TO.z))
+            f.fx(FxKind.SEAM, from, f.abs(Vec3d(ArenaLayout.CUT_X, 0.2, z1.toDouble())), a = 220f, life = AriusTimings.CUT_SLIDE + 40)
+            f.ambient("cut.split", f.abs(Vec3d(ArenaLayout.CUT_X, 40.0, ArenaLayout.SPIRE.z.toDouble())), 8f)
+            f.ambient("glacier.collapse", from, 6f, 0.6f)
+            f.calls.roomShake(from, 8f, 90f)
         }
-        for ((pos, _) in blocks) f.edits.clear(pos)
-        val cleft = ArenaBuilder.southCleft(f.world, f.origin)
-        for (pos in cleft) {
-            val st = f.world.getBlockState(pos)
-            if (animate && rnd.nextInt(6) == 0) {
-                f.world.spawnParticles(BlockStateParticleEffect(ParticleTypes.BLOCK, st), pos.x + 0.5, pos.y + 0.5, pos.z + 0.5, 4, 0.4, 0.4, 0.4, 0.05)
+        var z = z0
+        f.task(script {
+            while (z <= z1) {
+                carve(z, minOf(z1, z + 5), animate)
+                z += 6
+                yield(Unit)
             }
-            f.edits.clear(pos)
+        })
+    }
+
+    /** Kluft für die Scheibe z0..z1 (relativ): V-förmig, unten 3, oben bis 9 Blöcke breit. */
+    private fun carve(z0: Int, z1: Int, animate: Boolean) {
+        val pos = BlockPos.Mutable()
+        val debris = ArrayList<BlockPos>()
+        val debrisStates = ArrayList<Int>()
+        for (z in z0..z1) {
+            for (dx in -6..6) {
+                val x = kotlin.math.floor(ArenaLayout.CUT_X).toInt() + dx
+                val top = dev.henny.hha_arius.arena.FarPlan.top(x, z)
+                if (top < 0) continue
+                for (y in 0..top + 1) {
+                    val hw = 1.5 + y / 50.0
+                    if (kotlin.math.abs(x + 0.5 - ArenaLayout.CUT_X) > hw) continue
+                    pos.set(f.origin.x + x, f.origin.y + y, f.origin.z + z)
+                    if (f.world.getBlockState(pos).isAir) continue
+                    if (animate && debris.size < 40 && rnd.nextInt(30) == 0) {
+                        debris.add(pos.toImmutable())
+                        debrisStates.add(net.minecraft.block.Block.getRawIdFromState(f.world.getBlockState(pos)))
+                    }
+                    f.edits.clear(pos)
+                }
+            }
         }
-        if (!animate) {
-            for ((pos, state) in ArenaBuilder.cutRubble(f.world, f.origin)) if (f.world.getBlockState(pos).isAir) f.edits.set(pos, state)
-            return
+        if (animate && debris.isNotEmpty() && !Cine.muted) {
+            val payload = dev.henny.hha_arius.gear.art.ArtCutS2C(LongArray(debris.size) { debris[it].asLong() }, debrisStates.toIntArray(), 3)
+            for (p in f.audience()) dev.henny.hha_arius.net.AriusNet.send(p, payload)
         }
-        f.ambient("cut.split", f.abs(Vec3d.of(ArenaLayout.TEMPLE)), 6f)
-        f.ambient("glacier.crack", f.abs(ArenaLayout.CUT_TO), 6f, 0.7f)
-        f.calls.roomShake(f.abs(Vec3d.of(ArenaLayout.TEMPLE)), 6f, 80f)
-        val cutX = f.origin.x + ArenaLayout.CUT_X
-        for (p in f.players()) if (p.x > cutX) Fx.launchPlayer(p, Vec3d(-0.8, 0.3, 0.0))
     }
 
     /**

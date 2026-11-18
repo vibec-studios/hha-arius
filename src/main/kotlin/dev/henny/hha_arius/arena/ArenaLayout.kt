@@ -149,9 +149,9 @@ object ArenaLayout {
      * Blöcke: die Spitze ist ab etwa 10 Chunks Sichtweite zu sehen. Kameras und Flugbahn des Auftritts hängen an
      * diesem Punkt ([dev.henny.hha_arius.boss.EntrancePath.near]).
      */
-    val SPIRE = BlockPos(0, -40, 200)
-    const val SPIRE_TOP = 185
-    const val SPIRE_BASE_R = 38.0
+    val SPIRE = BlockPos(0, -40, 250)
+    const val SPIRE_TOP = 220
+    const val SPIRE_BASE_R = 52.0
 
     /** Radius der Nadel auf Höhe y (relativ zur Lauffläche), steil und spitz zulaufend. */
     fun spireRadius(y: Double): Double {
@@ -171,7 +171,9 @@ object ArenaLayout {
      * die weite Kameraeinstellung das obere Drittel der Nadel füllen, nicht den ganzen Berg.
      */
     fun coil(s: Double): Vec3d {
-        val y = 144.0 + (170.0 - 144.0) * s
+        // Seit 1.5.1 liegt der Gipfel höher (SPIRE_TOP 220 statt 185): die Windung wandert mit.
+        val dy = SPIRE_TOP - 185.0
+        val y = 144.0 + dy + (170.0 - 144.0) * s
         val r = spireRadius(y) * 1.2 + 2.5 + 2.2
         val a = s * 1.5 * 2 * PI
         return Vec3d(SPIRE.x + 0.5 + sin(a) * r, y, SPIRE.z + 0.5 + cos(a) * r)
@@ -195,8 +197,8 @@ object ArenaLayout {
     const val BOUND_Y_MAX = 30
 
     /** Fernlandschaft (Nadel, Schlucht, Gletscherzüge) reicht weiter: bis z [FAR_Z_MAX], x ±[FAR_X], y [FAR_Y_MIN]..[SPIRE_TOP]. */
-    const val FAR_X = 132
-    const val FAR_Z_MAX = 332
+    const val FAR_X = 182
+    const val FAR_Z_MAX = 430
     const val FAR_Y_MIN = -80
 
     fun at(origin: BlockPos, rel: BlockPos): BlockPos = origin.add(rel)
