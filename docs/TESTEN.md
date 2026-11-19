@@ -88,6 +88,10 @@ Client-Welt und Spieler sind vorhanden. Geprüft mit Minecraft 1.21.11, Fabric L
 - [ ] Rüstung „Drachenherz-Wacht“: an Spieler, Rüstungsständer, Mannequin, Zombie; Leuchten Tag/Nacht, Verzauberungsglanz, Umhang, Federn beim Laufen/Springen, schmale Arme, mit und ohne Handschuhe
 - [ ] Solvane-Item: länger, Lichtfluss in der Hohlkehle, Sitz in erster und dritter Person
 
+## 1.7.1
+- [ ] Enderperle im Hochland werfen, dann den Kampf beenden oder heimgeschickt werden: Die Perle verschwindet, kein Einfrieren
+- [ ] Ohne laufenden Kampf ins Hochland gelangen (Perle, Befehl): Man wird einmal heimgeschickt, kein Hängenbleiben
+
 ## 1.7.0
 - [ ] HUD: Aktionsleisten-Meldungen stehen über Resonanzleiste und Abklingzeit-Icons (34 px höher, sobald man Ausrüstung trägt); Frostbalken darüber
 - [ ] Normaler Schild blockt Arius/Solvane von vorn (±70°), Haltbarkeit sinkt; schwere Treffer (≥ 8, Null-Schnitt) schlagen ihn 5 s weg

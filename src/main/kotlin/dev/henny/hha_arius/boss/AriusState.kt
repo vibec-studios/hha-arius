@@ -127,6 +127,7 @@ class AriusState(var data: Data = Data()) : PersistentState() {
             val pos = if (home != null && world.registryKey == key) Vec3d(home.x, home.y, home.z)
             else world.getTopPosition(Heightmap.Type.MOTION_BLOCKING, BlockPos.ORIGIN).toBottomCenterPos()
             player.onLanding()
+            Encounters.discardPearlsIn(player, Encounters.WORLD)
             player.teleport(world, pos.x, pos.y, pos.z, emptySet(), home?.yaw ?: player.yaw, player.pitch, false)
             state.player(player.uuid).sendHome = false
             state.save()

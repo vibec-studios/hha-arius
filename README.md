@@ -71,6 +71,11 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.7.1
+- **Fix:** an ender pearl landing in the highland after the fight no longer freezes the server.
+  - It used to trigger an endless teleport loop.
+  - Stray pearls are now removed when you leave the highland.
+
 ### New in 1.7.0
 - **The Hunt:** after phase III, a powered-up Arius chases you up the spiral mountain.
   - Each of his hits deals exactly three hearts, and ender pearls are blocked.

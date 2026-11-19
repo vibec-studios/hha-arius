@@ -40,8 +40,21 @@ object Encounters {
     /** Spieler, die gerade von uns in die Arena gebracht werden (kein Nachzügler). */
     val arriving = HashSet<UUID>()
 
+    /**
+     * Ankünfte von außen, erst am Tickende behandelt. Seit 1.7.1: Wer im Weltwechsel-Ereignis sofort zurückgeschickt
+     * wird, landet wieder in der Herkunftswelt, bevor Vanilla dort `teleportSpectatingPlayers` ausführt. Der Spieler
+     * „beobachtet“ sich selbst, wird erneut teleportiert, wieder zurückgeschickt … – eine Endlosschleife, die den
+     * Server einfriert (z. B. eine Enderperle, die nach dem Kampf im Hochland landet).
+     */
+    private val pendingArrivals = LinkedHashMap<UUID, Pair<ServerPlayerEntity, ServerWorld?>>()
+
     fun init() {
         ServerTickEvents.END_SERVER_TICK.register { server ->
+            if (pendingArrivals.isNotEmpty()) {
+                val due = pendingArrivals.values.toList()
+                pendingArrivals.clear()
+                for ((player, origin) in due) if (!player.isRemoved && !player.isDisconnected) onArrive(player, origin)
+            }
             Hold.tick(server)
             tickInboxes(server)
             for (fight in fights.values.toList()) fight.tick()
@@ -76,8 +89,13 @@ object Encounters {
             }
         }
         ServerEntityWorldChangeEvents.AFTER_PLAYER_CHANGE_WORLD.register { player, origin, destination ->
-            if (origin.registryKey == WORLD) fights.values.firstOrNull { it.world === origin && it.isParticipant(player) && !it.ended }?.onLeave(player)
-            if (destination.registryKey == WORLD && player.uuid !in arriving) onArrive(player, origin)
+            if (origin.registryKey == WORLD) {
+                fights.values.firstOrNull { it.world === origin && it.isParticipant(player) && !it.ended }?.onLeave(player)
+                // Enderperlen, die noch im Hochland fliegen, würden ihn später ungefragt zurückziehen.
+                discardPearlsIn(player, WORLD)
+            }
+            // Nie im Ereignis selbst teleportieren (siehe [pendingArrivals]).
+            if (destination.registryKey == WORLD && player.uuid !in arriving) pendingArrivals[player.uuid] = player to origin
         }
         // Die Arena ist kein Bauplatz: kein Abbauen, kein Platzieren, keine Eimer (außer im Kreativmodus).
         PlayerBlockBreakEvents.BEFORE.register { world, player, _, _, _ ->
@@ -121,6 +139,11 @@ object Encounters {
             AriusState.sendHome(player)
             player.sendMessage(Text.translatable("hha_arius.msg.sent_home").formatted(Formatting.GRAY), false)
         }
+    }
+
+    /** Entfernt die Enderperlen des Spielers, die in [world] unterwegs sind. */
+    fun discardPearlsIn(player: ServerPlayerEntity, world: RegistryKey<World>) {
+        for (pearl in player.enderPearls.toList()) if (pearl.entityWorld.registryKey == world) pearl.discard()
     }
 
     fun slotOf(x: Double): Int = floor((x + ArenaLayout.SLOT_SPACING / 2.0) / ArenaLayout.SLOT_SPACING).toInt()
