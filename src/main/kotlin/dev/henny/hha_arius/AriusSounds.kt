@@ -46,6 +46,13 @@ object AriusSounds {
 
     // Nivaris
     val NIVARIS_ROAR = register("nivaris.roar")
+    // Seit 1.8.0: tiefe Schichten aus Vanilla-Klängen (siehe EirholmFight.layers)
+    val NIVARIS_ROAR_BODY = register("nivaris.roar_body")
+    val NIVARIS_ROAR_LOW = register("nivaris.roar_low")
+    val NIVARIS_WING_BODY = register("nivaris.wing_body")
+    val NIVARIS_BREATH_BODY = register("nivaris.breath_body")
+    val NIVARIS_INHALE_BODY = register("nivaris.inhale_body")
+    val NIVARIS_HIT_BODY = register("nivaris.hit_body")
     val NIVARIS_INHALE = register("nivaris.inhale")
     val NIVARIS_BREATH = register("nivaris.breath")
     val NIVARIS_WING = register("nivaris.wing")

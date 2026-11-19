@@ -256,17 +256,19 @@ class EirholmFight(
     val arenaCenter: Vec3d
         get() = when {
             phase <= Phase.CUT -> abs(Vec3d.of(ArenaLayout.TEMPLE)).add(0.5, 0.0, 0.5)
-            phase <= Phase.COLLAPSE -> abs(Vec3d.of(ArenaLayout.PLATEAU)).add(0.5, 0.0, 0.5)
-            onSummit -> summit.add(0.0, 0.0, -14.0)
+            // Seit 1.8.0 kämpft Solvane in ihrem eigenen Horst im Westen (Crix: größere Arena für den Drachen).
+            phase <= Phase.COLLAPSE -> abs(Vec3d.of(ArenaLayout.AERIE)).add(0.5, 0.0, 0.5)
+            onSummit -> summit.add(0.0, 0.0, -19.0)
             else -> abs(Vec3d.of(ArenaLayout.VAULT)).add(0.5, 0.0, 0.5)
         }
 
     val arenaRadius: Double
         get() = when {
             phase <= Phase.CUT -> ArenaLayout.TEMPLE_R + 10.0 // offenes Klingengrab (seit 1.4.2)
-            phase <= Phase.COLLAPSE -> 100.0 // offenes Hochland ab dem Drachenkampf (seit 1.3.1)
+            phase == Phase.GLACIER -> ArenaLayout.AERIE_R - 3.0 // Drachenhorst (seit 1.8.0)
+            phase <= Phase.COLLAPSE -> 600.0 // Ritt auf Solvanes Rücken
             chasing -> 600.0
-            onSummit -> 10.0 // Gipfelschulter (Ring um das Horn, seit 1.7.0)
+            onSummit -> 12.0 // Gipfelschulter nördlich des Horns (seit 1.8.0 größer, Schulter r 34)
             else -> 70.0 // offenes Feld (seit 1.4.2)
         }
 
@@ -355,7 +357,7 @@ class EirholmFight(
         // Grundstimmung je Abschnitt; Szenen können danach eigene Stimmungen setzen.
         val mood = when (next) {
             Phase.INTRO, Phase.TEMPLE, Phase.CUT -> dev.henny.hha_arius.net.AtmosMode.CLEAR
-            Phase.GLACIER -> dev.henny.hha_arius.net.AtmosMode.SNOW
+            Phase.GLACIER -> dev.henny.hha_arius.net.AtmosMode.AERIE
             Phase.VAULT, Phase.FINALE -> dev.henny.hha_arius.net.AtmosMode.VAULT
             else -> -2
         }
@@ -512,7 +514,7 @@ class EirholmFight(
     }
 
     fun landingSpot(player: ServerPlayerEntity): Vec3d {
-        val list = if (phase >= Phase.VAULT) ArenaLayout.VAULT_LANDING else if (phase >= Phase.GLACIER) ArenaLayout.LANDING else listOf(ArenaLayout.ARRIVAL)
+        val list = if (phase >= Phase.VAULT) ArenaLayout.VAULT_LANDING else if (phase >= Phase.GLACIER) ArenaLayout.AERIE_LANDING else listOf(ArenaLayout.ARRIVAL)
         val i = fighters.keys.indexOf(player.uuid).coerceAtLeast(0)
         return abs(list[i % list.size])
     }
@@ -825,18 +827,45 @@ class EirholmFight(
         AriusNet.near(world, pos, FxS2C(kind.ordinal, pos.x, pos.y, pos.z, dir.x, dir.y, dir.z, a, b, life, e1?.id ?: -1, e2?.id ?: -1))
     }
 
+    /** Effekt an alle Zuschauer unabhängig von der Entfernung (Auren, lange Begleiteffekte). */
+    fun fxAll(kind: FxKind, pos: Vec3d, dir: Vec3d = Vec3d.ZERO, a: Float = 0f, b: Float = 0f, life: Int = 20, e1: Entity? = null, e2: Entity? = null) {
+        val payload = FxS2C(kind.ordinal, pos.x, pos.y, pos.z, dir.x, dir.y, dir.z, a, b, life, e1?.id ?: -1, e2?.id ?: -1)
+        for (p in audience()) AriusNet.send(p, payload)
+    }
+
     fun soundEvent(id: String): SoundEvent? = Registries.SOUND_EVENT.get(HhaArius.id(id))
 
     /** Kampfklang mit Telegraph-Budget (höchstens zwei je Tick). */
     fun sound(id: String, at: Vec3d, volume: Float = 2.5f, pitch: Float = 1f) {
         val event = soundEvent(id) ?: return
         calls.sound(event, at, volume, pitch)
+        layers(id, at, volume, pitch)
     }
 
     /** Klang außerhalb des Budgets (Szenen, Umgebung). */
     fun ambient(id: String, at: Vec3d, volume: Float = 3f, pitch: Float = 1f) {
         val event = soundEvent(id) ?: return
         world.playSound(null, at.x, at.y, at.z, event, SoundCategory.HOSTILE, volume, pitch)
+        layers(id, at, volume, pitch)
+    }
+
+    /**
+     * Seit 1.8.0 (Crix: „gib Solvane Sounds, wenn sie brüllt, ein richtiges Brüllen“): Drachenklänge bekommen tiefe
+     * Schichten aus Vanilla-Klängen (Enderdrache, Wärter, Verwüster, Brise), gemeinsam mit dem eigenen Klang abgespielt.
+     */
+    fun layers(id: String, at: Vec3d, volume: Float, pitch: Float) {
+        val extra = when (id) {
+            "nivaris.roar" -> listOf("nivaris.roar_body", "nivaris.roar_low")
+            "nivaris.wing" -> listOf("nivaris.wing_body")
+            "nivaris.breath" -> listOf("nivaris.breath_body")
+            "nivaris.inhale" -> listOf("nivaris.inhale_body")
+            "nivaris.land", "nivaris.crash", "nivaris.tail", "nivaris.claw" -> listOf("nivaris.hit_body")
+            else -> return
+        }
+        for (x in extra) {
+            val e = soundEvent(x) ?: continue
+            world.playSound(null, at.x, at.y, at.z, e, SoundCategory.HOSTILE, volume * 1.2f, pitch)
+        }
     }
 
     /** Laufende Kampfmusik (für Wiedereinsteiger). */
@@ -897,7 +926,7 @@ class EirholmFight(
         if (training == 0) {
             f.ko = true
             anyKo = true
-            val watch = abs(if (phase >= Phase.VAULT) ArenaLayout.WATCH_VAULT else ArenaLayout.WATCH_UPPER)
+            val watch = abs(if (phase >= Phase.VAULT) ArenaLayout.WATCH_VAULT else if (phase >= Phase.GLACIER) ArenaLayout.AERIE_WATCH else ArenaLayout.WATCH_UPPER)
             player.teleport(world, watch.x, watch.y, watch.z, emptySet(), player.yaw, player.pitch, false)
             player.onLanding()
             player.sendMessage(Text.translatable("hha_arius.msg.ko").formatted(Formatting.GRAY), false)
@@ -930,7 +959,7 @@ class EirholmFight(
         Hold.drop(player)
         if (phase == Phase.BUILD) return
         f.ko = true
-        val watch = abs(if (phase >= Phase.VAULT) ArenaLayout.WATCH_VAULT else ArenaLayout.WATCH_UPPER)
+        val watch = abs(if (phase >= Phase.VAULT) ArenaLayout.WATCH_VAULT else if (phase >= Phase.GLACIER) ArenaLayout.AERIE_WATCH else ArenaLayout.WATCH_UPPER)
         player.teleport(world, watch.x, watch.y, watch.z, emptySet(), player.yaw, player.pitch, false)
         player.sendMessage(Text.translatable("hha_arius.msg.latejoin").formatted(Formatting.AQUA), false)
         if (currentMusic.isNotEmpty()) AriusNet.send(player, MusicS2C(currentMusic, 20))

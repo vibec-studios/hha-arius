@@ -328,7 +328,42 @@ class CutPlaneFx(private val origin: Vec3d, private val vec: Vec3d, private val 
         span = if (horizontal) right else up
     }
 
+    /**
+     * Seit 1.8.0 (Crix, mit Bild einer riesigen Lichtklinge): Beim Loslassen wächst aus den Händen eine gewaltige Klinge
+     * aus Licht – breiter weißer Kern, blauer Saum, weicher Schein, Spitze –, schwingt in 5 Ticks durch die Schnittebene
+     * und hinterlässt eine leuchtende Sichel der überstrichenen Fläche; danach die feine Naht wie bisher.
+     */
+    private fun giantBlade(d: VfxDraw, t: Float) {
+        val len = vec.length()
+        val swing = (t / 5f).coerceIn(0f, 1f)
+        val ease = 1f - (1f - swing) * (1f - swing)
+        val a0 = Math.toRadians(80.0)
+        val a1 = Math.toRadians(-25.0)
+        val ang = a0 + (a1 - a0) * ease
+        val fade = if (t < 6f) 1f else (1f - (t - 6f) / 6f).coerceIn(0f, 1f)
+        if (fade <= 0f) return
+        val dir = fwd.multiply(kotlin.math.cos(ang)).add(span.multiply(kotlin.math.sin(ang))).normalize()
+        val width = fwd.multiply(-kotlin.math.sin(ang)).add(span.multiply(kotlin.math.cos(ang))).normalize()
+        val hilt = origin
+        val bodyEnd = hilt.add(dir.multiply(len * 0.86))
+        val tip = hilt.add(dir.multiply(len * 1.02))
+        val w = 0.32 + half * 0.22
+        // Klingenkörper in Lagen: Schein, Saum, Kern; Spitze als schmales Stück
+        d.band(VfxLayers.FLOW_ADD, hilt, tip, width, w * 2.6, withAlpha(0xFFBFE6FF.toInt(), 0.35f * fade), withAlpha(0xFFBFE6FF.toInt(), 0.18f * fade), uScale = 0.2f, uOffset = -t * 0.2f)
+        d.band(VfxLayers.GLOW_ADD, hilt, bodyEnd, width, w * 1.5, withAlpha(0xFF8FC8FF.toInt(), 0.55f * fade), withAlpha(0xFF6FB0FF.toInt(), 0.45f * fade))
+        d.band(VfxLayers.GLOW_ADD, hilt, bodyEnd, width, w, withAlpha(0xFFFFFFFF.toInt(), 0.95f * fade), withAlpha(0xFFF0F8FF.toInt(), 0.9f * fade))
+        d.band(VfxLayers.GLOW_ADD, bodyEnd, tip, width, w * 0.45, withAlpha(0xFFFFFFFF.toInt(), 0.9f * fade), withAlpha(0xFFFFFFFF.toInt(), 0.2f * fade))
+        d.billboard(VfxLayers.FLARE_ADD, tip, 1.6, withAlpha(0xFFFFFFFF.toInt(), 0.85f * fade))
+        d.billboard(VfxLayers.GLOW_ADD, hilt, 2.0, withAlpha(0xFFBFE6FF.toInt(), 0.6f * fade))
+        // Sichel der überstrichenen Fläche
+        if (ease > 0.02f) {
+            d.arc(VfxLayers.FLOW_ADD, hilt, fwd, span, len * 0.25, len * 1.02, a1.coerceAtLeast(ang), a0, withAlpha(0xFFFFFFFF.toInt(), 0f), withAlpha(0xFFE6F6FF.toInt(), 0.5f * fade), segments = 32, uTile = 2f, uOffset = -t * 0.3f)
+            d.arc(VfxLayers.GLOW_ADD, hilt, fwd, span, len * 0.94, len * 1.04, ang, a0, withAlpha(0xFF8FC8FF.toInt(), 0.2f * fade), withAlpha(0xFFFFFFFF.toInt(), 0.8f * fade), segments = 32)
+        }
+    }
+
     override fun render(d: VfxDraw, matrices: MatrixStack, t: Float) {
+        giantBlade(d, t)
         val end = origin.add(vec)
         val sheet = (1f - t / 7f).coerceIn(0f, 1f)
         if (sheet > 0f) d.band(VfxLayers.GLOW_ADD, origin, end, span, half, withAlpha(0xFFFFFFFF.toInt(), 0.55f * sheet), withAlpha(ArtColors.ICE, 0.25f * sheet))

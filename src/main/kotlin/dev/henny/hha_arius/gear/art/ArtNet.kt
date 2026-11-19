@@ -45,7 +45,10 @@ enum class ArtAction {
     ART_CANCEL,
 
     /** Maße der Yang-Brücke (seit 1.4.2); arg = Länge · 16 + Breite. */
-    BRIDGE_DIMS;
+    BRIDGE_DIMS,
+
+    /** Seit 1.8.0: Kombo wählen; arg = ComboStyle-Ordinal. */
+    COMBO_SELECT;
 
     companion object {
         fun of(raw: Int): ArtAction? = entries.getOrNull(raw)
@@ -137,6 +140,23 @@ data class ArtCutS2C(val positions: LongArray, val states: IntArray, val axis: I
     }
 }
 
+/**
+ * Seit 1.8.0: Kombo-Stand für das eigene HUD. [style] = gewählte Kombo, [progress] = getroffene Tasten der Folge,
+ * [chain] = Kettencode (siehe GauntletCombat), [move] = letzter Schlag (Move-Ordinal, −1 keiner), [finisher] = der
+ * letzte Schlag war ein Finisher.
+ */
+data class ComboS2C(val style: Int, val progress: Int, val chain: Int, val move: Int, val finisher: Boolean) : CustomPayload {
+    override fun getId(): CustomPayload.Id<out CustomPayload> = ID
+
+    companion object {
+        val ID = CustomPayload.Id<ComboS2C>(HhaArius.id("art_combo"))
+        val CODEC: PacketCodec<RegistryByteBuf, ComboS2C> = PacketCodec.of(
+            { v, buf -> buf.writeVarInt(v.style); buf.writeVarInt(v.progress); buf.writeVarInt(v.chain); buf.writeVarInt(v.move + 1); buf.writeBoolean(v.finisher) },
+            { buf -> ComboS2C(buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt() - 1, buf.readBoolean()) },
+        )
+    }
+}
+
 object ArtNet {
     private var registered = false
 
@@ -147,6 +167,7 @@ object ArtNet {
         PayloadTypeRegistry.playS2C().register(ArtAnimS2C.ID, ArtAnimS2C.CODEC)
         PayloadTypeRegistry.playS2C().register(ArtSelfS2C.ID, ArtSelfS2C.CODEC)
         PayloadTypeRegistry.playS2C().register(ArtCutS2C.ID, ArtCutS2C.CODEC)
+        PayloadTypeRegistry.playS2C().register(ComboS2C.ID, ComboS2C.CODEC)
     }
 
     /** Animation an den Spieler selbst und alle, die ihn sehen. */

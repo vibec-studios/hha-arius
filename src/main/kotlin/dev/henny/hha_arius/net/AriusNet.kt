@@ -56,6 +56,12 @@ object AtmosMode {
 
     /** Weißes Licht (Verwandlung, weißes Loch, Finale). */
     const val WHITE = 5
+
+    /** Seit 1.8.0: Drachenhorst – dunkler Sturmhimmel, Schneefahnen, Aura. */
+    const val AERIE = 6
+
+    /** Seit 1.8.0: Jagd – heftigster Schneesturm, Sicht nur ein paar Blöcke. */
+    const val WHITEOUT = 7
 }
 
 /** Wetter-/Lichtstimmung [mode] (siehe [AtmosMode]), Überblendung in [ticks]; mode < 0 = zurück auf Standard. */
@@ -256,6 +262,18 @@ enum class FxKind {
 
     /** Der gefrorene Stern (seit 1.7.0): pos = Ziel am Boden, a = Radius, b = Ticks bis zum Einschlag. */
     FROZEN_STAR,
+
+    /** Seit 1.8.0: Aura der Drachin, folgt e1 (Körper aus DragonHits) für life Ticks. */
+    DRAGON_AURA,
+
+    /** Seit 1.8.0: Hiebsichel; pos = Mitte, dir = Richtung, a = Reichweite, b = Neigung (0 waagerecht … 1 senkrecht). */
+    SLASH_ARC,
+
+    /** Seit 1.8.0: Zorn-Aura um e1 (Jagd). */
+    RAGE_AURA,
+
+    /** Seit 1.8.0: Windschritt-Nachbilder von pos nach dir (absolut). */
+    DASH_STREAK,
 }
 
 /**

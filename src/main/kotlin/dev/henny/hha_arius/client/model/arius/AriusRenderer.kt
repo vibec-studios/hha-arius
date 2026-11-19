@@ -137,7 +137,9 @@ class AriusRenderer(context: EntityRendererFactory.Context) :
     }
 
     override fun scale(state: AriusRenderState, matrices: MatrixStack) {
-        matrices.scale(SCALE, SCALE, SCALE)
+        // Seit 1.8.0 (Crix: „neben einem Spieler sieht er komisch aus, größer und breiter?“): etwa 2,15 Blöcke hoch
+        // und 12 % breiter als vorher – ein großer Krieger, aber noch ein Mensch.
+        matrices.scale(SCALE * WIDE, SCALE, SCALE * WIDE)
     }
 
     override fun canBeCulled(entity: AriusEntity): Boolean = false
@@ -146,7 +148,8 @@ class AriusRenderer(context: EntityRendererFactory.Context) :
 
     private companion object {
         /** Sohle bis Scheitel (Haarkappe) 62 Einheiten × 0,49 = 1,90 Blöcke; Haarspitzen ≈ 1,97, Trefferbox 1,95. */
-        const val SCALE = 0.49f
+        const val SCALE = 0.555f
+        const val WIDE = 1.12f
         const val FULL_BRIGHT = 0xF000F0
 
         fun tex(name: String): Identifier = HhaArius.id("textures/entity/$name.png")

@@ -101,6 +101,7 @@ object ArtClient {
         net.fabricmc.fabric.api.client.rendering.v1.BlockRenderLayerMap.putBlock(dev.henny.hha_arius.gear.art.Constructs.YANG_BRICKS, net.minecraft.client.render.BlockRenderLayer.TRANSLUCENT)
         net.fabricmc.fabric.api.client.rendering.v1.BlockRenderLayerMap.putBlock(dev.henny.hha_arius.gear.art.Constructs.YANG_WALL, net.minecraft.client.render.BlockRenderLayer.TRANSLUCENT)
 
+        ComboHud.init()
         ClientPlayNetworking.registerGlobalReceiver(ArtSelfS2C.ID) { p, _ ->
             val now = ArtAnims.ticks
             Spell.of(p.selected)?.let {
@@ -275,7 +276,8 @@ object ArtClient {
         modeDown = modeNow
         val techNow = tech.isPressed
         if (techNow && !techDown && inGame) {
-            if (gauntlets) client.setScreen(SpellWheelScreen(tech))
+            // Seit 1.8.0: im Nahkampfmodus öffnet die Technik-Taste die Kombo-Auswahl, im Magiemodus das Zauberrad.
+            if (gauntlets) client.setScreen(if (mode(player) == GauntletMode.MELEE) ComboScreen(tech) else SpellWheelScreen(tech))
             else if (solvane && !artHeld) {
                 send(ArtAction.ART_PRESS, if (player.isSneaking) 1 else 0)
                 artHeld = true
@@ -344,7 +346,7 @@ object ArtClient {
     private fun renderHud(context: DrawContext, tickDelta: Float) {
         val client = MinecraftClient.getInstance()
         val player = client.player ?: return
-        if (client.options.hudHidden || client.currentScreen is SpellWheelScreen) return
+        if (client.options.hudHidden || client.currentScreen is SpellWheelScreen || client.currentScreen is ComboScreen) return
         val cx = context.scaledWindowWidth / 2
         val cy = context.scaledWindowHeight / 2
         val anim = ArtAnims.get(player.id)
@@ -354,6 +356,7 @@ object ArtClient {
             val x = cx + 9
             val y = cy + 7
             context.drawGuiTexture(RenderPipelines.GUI_TEXTURED, icon(if (magic) "mode_magic" else "mode_melee"), x, y, 9, 9, 0xC0FFFFFF.toInt())
+            ComboHud.render(context, mode(player))
             if (magic) {
                 val left = cooldownLeft(selected)
                 val alpha = if (left > 0) 0x70FFFFFF else 0xD0FFFFFF.toInt()

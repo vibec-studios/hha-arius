@@ -5,7 +5,8 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "gear.LivingEntityFreezeMixin",
-    "gear.PowderSnowBlockMixin"
+    "gear.PowderSnowBlockMixin",
+    "boss.PlayerRideMixin"
   ],
   "client": [
     "gear.client.CapeFeatureArmorMixin",

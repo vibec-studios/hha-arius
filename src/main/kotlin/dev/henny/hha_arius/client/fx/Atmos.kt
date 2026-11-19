@@ -41,6 +41,8 @@ object Atmos {
         Mood(34f, 300f, 0xFFCADAEC.toInt(), 0xFF6F9BD6.toInt(), 1.05f, 0.6f, 0.8f, 0.25f), // REVEAL
         Mood(10f, 150f, 0xFFB7C7DB.toInt(), 0xFF7F9CC2.toInt(), 0.82f, 1.3f, 1.6f, 0.7f), // VAULT = Himmelsbalkon im Sturm
         Mood(8f, 150f, 0xFFF5F9FF.toInt(), 0xFFE8F1FF.toInt(), 1.2f, 0.55f, 0.6f, 0.3f), // WHITE
+        Mood(14f, 190f, 0xFFA9B9CF.toInt(), 0xFF4D6488.toInt(), 0.7f, 1.2f, 1.5f, 0.65f), // AERIE: dunkler Sturmhimmel
+        Mood(0f, 22f, 0xFFEEF3F9.toInt(), 0xFFDCE6F1.toInt(), 0.75f, 2.6f, 2.6f, 1.5f), // WHITEOUT: Jagd
     )
 
     private var from: Mood = MOODS[AtmosMode.CLEAR]
@@ -154,6 +156,76 @@ object Atmos {
         }
     }
 
+    /**
+     * Seit 1.8.0 (Crix: „die Arena und die unendliche Leere sollen sich lebendiger anfühlen“): ohne Zustand, nur aus
+     * Zeit und Kamera berechnet –
+     * * Polarlichter: drei lange, wehende Lichtvorhänge hoch am Himmel (im dichten Sturm kaum zu sehen),
+     * * treibende Eisfunken, die im Wind um die Kamera ziehen und funkeln,
+     * * Windschlieren dicht über dem Boden, die mit den Böen laufen,
+     * * ab und zu eine Sternschnuppe aus Frost.
+     */
+    private fun life(d: VfxDraw, m: Mood) {
+        val fx = AriusClientConfig.fx.coerceIn(0f, 1f)
+        if (fx <= 0f) return
+        val cam = d.cam
+        val time = age + d.tickDelta
+        val clear = (1f - (m.snow - 0.6f) / 1.6f).coerceIn(0.1f, 1f)
+        // Polarlichter
+        for (band in 0 until 3) {
+            val path = ArrayList<Vec3d>(32)
+            val baseA = band * 2.1 + 0.4
+            for (j in 0 until 32) {
+                val q = j / 31.0
+                val ang = baseA + (q - 0.5) * 1.6
+                val dist = 230.0 + 40.0 * sin(q * 5.0 + band)
+                val y = 120.0 + band * 18.0 + 10.0 * sin(q * 7.0 + time * 0.01 + band)
+                path.add(Vec3d(cam.x + cos(ang) * dist, cam.y + y, cam.z + sin(ang) * dist))
+            }
+            val col = when (band) { 0 -> 0xFF7FE8D0.toInt(); 1 -> 0xFF8FB8FF.toInt(); else -> 0xFFB79CFF.toInt() }
+            d.ribbon(VfxLayers.FLOW_ADD, path, { q -> 14.0 + 8.0 * sin(q * 9.0 + time * 0.02) }, { q -> withAlpha(col, (0.22f * clear * fx * sin(q * PI).toFloat()).coerceAtLeast(0f)) }, uScale = 0.05f, uOffset = -time * 0.004f)
+        }
+        // Treibende Eisfunken
+        val wx = cos(windAngle)
+        val wz = sin(windAngle)
+        val n = (36 * fx).toInt()
+        for (i in 0 until n) {
+            val seed = i * 12.9898
+            val phase = ((time * (0.004 + (i % 7) * 0.0007) + (seed % 1.0)) % 1.0)
+            val ox = ((sin(seed) * 43758.5453) % 1.0) * 24.0
+            val oz = ((sin(seed * 1.7) * 24634.6345) % 1.0) * 24.0
+            val p = Vec3d(cam.x + ox + wx * (phase - 0.5) * 30.0, cam.y - 2.0 + (i % 9) * 1.1 + sin(time * 0.05 + i) * 0.6, cam.z + oz + wz * (phase - 0.5) * 30.0)
+            val tw = (0.5 + 0.5 * sin(time * 0.3 + i * 1.7)).toFloat()
+            d.billboard(VfxLayers.FLARE_ADD, p, 0.07 + 0.06 * tw, withAlpha(0xFFDFF4FF.toInt(), 0.75f * tw * sin(phase * PI).toFloat()))
+        }
+        // Windschlieren über dem Boden
+        val world = MinecraftClient.getInstance().world ?: return
+        for (i in 0 until (6 * fx).toInt()) {
+            val k = ((time * 0.012 + i * 0.37) % 1.0)
+            val side = Vec3d(-wz, 0.0, wx)
+            val c0 = Vec3d(cam.x + side.x * (i - 3) * 6.0 - wx * 30.0 * (0.5 - k), cam.y, cam.z + side.z * (i - 3) * 6.0 - wz * 30.0 * (0.5 - k))
+            val top = world.getTopY(net.minecraft.world.Heightmap.Type.MOTION_BLOCKING, kotlin.math.floor(c0.x).toInt(), kotlin.math.floor(c0.z).toInt()).toDouble()
+            if (kotlin.math.abs(top - cam.y) > 12.0) continue
+            val a = Vec3d(c0.x, top + 0.3 + (i % 3) * 0.25, c0.z)
+            val b = a.add(wx * 7.0, 0.1 * sin(time * 0.1 + i), wz * 7.0)
+            d.band(VfxLayers.FLOW_ADD, a, b, VfxDrawUp, 0.18, withAlpha(0xFFFFFFFF.toInt(), 0f), withAlpha(0xFFFFFFFF.toInt(), 0.25f * sin(k * PI).toFloat()), uScale = 0.3f, uOffset = -time * 0.05f)
+        }
+        // Sternschnuppe aus Frost (etwa alle 15 s)
+        val cycle = (time / 300.0)
+        val ph = cycle - kotlin.math.floor(cycle)
+        if (ph < 0.06 && clear > 0.3f) {
+            val k = ph / 0.06
+            val seed = kotlin.math.floor(cycle)
+            val ang = seed * 2.39996
+            val from = Vec3d(cam.x + cos(ang) * 160.0, cam.y + 110.0, cam.z + sin(ang) * 160.0)
+            val dir = Vec3d(-sin(ang), -0.35, cos(ang)).normalize()
+            val head = from.add(dir.multiply(k * 140.0))
+            d.band(VfxLayers.GLOW_ADD, head.subtract(dir.multiply(24.0)), head, d.camUp, 0.5, withAlpha(0xFFBFE8FF.toInt(), 0f), withAlpha(0xFFFFFFFF.toInt(), 0.9f * clear * (1f - k.toFloat())))
+            d.billboard(VfxLayers.FLARE_ADD, head, 2.5, withAlpha(0xFFFFFFFF.toInt(), 0.9f * clear * (1f - k.toFloat())))
+        }
+    }
+
+    private val VfxDrawUp = Vec3d(0.0, 1.0, 0.0)
+
     /** Frostrand im HUD (nur im Heiligtum). */
     fun renderHud(ctx: net.minecraft.client.gui.DrawContext) {
         if (!active || !inEirholm()) return
@@ -165,6 +237,7 @@ object Atmos {
         if (!active || !inEirholm()) return
         val m = current()
         SnowStorm.render(d, m.snow)
+        life(d, m)
         for (v in veils) {
             val t = (v.age + d.tickDelta) / v.life
             val k = (sin(t * PI) * m.veil * 0.22).toFloat().coerceIn(0f, 0.3f)

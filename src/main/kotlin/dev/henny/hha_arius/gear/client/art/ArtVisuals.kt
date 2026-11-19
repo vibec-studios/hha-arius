@@ -289,6 +289,7 @@ internal object ArtVisuals {
             when (s.anim) {
                 Anim.SHIELD -> if (fx > 0f) shield(d, p, a, td, fx, own)
                 Anim.GLIDE -> if (fx > 0f) glide(d, p, a, td, fx)
+                Anim.CAST_CHARGE, Anim.CAST_TAP, Anim.CAST_RELEASE -> if (fx > 0f) castSigil(d, p, s, a, td, fx, own)
                 Anim.ART_CHARGE -> {
                     chargeAge[p.id] = a
                     shots.remove(p.id)
@@ -346,6 +347,50 @@ internal object ArtVisuals {
     }
 
     /** Lichtgleiter: helle Scheibe unter den Füßen. */
+    /**
+     * Zaubersiegel (seit 1.8.0, Crix: „Effekte und Casting-Animation der Handschuh-Zauber besser“): Beim Aufladen dreht
+     * sich unter dem Wirker ein Runenkreis in der Farbe der Schule, vor der Brust wächst ein senkrechtes Siegel, Funken
+     * steigen spiralig auf; beim Wirken (Tippen, Freigabe) springt das Siegel nach vorn und zerspringt in einen Ring.
+     */
+    private fun castSigil(d: VfxDraw, p: PlayerEntity, s: ArtAnims.State, a: Float, td: Float, fx: Float, own: Boolean) {
+        val school = School.entries.getOrElse(ArtParam.school(s.param)) { School.WIND }
+        val color = GauntletLook.schoolColor(school)
+        val core = GauntletLook.schoolCore(school)
+        val base = p.getLerpedPos(td)
+        val look = p.getRotationVec(td)
+        val flat = Vec3d(look.x, 0.0, look.z).let { if (it.lengthSquared() < 1e-6) Z else it.normalize() }
+        val side = Vec3d(-flat.z, 0.0, flat.x)
+        val up = side.crossProduct(look).normalize().multiply(-1.0)
+        val time = ArtAnims.ticks + td
+        when (s.anim) {
+            Anim.CAST_CHARGE -> {
+                val c = ArtParam.castCharge(s.param, a)
+                val k = (0.3f + 0.7f * c) * fx
+                d.disc(VfxLayers.RUNE_ADD, base.add(0.0, 0.05, 0.0), X, Z, 0.9 + 0.7 * c, withAlpha(color, 0.65f * k), time * 0.05)
+                d.ring(VfxLayers.GLOW_ADD, base.add(0.0, 0.06, 0.0), X, Z, 1.0 + 0.7 * c, 1.12 + 0.7 * c, withAlpha(core, 0f), withAlpha(core, 0.7f * k), segments = 40)
+                if (!own) {
+                    val chest = base.add(0.0, 1.25, 0.0).add(look.multiply(0.9))
+                    d.disc(VfxLayers.RUNE_ADD, chest, side, up, 0.25 + 0.45 * c, withAlpha(core, 0.7f * k), -time * 0.08)
+                }
+                for (i in 0 until 6) {
+                    val ang = time * 0.15 + i * PI / 3
+                    val h = ((time * 0.04 + i / 6.0) % 1.0) * 2.0
+                    val r = 0.7 + 0.2 * sin(time * 0.2 + i)
+                    d.billboard(VfxLayers.FLARE_ADD, base.add(cos(ang) * r, h, sin(ang) * r), 0.08 + 0.06 * c, withAlpha(core, 0.8f * k * (1f - (h / 2.0).toFloat())))
+                }
+            }
+            else -> {
+                val dur = if (s.anim == Anim.CAST_TAP) ArtTimings.CAST_TAP.toFloat() else ArtTimings.CAST_RELEASE.toFloat()
+                val u = (a / dur).coerceIn(0f, 1f)
+                val k = (1f - u) * fx
+                val at = base.add(0.0, 1.25, 0.0).add(look.multiply(1.0 + 1.6 * u))
+                d.disc(VfxLayers.RUNE_ADD, at, side, up, 0.35 + 0.9 * u, withAlpha(core, 0.8f * k), time * 0.1)
+                d.ring(VfxLayers.GLOW_ADD, at, side, up, 0.3 + 1.4 * u, 0.42 + 1.6 * u, withAlpha(color, 0.7f * k), withAlpha(color, 0f), segments = 32)
+                d.billboard(VfxLayers.FLARE_ADD, at, 0.5 * (1.0 - u) + 0.1, withAlpha(0xFFFFFFFF.toInt(), 0.8f * k))
+            }
+        }
+    }
+
     private fun glide(d: VfxDraw, p: PlayerEntity, a: Float, td: Float, fx: Float) {
         val k = easeOut(a / 4f) * fx
         val c = p.getLerpedPos(td).add(0.0, 0.04, 0.0)

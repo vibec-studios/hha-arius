@@ -60,7 +60,7 @@ object HhaArius : ModInitializer {
 
 object AriusEntities {
 
-    val ARIUS: EntityType<AriusEntity> = register("arius", 0.7f, 1.95f, ::AriusEntity)
+    val ARIUS: EntityType<AriusEntity> = register("arius", 0.85f, 2.2f, ::AriusEntity)
     val NIVARIS: EntityType<NivarisEntity> = register("nivaris", 4.5f, 3.6f, ::NivarisEntity)
     val NIVARIS_HEAD: EntityType<dev.henny.hha_arius.boss.NivarisHeadEntity> = register("nivaris_head", 1.9f, 1.9f, ::NivarisHeadEntity)
 

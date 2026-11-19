@@ -36,6 +36,9 @@ abstract class AriusFx(val life: Int) {
 
     protected open fun tick(world: ClientWorld) {}
 
+    /** Lange Begleiteffekte (Auren) werden bei vollem Speicher nicht als Erste verdrängt. */
+    open val persistent: Boolean get() = false
+
     /** [t] = Alter inkl. Teil-Tick. */
     abstract fun render(d: VfxDraw, matrices: MatrixStack, t: Float)
 
@@ -81,7 +84,11 @@ abstract class AriusFx(val life: Int) {
                 FxKind.DRAGON_TAIL -> e1?.let { DragonTailFx(it, p.b.toDouble(), p.a.toDouble(), p.life) }
                 FxKind.ICE_ARMOR -> e1?.let { IceArmorFx(it, p.life) }
                 FxKind.GIANT_BLADE -> e1?.let { GiantBladeFx(it, p.a.toDouble(), p.b.toInt(), p.life) }
-                FxKind.FROZEN_STAR -> FrozenStarFx(pos, p.a.toDouble(), p.b.toInt(), p.life)
+                FxKind.FROZEN_STAR -> MoonFx(pos, p.a.toDouble(), p.b.toInt(), p.life)
+                FxKind.DRAGON_AURA -> e1?.let { DragonAuraFx(it, p.life) }
+                FxKind.SLASH_ARC -> SlashArcFx(pos, dir, p.a.toDouble(), p.b.toDouble(), p.life)
+                FxKind.RAGE_AURA -> e1?.let { RageAuraFx(it, p.life) }
+                FxKind.DASH_STREAK -> DashStreakFx(pos, dir, p.life)
                 FxKind.CUT_PLANE -> CutPlaneFx(pos, dir, p.a.toDouble(), p.b >= 0.5f, p.life)
                 FxKind.PULL -> e1?.let { PullFx(it, p.a.toDouble(), p.life) }
                 FxKind.GALE -> GaleFx(pos, dir, p.a, p.life)

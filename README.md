@@ -71,6 +71,42 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.8.0
+- **Bigger Arius:** taller and broader, with a blockier head. Phase I lasts longer and has four new attacks.
+- **The Aerie:** Solvane fights in her own arena in the west.
+  - A rock basin with ancient dragon ribs and crystal pillars.
+  - She flies everyone there after the entrance scene.
+  - She has a glowing aura, real roars and four new attacks.
+- **The ride:** between phases II and III you ride on Solvane's back.
+  - Three hold-on QTEs; failing makes you slip, failing twice makes you fall.
+  - She flies along the mountain and through the storm to the field far away.
+- **Duo attacks:** Dragon Ride and Cross Cut.
+- **The Heir's Wrath:** the hunt was rebuilt.
+  - It opens with a rage scene and a whiteout.
+  - Five attack types, and Solvane strafes the path.
+  - The storm keeps you on the spiral path.
+- **The mountain:**
+  - side peaks with tunnels and ravines with bridges;
+  - a crown of ice spires and a bigger summit arena;
+  - a crystal horn.
+- **Visuals:**
+  - the Frozen Star is now a moon;
+  - the White Hole was reworked;
+  - new slash arcs and afterimages;
+  - the Cut scene chases the seam to the mountain;
+  - auroras and drifting sparks in the highland.
+- **No more ice walls:** breath and frost walls leave small ice spikes instead.
+- **Readable subtitles:** they now show in cutscenes too, with a typewriter effect and enough time to read.
+- **Gauntlets:**
+  - a real fighting stance, a kick chain, knee and leg sweep;
+  - selectable combos with key prompts and finishers;
+  - spell sigils when casting;
+  - the potions moved to a bar above the wheel and use vanilla durations.
+- **Solvane's active:** the Clear Cut swings a giant blade of light.
+- **Dragon fixes:**
+  - no more stutter;
+  - Dragon Breath and Dragon Tail got rune portals and frost spirals.
+
 ### New in 1.7.1
 - **Fix:** an ender pearl landing in the highland after the fight no longer freezes the server.
   - It used to trigger an endless teleport loop.

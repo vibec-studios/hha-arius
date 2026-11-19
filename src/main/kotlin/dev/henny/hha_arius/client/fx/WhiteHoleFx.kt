@@ -221,41 +221,51 @@ class WhiteHoleFx(val center: Vec3d, private val radius: Double, private var pul
             // gekippte, wolkig-weiße Akkretionsscheibe, die weit zu beiden Seiten ausläuft; funkelnde Sterne darum.
             // Die Scheibe ist zur Kamera ausgerichtet (fast von der Kante, leicht gekippt und gedreht), damit das Bild aus
             // jeder Richtung so aussieht.
-            val camF = d.camForward
-            val tilt = Math.toRadians(14.0)
-            val roll = Math.toRadians(-18.0)
-            val upR = d.camUp.multiply(cos(roll)).add(d.camRight.multiply(sin(roll)))
-            val rightR = d.camRight.multiply(cos(roll)).subtract(d.camUp.multiply(sin(roll)))
-            val dn = upR.multiply(cos(tilt)).subtract(camF.multiply(sin(tilt))).normalize()
-            val du = rightR
-            val dv = dn.crossProduct(du).normalize()
+            // Seit 1.8.0 (Crix: „das weiße Loch ist irgendwie noch komisch“): Die Scheibe hängt jetzt fest im Raum (langsam
+            // taumelnde Achse) statt sich mit der Kamera zu drehen, der dunkle Schattenring ist einem kühlen blauen Saum
+            // gewichen, drei Lichtarme winden sich spiralig nach außen, an den Polen schießen Lichtstrahlen; nur der dünne
+            // Photonenring zeigt zur Kamera.
+            val du = u
+            val dv = v
             val R = core * 2.2
-            // Akkretionsscheibe: weit, wolkig, innen hell, außen bläulich
-            val diskR = radius * 1.9 + R * 2.0
-            for (bnd in 0 until 10) {
-                val f = bnd / 9f
-                val r0 = R * 1.05 + (diskR - R) * f
-                val r1 = r0 + (diskR - R) / 10.0 * 1.1
-                val col = dev.henny.hha.client.vfx.lerpColor(0xFFFFFFFF.toInt(), 0xFFAFC8E8.toInt(), f)
-                val a = (1f - f * 0.75f) * 0.55f * k
-                d.ring(VfxLayers.FLOW_ADD, center, du, dv, r0, r1, withAlpha(col, a), withAlpha(col, a * 0.5f), segments = 96,
-                    uTile = 5f + bnd, uOffset = -time * (0.03f + 0.006f * bnd))
+            val diskR = radius * 1.6 + R * 2.0
+            for (bnd in 0 until 8) {
+                val f = bnd / 7f
+                val r0 = R * 1.3 + (diskR - R) * f
+                val r1 = r0 + (diskR - R) / 8.0 * 1.15
+                val col = dev.henny.hha.client.vfx.lerpColor(0xFFFFFFFF.toInt(), 0xFF9FC4F0.toInt(), f)
+                val a = (1f - f * 0.8f) * 0.5f * k
+                d.ring(VfxLayers.FLOW_ADD, center, du, dv, r0, r1, withAlpha(col, a), withAlpha(col, a * 0.4f), segments = 96,
+                    uTile = 4f + bnd, uOffset = -time * (0.04f + 0.008f * bnd))
             }
-            // Wolkige Schwaden in der Scheibe
-            for (j in 0 until 48) {
+            // Drei Lichtarme, spiralig nach außen
+            for (arm in 0 until 3) {
+                val path = ArrayList<Vec3d>(28)
+                for (j in 0 until 28) {
+                    val f = j / 27.0
+                    val rr = R * 1.2 + f * (diskR - R * 1.2)
+                    val ang = arm * 2.0944 + f * 4.2 - time * 0.06
+                    path.add(center.add(du.multiply(cos(ang) * rr)).add(dv.multiply(sin(ang) * rr)))
+                }
+                d.ribbon(VfxLayers.GLOW_ADD, path, { f -> 0.35 * (1.0 - f * 0.6) }, { f -> withAlpha(0xFFFFF4D6.toInt(), (0.8f - f * 0.75f) * k) }, uScale = 1f, uOffset = 0f)
+            }
+            // Wenige weiche Schwaden in der Scheibe
+            for (j in 0 until 18) {
                 val f = ((j * 0.618) % 1.0)
-                val ang = j * 2.39996 - time * 0.02 * (1.5 - f)
-                val rr = R * 1.2 + f * (diskR - R)
+                val ang = j * 2.39996 - time * 0.03 * (1.5 - f)
+                val rr = R * 1.4 + f * (diskR - R)
                 val pos = center.add(du.multiply(cos(ang) * rr)).add(dv.multiply(sin(ang) * rr))
-                d.billboard(VfxLayers.CLOUD_ALPHA, pos, 1.2 + f * 2.8, withAlpha(dev.henny.hha.client.vfx.lerpColor(0xFFFFFFFF.toInt(), 0xFFC8DAF0.toInt(), f.toFloat()), (0.55f - f.toFloat() * 0.35f) * k), (ang * 57.0) % 360.0)
+                d.billboard(VfxLayers.CLOUD_ALPHA, pos, 1.0 + f * 2.0, withAlpha(0xFFF4F8FF.toInt(), (0.4f - f.toFloat() * 0.3f) * k), (ang * 57.0) % 360.0)
             }
-            // Dunkler Schattenring direkt um die Scheibe, dann der dicke helle Lichtring
-            d.ring(VfxLayers.SMOKE_ALPHA, center, d.camRight, d.camUp, R * 0.98, R * 1.22, withAlpha(0xFF1E232E.toInt(), 0.85f * k), withAlpha(0xFF3A4252.toInt(), 0.6f * k), segments = 72)
-            d.ring(VfxLayers.GLOW_ADD, center, d.camRight, d.camUp, R * 1.22, R * 1.75, withAlpha(0xFFFFFFFF.toInt(), 0.95f * k), withAlpha(0xFFFFFFFF.toInt(), 0f), segments = 72)
-            d.ring(VfxLayers.FLOW_ADD, center, d.camRight, d.camUp, R * 1.2, R * 1.6, withAlpha(0xFFFFFFFF.toInt(), 0.6f * k), withAlpha(0xFFE8F2FF.toInt(), 0.2f * k), segments = 72, uTile = 6f, uOffset = time * 0.04f)
-            // Vorderer Scheibenrand läuft über die untere Hälfte der Kugel (wie im Bild)
-            d.arc(VfxLayers.GLOW_ADD, center.subtract(camF.multiply(R * 0.2)), du, dv, R * 1.05, R * 1.6, Math.PI * 0.05, Math.PI * 0.95,
-                withAlpha(0xFFFFFFFF.toInt(), 0.7f * k), withAlpha(0xFFFFFFFF.toInt(), 0.1f * k), segments = 40)
+            // Polstrahlen entlang der Achse
+            for (sgn in intArrayOf(1, -1)) {
+                val tip = center.add(nrm.multiply(sgn * radius * 1.4))
+                d.band(VfxLayers.FLOW_ADD, center, tip, d.camRight, R * 0.35, withAlpha(0xFFFFFFFF.toInt(), 0.6f * k), withAlpha(0xFFBFE6FF.toInt(), 0f), uScale = 0.4f, uOffset = -time * 0.2f)
+                d.band(VfxLayers.GLOW_ADD, center, center.add(nrm.multiply(sgn * radius * 0.8)), d.camRight, R * 0.12, withAlpha(0xFFFFFFFF.toInt(), 0.9f * k), withAlpha(0xFFFFFFFF.toInt(), 0f))
+            }
+            // Kühler Saum und Photonenring (zur Kamera)
+            d.ring(VfxLayers.GLOW_ADD, center, d.camRight, d.camUp, R * 0.98, R * 1.3, withAlpha(0xFF6FA8E8.toInt(), 0.35f * k), withAlpha(0xFF6FA8E8.toInt(), 0f), segments = 72)
+            d.ring(VfxLayers.GLOW_ADD, center, d.camRight, d.camUp, R * 1.18, R * 1.32, withAlpha(0xFFFFFFFF.toInt(), 0.95f * k), withAlpha(0xFFFFFFFF.toInt(), 0.3f * k), segments = 72)
             // Lichtfesseln zu Wesen in der Nähe (nicht zum eigenen Spieler): geschwungene Lichtbänder
             val world = MinecraftClient.getInstance().world
             if (world != null && age < pullTicks) {

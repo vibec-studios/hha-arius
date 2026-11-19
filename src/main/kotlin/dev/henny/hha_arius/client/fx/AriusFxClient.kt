@@ -44,7 +44,10 @@ object AriusFxClient {
         ClientPlayNetworking.registerGlobalReceiver(FxS2C.ID) { p, ctx ->
             val world = ctx.client().world ?: return@registerGlobalReceiver
             val fx = AriusFx.create(p, world) ?: return@registerGlobalReceiver
-            if (effects.size >= MAX_EFFECTS) effects.removeAt(0)
+            if (effects.size >= MAX_EFFECTS) {
+                val i = effects.indexOfFirst { !it.persistent }
+                effects.removeAt(if (i >= 0) i else 0)
+            }
             effects.add(fx)
         }
         ClientTickEvents.END_CLIENT_TICK.register { client ->

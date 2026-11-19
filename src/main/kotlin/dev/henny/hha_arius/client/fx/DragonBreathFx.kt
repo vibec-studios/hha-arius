@@ -97,8 +97,17 @@ class DragonBreathFx(private val caster: Entity, private val range: Double, life
         val hl = f.negate().crossProduct(hu)
         val y = hu.negate()
         val z = f.negate()
-        val joint = headJoint(td)
+        // Seit 1.8.0 (Crix: Atem und Drachenkopf schöner): Der Kopf taucht aus einem Runentor hinter dem Wirker auf,
+        // schiebt sich vor und zuckt beim Ausstoß; drei Halsglieder folgen ihm aus dem Tor, ein Lichtsaum umgibt ihn.
+        val now = (MinecraftClient.getInstance().world?.time ?: 0L).toDouble()
+        val emerge = (1f - alpha).toDouble()
+        val recoil = if (jaw > 0.9f) 0.18 * sin(now * 1.7) else 0.0
+        val joint = headJoint(td).subtract(f.multiply(emerge * 1.4 - recoil))
         val cam = d.cam
+        val portal = joint.subtract(f.multiply(2.2))
+        d.disc(VfxLayers.RUNE_ADD, portal, hl, hu, 1.6 + 0.4 * alpha, withAlpha(0xFF9FD8FF.toInt(), 0.7f * alpha), now * 0.04)
+        d.billboard(VfxLayers.GLOW_ADD, portal, 3.2, withAlpha(0xFFBFE6FF.toInt(), 0.3f * alpha))
+        renderNeck(d, matrices, joint, portal, alpha)
         matrices.push()
         matrices.translate(joint.x - cam.x, joint.y - cam.y, joint.z - cam.z)
         m3.set(hl.x.toFloat(), hl.y.toFloat(), hl.z.toFloat(), y.x.toFloat(), y.y.toFloat(), y.z.toFloat(), z.x.toFloat(), z.y.toFloat(), z.z.toFloat())
@@ -111,12 +120,45 @@ class DragonBreathFx(private val caster: Entity, private val range: Double, life
         val ghost = consumers.getBuffer(RenderLayers.eyes(TEXTURE))
         val col = withAlpha(lerpColor(0xFF9FD8FF.toInt(), 0xFFFFFFFF.toInt(), 0.35f), (if (firstPerson()) 0.4f else 0.75f) * alpha)
         model.head.render(matrices, ghost, LightmapTextureManager.MAX_LIGHT_COORDINATE, OverlayTexture.DEFAULT_UV, col)
+        // Lichtsaum: derselbe Kopf etwas größer, schwach und blau
+        matrices.push()
+        matrices.scale(1.07f, 1.07f, 1.07f)
+        model.head.render(matrices, ghost, LightmapTextureManager.MAX_LIGHT_COORDINATE, OverlayTexture.DEFAULT_UV, withAlpha(0xFF6FB0FF.toInt(), 0.22f * alpha))
+        matrices.pop()
         val eyes = consumers.getBuffer(RenderLayers.eyes(EYES))
         model.head.render(matrices, eyes, LightmapTextureManager.MAX_LIGHT_COORDINATE, OverlayTexture.DEFAULT_UV, withAlpha(0xFFFFFFFF.toInt(), alpha))
         model.openJaw(0f)
         matrices.pop()
         // Lichtschein um den Kopf und Funken an den Hornspitzen.
         d.billboard(VfxLayers.GLOW_ADD, joint.add(f.multiply(HEAD_LEN * 0.5)), 2.6, withAlpha(0xFFBFE6FF.toInt(), 0.35f * alpha))
+    }
+
+    /** Drei Halsglieder vom Runentor bis zum Kopf (Geisterlicht wie der Kopf). */
+    private fun renderNeck(d: VfxDraw, matrices: MatrixStack, joint: Vec3d, portal: Vec3d, alpha: Float) {
+        val model = model() ?: return
+        val buf = d.consumers.getBuffer(RenderLayers.eyes(TEXTURE))
+        val col = withAlpha(0xFFBFE6FF.toInt(), (if (firstPerson()) 0.25f else 0.6f) * alpha)
+        val cam = d.cam
+        val n = 3
+        for (k in 0 until n) {
+            val a = joint.lerp(portal, k / n.toDouble()).add(0.0, -0.15 * k, 0.0)
+            val b = joint.lerp(portal, (k + 1) / n.toDouble()).add(0.0, -0.15 * (k + 1), 0.0)
+            val dir = b.subtract(a)
+            val len = dir.length()
+            if (len < 1e-4) continue
+            val bz = dir.multiply(1.0 / len)
+            var u = UP.subtract(bz.multiply(UP.dotProduct(bz)))
+            u = if (u.lengthSquared() < 1e-6) X else u.normalize()
+            val l = bz.crossProduct(u)
+            matrices.push()
+            matrices.translate(a.x - cam.x, a.y - cam.y, a.z - cam.z)
+            m3.set(l.x.toFloat(), l.y.toFloat(), l.z.toFloat(), (-u.x).toFloat(), (-u.y).toFloat(), (-u.z).toFloat(), bz.x.toFloat(), bz.y.toFloat(), bz.z.toFloat())
+            matrices.multiply(rot.setFromNormalized(m3))
+            val g = NivarisShape.SCALE * HEAD_SCALE * NivarisShape.taper(k) * 0.85f
+            matrices.scale(g, g, NivarisShape.SCALE * HEAD_SCALE * (len / NivarisShape.SEGMENT).toFloat() * 1.05f)
+            model.glied(k).render(matrices, buf, LightmapTextureManager.MAX_LIGHT_COORDINATE, OverlayTexture.DEFAULT_UV, col)
+            matrices.pop()
+        }
     }
 
     // --- Atem ----------------------------------------------------------------------------------------------------------
@@ -170,6 +212,25 @@ class DragonBreathFx(private val caster: Entity, private val range: Double, life
             d.billboard(VfxLayers.FLARE_ADD, m, 1.4 + 0.2 * sin(t * 1.3), withAlpha(0xFFFFFFFF.toInt(), 0.95f * k))
             d.billboard(VfxLayers.GLOW_ADD, m.add(f.multiply(1.2)), 2.4, withAlpha(0xFF9FD8FF.toInt(), 0.5f * k))
             d.band(VfxLayers.FLOW_ADD, m, m.add(f.multiply(range * 0.8)), d.camUp, 0.9, withAlpha(0xFFFFFFFF.toInt(), 0.55f * k), withAlpha(0xFFB8E8FF.toInt(), 0f), uScale = 0.25f, uOffset = -t * 0.12f)
+            // Seit 1.8.0: zwei Frostspiralen winden sich um den Strahl, Strahlenkranz am Maul, Eissplitter fliegen mit.
+            val side = f.crossProduct(UP).let { if (it.lengthSquared() < 1e-4) X else it.normalize() }
+            val upv = side.crossProduct(f).normalize()
+            for (s in 0 until 2) {
+                val path = ArrayList<Vec3d>(24)
+                for (j in 0 until 24) {
+                    val q = j / 23.0
+                    val rr = 0.3 + q * range * 0.18
+                    val ang = q * 9.0 - t * 0.5 + s * kotlin.math.PI
+                    path.add(m.add(f.multiply(q * range * 0.85)).add(side.multiply(cos(ang) * rr)).add(upv.multiply(sin(ang) * rr)))
+                }
+                d.ribbon(VfxLayers.GLOW_ADD, path, { q -> 0.08 + 0.1 * q }, { q -> withAlpha(0xFFE6F6FF.toInt(), 0.7f * k * (1f - q)) }, uScale = 1f, uOffset = 0f)
+            }
+            d.billboard(VfxLayers.RAYS_ADD, m, 3.2, withAlpha(0xFFBFE6FF.toInt(), 0.45f * k), t * 2.0)
+            for (j in 0 until 8) {
+                val q = ((t * 0.07 + j / 8.0) % 1.0)
+                val p = m.add(f.multiply(q * range * 0.9)).add(side.multiply(sin(j * 2.3 + t * 0.2) * q * 2.0)).add(upv.multiply(cos(j * 1.7) * q * 1.4))
+                d.box(VfxLayers.SHARD_ALPHA, p, side.multiply(0.14), upv.multiply(0.22), f.multiply(0.14), withAlpha(0xFFDDF2FF.toInt(), 0.8f * k * (1f - q.toFloat())))
+            }
         }
     }
 

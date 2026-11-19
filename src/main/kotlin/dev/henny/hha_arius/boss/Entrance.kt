@@ -277,6 +277,7 @@ internal object Entrance {
         val far = f.audience().maxOfOrNull { sqrt(it.squaredDistanceTo(at)) } ?: 0.0
         val v = max(volume.toDouble(), far / 15.0 + 0.5).toFloat()
         f.world.playSound(null, at.x, at.y, at.z, event, SoundCategory.HOSTILE, v, pitch)
+        f.layers(id, at, v, pitch)
     }
 
     private fun fx(f: EirholmFight, kind: FxKind, pos: Vec3d, a: Float, life: Int) {

@@ -550,7 +550,7 @@ class NivarisBody {
         val p = s.p
         val mode = e.mode
         val world = e.entityWorld
-        val base = Vec(s.x, s.y, s.z)
+        val base = smoothed(Vec(s.x, s.y, s.z), dt)
         val slot = Math.floorDiv(Math.round(s.x).toInt() + ArenaLayout.SLOT_SPACING / 2, ArenaLayout.SLOT_SPACING)
         val origin = ArenaLayout.origin(slot)
         val o = Vec(origin.x.toDouble(), origin.y.toDouble(), origin.z.toDouble())
@@ -747,6 +747,34 @@ class NivarisBody {
         val hl = headFwd.negate().crossProduct(hu)
         put(s.headFrame, 0, hl, hu.negate(), headFwd.negate())
         s.bodyReady = true
+    }
+
+    private var smPos: Vec? = null
+    private var smVel = Vec.ZERO
+    private var lastTarget: Vec? = null
+
+    /**
+     * Seit 1.8.0 (Crix: „der Drache fliegt immer noch in 16 fps“): Der Server setzt die Drachin jeden Tick per Position;
+     * läuft er unter 20 TPS oder kommen Pakete gebündelt, steht sie im Client einen Tick still und springt dann doppelt.
+     * Hier folgt eine geglättete Position mit geschätzter Geschwindigkeit dem echten Punkt (kritisch gedämpft), so
+     * fließt der Körper auch bei ungleichmäßigen Updates. Große Sprünge (Teleport) werden direkt übernommen.
+     */
+    private fun smoothed(target: Vec, dt: Float): Vec {
+        val prev = smPos
+        val lt = lastTarget
+        lastTarget = target
+        if (prev == null || lt == null || prev.squaredDistanceTo(target) > 14.0 * 14.0) {
+            smPos = target
+            smVel = Vec.ZERO
+            return target
+        }
+        if (dt <= 1e-4f) return prev
+        val obs = target.subtract(lt).multiply(1.0 / dt)
+        smVel = smVel.lerp(obs, 1.0 - kotlin.math.exp(-dt * 0.3))
+        val predicted = prev.add(smVel.multiply(dt.toDouble()))
+        val next = predicted.lerp(target, 1.0 - kotlin.math.exp(-dt * 0.45))
+        smPos = next
+        return next
     }
 
     private fun startFade(now: Float) {

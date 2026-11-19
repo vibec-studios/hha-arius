@@ -1,5 +1,6 @@
 package dev.henny.hha_arius.client.fx
 
+import dev.henny.hha.client.cine.CinePlayer
 import dev.henny.hha_arius.HhaArius
 import dev.henny.hha_arius.net.LineS2C
 import net.minecraft.client.MinecraftClient
@@ -11,8 +12,15 @@ import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 
 /**
- * Untertitel und Szenentexte (docs/STIMME.md): unten mittig über der Hotbar, immer sichtbar, auch ohne Ton. Zu jeder
- * Arius-Zeile wird, falls vorhanden, die Stimme `hha_arius:voice.<de|en>.<id>` gespielt.
+ * Untertitel und Szenentexte (docs/STIMME.md). Zu jeder Arius-Zeile wird, falls vorhanden, die Stimme
+ * `hha_arius:voice.<de|en>.<id>` gespielt.
+ *
+ * Seit 1.8.0 (Crix: „die Texte kann man im Kampf nicht mal lesen“):
+ * * In Szenen waren sie unsichtbar (HHA blendet dort das HUD aus); jetzt zeichnet [renderAlways] sie auch dann, groß
+ *   im unteren Kinobalken.
+ * * Jede Zeile bleibt so lange, wie man zum Lesen braucht (mindestens die Serverzeit), und wird wie eine
+ *   Schreibmaschine aufgebaut. Eine neue Zeile drängt die laufende nicht mehr weg, sondern wartet (höchstens drei).
+ * * Im Kampf steht der Text über Frostbalken und Aktionsleiste, mit dunklem Band und Sprechername.
  */
 object Subtitles {
 
@@ -22,16 +30,19 @@ object Subtitles {
 
     private val queue = ArrayDeque<Line>()
     private var voice: SoundInstance? = null
+    private var pendingVoice: String? = null
+
+    /** Lesezeit in Ticks: etwa 14 Zeichen je Sekunde, dazu eine Sekunde zum Ankommen. */
+    private fun readTicks(text: Text): Int = (24 + text.string.length * 1.45).toInt()
 
     fun handle(p: LineS2C) {
-        val line = Line(p.speaker, Text.translatable(p.key), p.ticks.coerceIn(20, 200))
-        if (p.speaker == 1) {
-            // Eine neue Arius-Zeile ersetzt eine laufende (er wird nie überlagert).
-            queue.removeIf { it.speaker == 1 }
-            playVoice(p.voice)
-        }
+        val text = Text.translatable(p.key)
+        val line = Line(p.speaker, text, maxOf(p.ticks, readTicks(text)).coerceIn(30, 260))
         queue.addLast(line)
         while (queue.size > 3) queue.removeFirst()
+        if (p.speaker == 1) {
+            if (queue.size == 1) playVoice(p.voice) else pendingVoice = p.voice
+        }
     }
 
     private fun playVoice(id: String) {
@@ -48,38 +59,74 @@ object Subtitles {
 
     fun tick() {
         val first = queue.firstOrNull() ?: return
-        if (++first.age > first.ticks) queue.removeFirst()
+        // Liegt viel an, geht es etwas schneller weiter (ab der Hälfte doppelt), damit nichts hinterherhinkt.
+        first.age += if (queue.size > 1 && first.age > first.ticks / 2) 2 else 1
+        if (first.age > first.ticks) {
+            queue.removeFirst()
+            val next = queue.firstOrNull()
+            if (next != null && next.speaker == 1) pendingVoice?.let { playVoice(it) }
+            pendingVoice = null
+        }
     }
 
     fun clear() {
         queue.clear()
+        pendingVoice = null
         voice?.let { MinecraftClient.getInstance().soundManager.stop(it) }
         voice = null
     }
 
+    /** Aus dem HUD-Mixin (läuft auch in Szenen): in Szenen hier zeichnen, sonst übernimmt [render]. */
+    @JvmStatic
+    fun renderAlways(context: DrawContext) {
+        if (CinePlayer.active) draw(context, true)
+    }
+
     fun render(context: DrawContext) {
+        if (!CinePlayer.active) draw(context, false)
+    }
+
+    private fun draw(context: DrawContext, cinema: Boolean) {
         val line = queue.firstOrNull() ?: return
         val client = MinecraftClient.getInstance()
         val font = client.textRenderer
         val w = context.scaledWindowWidth
         val h = context.scaledWindowHeight
-        val alpha = ((minOf(line.age, line.ticks - line.age).toFloat() / 6f).coerceIn(0f, 1f) * 255).toInt()
+        val alpha = ((minOf(line.age + 1, line.ticks - line.age).toFloat() / 6f).coerceIn(0f, 1f) * 255).toInt()
         if (alpha <= 8) return
-        val maxWidth = (w * 0.6).toInt().coerceAtMost(360)
-        val body = if (line.speaker == 0) line.text.copy().formatted(Formatting.ITALIC) else line.text
+        val scale = if (cinema) 1.25f else 1.1f
+        val maxWidth = ((w * 0.62f) / scale).toInt().coerceAtMost(330)
+        // Schreibmaschine: 3 Zeichen je Tick.
+        val full = line.text.string
+        val shown = minOf(full.length, (line.age * 3) + 1)
+        var body: Text = Text.literal(full.substring(0, shown))
+        if (line.speaker == 0) body = body.copy().formatted(Formatting.ITALIC)
         val wrapped = font.wrapLines(body, maxWidth)
-        var y = h - 74 - wrapped.size * 10
+        val rows = maxOf(1, font.wrapLines(Text.literal(full), maxWidth).size)
+        val blockH = (rows * 10 + (if (line.speaker == 1) 12 else 0)) * scale
+        val bottom = if (cinema) h - 12f else h - 126f
+        val top = bottom - blockH
         val a = alpha shl 24
+        val m = context.matrices
+        m.pushMatrix()
+        m.translate(w / 2f, top)
+        m.scale(scale, scale)
+        val half = maxWidth / 2
+        if (!cinema) {
+            context.fill(-half - 8, -4, half + 8, (blockH / scale).toInt() + 3, ((alpha * 0.55f).toInt() shl 24) or 0x05080F)
+            context.fill(-half - 8, -4, -half - 6, (blockH / scale).toInt() + 3, a or (if (line.speaker == 1) 0x9FE6FF else 0x8C887C))
+        }
+        var y = 0
         if (line.speaker == 1) {
-            val name = Text.translatable("hha_arius.speaker.arius")
-            context.drawTextWithShadow(font, name, (w - font.getWidth(name)) / 2, y - 11, a or 0x9FE6FF)
+            val name = Text.translatable("hha_arius.speaker.arius").formatted(Formatting.BOLD)
+            context.drawTextWithShadow(font, name, -font.getWidth(name) / 2, y, a or 0x9FE6FF)
+            y += 12
         }
         val color = if (line.speaker == 0) 0xC8C4B8 else 0xF4F6FA
-        val bgTop = y - (if (line.speaker == 1) 14 else 3)
-        context.fill((w - maxWidth) / 2 - 6, bgTop, (w + maxWidth) / 2 + 6, y + wrapped.size * 10 + 3, ((alpha * 0.45f).toInt() shl 24))
         for (row in wrapped) {
-            context.drawTextWithShadow(font, row, (w - font.getWidth(row)) / 2, y, a or color)
+            context.drawTextWithShadow(font, row, -font.getWidth(row) / 2, y, a or color)
             y += 10
         }
+        m.popMatrix()
     }
 }

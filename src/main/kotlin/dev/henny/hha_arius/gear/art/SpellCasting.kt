@@ -540,21 +540,21 @@ object SpellCasting {
                 GearSounds.play(world, target.entityPos, "art.ice_prison", SoundEvents.BLOCK_GLASS_PLACE, 1f, 0.6f)
             }
             Spell.FULL_POT -> {
-                // „Full-Pot“: Stärke II, Schnelligkeit II, Feuerresistenz, Regeneration II.
-                val t = num(spell, "ticks").toInt()
-                player.addStatusEffect(StatusEffectInstance(StatusEffects.STRENGTH, t, 1, false, true, true))
-                player.addStatusEffect(StatusEffectInstance(StatusEffects.SPEED, t, 1, false, true, true))
-                player.addStatusEffect(StatusEffectInstance(StatusEffects.FIRE_RESISTANCE, t, 0, false, true, true))
-                player.addStatusEffect(StatusEffectInstance(StatusEffects.REGENERATION, t / 4, 1, false, true, true))
+                // „Full-Pot“: Stärke II, Schnelligkeit II, Feuerresistenz, Regeneration II – seit 1.8.0 mit den Längen der
+                // Vanilla-Tränke (Crix): Stärke II und Schnelligkeit II 1:30, Feuerresistenz 3:00, Regeneration II 0:22.
+                player.addStatusEffect(StatusEffectInstance(StatusEffects.STRENGTH, 1800, 1, false, true, true))
+                player.addStatusEffect(StatusEffectInstance(StatusEffects.SPEED, 1800, 1, false, true, true))
+                player.addStatusEffect(StatusEffectInstance(StatusEffects.FIRE_RESISTANCE, 3600, 0, false, true, true))
+                player.addStatusEffect(StatusEffectInstance(StatusEffects.REGENERATION, 450, 1, false, true, true))
                 GearVfx.nova(world, Vfx.Style.GOLD, player.entityPos.add(0.0, 1.0, 0.0), 1.6f, 12)
                 GearVfx.shockwave(world, Vfx.Style.GOLD, player.entityPos, 3f, 12, 0.8f)
                 GearSounds.play(world, player.entityPos, "art.full_pot", SoundEvents.ENTITY_PLAYER_LEVELUP, 0.8f, 1.4f)
             }
             Spell.TANK_MODE -> {
-                // „Tank-Mode“: Schildkrötenmeister mit Resistenz IV (und der dazugehörigen Langsamkeit).
-                val t = num(spell, "ticks").toInt()
+                // „Tank-Mode“: Trank des Schildkrötenmeisters II wie in Vanilla – Resistenz IV und Langsamkeit VI, 20 s.
+                val t = 400
                 player.addStatusEffect(StatusEffectInstance(StatusEffects.RESISTANCE, t, 3, false, true, true))
-                player.addStatusEffect(StatusEffectInstance(StatusEffects.SLOWNESS, t, 3, false, true, true))
+                player.addStatusEffect(StatusEffectInstance(StatusEffects.SLOWNESS, t, 5, false, true, true))
                 GearVfx.nova(world, Vfx.Style.HEAVEN, player.entityPos.add(0.0, 1.0, 0.0), 1.8f, 14)
                 ArtFx.send(world, FxKind.ICE_ARMOR, player.entityPos, life = t, e1 = player.id)
                 GearSounds.play(world, player.entityPos, "art.tank_mode", SoundEvents.ITEM_ARMOR_EQUIP_NETHERITE.value(), 1f, 0.6f)

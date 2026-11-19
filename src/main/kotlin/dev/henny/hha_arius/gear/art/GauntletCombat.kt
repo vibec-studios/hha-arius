@@ -49,6 +49,58 @@ object GauntletCombat {
         var chain = 0
         var chainUntil = 0L
         var buffer: ArtAction? = null
+
+        /** Seit 1.8.0: gewählte Kombo, getroffene Tasten, Finisher für den laufenden Schlag. */
+        var style = ComboStyle.FREESTYLE
+        var progress = 0
+        var finisher = false
+    }
+
+    /**
+     * Kettencodes (seit 1.8.0): 1–4 Jab, Cross, Haken, Aufwärtshaken; 11–13 Seitentritt, Halbkreistritt, Drehtritt;
+     * 21 Kniestoß. Daraus folgt der nächste Schlag (siehe [start]).
+     */
+    private fun chainAfter(move: Move): Int = when (move) {
+        Move.JAB -> 1
+        Move.CROSS -> 2
+        Move.HOOK -> 3
+        Move.UPPERCUT -> 4
+        Move.SIDE_KICK -> 11
+        Move.ROUNDHOUSE -> 12
+        Move.SPIN_KICK -> 13
+        Move.KNEE -> 21
+        else -> 0
+    }
+
+    fun selectStyle(player: ServerPlayerEntity, style: ComboStyle) {
+        val s = states.getOrPut(player.uuid) { State() }
+        s.style = style
+        s.progress = 0
+        sendCombo(player, s, null)
+    }
+
+    private fun sendCombo(player: ServerPlayerEntity, s: State, move: Move?) {
+        val payload = ComboS2C(s.style.ordinal, s.progress, if (GearTasks.now <= s.chainUntil) s.chain else 0, move?.ordinal ?: -1, s.finisher)
+        if (net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.canSend(player, ComboS2C.ID)) net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(player, payload)
+    }
+
+    /** Taste der vorgegebenen Kombo prüfen: passt sie, weiter; sonst neu beginnen (die Taste kann der Anfang sein). */
+    private fun track(s: State, action: ArtAction, move: Move) {
+        s.finisher = false
+        val keys = s.style.keys
+        if (keys.isEmpty()) return
+        val c = when (action) { ArtAction.ATTACK -> 'L'; ArtAction.KICK -> 'R'; else -> '?' }
+        // Sprung-, Sprint- und Schleich-Varianten zählen nicht zur Folge.
+        val plain = move != Move.DIVE_KICK && move != Move.FLYING_KICK && move != Move.WHIRL_KICK && move != Move.PALM_BLAST && move != Move.FLURRY
+        if (plain && s.progress < keys.length && keys[s.progress] == c) {
+            s.progress++
+            if (s.progress == keys.length) {
+                s.finisher = true
+                s.progress = 0
+            }
+        } else {
+            s.progress = if (plain && keys[0] == c) 1 else 0
+        }
     }
 
     private val states = HashMap<UUID, State>()
@@ -100,18 +152,29 @@ object GauntletCombat {
                 1 -> Move.CROSS
                 2 -> Move.HOOK
                 3 -> Move.UPPERCUT
+                21 -> Move.UPPERCUT
                 else -> Move.JAB
             }
+            // Seit 1.8.0 eigene Trittkette: Seitentritt → Halbkreistritt → Drehtritt → Axttritt; aus der Schlagfolge
+            // Knie (nach dem Jab), schneller Seitentritt (nach dem Cross), Drehtritt (nach dem Haken), Axttritt (nach dem
+            // Aufwärtshaken); nach dem Knie der Fußfeger.
             ArtAction.KICK -> when (chain) {
+                1 -> Move.KNEE
+                2 -> Move.SIDE_KICK.also { windupOverride = 4 }
                 3 -> Move.SPIN_KICK
                 4 -> Move.AXE_KICK
-                1, 2 -> Move.SIDE_KICK.also { windupOverride = 4 }
+                11 -> Move.ROUNDHOUSE
+                12 -> Move.SPIN_KICK
+                13 -> Move.AXE_KICK
+                21 -> Move.LOW_SWEEP
                 else -> Move.SIDE_KICK
             }
             ArtAction.PARRY -> Move.PARRY
             else -> return
         }
+        track(s, action, move)
         begin(player, s, move, if (windupOverride > 0) windupOverride else move.windup)
+        sendCombo(player, s, move)
     }
 
     private fun begin(player: ServerPlayerEntity, s: State, move: Move, windup: Int) {
@@ -200,14 +263,10 @@ object GauntletCombat {
         s.move = null
         removeSlow(player)
         Focus.end(player, Focus.Busy.MOVE)
-        s.chain = when (move) {
-            Move.JAB -> 1
-            Move.CROSS -> 2
-            Move.HOOK -> 3
-            Move.UPPERCUT -> 4
-            else -> 0
-        }
+        s.chain = chainAfter(move)
         s.chainUntil = GearTasks.now + GearConfig.ticks("melee_link_ticks")
+        s.finisher = false
+        sendCombo(player, s, null)
         val buffered = s.buffer
         s.buffer = null
         if (buffered != null && holdsMelee(player) && Focus.isFree(player)) start(player, s, buffered)
@@ -220,7 +279,8 @@ object GauntletCombat {
         val targets = targets(player, move)
         val stack = player.mainHandStack
         val base = GearConfig.num("melee_base_damage") + (player.getAttributeValue(EntityAttributes.ATTACK_DAMAGE) - 1.0).coerceAtLeast(0.0)
-        val damage = (base * move.mult).toFloat()
+        val fin = states[player.uuid]?.finisher == true
+        val damage = (base * move.mult * (if (fin) 1.6 else 1.0)).toFloat()
         var any = false
         for (target in targets) {
             target.timeUntilRegen = 0
@@ -228,13 +288,13 @@ object GauntletCombat {
             any = true
             if (move.knock > 0 && !GearCombat.isHeavy(target)) {
                 val last = knockGuard[target.id] ?: Long.MIN_VALUE
-                val strong = move == Move.SIDE_KICK || move == Move.SPIN_KICK || move == Move.COUNTER || move == Move.FLYING_KICK || move == Move.WHIRL_KICK
+                val strong = move == Move.SIDE_KICK || move == Move.SPIN_KICK || move == Move.COUNTER || move == Move.FLYING_KICK || move == Move.WHIRL_KICK || move == Move.ROUNDHOUSE
                 if (!strong || GearTasks.now - last >= GearConfig.ticks("melee_knock_guard_ticks")) {
                     if (strong) knockGuard[target.id] = GearTasks.now
                     GearCombat.push(target, player.entityPos, move.knock, move.lift)
                 }
             }
-            if (GearCombat.worthy(player, target)) Resonance.gain(player, GearConfig.num(move.gainKey))
+            if (GearCombat.worthy(player, target)) Resonance.gain(player, GearConfig.num(move.gainKey) * (if (fin) 1.5 else 1.0))
             val at = target.entityPos.add(0.0, target.height * 0.6, 0.0)
             world.spawnParticles(ParticleTypes.CRIT, at.x, at.y, at.z, 4, 0.15, 0.15, 0.15, 0.1)
         }
@@ -242,7 +302,8 @@ object GauntletCombat {
             Resonance.markCombat(player)
             stack.damage(1, player, EquipmentSlot.MAINHAND)
             val (sound, pitch) = when (move) {
-                Move.SIDE_KICK, Move.SPIN_KICK, Move.FLYING_KICK, Move.WHIRL_KICK -> SoundEvents.ENTITY_PLAYER_ATTACK_KNOCKBACK to 0.9f
+                Move.SIDE_KICK, Move.SPIN_KICK, Move.FLYING_KICK, Move.WHIRL_KICK, Move.ROUNDHOUSE, Move.LOW_SWEEP -> SoundEvents.ENTITY_PLAYER_ATTACK_KNOCKBACK to 0.9f
+                Move.KNEE -> SoundEvents.ENTITY_PLAYER_ATTACK_STRONG to 0.9f
                 Move.DIVE_KICK -> SoundEvents.ENTITY_PLAYER_ATTACK_CRIT to 0.8f
                 Move.COUNTER -> SoundEvents.ENTITY_PLAYER_ATTACK_CRIT to 1.2f
                 else -> SoundEvents.ENTITY_PLAYER_ATTACK_STRONG to 1.25f
@@ -250,6 +311,7 @@ object GauntletCombat {
             GearSounds.play(world, player.entityPos, "gauntlet.hit", sound, 0.8f, pitch)
         }
         strikeFx(player, move, any)
+        if (fin) finisherFx(player, move)
         if (knockGuard.size > 512) knockGuard.entries.removeIf { GearTasks.now - it.value > 200 }
     }
 
@@ -289,6 +351,19 @@ object GauntletCombat {
                 world.spawnParticles(ParticleTypes.CLOUD, chest.x + look.x * 1.4, chest.y - 0.6, chest.z + look.z * 1.4, 8, 0.2, 0.6, 0.2, 0.08)
             }
             Move.SPIN_KICK -> GearVfx.crescent(world, Vfx.Style.STORM, player.entityPos.add(0.0, 0.7, 0.0), look, 3.2f, 2.6f, 6)
+            Move.ROUNDHOUSE -> {
+                GearVfx.crescent(world, Vfx.Style.STORM, player.entityPos.add(0.0, 1.3, 0.0), look, 3.0f, 2.4f, 6)
+                world.spawnParticles(ParticleTypes.SNOWFLAKE, chest.x + look.x * 2.0, chest.y + 0.2, chest.z + look.z * 2.0, 12, 0.4, 0.3, 0.4, 0.08)
+            }
+            Move.LOW_SWEEP -> {
+                GearVfx.crescent(world, Vfx.Style.STORM, player.entityPos.add(0.0, 0.25, 0.0), look, 3.4f, 2.8f, 6)
+                GearVfx.crescent(world, Vfx.Style.STORM, player.entityPos.add(0.0, 0.25, 0.0), look.multiply(-1.0), 3.4f, 2.8f, 6)
+                world.spawnParticles(ParticleTypes.CLOUD, player.x, player.y + 0.2, player.z, 18, 1.4, 0.1, 1.4, 0.08)
+            }
+            Move.KNEE -> {
+                GearVfx.crescent(world, Vfx.Style.STORM, chest.add(look.multiply(0.7)).add(0.0, -0.5, 0.0), Vec3d(look.x * 0.5, 0.8, look.z * 0.5).normalize(), 1.6f, 1.2f, 4)
+                if (hit) world.spawnParticles(ParticleTypes.CRIT, chest.x + look.x, chest.y - 0.3, chest.z + look.z, 8, 0.2, 0.2, 0.2, 0.2)
+            }
             Move.FLYING_KICK -> {
                 GearVfx.crescent(world, Vfx.Style.STORM, chest.add(look.multiply(1.2)), look, 2.4f, 2.0f, 6)
                 world.spawnParticles(ParticleTypes.CLOUD, chest.x, chest.y - 0.6, chest.z, 10, 0.4, 0.2, 0.4, 0.06)
@@ -326,6 +401,20 @@ object GauntletCombat {
         }
     }
 
+    /** Finisher einer vorgegebenen Kombo: Lichtblitz, Frostwelle, tiefer Schlag-Klang. */
+    private fun finisherFx(player: ServerPlayerEntity, move: Move) {
+        val world = player.entityWorld
+        val look = horizontalLook(player)
+        val at = player.entityPos.add(look.multiply(1.6))
+        GearVfx.shockwave(world, Vfx.Style.HEAVEN, at, 4.5f, 14, 1.6f)
+        GearVfx.nova(world, Vfx.Style.GOLD, at.add(0.0, 1.0, 0.0), 1.6f, 10)
+        ArtFx.send(world, dev.henny.hha_arius.net.FxKind.SLASH_ARC, player.entityPos.add(0.0, 1.1, 0.0), look, a = 4.5f, b = if (move == Move.AXE_KICK) 1f else 0.15f, life = 12)
+        world.spawnParticles(ParticleTypes.SNOWFLAKE, at.x, at.y + 0.6, at.z, 40, 1.2, 0.5, 1.2, 0.18)
+        GearSounds.play(world, at, "gauntlet.finisher", SoundEvents.ENTITY_PLAYER_ATTACK_CRIT, 1f, 0.6f)
+        GearSounds.play(world, at, "gauntlet.finisher", SoundEvents.ITEM_TRIDENT_THUNDER.value(), 0.35f, 1.6f)
+        GearCombat.actionbar(player, "hha_arius.msg.combo_finisher", net.minecraft.text.Text.translatable("hha_arius.combo." + (states[player.uuid]?.style?.key ?: "freestyle")))
+    }
+
     private fun horizontalLook(player: ServerPlayerEntity): Vec3d {
         val v = player.rotationVector
         val h = Vec3d(v.x, 0.0, v.z)
@@ -336,7 +425,7 @@ object GauntletCombat {
     private fun targets(player: ServerPlayerEntity, move: Move): List<LivingEntity> {
         val world = player.entityWorld
         val eye = player.eyePos
-        val kick = move == Move.SIDE_KICK || move == Move.SPIN_KICK
+        val kick = move == Move.SIDE_KICK || move == Move.SPIN_KICK || move == Move.ROUNDHOUSE || move == Move.LOW_SWEEP
         val look = if (kick) horizontalLook(player) else player.rotationVector.normalize()
         val reach = move.reach
         val box = player.boundingBox.expand(reach + 1.0)

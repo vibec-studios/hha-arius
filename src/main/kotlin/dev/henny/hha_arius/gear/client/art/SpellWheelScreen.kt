@@ -36,6 +36,7 @@ class SpellWheelScreen(private val key: KeyBinding) : Screen(Text.translatable("
     private var school: School? = null
     private var hoverSchool: School? = null
     private var hoverSpell: Spell? = null
+    private var hoverBuff: Spell? = null
     private var moved = false
     private var startX = -1.0
     private var startY = -1.0
@@ -72,6 +73,7 @@ class SpellWheelScreen(private val key: KeyBinding) : Screen(Text.translatable("
     override fun mouseClicked(click: Click, doubled: Boolean): Boolean {
         when (click.button()) {
             0 -> {
+                hoverBuff?.let { choose(it); return true }
                 val spell = hoverSpell
                 if (school != null && spell != null) {
                     choose(spell)
@@ -94,6 +96,7 @@ class SpellWheelScreen(private val key: KeyBinding) : Screen(Text.translatable("
         val spell = hoverSpell
         val sch = hoverSchool
         when {
+            hoverBuff != null -> choose(hoverBuff!!)
             !moved && System.currentTimeMillis() - openedAt < 250 -> choose(ArtClient.previous)
             school != null && spell != null -> choose(spell)
             school == null && sch != null -> choose(Spell.entries[ArtClient.lastOfSchool[sch.ordinal]])
@@ -125,10 +128,15 @@ class SpellWheelScreen(private val key: KeyBinding) : Screen(Text.translatable("
         val angle = atan2(dy, dx)
         val tr = textRenderer
 
+        buffBar(context, cx, cy - OUTER - 30, mouseX, mouseY)
         val current = school
+        if (hoverBuff != null) {
+            hoverSchool = null
+            hoverSpell = null
+        }
         if (current == null) {
             hoverSpell = null
-            hoverSchool = if (dist > INNER - 4) School.entries[sectorOf(angle, 3, SCHOOL_START)] else null
+            hoverSchool = if (hoverBuff == null && dist > INNER - 4 && dist < OUTER + 24) School.entries[sectorOf(angle, 3, SCHOOL_START)] else null
             if (hoverSchool != null && dist > OUTER + 10) school = hoverSchool
             drawRing(context, cx, cy, 3, SCHOOL_START) { i -> ArtColors.of(i) to (hoverSchool?.ordinal == i) }
             for (s in School.entries) {
@@ -140,12 +148,12 @@ class SpellWheelScreen(private val key: KeyBinding) : Screen(Text.translatable("
             val label = hoverSchool?.let { Text.translatable("hha_arius.school.${it.name.lowercase()}") } ?: Text.translatable("hha_arius.wheel.hint")
             centered(context, label, cx, cy - 4, Ui.TEXT)
             val sel = Text.translatable("hha_arius.wheel.current", Text.translatable("hha_arius.spell.${ArtClient.selected.key}"))
-            centered(context, sel, cx, cy + OUTER + 14, Ui.MUTED)
+            if (hoverBuff == null) centered(context, sel, cx, cy + OUTER + 14, Ui.MUTED)
         } else {
             val spells = Spell.bySchool(current)
             val n = spells.size
             hoverSchool = null
-            hoverSpell = if (dist > INNER - 4) spells[sectorOf(angle, n, spellStart(n))] else null
+            hoverSpell = if (hoverBuff == null && dist > INNER - 4 && dist < OUTER + 24) spells[sectorOf(angle, n, spellStart(n))] else null
             drawRing(context, cx, cy, n, spellStart(n)) { i -> ArtColors.of(current.ordinal) to (hoverSpell == spells[i]) }
             for ((i, spell) in spells.withIndex()) {
                 val mid = spellStart(n) + (i + 0.5) * 2 * PI / n
@@ -161,9 +169,39 @@ class SpellWheelScreen(private val key: KeyBinding) : Screen(Text.translatable("
                 }
             }
             centered(context, Text.translatable("hha_arius.school.${current.name.lowercase()}"), cx, cy - 4, ArtColors.of(current.ordinal))
-            info(context, cx, cy + OUTER + 12, hoverSpell)
+            if (hoverBuff == null) info(context, cx, cy + OUTER + 12, hoverSpell)
         }
     }
+
+    /**
+     * Trank-Leiste über dem Rad (seit 1.8.0): Full-Pot und Tank-Mode als zwei Felder, wählbar per Maus (Loslassen der
+     * Technik-Taste über einem Feld oder Linksklick). Zeigt Abklingzeit und Kosten.
+     */
+    private fun buffBar(context: DrawContext, cx: Int, y: Int, mouseX: Int, mouseY: Int) {
+        val buffs = Spell.BUFFS
+        val w = 66
+        val gap = 8
+        val total = buffs.size * w + (buffs.size - 1) * gap
+        var x = cx - total / 2
+        hoverBuff = null
+        for (spell in buffs) {
+            val hot = mouseX in x until x + w && mouseY in y - 2 until y + 24
+            if (hot) hoverBuff = spell
+            val color = if (spell == Spell.FULL_POT) 0xFFE7B95A.toInt() else 0xFF8FB8E8.toInt()
+            context.fill(x, y - 2, x + w, y + 24, if (hot) Ui.alpha(color, 0.45f) else 0xB00B0B0E.toInt())
+            frame(context, x, y - 2, x + w, y + 24, if (spell == ArtClient.selected) 0xC0FFFFFF.toInt() else 0x50FFFFFF)
+            val left = ArtClient.cooldownLeft(spell)
+            context.drawGuiTexture(RenderPipelines.GUI_TEXTURED, ArtClient.icon(spell.key), x + 3, y + 1, 18, 18, if (left > 0) 0x80FFFFFF.toInt() else -1)
+            val name = Text.translatable("hha_arius.spell.${spell.key}")
+            context.drawText(textRenderer, name, x + 24, y + 2, if (hot) Ui.TEXT else Ui.MUTED, true)
+            val sub = if (left > 0) String.format("%.0f s", Math.ceil(left / 20.0)) else "${ArtClient.costs[spell.ordinal]} ✦"
+            context.drawText(textRenderer, sub, x + 24, y + 12, Ui.DIM, true)
+            x += w + gap
+        }
+        if (hoverBuff != null) info(context, cx, cy0() + OUTER + 12, hoverBuff)
+    }
+
+    private fun cy0() = height / 2
 
     /** Infozeile unter dem Rad: Name, Art, Kosten, Abklingzeit, Kurzbeschreibung. */
     private fun info(context: DrawContext, cx: Int, y: Int, spell: Spell?) {

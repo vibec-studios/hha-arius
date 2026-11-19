@@ -78,7 +78,9 @@ enum class Spell(val school: School, val kind: CastKind, val role: Role, val key
 
     companion object {
         fun of(raw: Int): Spell? = entries.getOrNull(raw)
-        fun bySchool(school: School): List<Spell> = entries.filter { it.school == school }
+        /** Seit 1.8.0 (Crix): Trank-Techniken stehen nicht mehr bei Yang, sondern in einer eigenen Leiste über dem Rad. */
+        val BUFFS: List<Spell> get() = listOf(FULL_POT, TANK_MODE)
+        fun bySchool(school: School): List<Spell> = entries.filter { it.school == school && it !in BUFFS }
     }
 }
 
@@ -132,7 +134,17 @@ enum class Move(
     FLURRY(3, 12, 0.45f, 3.0, 40.0, 2, 0.08, 0.0, "melee_gain_jab", 0.5, Anim.JAB),
 
     /** Seit 1.7.0, Sprint + Rechtsklick: Handflächenstoß mit Windexplosion, schleudert alles vor dir weit weg. */
-    PALM_BLAST(7, 14, 1.8f, 3.4, 70.0, 4, 1.7, 0.45, "melee_gain_parry", 0.4, Anim.COUNTER);
+    PALM_BLAST(7, 14, 1.8f, 3.4, 70.0, 4, 1.7, 0.45, "melee_gain_parry", 0.4, Anim.COUNTER),
+
+    // Seit 1.8.0 (Crix: „mehr verschiedene Kicks, aktuell gibt es gefühlt nur Schläge“)
+    /** Zweiter Tritt der Trittkette: Halbkreistritt mit dem Spann, hoch und weit. */
+    ROUNDHOUSE(6, 12, 1.25f, 3.5, 55.0, 2, 0.85, 0.2, "melee_gain_kick", 0.5, Anim.ROUNDHOUSE),
+
+    /** Nach dem Kniestoß: Fußfeger – tief geduckt einmal herum, holt alles im Kreis von den Füßen. */
+    LOW_SWEEP(5, 12, 0.9f, 3.2, 180.0, 4, 0.2, 0.55, "melee_gain_spin", 0.4, Anim.LOW_SWEEP),
+
+    /** Nach dem Jab: Kniestoß aus der Nähe, schnell, hebt leichte Gegner an. */
+    KNEE(3, 8, 0.85f, 2.4, 40.0, 1, 0.15, 0.25, "melee_gain_jab", 0.6, Anim.KNEE);
 
     val total: Int get() = windup + recover
 }
@@ -199,10 +211,36 @@ enum class Anim(val loop: Boolean = false) {
     DIVE_KICK,
 
     /** Wirbeltritt in der Luft (param = Ausholzeit). */
-    WHIRL_KICK;
+    WHIRL_KICK,
+
+    /** Seit 1.8.0: Halbkreistritt (param = Ausholzeit). */
+    ROUNDHOUSE,
+
+    /** Seit 1.8.0: Fußfeger, tief geduckt einmal herum (param = Ausholzeit). */
+    LOW_SWEEP,
+
+    /** Seit 1.8.0: Kniestoß (param = Ausholzeit). */
+    KNEE;
 
     companion object {
         fun of(raw: Int): Anim = entries.getOrElse(raw) { NONE }
+    }
+}
+
+/**
+ * Vorgegebene Kombos (seit 1.8.0, Crix: „Kombos auswählen, frei oder vorgegeben, und man sieht, welche Tasten man
+ * drücken muss“). [keys]: L = Angriff (Linksklick), R = Tritt (Rechtsklick), am Boden ohne Sprint. Wer die Folge
+ * vollständig trifft, verwandelt den letzten Schlag in einen Finisher (mehr Schaden, eigener Effekt, mehr Resonanz).
+ */
+enum class ComboStyle(val key: String, val keys: String) {
+    FREESTYLE("freestyle", ""),
+    STORM("storm", "LLLR"),
+    GLACIER("glacier", "LLLLR"),
+    TAIL("tail", "RRRR"),
+    BREAKER("breaker", "LRR");
+
+    companion object {
+        fun of(raw: Int): ComboStyle = entries.getOrElse(raw) { FREESTYLE }
     }
 }
 

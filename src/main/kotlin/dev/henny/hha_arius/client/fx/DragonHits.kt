@@ -22,6 +22,11 @@ object DragonHits {
     private val bodies = HashMap<Int, Body>()
     private var frameCounter = 0L
 
+    /** Seit 1.8.0 für die Aura: Weltpunkte des Körpers (Kopf … Schwanz) bzw. halbe Gliedbreiten, falls bekannt. */
+    fun points(entityId: Int): Array<Vec3d>? = bodies[entityId]?.points
+
+    fun radii(entityId: Int): DoubleArray? = bodies[entityId]?.radii
+
     /** Vom Renderer nach der Körperberechnung (Punkte relativ zur Render-Position). */
     fun update(entityId: Int, s: NivarisRenderState) {
         if (!s.bodyReady) return

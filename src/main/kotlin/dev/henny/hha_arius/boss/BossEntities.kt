@@ -210,6 +210,17 @@ object AriusBlade {
 /** Nivaris, die Alte vom Eirgletscher. Siehe [NivarisPose]. */
 class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : EirholmPuppet(type, world) {
 
+    // --- Ritt (seit 1.8.0): bis zu acht Spieler sitzen hintereinander auf ihrem Rücken ---------------------------------
+
+    override fun canAddPassenger(passenger: net.minecraft.entity.Entity): Boolean = passengerList.size < 8
+
+    override fun getPassengerAttachmentPos(passenger: net.minecraft.entity.Entity, dimensions: net.minecraft.entity.EntityDimensions, scaleFactor: Float): net.minecraft.util.math.Vec3d {
+        val i = passengerList.indexOf(passenger).coerceAtLeast(0)
+        val side = if (i % 2 == 0) -0.55 else 0.55
+        val local = net.minecraft.util.math.Vec3d(side, NivarisShape.SPINE_UP + 0.95, -1.8 - (i / 2) * 2.0)
+        return local.rotateY(-yaw * net.minecraft.util.math.MathHelper.RADIANS_PER_DEGREE)
+    }
+
     override fun poseData(): TrackedData<Int> = POSE
     override fun windupData(): TrackedData<Int> = WINDUP
     override fun serialData(): TrackedData<Int> = SERIAL

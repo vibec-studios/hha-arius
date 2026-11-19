@@ -227,8 +227,8 @@ class NivarisMoves(private val f: EirholmFight) {
         while (done < attacks && f.now < limit) {
             val t = f.target() ?: break
             val canDive = f.ridgeCount() > 0 || rnd.nextFloat() < 0.4f
-            var pick = rnd.nextInt(5)
-            if (pick == last) pick = (pick + 1) % 5
+            var pick = rnd.nextInt(7)
+            if (pick == last) pick = (pick + 1) % 7
             last = pick
             when {
                 done == 0 && pick == 1 -> yieldAll(breath(t))
@@ -237,6 +237,8 @@ class NivarisMoves(private val f: EirholmFight) {
                 pick == 1 -> yieldAll(bodySweep(t))
                 pick == 2 -> yieldAll(skyPlunge(t))
                 pick == 3 -> yieldAll(iceVolley())
+                pick == 5 -> yieldAll(iceCage(t))
+                pick == 6 -> yieldAll(stormSpiral())
                 else -> yieldAll(bodySweep(t))
             }
             done++
@@ -254,6 +256,8 @@ class NivarisMoves(private val f: EirholmFight) {
             val dist = sqrt(t.squaredDistanceTo(d))
             val nearAll = f.players().count { it.squaredDistanceTo(d) < 81.0 }
             when {
+                dist < 9 && rnd.nextFloat() < 0.28f -> yieldAll(frostRoar())
+                dist in 8.0..22.0 && rnd.nextFloat() < 0.3f -> yieldAll(glacierCharge(t))
                 dist > 11 && f.grabSource(d.entityPos) != null && rnd.nextFloat() < 0.6f -> yieldAll(grabThrow(t))
                 nearAll >= 2 || (dist < 8 && rnd.nextFloat() < 0.35f) -> yieldAll(tail(null))
                 dist < 7 -> yieldAll(claw(t, null))
@@ -508,6 +512,115 @@ class NivarisMoves(private val f: EirholmFight) {
         Vfx.shockwave(f.world, style, Vec3d(end.x, f.floorY, end.z), 5f, 12, 1f)
     }
 
+    // --- Seit 1.8.0: neue Angriffe (Crix: „der Drache braucht mehr coolere Angriffe“) ---------------------------------
+
+    /** Frostbrüllen (Boden): Sie bäumt sich auf und brüllt; eine Frostdruckwelle friert den Ring um sie (Frost, Rückstoß). */
+    fun frostRoar(): Script = script {
+        val d = f.nivaris ?: return@script
+        val c = Vec3d(d.x, f.floorY, d.z)
+        val ring = f.calls.ring(c, 11f, 30, inner = 2.5f, style = style)
+        d.play(NivarisPose.ROAR, ring.ticks)
+        f.sound("nivaris.inhale", d.entityPos, 3f, 0.7f)
+        wait(ring.ticks)
+        f.sound("nivaris.roar", d.entityPos, 5f, 0.8f)
+        f.calls.roomShake(c, 5f, 40f)
+        Vfx.shockwave(f.world, style, c, 11f, 18, 2f)
+        f.fx(FxKind.CLEAR_WAVE, c, a = 14f, life = 20)
+        for (p in ring.hits(f.players())) {
+            f.hurt(p, 7f, Damage.Kind.FROST_BREATH, d)
+            dev.henny.hha_arius.gear.Frostbite.add(p, 30f)
+            Fx.launchPlayer(p, flatDir(c, p.entityPos).multiply(1.0).add(0.0, 0.4, 0.0))
+        }
+        yieldAll(thornRings(c, doubleArrayOf(6.0)))
+        wait(14)
+    }
+
+    /** Gletscherwalze (Boden): Sie duckt sich und schießt in gerader Bahn über den Boden auf das Ziel zu. */
+    fun glacierCharge(t: ServerPlayerEntity): Script = script {
+        val d = f.nivaris ?: return@script
+        f.face(d, t.entityPos)
+        val from = Vec3d(d.x, f.floorY, d.z)
+        val dir = flatDir(from, t.entityPos)
+        val to = f.clampToArena(from.add(dir.multiply(24.0)), 3.0).let { Vec3d(it.x, f.floorY, it.z) }
+        val line = f.calls.line(from, to, 5f, 28, Telegraph.Pace.HEAVY, style = style)
+        d.play(NivarisPose.CLAW, line.ticks)
+        f.sound("nivaris.roar", d.entityPos, 3f, 1.15f)
+        wait(line.ticks)
+        f.sound("nivaris.wing", d.entityPos, 4f, 0.6f)
+        for (i in 1..10) {
+            f.place(d, from.lerp(to, i / 10.0))
+            f.face(d, to.add(dir))
+            if (i % 3 == 0) Vfx.shockwave(f.world, style, Vec3d(d.x, f.floorY, d.z), 3f, 8, 0.8f)
+            yield(Unit)
+        }
+        for (p in line.hits(f.players())) {
+            f.hurt(p, 9f, Damage.Kind.IMPACT, d)
+            Fx.launchPlayer(p, Vec3d(-dir.z, 0.0, dir.x).multiply(if (rnd.nextBoolean()) 1.0 else -1.0).add(dir.multiply(0.4)).add(0.0, 0.5, 0.0))
+        }
+        f.sound("nivaris.land", to, 3f, 1.1f)
+        f.calls.hitShake(to, 3f, 20f)
+        wait(AriusTimings.NIVARIS_RECOVER[NivarisPose.CLAW])
+    }
+
+    /** Eiskäfig (Luft): Sie kreist über dem Ziel und lässt Eisbrocken in einem Ring um es fallen; die Mitte ist sicher. */
+    fun iceCage(t: ServerPlayerEntity): Script = script {
+        val d = f.nivaris ?: return@script
+        val c = Vec3d(t.x, f.floorY, t.z)
+        flyTo(airPoint(c.add(8.0, 0.0, 0.0), 16.0), 1.2, 24, faceTarget = c)
+        f.sound("nivaris.inhale", d.entityPos, 3f, 1.2f)
+        val group = f.calls.boss(style = style)
+        group.safe(c, 2.2f, 44)
+        val rings = (0 until 9).map { k ->
+            val a = k / 9.0 * Math.PI * 2
+            val at = c.add(kotlin.math.cos(a) * 5.0, 0.0, kotlin.math.sin(a) * 5.0)
+            group.ring(at, 2.4f, 26 + k * 2) to at
+        }
+        var ang = 0.0
+        var elapsed = 0
+        for ((ring, at) in rings) {
+            while (elapsed < ring.ticks) {
+                ang += 0.12
+                f.place(d, c.add(kotlin.math.cos(ang) * 10.0, 16.0, kotlin.math.sin(ang) * 10.0))
+                f.face(d, c)
+                if (elapsed % 3 == 0 && elapsed < 24) f.fx(FxKind.ICE_CHUNK, mouth(), at, a = 1.5f, life = (ring.ticks - elapsed).coerceAtLeast(4))
+                elapsed++
+                yield(Unit)
+            }
+            f.sound("glacier.crack", at, 2.5f, 1.3f)
+            Vfx.shockwave(f.world, style, at, 2.6f, 8, 0.8f)
+            for (p in ring.hits(f.players())) f.hurt(p, 6f, Damage.Kind.IMPACT, d)
+        }
+        group.end()
+        wait(8)
+    }
+
+    /** Sturmspirale (Luft): Sie umkreist die Arena, ein Sturmwall schließt sich von außen; nur die Mitte bleibt frei. */
+    fun stormSpiral(): Script = script {
+        val d = f.nivaris ?: return@script
+        val c = Vec3d(f.arenaCenter.x, f.floorY, f.arenaCenter.z)
+        val inner = 12f
+        val outer = (f.arenaRadius - 1.0).toFloat()
+        val ring = f.calls.ring(c, outer, 60, inner = inner, style = style)
+        f.sound("nivaris.roar", d.entityPos, 4f, 0.95f)
+        f.fx(FxKind.BLIZZARD, c, a = outer, life = 70)
+        var ang = kotlin.math.atan2(d.z - c.z, d.x - c.x)
+        for (i in 0 until ring.ticks) {
+            ang += 0.09
+            val r = outer - 4.0
+            f.place(d, c.add(kotlin.math.cos(ang) * r, 9.0 + kotlin.math.sin(i * 0.2) * 2.0, kotlin.math.sin(ang) * r))
+            f.face(d, c.add(kotlin.math.cos(ang + 0.6) * r, 9.0, kotlin.math.sin(ang + 0.6) * r))
+            if (i % 12 == 0) f.sound("nivaris.wing", d.entityPos, 3f, 0.8f)
+            yield(Unit)
+        }
+        f.sound("nivaris.breath", c, 4f, 0.7f)
+        for (p in ring.hits(f.players())) {
+            f.hurt(p, 8f, Damage.Kind.PRESSURE, d)
+            Fx.launchPlayer(p, flatDir(p.entityPos, c).multiply(0.9).add(0.0, 0.4, 0.0))
+        }
+        Vfx.shockwave(f.world, style, c, outer, 20, 1.6f)
+        vel = null
+    }
+
     // --- D3: Landung -----------------------------------------------------------------------------------------------------
 
     fun land(t: ServerPlayerEntity?): Script = script {
@@ -548,7 +661,7 @@ class NivarisMoves(private val f: EirholmFight) {
         val spots = if (f.phase >= EirholmFight.Phase.VAULT) {
             (0 until 8).map { i -> f.ringPoint(center, 12.0, i / 8.0 * Math.PI * 2) }
         } else {
-            dev.henny.hha_arius.arena.ArenaLayout.DRAGON_SPOTS.map { f.abs(it) }
+            dev.henny.hha_arius.arena.ArenaLayout.AERIE_SPOTS.map { f.abs(it) }
         }
         val pick = spots.filter { it.squaredDistanceTo(t.entityPos) in 49.0..225.0 && f.passable(it) }
             .minByOrNull { it.squaredDistanceTo(t.entityPos) } ?: spots.minBy { it.squaredDistanceTo(t.entityPos) }

@@ -59,6 +59,7 @@ object ArtServer {
             ArtAction.ART_RELEASE -> SolvaneArt.release(player, arg == 1)
             ArtAction.ART_CANCEL -> SolvaneArt.cancel(player)
             ArtAction.BRIDGE_DIMS -> BridgeShape.unpack(player.uuid, arg)
+            ArtAction.COMBO_SELECT -> GauntletCombat.selectStyle(player, ComboStyle.of(arg))
         }
     }
 

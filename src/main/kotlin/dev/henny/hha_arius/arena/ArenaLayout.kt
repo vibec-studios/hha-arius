@@ -140,6 +140,40 @@ object ArenaLayout {
     val VAULT_LANDING: List<Vec3d> = listOf(Vec3d(-3.5, 0.0, 6.5), Vec3d(-9.5, 0.0, 4.5), Vec3d(2.5, 0.0, 4.5),
         Vec3d(-6.5, 0.0, 10.5), Vec3d(-0.5, 0.0, 10.5), Vec3d(-3.5, 0.0, 14.5)).map { Vec3d(VAULT.x + it.x, VAULT.y + it.y, VAULT.z + it.z) }
 
+    // --- Drachenhorst (Abschnitt II, seit 1.8.0) --------------------------------------------------------------------
+
+    /**
+     * Crix (19.11.): „Gib dem Drachen eine eigene Arena, die größer ist, damit er da auch passt.“ Ein Felskessel im
+     * Westen des Hochlands: ebener Boden (Radius [AERIE_R]) mit Runenkreisen, ringsum zerklüftete Fels- und Eiswände bis
+     * [AERIE_RIM], im Norden die Rippen und Wirbel eines uralten Drachen, sechs Kristallsäulen als Deckung. Öffnung nach
+     * Osten (dorther trägt Solvane die Spieler herein).
+     */
+    val AERIE = BlockPos(-112, 0, -55)
+    const val AERIE_R = 50
+    const val AERIE_RIM = 66
+
+    /** Landeplätze im Horst (Ostseite, Blick nach Westen in den Kessel). */
+    val AERIE_LANDING: List<Vec3d> = listOf(Vec3d(28.5, 0.0, 0.5), Vec3d(30.5, 0.0, -4.5), Vec3d(30.5, 0.0, 5.5),
+        Vec3d(33.5, 0.0, -1.5), Vec3d(33.5, 0.0, 3.5), Vec3d(36.5, 0.0, 0.5)).map { Vec3d(AERIE.x + it.x, it.y, AERIE.z + it.z) }
+
+    /** Arius sieht im Horst von einem Felspfeiler vor dem Nordrand zu (Lauffläche des Vorsprungs). */
+    val AERIE_SEAT = Vec3d(AERIE.x + 0.5, 12.0, AERIE.z - 46.5)
+
+    /** Zuschauerpunkt (k. o.) im Horst: Felspfeiler im Nordosten. */
+    val AERIE_WATCH = Vec3d(AERIE.x + 38.5, 10.0, AERIE.z - 27.5)
+
+    /** Kristallsäulen im Horst (Deckung, Wurfgeschosse für Solvane). Mittelpunkte auf Laufhöhe. */
+    val AERIE_PILLARS: List<BlockPos> = (0 until 6).map { i ->
+        val a = (i + 0.25) / 6.0 * 2.0 * PI
+        BlockPos(AERIE.x + Math.round(sin(a) * 31.0).toInt(), 0, AERIE.z + Math.round(cos(a) * 31.0).toInt())
+    }
+
+    /** Landepunkte für Solvane im Horst (Ring r 22 um die Mitte). */
+    val AERIE_SPOTS: List<Vec3d> = (0 until 10).map { i ->
+        val a = i / 10.0 * 2.0 * PI
+        Vec3d(AERIE.x + 0.5 + sin(a) * 22.0, 0.0, AERIE.z + 0.5 + cos(a) * 22.0)
+    }
+
     // --- Fernlandschaft und die Nadel (Auftritt von Nivaris) --------------------------------------------------------
 
     /**

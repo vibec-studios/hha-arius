@@ -93,8 +93,12 @@ class AriusMoves(private val f: EirholmFight) {
      * Hiebspur (seit 1.2.2 hochwertiger): weiße Hauptsichel, darüber eine schmale, schnellere Sturmsichel als
      * Nachschwung, Frostfunken entlang der Schneide und ein kurzer Bodenkratzer, wo die Spitze aufsetzt.
      */
+    private var slashTilt = 0
+
     private fun slash(at: Vec3d, dir: Vec3d, range: Float) {
         val mid = at.add(0.0, 1.1, 0.0)
+        // Seit 1.8.0 eine eigene Hiebsichel (wechselnd waagerecht und schräg), dazu die alten Bögen.
+        f.fx(FxKind.SLASH_ARC, mid, dir, a = range, b = listOf(0f, 0.35f, -0.3f)[slashTilt++ % 3].coerceAtLeast(0f), life = 12)
         Vfx.crescent(f.world, style, mid, dir, range, 2.6f, 8)
         Vfx.crescent(f.world, Vfx.Style.STORM, mid.add(0.0, 0.25, 0.0), dir, range * 1.15f, 1.1f, 5)
         val tip = at.add(dir.multiply(range * 0.8))
@@ -121,11 +125,28 @@ class AriusMoves(private val f: EirholmFight) {
                     yieldAll(arrowWalk(t))
                     yieldAll(combo(false, serious))
                 }
+                // Seit 1.8.0 vier neue Angriffe, schon ab Beginn gemischt
+                now >= nextLotus && d < 9 && rnd.nextFloat() < 0.35f -> {
+                    nextLotus = now + 420
+                    yieldAll(frostLotus(false))
+                }
+                now >= nextChain && d in 5.0..18.0 && rnd.nextFloat() < 0.35f -> {
+                    nextChain = now + 300
+                    yieldAll(stepChain(false))
+                }
+                now >= nextJavelin && d in 7.0..22.0 && rnd.nextFloat() < 0.4f -> {
+                    nextJavelin = now + 340
+                    yieldAll(iceJavelin(false))
+                }
+                unlocked && now >= nextSky && rnd.nextFloat() < 0.3f -> {
+                    nextSky = now + 480
+                    yieldAll(skyLeap(false))
+                }
                 now >= nextGuard && d < 6 && rnd.nextFloat() < 0.3f -> {
                     nextGuard = now + 400
                     yieldAll(guard(false, serious))
                 }
-                serious && now >= nextThorns && d in 4.0..20.0 && rnd.nextFloat() < 0.4f -> {
+                unlocked && now >= nextThorns && d in 4.0..20.0 && rnd.nextFloat() < 0.4f -> {
                     nextThorns = now + 400
                     yieldAll(frostThorns(false))
                 }
@@ -169,7 +190,7 @@ class AriusMoves(private val f: EirholmFight) {
         val spot = Vec3d(t.x, f.floorY, t.z)
         val ticks = 70
         for (p in f.audience()) dev.henny.hha.logic.boss.Cine.title(listOf(p), "hha_arius.feat.frozen_star", "hha_arius.feat.frozen_star.sub", 50)
-        f.fx(FxKind.FROZEN_STAR, spot, a = 9f, b = ticks.toFloat(), life = ticks + 6)
+        f.fx(FxKind.FROZEN_STAR, spot, a = 9f, b = ticks.toFloat(), life = ticks + 40)
         f.ambient("core.form", spot.add(0.0, 30.0, 0.0), 5f, 0.6f)
         val ring = f.calls.ring(spot, 9f, ticks)
         wait(ring.ticks)
@@ -243,6 +264,18 @@ class AriusMoves(private val f: EirholmFight) {
                     nextGuard = now + 360
                     yieldAll(guard(true, false))
                 }
+                now >= nextChain && d in 5.0..18.0 && rnd.nextFloat() < 0.35f -> {
+                    nextChain = now + 260
+                    yieldAll(stepChain(true))
+                }
+                now >= nextSky && rnd.nextFloat() < 0.25f -> {
+                    nextSky = now + 420
+                    yieldAll(skyLeap(true))
+                }
+                now >= nextLotus && d < 9 && rnd.nextFloat() < 0.3f -> {
+                    nextLotus = now + 400
+                    yieldAll(frostLotus(true))
+                }
                 d > 6 -> yieldAll(lunge(t, true))
                 else -> yieldAll(combo(true, false))
             }
@@ -293,6 +326,151 @@ class AriusMoves(private val f: EirholmFight) {
         } finally {
             acting = false
         }
+    }
+
+    // --- Seit 1.8.0: neue Angriffe in Abschnitt I (Crix: „stirbt echt schnell und hat nicht viele coole Angriffe“) ---
+
+    private var nextLotus = 0L
+    private var nextChain = 0L
+    private var nextJavelin = 0L
+    private var nextSky = 0L
+
+    /**
+     * Frostlotus: Er rammt die Klinge in den Boden, sechs Blütenblätter aus Frost schießen nacheinander sternförmig aus
+     * ihm heraus (Linien, im Uhrzeigersinn), zum Schluss blüht die Mitte auf (Ring).
+     */
+    fun frostLotus(white: Boolean): Script = script {
+        val a = f.arius ?: return@script
+        val c = a.entityPos
+        val base = rnd.nextDouble() * Math.PI * 2
+        a.play(AriusPose.STAB_GROUND, 16)
+        f.sound("arius.guard", c, 1.6f, 0.6f)
+        val group = f.calls.boss()
+        val petals = (0 until 6).map { k ->
+            val ang = base + k * Math.PI / 3
+            val dir = Vec3d(sin(ang), 0.0, cos(ang))
+            val to = f.clampToArena(c.add(dir.multiply(11.0)), 0.5)
+            Triple(group.line(c, to, 1.8f, 16 + k * 5, Telegraph.Pace.HEAVY), dir, to)
+        }
+        val bloom = group.ring(c, 3.2f, 16 + 6 * 5 + 8)
+        var elapsed = 0
+        for ((line, dir, to) in petals) {
+            wait((line.ticks - elapsed).coerceAtLeast(0))
+            elapsed = line.ticks
+            f.sound("arius.frost_strip", c, 1.6f, 1.1f + elapsed * 0.004f)
+            f.fx(FxKind.SEAM, c.add(0.0, 0.1, 0.0), to.add(0.0, 0.1, 0.0), a = 1.2f, life = 14)
+            f.fx(FxKind.SLASH_ARC, c.add(dir.multiply(5.0)).add(0.0, 0.4, 0.0), dir, a = 4f, b = 0.9f, life = 10)
+            for (p in line.hits(f.players())) f.hurt(p, if (white) 10f else 9f)
+            val placed = ArrayList<net.minecraft.util.math.BlockPos>()
+            placed += spike(c.add(dir.multiply(4.0)), 1)
+            placed += spike(c.add(dir.multiply(8.0)), 2)
+            f.task(script { wait(30); f.edits.revert(placed) })
+        }
+        wait((bloom.ticks - elapsed).coerceAtLeast(0))
+        f.sound("arius.stab_ground", c, 2.4f, 1.1f)
+        Vfx.nova(f.world, style, c.add(0.0, 0.3, 0.0), 3.4f, 12)
+        for (p in bloom.hits(f.players())) {
+            f.hurt(p, 8f, Damage.Kind.IMPACT)
+            dev.henny.hha.logic.Fx.launchPlayer(p, flatDir(c, p.entityPos).multiply(0.7).add(0.0, 0.5, 0.0))
+        }
+        f.openArius(24)
+        wait(24)
+    }
+
+    /** Windschritt-Kette: drei blitzschnelle Schritte im Zickzack auf das Ziel zu, bei jedem ein Hieb. */
+    fun stepChain(white: Boolean): Script = script {
+        val a = f.arius ?: return@script
+        for (k in 0 until 3) {
+            val t = f.target() ?: break
+            val from = a.entityPos
+            val toward = flatDir(from, t.entityPos)
+            val side = Vec3d(-toward.z, 0.0, toward.x).multiply(if (k % 2 == 0) 1.0 else -1.0)
+            val dist = sqrt(from.squaredDistanceTo(t.entityPos))
+            val to = f.clampToArena(from.add(toward.multiply(minOf(dist + 1.5, 9.0))).add(side.multiply(2.0)), 1.0)
+            val line = f.calls.line(from, to, 2f, if (k == 0) 16 else 9, if (k == 0) Telegraph.Pace.HEAVY else Telegraph.Pace.FOLLOW_UP)
+            a.play(AriusPose.LUNGE, line.ticks)
+            f.sound("arius.wind_step", from, 1.8f, 1.1f + k * 0.1f)
+            wait(line.ticks)
+            f.fx(FxKind.DASH_STREAK, from, to, life = 12)
+            f.place(a, Vec3d(to.x, f.floorY, to.z))
+            f.face(a, t.entityPos)
+            f.sound("arius.slash", to, 2.2f, 1.0f + k * 0.12f)
+            for (p in line.hits(f.players())) f.hurt(p, if (white) 9f else 8f)
+            slash(to, flatDir(from, to), 3.6f)
+            wait(3)
+        }
+        f.openArius(20)
+        wait(20)
+    }
+
+    /** Eisspeerwurf: Er formt drei Eisspeere in der Luft und schleudert sie im Fächer (angesagte Bahnen). */
+    fun iceJavelin(white: Boolean): Script = script {
+        val a = f.arius ?: return@script
+        val t = f.target() ?: return@script
+        f.face(a, t.entityPos)
+        val from = a.entityPos
+        val dir = flatDir(from, t.entityPos)
+        a.play(AriusPose.THROW_CRYSTALS, 22)
+        f.sound("crystal.hang", from, 2f, 1.3f)
+        val group = f.calls.boss()
+        val lines = listOf(-0.32, 0.0, 0.32).map { off ->
+            val d = Vec3d(dir.x * cos(off) - dir.z * sin(off), 0.0, dir.x * sin(off) + dir.z * cos(off))
+            val to = f.clampToArena(from.add(d.multiply(20.0)), 0.5)
+            f.fx(FxKind.CRYSTAL, from.add(0.0, 2.6, 0.0).add(d.multiply(0.8)), to.add(0.0, 1.0, 0.0), a = 22f, life = 30)
+            group.line(from, to, 1.6f, 22, Telegraph.Pace.PROJECTILE) to d
+        }
+        wait(22)
+        f.sound("arius.thrust", from, 2.4f, 1.2f)
+        for ((line, _) in lines) for (p in line.hits(f.players())) {
+            f.hurt(p, if (white) 10f else 9f)
+            dev.henny.hha_arius.gear.Frostbite.add(p, 15f)
+        }
+        f.openArius(18)
+        wait(18)
+    }
+
+    /** Himmelssprung: Er springt hoch in die Luft und stürzt mit der Klinge voran auf das Ziel; Eisdornenkranz. */
+    fun skyLeap(white: Boolean): Script = script {
+        val a = f.arius ?: return@script
+        val t = f.target() ?: return@script
+        val from = a.entityPos
+        val spot = Vec3d(t.x, f.floorY, t.z)
+        val ring = f.calls.ring(spot, 3.8f, 30, pace = Telegraph.Pace.HEAVY)
+        a.play(AriusPose.LAUNCH, 8)
+        f.sound("arius.wind_step", from, 2.4f, 0.7f)
+        f.fx(FxKind.DASH_STREAK, from, from.add(0.0, 10.0, 0.0), life = 10)
+        val apex = from.lerp(spot, 0.5).add(0.0, 10.0, 0.0)
+        for (i in 1..16) {
+            val k = i / 16.0
+            f.place(a, from.lerp(apex, 1.0 - (1.0 - k) * (1.0 - k)))
+            f.face(a, spot)
+            yield(Unit)
+        }
+        a.play(AriusPose.STAB_GROUND, ring.remaining.coerceAtLeast(1))
+        val top = a.entityPos
+        val left = ring.remaining.coerceAtLeast(4)
+        for (i in 1..left) {
+            val k = i / left.toDouble()
+            f.place(a, top.lerp(spot, k * k))
+            yield(Unit)
+        }
+        f.place(a, spot)
+        f.sound("arius.stab_ground", spot, 3f, 0.8f)
+        f.calls.roomShake(spot, 4f, 30f)
+        Vfx.shockwave(f.world, style, spot, 5f, 14, 1.6f)
+        f.fx(FxKind.CLEAR_WAVE, spot, a = 7f, life = 16)
+        for (p in ring.hits(f.players())) {
+            f.hurt(p, if (white) 13f else 12f, Damage.Kind.IMPACT)
+            dev.henny.hha.logic.Fx.launchPlayer(p, flatDir(spot, p.entityPos).multiply(0.8).add(0.0, 0.5, 0.0))
+        }
+        val placed = ArrayList<net.minecraft.util.math.BlockPos>()
+        for (k in 0 until 10) {
+            val ang = k / 10.0 * Math.PI * 2
+            placed += spike(spot.add(cos(ang) * 4.6, 0.0, sin(ang) * 4.6), 1 + rnd.nextInt(2))
+        }
+        f.task(script { wait(50); f.edits.revert(placed) })
+        f.openArius(30)
+        wait(30)
     }
 
     // --- Klingenflug (seit 1.2.2): Solvane fliegt allein, Arius tritt ----------------------------------------------------
@@ -635,6 +813,7 @@ class AriusMoves(private val f: EirholmFight) {
         val pillar = f.pillarOnPath(from, to, 1.8)
         val stop = pillar?.let { Vec3d(it.x + 0.5, f.floorY, it.z + 0.5).subtract(dir.multiply(1.6)) } ?: to
         Vfx.trail(f.world, style, a, 0.6f, 12)
+        f.fx(FxKind.DASH_STREAK, from, stop, life = 14)
         for (p in line.hits(f.players())) {
             f.hurt(p, 16f)
             dev.henny.hha.logic.Fx.launchPlayer(p, dir.multiply(0.8).add(0.0, 0.35, 0.0))
@@ -875,6 +1054,8 @@ class AriusMoves(private val f: EirholmFight) {
         // Trennt die Verbindung zur Deckung: trifft auch hinter Säulen und Eiskämmen.
         for (p in line.hits(f.players())) f.hurt(p, 16f, Damage.Kind.NULL_CUT)
         f.fx(FxKind.SEAM, a.entityPos.add(0.0, 1.1, 0.0), to.add(0.0, 1.1, 0.0), a = 1.6f, life = 16)
+        f.fx(FxKind.SLASH_ARC, a.entityPos.add(0.0, 1.1, 0.0), dir, a = 7f, b = 0f, life = 14)
+        f.fx(FxKind.DASH_STREAK, a.entityPos, to, life = 10)
         Vfx.crescent(f.world, style, a.entityPos.add(0.0, 1.1, 0.0), dir, 24f, 1.0f, 8)
         wait(16)
     }

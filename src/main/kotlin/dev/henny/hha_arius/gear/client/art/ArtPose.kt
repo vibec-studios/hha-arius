@@ -403,7 +403,8 @@ internal object ArtPose {
         return when (anim.anim) {
             Anim.JAB, Anim.CROSS -> minOf(1.6f, w * 0.8f)
             Anim.HOOK -> minOf(2f, w * 0.5f)
-            Anim.SIDE_KICK, Anim.SPIN_KICK, Anim.FLYING_KICK, Anim.WHIRL_KICK, Anim.DIVE_KICK -> minOf(2.5f, w * 0.5f)
+            Anim.SIDE_KICK, Anim.SPIN_KICK, Anim.FLYING_KICK, Anim.WHIRL_KICK, Anim.DIVE_KICK, Anim.ROUNDHOUSE, Anim.LOW_SWEEP -> minOf(2.5f, w * 0.5f)
+            Anim.KNEE -> minOf(1.6f, w * 0.6f)
             Anim.PARRY -> 1.5f
             Anim.COUNTER -> 1.2f
             Anim.ART_RELEASE -> 1.2f
@@ -535,14 +536,19 @@ internal object ArtPose {
      * frei bleiben (Crix 17.11.: vorher Fäuste vor dem Gesicht); leichtes Atmen.
      */
     fun guard(p: Pose, c: Ctx, t: Float) {
+        // Seit 1.8.0 eine richtige Kampfhaltung (Crix: „gib dem Nahkampfmodus einen richtigen Stand“): tiefer, breiter
+        // Stand in Rechtsauslage, Rumpf eingedreht, vordere Faust höher und weiter vorn, hintere Faust am Kinn, ein
+        // leichtes Wippen auf den Fußballen wie ein Kampfsportler.
         p.reset()
         val b = breathe(t)
-        p.tYaw = 0.25f; p.tPitch = 0.08f + 0.015f * b
-        p.rHand.set(-3.0f, 3.4f + 0.25f * b, -6.2f); p.rPalm.set(1f, 0.3f, -0.2f)
-        p.lHand.set(2.4f, 2.6f + 0.25f * breathe(t, phase = 0.6f), -8.4f); p.lPalm.set(-1f, 0.3f, -0.2f)
-        p.rLeg(0.22f, 0.25f, 0.06f); p.lLeg(-0.28f, -0.1f, -0.06f)
+        val bob = sin(t * 0.32f) * (1f - c.walk)
+        p.tYaw = 0.42f; p.tPitch = 0.1f + 0.015f * b
+        p.drop = 1.0f + 0.35f * bob
+        p.rHand.set(-2.6f, 2.2f + 0.25f * b + 0.2f * bob, -5.6f); p.rPalm.set(1f, 0.3f, -0.2f)
+        p.lHand.set(2.0f, 1.2f + 0.25f * breathe(t, phase = 0.6f) + 0.2f * bob, -9.8f); p.lPalm.set(-1f, 0.35f, -0.25f)
+        p.rLeg(0.4f, 0.38f, 0.14f); p.lLeg(-0.44f, -0.22f, -0.14f)
         p.legW = 1f - c.walk
-        p.headP = 0.08f
+        p.headP = 0.12f
     }
 
     /** Magiemodus: lockere, offene Hände neben der Hüfte, ruhiger Stand. */
@@ -673,6 +679,9 @@ internal object ArtPose {
             Anim.WHITE_HOLE -> whiteHole(p, c, t, a)
             Anim.UPPERCUT -> uppercut(p, c, t, a, s)
             Anim.AXE_KICK, Anim.DIVE_KICK -> axeKick(p, c, t, a, s)
+            Anim.ROUNDHOUSE -> roundhouse(p, c, t, a, s)
+            Anim.LOW_SWEEP -> lowSweep(p, c, t, a, s)
+            Anim.KNEE -> knee(p, c, t, a, s)
             Anim.NONE -> idle(p, c, t)
         }
     }
@@ -937,6 +946,99 @@ internal object ArtPose {
         // Umdrehung im Uhrzeigersinn = negative Drehung im Entity-Raum; 360° ≙ 0 (kein Sprung).
         p.turn = if (deg >= 359.9f) 0f else -Math.toRadians(deg.toDouble()).toFloat()
         p.headY = 0.4f * sin(PI.toFloat() * seg(a, gather, w))
+    }
+
+    /**
+     * Halbkreistritt (seit 1.8.0): Das Standbein dreht ein, die Hüfte öffnet, das rechte Bein schwingt angewinkelt von
+     * der Seite herum und schnappt in Kopfhöhe aus (Treffer bei t = windup); die Arme halten das Gleichgewicht, danach
+     * zurück in die Kammer und in die Haltung.
+     */
+    private fun roundhouse(p: Pose, c: Ctx, t: Float, a: Float, s: ArtAnims.State) {
+        val w = s.param.coerceAtLeast(2).toFloat()
+        val d = if (s.duration > 0) s.duration.toFloat() else (w + Move.ROUNDHOUSE.recover)
+        guard(keyA, c, t)
+        keyB.set(keyA).apply {   // Kammer seitlich
+            turn = 0.5f; headY = 0.45f; tYaw = 0.35f; tRoll = 0.3f; drop = 1.2f
+            rLeg(-0.9f, 0.4f, 0.9f); lLeg(0.08f, -0.2f, -0.14f); legW = 1f
+            rHand.set(-4.0f, 1f, -5.5f); lHand.set(2.4f, -1.5f, -8f)
+        }
+        keyC.set(keyA).apply {   // ausgeschnappt, hoch
+            turn = 0.95f; headY = 0.85f; tYaw = -0.1f; tRoll = 0.62f; drop = 0.6f
+            rLeg(-1.25f, -0.2f, 1.45f); lLeg(0.06f, -0.3f, -0.2f); legW = 1f
+            rHand.set(-10f, 6f, 1f); rPalm.set(0f, 1f, 0f)
+            lHand.set(3f, -0.5f, -6.5f)
+        }
+        val ch = 0.5f * w
+        when {
+            a < ch -> p.mix(keyA, keyB, easeOut(a / ch))
+            a < w -> {
+                val u = seg(a, ch, w)
+                p.mix(keyB, keyC, drive(u, 0.1f).coerceAtLeast(0f))
+                p.bodyFrom(keyB, keyC, smooth(u * 1.3f))
+            }
+            a < w + 1.5f -> p.set(keyC)
+            a < w + 4.5f -> p.mix(keyC, keyB, smooth(seg(a, w + 1.5f, w + 4.5f)))
+            else -> {
+                val v = seg(a, w + 4.5f, d)
+                p.mix(keyB, keyA, smooth(v))
+                p.drop += 0.9f * bump(seg(v, 0.1f, 0.7f))
+            }
+        }
+    }
+
+    /**
+     * Fußfeger (seit 1.8.0): tief in die Hocke, das linke Bein trägt, das rechte fegt gestreckt flach über den Boden einmal
+     * im Kreis (Treffer bei t = windup nach ≈ 270°), die Hände stützen nah am Boden; danach hoch in die Haltung.
+     */
+    private fun lowSweep(p: Pose, c: Ctx, t: Float, a: Float, s: ArtAnims.State) {
+        val w = s.param.coerceAtLeast(2).toFloat()
+        val d = if (s.duration > 0) s.duration.toFloat() else (w + Move.LOW_SWEEP.recover)
+        val hitDeg = 270f
+        val deg = when {
+            a < w -> hitDeg * Math.pow(seg(a, 0f, w).toDouble(), 1.3).toFloat()
+            a < w + 4f -> hitDeg + 90f * easeOut(seg(a, w, w + 4f))
+            else -> 0f
+        }
+        guard(keyA, c, t)
+        keyB.set(keyA).apply {   // tiefe Hocke, Bein gestreckt flach
+            tPitch = 0.5f; tYaw = 0.1f; tRoll = 0.1f; drop = 5.0f
+            lLeg(-1.5f, -0.1f, -0.1f); rLeg(-0.2f, 0f, 1.5f); legW = 1f
+            rHand.set(-5f, 10f, -4f); rPalm.set(0f, 1f, 0f)
+            lHand.set(4.5f, 10.5f, -5f); lPalm.set(0f, 1f, 0f)
+            headP = 0.25f
+        }
+        when {
+            a < 0.3f * w -> p.mix(keyA, keyB, easeOut(a / (0.3f * w)))
+            a < w + 4f -> p.set(keyB)
+            else -> p.mix(keyB, keyA, smooth(seg(a, w + 4f, d)))
+        }
+        p.turn = if (deg >= 359.9f) 0f else -Math.toRadians(deg.toDouble()).toFloat()
+    }
+
+    /**
+     * Kniestoß (seit 1.8.0): Beide Hände greifen vor und ziehen nach unten (Clinch), das rechte Knie schießt hoch vor die
+     * Brust (Treffer bei t = windup), der Rumpf lehnt sich hinein; dann zurück in die Haltung.
+     */
+    private fun knee(p: Pose, c: Ctx, t: Float, a: Float, s: ArtAnims.State) {
+        val w = s.param.coerceAtLeast(1).toFloat()
+        val d = if (s.duration > 0) s.duration.toFloat() else (w + Move.KNEE.recover)
+        guard(keyA, c, t)
+        keyB.set(keyA).apply {
+            tYaw = 0.1f; tPitch = 0.3f; drop = 0.2f
+            rLeg(-1.9f, 0.1f, 0.05f); lLeg(0.15f, -0.05f, -0.06f); legW = 1f
+            rHand.set(-2.2f, -0.5f, -11.5f); rPalm.set(0f, 1f, -0.3f)
+            lHand.set(2.2f, -0.5f, -11.5f); lPalm.set(0f, 1f, -0.3f)
+            headP = 0.25f
+        }
+        when {
+            a < w -> p.mix(keyA, keyB, drive(seg(a, 0f, w), 0.2f).coerceAtLeast(0f))
+            a < w + 1.5f -> p.set(keyB)
+            else -> {
+                val v = seg(a, w + 1.5f, d)
+                p.mix(keyB, keyA, smooth(v))
+                p.drop += 0.7f * bump(seg(v, 0.1f, 0.6f))
+            }
+        }
     }
 
     /** Handflächen-Parade: beide offenen Hände hoch vor dem Gesicht, Handflächen nach vorn, Gewicht hinten. */

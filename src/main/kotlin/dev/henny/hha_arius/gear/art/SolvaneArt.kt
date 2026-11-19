@@ -179,7 +179,7 @@ object SolvaneArt {
         }
         if (any) Resonance.markCombat(player)
         ArtFx.send(world, FxKind.CUT_PLANE, plane.origin, plane.forward.multiply(plane.length), plane.half.toFloat(),
-            if (abs(plane.span.y) < 0.5) 1f else 0f, 16)
+            if (abs(plane.span.y) < 0.5) 1f else 0f, 22)
         GearVfx.crescent(world, Vfx.Style.HEAVEN, player.entityPos.add(0.0, 1.1, 0.0), plane.forward, 3f, 2.4f, 6)
         GearSounds.play(world, plane.origin, "clear_cut.release", SoundEvents.ENTITY_PLAYER_ATTACK_SWEEP, 1f, 0.7f)
         if (GearConfig.on("clear_cut_blocks")) cutBlocks(player, world, plane)

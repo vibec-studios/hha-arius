@@ -88,6 +88,30 @@ Client-Welt und Spieler sind vorhanden. Geprüft mit Minecraft 1.21.11, Fabric L
 - [ ] Rüstung „Drachenherz-Wacht“: an Spieler, Rüstungsständer, Mannequin, Zombie; Leuchten Tag/Nacht, Verzauberungsglanz, Umhang, Federn beim Laufen/Springen, schmale Arme, mit und ohne Handschuhe
 - [ ] Solvane-Item: länger, Lichtfluss in der Hohlkehle, Sitz in erster und dritter Person
 
+## 1.8.0
+- [ ] Arius: größer (≈ 2,15 Blöcke), breiter, kantiger Kopf; Trefferbox passt
+- [ ] Phase I hält deutlich länger; neue Angriffe: Frostlotus (Sternlinien + Ring), Windschritt-Kette (3 Zickzack-Hiebe), Eisspeerwurf (Fächer), Himmelssprung (Sturz aus der Luft)
+- [ ] Hiebe von Arius mit eigener Sichel, Windschritt mit Nachbildern
+- [ ] Schnitt-Cutscene: Blitz, Kamera jagt der Naht nach, Schneewolken an der Kluft; statt des Tritts fegt eine Windsichel alle durchs Tor
+- [ ] Nach Solvanes Namen: Flug in den Drachenhorst im Westen (Titel „Der Horst“), Kampf dort; Arius sitzt auf dem Felspfeiler im Norden; Rippen, Kristallsäulen, Runenboden
+- [ ] Drache ruckelt nicht mehr (auch bei Server unter 20 TPS)
+- [ ] Drachen-Aura (Schein, Frostbänder, Augen); Brüllen klingt nach Brüllen (Enderdrache/Wärter/Verwüster-Schichten)
+- [ ] Neue Drachenangriffe: Frostbrüllen, Gletscherwalze, Eiskäfig (Mitte sicher), Sturmspirale (nur Mitte frei)
+- [ ] Keine Eiswände mehr: Atem und Frostwand hinterlassen nur kleine Eisdornen
+- [ ] Ritt II → III: aufsitzen, Schleichen wirft nicht ab, 3 QTEs (Festhalten/Ducken/Festhalten), Scheitern = Abrutschen, 2× = Fallen und am Feld abgesetzt; Flug an der Nordflanke entlang
+- [ ] Duo-Angriffe: Drachenritt (Arius auf ihrem Nacken, Bahn + Seitensicheln, Sturz) und Kreuzschnitt (Atem × Schnitt, Mitte bricht)
+- [ ] Gefrorener Stern als Mond mit Kratern, Ring, Splittern, Schweif und Einschlag
+- [ ] Weißes Loch (Boss und Rüstung): Scheibe fest im Raum, Lichtarme, Polstrahlen, kein dunkler Ring
+- [ ] Jagd: Zorn-Szene („Genug.“, Titel „Der Zorn des Erben“), Whiteout, Zorn-Aura; Blitzschritt (4 Herzen), Sichelsalve, Eisregen, Lawine, Stern; Solvane speit Frost über den Weg; wer vom Weg abweicht, wird zurückgeworfen
+- [ ] Berg: Nebengipfel mit Tunneln (Laternen), Schluchten mit Holzbrücken, Gipfelkrone aus Eisspitzen, Brüstung, Runenboden, Horn als Kristall; Finale auf dem größeren Gipfel
+- [ ] Hochland lebendiger: Polarlichter, Eisfunken, Windschlieren, Sternschnuppen
+- [ ] Untertitel: auch in Cutscenes sichtbar (groß im Kinobalken), Schreibmaschine, bleiben lange genug; im Kampf kein Plaudern mehr
+- [ ] Handschuhe Nahkampf: tiefe Kampfhaltung; Trittkette R×4; Knie (Gerade + R), Fußfeger; Technik-Taste im Nahkampf = Kombo-Auswahl; HUD zeigt Kette bzw. Tastenfolge, Finisher blitzt golden
+- [ ] Zauber: Siegel unter dem Wirker beim Aufladen, Siegel springt beim Wirken nach vorn
+- [ ] Rad: Full-Pot und Tank-Mode oben in eigener Leiste (nicht mehr bei Yang); Vanilla-Laufzeiten
+- [ ] Solvane-Active: riesige Lichtklinge schwingt durch die Schnittebene
+- [ ] Drachenatem/-schweif: Runentor, Hals, Lichtsaum, Frostspiralen, Splitter, Frostring
+
 ## 1.7.1
 - [ ] Enderperle im Hochland werfen, dann den Kampf beenden oder heimgeschickt werden: Die Perle verschwindet, kein Einfrieren
 - [ ] Ohne laufenden Kampf ins Hochland gelangen (Perle, Befehl): Man wird einmal heimgeschickt, kein Hängenbleiben

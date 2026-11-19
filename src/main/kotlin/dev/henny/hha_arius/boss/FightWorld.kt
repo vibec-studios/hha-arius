@@ -66,13 +66,29 @@ fun EirholmFight.addRidge(from: Vec3d, to: Vec3d, gaps: List<Double> = emptyList
                 dev.henny.hha.logic.Fx.launchPlayer(p, side.multiply(0.5 * sign).add(0.0, 0.25, 0.0))
             }
         }
-        placed.addAll(edits.fill(listOf(ground to Blocks.PACKED_ICE.defaultState, ground.up() to Blocks.BLUE_ICE.defaultState)))
+        // Seit 1.8.0 keine durchgehende Wand mehr (Crix: „die Eiswände fucken ab, die kleinen Eisdinger sind geil“):
+        // eine lockere Spur kleiner Eisdornen, 1–2 hoch, mit Abstand; man läuft zwischen ihnen hindurch.
+        val h = spikeH(col.x, col.z)
+        if (h == 0) continue
+        val cells = ArrayList<Pair<BlockPos, net.minecraft.block.BlockState>>()
+        for (y in 0 until h) cells += ground.up(y) to (if (y == h - 1) Blocks.BLUE_ICE else Blocks.PACKED_ICE).defaultState
+        placed.addAll(edits.fill(cells))
     }
     if (placed.isEmpty()) return null
     ambient("ridge.rise", from.lerp(to, 0.5), 3f, 0.9f)
     val ridge = EirholmFight.Ridge(placed, from, to)
     ridges.add(ridge)
     return ridge
+}
+
+/** Höhe eines Eisdorns der Frostspur in Spalte (x, z): meist 0 (Lücke), sonst 1 oder 2. */
+private fun spikeH(x: Int, z: Int): Int {
+    val h = ((x * 73856093) xor (z * 19349663)).toLong() and 0xFFFF
+    return when {
+        h % 5L != 0L && h % 7L != 0L -> 0
+        h % 3L == 0L -> 2
+        else -> 1
+    }
 }
 
 /** Der älteste Kamm bricht: kurze Riss-Ansage (Saal-Gefahr, kann vom Budget verschoben werden), dann verzögerte Kristalle. */
@@ -142,7 +158,11 @@ fun EirholmFight.coveredFrom(from: Vec3d, player: ServerPlayerEntity): Boolean {
 
 /** Mittelpunkte der Säulen des laufenden Schauplatzes (absolut), die noch stehen. */
 fun EirholmFight.livePillars(): List<BlockPos> {
-    val rel = if (phase >= EirholmFight.Phase.COLLAPSE) ArenaLayout.VAULT_PILLARS else ArenaLayout.TEMPLE_PILLARS
+    val rel = when {
+        phase >= EirholmFight.Phase.COLLAPSE -> ArenaLayout.VAULT_PILLARS
+        phase == EirholmFight.Phase.GLACIER -> ArenaLayout.AERIE_PILLARS
+        else -> ArenaLayout.TEMPLE_PILLARS
+    }
     return rel.map { abs(it) }.filter { it !in brokenPillars }
 }
 
@@ -166,9 +186,11 @@ fun EirholmFight.shatterPillar(center: BlockPos) {
 
 /** Eiswand entlang der Linie, [height] hoch, verschwindet nach [life] Ticks wieder. */
 fun EirholmFight.raiseWall(from: Vec3d, to: Vec3d, height: Int, life: Int) {
+    // Seit 1.8.0 keine Wand mehr, sondern eine Reihe kleiner Eisdornen (siehe addRidge); [height] begrenzt nur.
     val blocks = ArrayList<Pair<BlockPos, net.minecraft.block.BlockState>>()
     for (col in columns(Vec3d(from.x, floorY, from.z), Vec3d(to.x, floorY, to.z))) {
-        for (h in 0 until height) blocks.add(BlockPos(col.x, floorY.toInt() + h, col.z) to (if (h == height - 1) Blocks.BLUE_ICE else Blocks.PACKED_ICE).defaultState)
+        val h = minOf(height, spikeH(col.x, col.z))
+        for (y in 0 until h) blocks.add(BlockPos(col.x, floorY.toInt() + y, col.z) to (if (y == h - 1) Blocks.BLUE_ICE else Blocks.PACKED_ICE).defaultState)
     }
     val placed = edits.fill(blocks)
     task(script {

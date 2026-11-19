@@ -834,6 +834,8 @@ class AriusModel(root: ModelPart, private val bladeOnly: Boolean = false) : Enti
         val torso = part(Keys.TORSO)
         val chest = part(Keys.CHEST)
         val head = part(Keys.HEAD)
+        // Seit 1.8.0 größerer, kantiger Kopf (näher am Minecraft-Maß, Crix: „der runde Kopf passt nicht“).
+        head.xScale = HEAD_SCALE; head.yScale = HEAD_SCALE; head.zScale = HEAD_SCALE
         val armR = part(Keys.ARM_R)
         val armL = part(Keys.ARM_L)
         val open = m.open
@@ -971,6 +973,7 @@ class AriusModel(root: ModelPart, private val bladeOnly: Boolean = false) : Enti
     }
 
     private companion object {
+        const val HEAD_SCALE = 1.18f
         private val MEMORY = HashMap<Int, Memory>()
 
         /** Sohle tiefer als das (Modell: +y unten, Boden bei 24) gilt als am Boden, auch auf den Zehen. */

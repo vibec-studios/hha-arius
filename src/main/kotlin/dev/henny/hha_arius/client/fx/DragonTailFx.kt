@@ -73,6 +73,19 @@ class DragonTailFx(private val caster: Entity, private val start: Double, privat
         val tip = pts.last()
         d.billboard(VfxLayers.FLARE_ADD, tip, 1.1, withAlpha(0xFFFFFFFF.toInt(), 0.8f * fade))
         d.billboard(VfxLayers.GLOW_ADD, tip, 2.4, withAlpha(0xFF9FD8FF.toInt(), 0.35f * fade))
+        // Seit 1.8.0: Runentor am Rücken, aus dem der Schweif kommt; Leuchten entlang des Schweifs; Frostschleier hinter
+        // der Spitze; am Ende des Schwungs ein Frostring.
+        d.disc(VfxLayers.RUNE_ADD, pts[0].add(0.0, 0.1, 0.0), X, Z, 1.1, withAlpha(0xFF9FD8FF.toInt(), 0.7f * fade * grow), t * 0.08)
+        for ((k, p) in pts.withIndex()) if (k % 2 == 0) d.billboard(VfxLayers.GLOW_ADD, p, 1.2 + k * 0.08, withAlpha(0xFFBFE6FF.toInt(), 0.12f * fade))
+        if (t <= SWEEP + 4) for (j in 1..6) {
+            val ang = lead - j * 0.22
+            val r = radius * 0.95
+            d.billboard(VfxLayers.SMOKE_ALPHA, c.add(sin(ang) * r, 0.4 + j * 0.05, cos(ang) * r), 1.2 + j * 0.25, withAlpha(0xFFE6EEF6.toInt(), 0.3f * fade * (1f - j / 7f)), (t * 10.0 + j * 40.0) % 360.0)
+        }
+        if (t > SWEEP) {
+            val s = ((t - SWEEP) / 8f).coerceIn(0f, 1f)
+            d.ring(VfxLayers.GLOW_ADD, c.add(0.0, 0.1, 0.0), X, Z, radius * (0.9 + 0.5 * s), radius * (1.05 + 0.6 * s), withAlpha(0xFFFFFFFF.toInt(), 0.6f * (1f - s)), withAlpha(0xFFBFE6FF.toInt(), 0f), segments = 48)
+        }
     }
 
     private fun renderTail(d: VfxDraw, matrices: MatrixStack, pts: Array<Vec3d>, alpha: Float) {

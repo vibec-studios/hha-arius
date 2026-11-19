@@ -142,7 +142,7 @@ object AriusTimings {
     // --- Abschnitt III -----------------------------------------------------------------------------------------------
 
     const val RESONANCE_WARN = 20
-    const val RESONANCE_EVERY = 400
+    const val RESONANCE_EVERY = 320 // seit 1.8.0 öfter Duo-Angriffe (vorher 400)
     const val TAKT_BREAK_OPEN = 50
     const val CORE_BUILD = 60
     const val CORE_PULSE_EVERY = 36

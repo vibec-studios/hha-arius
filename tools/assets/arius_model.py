@@ -511,12 +511,9 @@ def head_part():
         # Hinterkopf: Spitzen fallen nach hinten unten
         lock('tuft_9', (-2.2, -5.0, 3.9), (-24, 0, 10), 2, 3, 20),
         lock('tuft_10', (2.2, -5.0, 3.9), (-24, 0, -10), 2, 3, 21),
-        # Wirbel: eine Strähne leicht nach hinten gekämmt
-        Part('tuft_4', (0.0, -10.4, 2.4), (70, 0, 0), cubes=[
-            C(-1.5, -2, -1, 3, 2, 2, hair_paint(15, 0.64)),
-            C(-1, -3.5, -0.5, 2, 2, 1, hair_paint(16, 0.7, tips=True)),
-        ]),
     ]
+    # Seit 1.8.0 (Crix: „der runde Kopf passt nicht“): kein Wirbel mehr hinten oben, flache Kappe statt gestufter
+    # Scheitel, Seitenhaar als volle Flächen – der Kopf wirkt kantig wie ein Block; im Renderer zusätzlich 1,2× größer.
     return Part('head', (0, -12, 0), cubes=[
         C(-3, -9, -3.5, 6, 6, 7, face_upper),                 # Schädel, vorn das Gesicht
         C(-2.5, -3, -3.3, 5, 1, 6, face_lower),               # Oberkiefer mit Mund
@@ -524,10 +521,9 @@ def head_part():
         C(-0.5, -4.6, -3.9, 1, 1, 1, nose),                   # Nase
         C(-3.5, -6, -0.5, 1, 2, 1, skin), C(2.5, -6, -0.5, 1, 2, 1, skin),     # Ohren
         C(-3.5, -10, -3.8, 7, 1, 8, hair_top),                # anliegende Kappe
-        C(-3, -10.5, -3, 6, 1, 6, hair_top),                  # Scheitel
-        C(-3.5, -9, 3.3, 7, 6, 1, hair_side),                 # Hinterkopf, glatt
-        C(-3, -3.2, 3.2, 6, 1, 1, hair_side),                 # Nackenansatz
-        C(-3.5, -9, -3.6, 1, 3, 6, hair_side), C(2.5, -9, -3.6, 1, 3, 6, hair_side),   # Schläfen, anliegend
+        C(-3.5, -11, -3.8, 7, 1, 8, hair_top),                # flacher Scheitel (kantig, nicht gestuft)
+        C(-3.5, -9, 3.3, 7, 7, 1, hair_side),                 # Hinterkopf, glatt, bis in den Nacken
+        C(-3.5, -9, -3.8, 1, 4, 7, hair_side), C(2.5, -9, -3.8, 1, 4, 7, hair_side),   # Seitenhaar, volle Flächen
         C(-3.1, -9, -4.0, 6, 1, 1, hair_paint(22, 0.66)),    # Haaransatz über der Stirn
     ], children=[hair_back, antenna] + tufts)
 
