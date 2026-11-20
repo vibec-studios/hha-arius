@@ -17,6 +17,7 @@
     "gear.client.ArtPlayerRendererMixin",
     "gear.client.GauntletHeldItemRendererMixin",
     "client.AtmosEnvironmentMixin",
+    "client.AtmosFogRendererMixin",
     "client.CameraKickMixin",
     "client.AriusRendererHitStopMixin",
     "client.QteHudMixin",

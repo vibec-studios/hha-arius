@@ -9,6 +9,7 @@ import dev.henny.hha_arius.net.AtmosMode
 import dev.henny.hha_arius.net.AtmosS2C
 import net.minecraft.block.Blocks
 import net.minecraft.client.MinecraftClient
+import net.minecraft.client.render.fog.FogData
 import net.minecraft.client.world.ClientWorld
 import net.minecraft.util.math.BlockPos
 import net.minecraft.util.math.Vec3d
@@ -102,20 +103,35 @@ object Atmos {
         )
     }
 
+    // Sturmböe: Nebel zieht kurz zu (Whiteout).
+    private fun fogStart(m: Mood) = m.fogStart * (1f - 0.8f * SnowStorm.whiteout)
+    private fun fogEnd(m: Mood) = m.fogEnd * (1f - 0.65f * SnowStorm.whiteout)
+
     /** Für den Mixin auf den Umgebungswerten: ersetzt Nebel, Himmel und Licht in Eirholm. */
     @JvmStatic
     fun override(attribute: EnvironmentAttribute<*>, value: Any?): Any? {
         if (!active || !inEirholm()) return value
         val m = current()
         return when (attribute) {
-            // Sturmböe: Nebel zieht kurz zu (Whiteout).
-            EnvironmentAttributes.FOG_START_DISTANCE_VISUAL -> if (value is Float) m.fogStart * (1f - 0.8f * SnowStorm.whiteout) else value
-            EnvironmentAttributes.FOG_END_DISTANCE_VISUAL -> if (value is Float) m.fogEnd * (1f - 0.65f * SnowStorm.whiteout) else value
+            EnvironmentAttributes.FOG_START_DISTANCE_VISUAL -> if (value is Float) fogStart(m) else value
+            EnvironmentAttributes.FOG_END_DISTANCE_VISUAL -> if (value is Float) fogEnd(m) else value
             EnvironmentAttributes.FOG_COLOR_VISUAL -> if (value is Int) m.fog else value
             EnvironmentAttributes.SKY_COLOR_VISUAL -> if (value is Int) m.sky else value
             EnvironmentAttributes.SKY_LIGHT_FACTOR_VISUAL -> if (value is Float) (value * m.light).coerceIn(0f, 1.25f) else value
             else -> value
         }
+    }
+
+    /**
+     * Für den Mixin auf dem FogRenderer: schreibt die Sturm-Nebeldistanz nach dem Atmosphären-Nebel noch einmal fest.
+     * Mods wie NoFog oder ClearViews setzen den Nebel innerhalb des Modifiers auf „unendlich“, danach greift das hier.
+     */
+    @JvmStatic
+    fun enforceFog(data: FogData) {
+        if (!active || !inEirholm()) return
+        val m = current()
+        data.environmentalStart = fogStart(m)
+        data.environmentalEnd = fogEnd(m)
     }
 
     fun tick(world: ClientWorld) {
