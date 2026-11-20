@@ -28,9 +28,9 @@ import java.util.UUID
 import kotlin.math.acos
 
 /**
- * Nahkampfmodus der Handschuhe (Server, maßgeblich). Kompaktes Moveset:
- * * Linksklick: Jab → Cross → Körperhaken (Folge, solange man im Verbindungsfenster weiterklickt).
- * * Rechtsklick: Seitentritt; direkt nach Jab/Cross schneller; direkt nach dem Haken der Drehtritt als Abschluss.
+ * Nahkampfmodus der Handschuhe (Server, maßgeblich). Seit 1.8.1 ergibt sich jeder Schlag nur aus der Reihenfolge von
+ * Links- (L) und Rechtsklicks (R) im Verbindungsfenster ([ComboTree], [Combo]): L Jab, LL Cross, LLL Haken, LR Knie,
+ * R Seitentritt, RR Halbkreistritt, RL Cross; vollständige Folgen enden im Finisher ihrer Kombo.
  * * Schleichen + Rechtsklick: Handflächen-Parade (kurzes Fenster); gelingt sie gegen einen Nahkampfschlag von vorn,
  *   folgt automatisch ein Konterstoß – nur wenn der Angreifer noch in Reichweite vor einem steht (kein Heranziehen).
  *
@@ -46,61 +46,19 @@ object GauntletCombat {
         var start = 0L
         var windup = 0
         var hit = false
-        var chain = 0
         var chainUntil = 0L
         var buffer: ArtAction? = null
 
-        /** Seit 1.8.0: gewählte Kombo, getroffene Tasten, Finisher für den laufenden Schlag. */
-        var style = ComboStyle.FREESTYLE
-        var progress = 0
-        var finisher = false
-    }
-
-    /**
-     * Kettencodes (seit 1.8.0): 1–4 Jab, Cross, Haken, Aufwärtshaken; 11–13 Seitentritt, Halbkreistritt, Drehtritt;
-     * 21 Kniestoß. Daraus folgt der nächste Schlag (siehe [start]).
-     */
-    private fun chainAfter(move: Move): Int = when (move) {
-        Move.JAB -> 1
-        Move.CROSS -> 2
-        Move.HOOK -> 3
-        Move.UPPERCUT -> 4
-        Move.SIDE_KICK -> 11
-        Move.ROUNDHOUSE -> 12
-        Move.SPIN_KICK -> 13
-        Move.KNEE -> 21
-        else -> 0
-    }
-
-    fun selectStyle(player: ServerPlayerEntity, style: ComboStyle) {
-        val s = states.getOrPut(player.uuid) { State() }
-        s.style = style
-        s.progress = 0
-        sendCombo(player, s, null)
+        /** Seit 1.8.1: bisher getroffene L/R-Folge, die des laufenden Schlags und die Kombo, die er vollendet. */
+        var seq = ""
+        var next = ""
+        var finisher: Combo? = null
     }
 
     private fun sendCombo(player: ServerPlayerEntity, s: State, move: Move?) {
-        val payload = ComboS2C(s.style.ordinal, s.progress, if (GearTasks.now <= s.chainUntil) s.chain else 0, move?.ordinal ?: -1, s.finisher)
+        val seq = if (GearTasks.now <= s.chainUntil || s.move != null) s.next else ""
+        val payload = ComboS2C(seq, move?.ordinal ?: -1, s.finisher?.ordinal ?: -1)
         if (net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.canSend(player, ComboS2C.ID)) net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(player, payload)
-    }
-
-    /** Taste der vorgegebenen Kombo prüfen: passt sie, weiter; sonst neu beginnen (die Taste kann der Anfang sein). */
-    private fun track(s: State, action: ArtAction, move: Move) {
-        s.finisher = false
-        val keys = s.style.keys
-        if (keys.isEmpty()) return
-        val c = when (action) { ArtAction.ATTACK -> 'L'; ArtAction.KICK -> 'R'; else -> '?' }
-        // Sprung-, Sprint- und Schleich-Varianten zählen nicht zur Folge.
-        val plain = move != Move.DIVE_KICK && move != Move.FLYING_KICK && move != Move.WHIRL_KICK && move != Move.PALM_BLAST && move != Move.FLURRY
-        if (plain && s.progress < keys.length && keys[s.progress] == c) {
-            s.progress++
-            if (s.progress == keys.length) {
-                s.finisher = true
-                s.progress = 0
-            }
-        } else {
-            s.progress = if (plain && keys[0] == c) 1 else 0
-        }
     }
 
     private val states = HashMap<UUID, State>()
@@ -136,44 +94,34 @@ object GauntletCombat {
         start(player, s, action)
     }
 
+    /**
+     * Seit 1.8.1 entscheidet nur die Reihenfolge von Links- (L) und Rechtsklicks: Passt die bisherige Folge plus diese
+     * Taste zu einem Kombo-Anfang ([ComboTree]), kommt dessen Schlag; vollendet sie eine Kombo, ihr Finisher (danach
+     * beginnt eine neue Folge). Sonst beginnt die Folge mit dieser Taste neu. Schleichen + Rechtsklick bleibt die Parade
+     * (Abwehr, keine Kombo); Sprint, Sprung und Schleichen ändern keinen Schlag mehr.
+     */
     private fun start(player: ServerPlayerEntity, s: State, action: ArtAction) {
-        val now = GearTasks.now
-        val linked = now <= s.chainUntil
-        val chain = if (linked) s.chain else 0
-        var windupOverride = -1
-        val airborne = !player.isOnGround && !player.isTouchingWater && player.fallDistance > 0.2
-        val move = when (action) {
-            ArtAction.ATTACK if airborne && chain == 0 -> Move.DIVE_KICK
-            ArtAction.ATTACK if player.isSprinting && chain == 0 -> Move.FLYING_KICK
-            ArtAction.KICK if !player.isOnGround && !player.isTouchingWater -> Move.WHIRL_KICK
-            ArtAction.KICK if player.isSprinting && chain == 0 -> Move.PALM_BLAST
-            ArtAction.ATTACK if player.isSneaking && chain == 0 -> Move.FLURRY
-            ArtAction.ATTACK -> when (chain) {
-                1 -> Move.CROSS
-                2 -> Move.HOOK
-                3 -> Move.UPPERCUT
-                21 -> Move.UPPERCUT
-                else -> Move.JAB
-            }
-            // Seit 1.8.0 eigene Trittkette: Seitentritt → Halbkreistritt → Drehtritt → Axttritt; aus der Schlagfolge
-            // Knie (nach dem Jab), schneller Seitentritt (nach dem Cross), Drehtritt (nach dem Haken), Axttritt (nach dem
-            // Aufwärtshaken); nach dem Knie der Fußfeger.
-            ArtAction.KICK -> when (chain) {
-                1 -> Move.KNEE
-                2 -> Move.SIDE_KICK.also { windupOverride = 4 }
-                3 -> Move.SPIN_KICK
-                4 -> Move.AXE_KICK
-                11 -> Move.ROUNDHOUSE
-                12 -> Move.SPIN_KICK
-                13 -> Move.AXE_KICK
-                21 -> Move.LOW_SWEEP
-                else -> Move.SIDE_KICK
-            }
-            ArtAction.PARRY -> Move.PARRY
-            else -> return
+        if (action == ArtAction.PARRY) {
+            s.seq = ""
+            s.next = ""
+            s.finisher = null
+            begin(player, s, Move.PARRY, Move.PARRY.windup)
+            sendCombo(player, s, Move.PARRY)
+            return
         }
-        track(s, action, move)
-        begin(player, s, move, if (windupOverride > 0) windupOverride else move.windup)
+        val c = when (action) { ArtAction.ATTACK -> 'L'; ArtAction.KICK -> 'R'; else -> return }
+        val linked = GearTasks.now <= s.chainUntil
+        var seq = (if (linked) s.seq else "") + c
+        var move = ComboTree.move(seq)
+        if (move == null) {
+            seq = c.toString()
+            move = ComboTree.move(seq) ?: return
+        }
+        s.finisher = Combo.finishedBy(seq)
+        s.next = seq
+        // Aus der Schlagfolge heraus ist der Seitentritt schneller.
+        val windup = if (move == Move.SIDE_KICK && seq.length > 1) 4 else move.windup
+        begin(player, s, move, windup)
         sendCombo(player, s, move)
     }
 
@@ -183,7 +131,6 @@ object GauntletCombat {
         s.start = now
         s.windup = windup
         s.hit = false
-        s.chain = 0
         val total = windup + move.recover
         Focus.begin(player, Focus.Busy.MOVE, now + total) { abort(player) }
         applySlow(player, move.slow)
@@ -234,7 +181,8 @@ object GauntletCombat {
         if (s.move == null) return
         s.move = null
         s.buffer = null
-        s.chain = 0
+        s.seq = ""
+        s.next = ""
         removeSlow(player)
         ArtNet.anim(player, Anim.NONE, 0)
     }
@@ -263,9 +211,11 @@ object GauntletCombat {
         s.move = null
         removeSlow(player)
         Focus.end(player, Focus.Busy.MOVE)
-        s.chain = chainAfter(move)
+        // Nach einem Finisher (oder der Parade) beginnt eine neue Folge.
+        s.seq = if (s.finisher != null || move == Move.PARRY || move == Move.COUNTER) "" else s.next
+        s.next = s.seq
         s.chainUntil = GearTasks.now + GearConfig.ticks("melee_link_ticks")
-        s.finisher = false
+        s.finisher = null
         sendCombo(player, s, null)
         val buffered = s.buffer
         s.buffer = null
@@ -279,7 +229,7 @@ object GauntletCombat {
         val targets = targets(player, move)
         val stack = player.mainHandStack
         val base = GearConfig.num("melee_base_damage") + (player.getAttributeValue(EntityAttributes.ATTACK_DAMAGE) - 1.0).coerceAtLeast(0.0)
-        val fin = states[player.uuid]?.finisher == true
+        val fin = states[player.uuid]?.finisher != null
         val damage = (base * move.mult * (if (fin) 1.6 else 1.0)).toFloat()
         var any = false
         for (target in targets) {
@@ -412,7 +362,8 @@ object GauntletCombat {
         world.spawnParticles(ParticleTypes.SNOWFLAKE, at.x, at.y + 0.6, at.z, 40, 1.2, 0.5, 1.2, 0.18)
         GearSounds.play(world, at, "gauntlet.finisher", SoundEvents.ENTITY_PLAYER_ATTACK_CRIT, 1f, 0.6f)
         GearSounds.play(world, at, "gauntlet.finisher", SoundEvents.ITEM_TRIDENT_THUNDER.value(), 0.35f, 1.6f)
-        GearCombat.actionbar(player, "hha_arius.msg.combo_finisher", net.minecraft.text.Text.translatable("hha_arius.combo." + (states[player.uuid]?.style?.key ?: "freestyle")))
+        val combo = states[player.uuid]?.finisher ?: return
+        GearCombat.actionbar(player, "hha_arius.msg.combo_finisher", net.minecraft.text.Text.translatable("hha_arius.combo." + combo.key))
     }
 
     private fun horizontalLook(player: ServerPlayerEntity): Vec3d {

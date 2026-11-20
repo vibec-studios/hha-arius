@@ -99,6 +99,11 @@ internal object GauntletFirstPerson {
         item: ItemStack, equipProgress: Float, matrices: MatrixStack, queue: OrderedRenderCommandQueue, light: Int,
     ): Boolean {
         val main = player.mainHandStack
+        // Seit 1.8.1: Ritt auf Solvane – beide (bzw. eine) Hände am Eisdorn; Gegenstände bleiben verborgen.
+        if (dev.henny.hha_arius.client.fx.RideClient.grip(player) > 0) {
+            if (hand == Hand.MAIN_HAND) renderRide(player, tickProgress, matrices, queue, light)
+            return true
+        }
         val anim = ArtAnims.get(player.id)
         val art = anim != null && (anim.anim == Anim.ART_CHARGE || anim.anim == Anim.ART_RELEASE)
         if (hand == Hand.OFF_HAND) {
@@ -168,6 +173,39 @@ internal object GauntletFirstPerson {
         if (anim != null && anim.anim == Anim.WHITE_HOLE) whiteHoleCore(matrices, glowB, anim.age(td), leftHanded)
         matrices.pop()
         glowB.submit(queue, VfxLayers.GLOW_ADD)
+    }
+
+    /**
+     * Ritt (erste Person): die Hände greifen den Eisdorn an seiner Stelle in der Welt (über die Kameradrehung in den
+     * Blickraum gerechnet, er bleibt also beim Umsehen am Drachen). Mit nur einer Hand rudert die linke frei.
+     */
+    private fun renderRide(player: AbstractClientPlayerEntity, td: Float, matrices: MatrixStack, queue: OrderedRenderCommandQueue, light: Int) {
+        val (upper, lower) = dev.henny.hha_arius.client.fx.RideClient.handTargets(td) ?: return
+        val grip = dev.henny.hha_arius.client.fx.RideClient.grip(player)
+        val leftHanded = player.mainArm == Arm.LEFT
+        val slim = player.skin.model() == PlayerSkinType.SLIM
+        val gloves = GauntletsItem.isGauntlets(player.mainHandStack)
+        val t = player.age + td
+        val rS = Vector3f(0.62f, -1.05f, -0.38f)
+        val lS = Vector3f(-0.62f, -1.05f, -0.40f)
+        // Rechte Hand oben, linke darunter, beide Handflächen zum Dorn.
+        val rH = Vector3f(upper).add(0.05f, 0f, 0.04f)
+        val lH = if (grip >= 2) Vector3f(lower).add(-0.05f, 0f, 0.04f)
+        else Vector3f(-0.78f, -0.12f + 0.14f * sin(t * 0.45f), -0.62f + 0.1f * cos(t * 0.37f))
+        val rN = Vector3f(-1f, 0f, 0.15f).normalize()
+        val lN = if (grip >= 2) Vector3f(1f, 0f, 0.15f).normalize() else Vector3f(0.6f, -0.6f, 0.4f).normalize()
+        matrices.push()
+        for (canonRight in booleanArrayOf(true, false)) {
+            val right = if (leftHanded) !canonRight else canonRight
+            val h = Vector3f(if (canonRight) rH else lH)
+            val sh = Vector3f(if (canonRight) rS else lS)
+            val n = Vector3f(if (canonRight) rN else lN)
+            if (leftHanded) { h.x = -h.x; sh.x = -sh.x; n.x = -n.x }
+            // Liegt der Griff hinter der Kamera (Blick nach hinten/oben), ist der Arm ohnehin nicht zu sehen.
+            if (h.z > -0.2f) continue
+            arm(player, matrices, queue, light, right, h, sh, n, slim, gloves, false, 0f, null, td, t, canonRight)
+        }
+        matrices.pop()
     }
 
     /** Ein Arm: Handende auf [h], Arm entlang (h - s), Handfläche nach [n]. Danach steht [matrices] wieder wie vorher. */
@@ -259,11 +297,21 @@ internal object GauntletFirstPerson {
 
     // --- Haltungen (erste Person) ------------------------------------------------------------------------------------
 
+    /**
+     * Kampfhaltung der ersten Person (seit 1.8.1, passend zur dritten Person): vordere linke Faust höher und weiter
+     * vorn nahe der Mitte, hintere rechte Faust tiefer und näher am Körper; beide wippen mit dem Stand, die vordere
+     * kreist minimal, die ganze Anordnung pendelt leicht.
+     */
     private fun guard(p: FpPose, t: Float) {
         p.shoulders()
         val b = 0.01f * breathe(t)
-        p.rH.set(0.36f, -0.30f + b, -0.80f); p.rS.set(0.72f, -1.05f, -0.32f); p.rN.set(-0.8f, 0f, 0.6f)
-        p.lH.set(-0.30f, -0.25f + 0.01f * breathe(t, phase = 0.6f), -0.92f); p.lS.set(-0.70f, -1.05f, -0.40f); p.lN.set(0.8f, 0f, 0.6f)
+        val bob = sin(t * 0.36f)
+        p.lH.set(-0.15f + 0.012f * sin(t * 0.3f), -0.19f + b + 0.012f * cos(t * 0.3f), -1.02f)
+        p.lS.set(-0.6f, -1.0f, -0.46f); p.lN.set(0.85f, 0.15f, 0.5f)
+        p.rH.set(0.24f, -0.37f + b, -0.74f)
+        p.rS.set(0.7f, -1.05f, -0.32f); p.rN.set(-0.8f, 0.2f, 0.55f)
+        p.dy = 0.012f * bob
+        p.roll = 0.03f * sin(t * 0.17f)
     }
 
     private fun magicIdle(p: FpPose, t: Float) {

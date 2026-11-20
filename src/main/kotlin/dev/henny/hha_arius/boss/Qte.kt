@@ -56,6 +56,7 @@ object Qte {
     fun init() {
         PayloadTypeRegistry.playS2C().register(QteS2C.ID, QteS2C.CODEC)
         PayloadTypeRegistry.playC2S().register(QteC2S.ID, QteC2S.CODEC)
+        RideGripS2C.register()
         ServerPlayNetworking.registerGlobalReceiver(QteC2S.ID) { p, ctx ->
             val round = rounds[p.id] ?: return@registerGlobalReceiver
             val player = ctx.player()

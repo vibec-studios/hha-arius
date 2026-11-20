@@ -216,8 +216,10 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
 
     override fun getPassengerAttachmentPos(passenger: net.minecraft.entity.Entity, dimensions: net.minecraft.entity.EntityDimensions, scaleFactor: Float): net.minecraft.util.math.Vec3d {
         val i = passengerList.indexOf(passenger).coerceAtLeast(0)
-        val side = if (i % 2 == 0) -0.55 else 0.55
-        val local = net.minecraft.util.math.Vec3d(side, NivarisShape.SPINE_UP + 0.95, -1.8 - (i / 2) * 2.0)
+        // Seit 1.8.1 sitzt niemand mehr: Die Reiter knien auf dem Rücken (Füße auf den Schuppen, 0,6 = Sattelpunkt des
+        // Spielers) und halten sich an einem Eisdorn vor sich fest (Darstellung: client/fx/RideClient).
+        val side = if (i % 2 == 0) -0.5 else 0.5
+        val local = net.minecraft.util.math.Vec3d(side, NivarisShape.SPINE_UP + 1.75, -1.6 - (i / 2) * 1.9)
         return local.rotateY(-yaw * net.minecraft.util.math.MathHelper.RADIANS_PER_DEGREE)
     }
 

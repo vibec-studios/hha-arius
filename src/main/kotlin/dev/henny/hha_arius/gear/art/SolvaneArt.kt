@@ -38,7 +38,9 @@ import kotlin.math.abs
  * 1. Taste halten: Haltung (stark verlangsamt), Energie sammelt sich an der Schneide (Mindestladung 0,8 s, voll 2 s).
  * 2. Blick richtet die Schnittebene aus; Schleichen beim Loslassen = waagerechter statt senkrechter Schnitt. Der eigene
  *    Client zeigt die Ebene als Vorschau (gleiche Geometrie, [CutPlane]).
- * 3. Loslassen: ein flacher, klar begrenzter Schnitt (Länge 6–12, Breite 3–5 Blöcke je nach Ladung), keine Explosion.
+ * 3. Loslassen: ein flacher, klar begrenzter Schnitt (Länge 6–12, Breite 3–5 Blöcke je nach Ladung). Seit 1.8.1
+ *    bricht dabei Solvanes Geist aus der Klinge und jagt die Ebene entlang; [ArtTimings.ART_SPLIT] Ticks danach reißt
+ *    die Naht auf und trifft ein zweites Mal (60 %, Frostaufbau, [split]).
  * 4. Erholung 1 s (keine Angriffe, langsam), Abklingzeit 12 s, danach Nachhall für andere große Techniken.
  *
  * Blöcke (Config `clear_cut_blocks`): Es werden echte, vollständige Blöcke abgebaut – höchstens `clear_cut_block_max`,
@@ -179,10 +181,49 @@ object SolvaneArt {
         }
         if (any) Resonance.markCombat(player)
         ArtFx.send(world, FxKind.CUT_PLANE, plane.origin, plane.forward.multiply(plane.length), plane.half.toFloat(),
-            if (abs(plane.span.y) < 0.5) 1f else 0f, 22)
+            if (abs(plane.span.y) < 0.5) 1f else 0f, ArtTimings.ART_SPLIT + 24)
         GearVfx.crescent(world, Vfx.Style.HEAVEN, player.entityPos.add(0.0, 1.1, 0.0), plane.forward, 3f, 2.4f, 6)
         GearSounds.play(world, plane.origin, "clear_cut.release", SoundEvents.ENTITY_PLAYER_ATTACK_SWEEP, 1f, 0.7f)
+        // Seit 1.8.1: Solvanes Geist bricht aus der Klinge (Drachenschrei), dann reißt die Naht auf (zweiter Treffer).
+        GearSounds.play(world, plane.origin, "clear_cut.dragon", SoundEvents.ENTITY_ENDER_DRAGON_GROWL, 0.55f, 1.35f)
+        GearTasks.later(ArtTimings.ART_SPLIT - ArtTimings.ART_HIT) {
+            if (GearCombat.stillThere(player, world)) split(player, world, plane, damage)
+        }
         if (GearConfig.on("clear_cut_blocks")) cutBlocks(player, world, plane)
+    }
+
+    /**
+     * Der Riss (seit 1.8.1): Einen Augenblick nach dem Schnitt reißt die Naht auf. Wer noch in der Ebene steht (oder
+     * hineingelaufen ist), bekommt 60 % des Schnittschadens, Frostaufbau und wird von der Ebene weggestoßen; Geschosse
+     * in der Ebene zerspringen. Endet in einem Frostring am Ende des Schnitts.
+     */
+    private fun split(player: ServerPlayerEntity, world: ServerWorld, plane: CutPlane, damage: Float) {
+        val reach = plane.length + plane.half + 2
+        var any = false
+        for (e in world.getOtherEntities(player, Box.of(plane.origin, reach * 2, reach * 2, reach * 2))) {
+            val r = maxOf(e.width, e.height) / 2.0 + 0.3
+            if (!plane.contains(e.boundingBox.center, r)) continue
+            when {
+                e is ProjectileEntity && GearCombat.isHostileProjectile(player, e) -> GearCombat.discardProjectile(world, e)
+                GearCombat.canHit(player, e) -> {
+                    val t = e as LivingEntity
+                    t.timeUntilRegen = 0
+                    if (t.damage(world, world.damageSources.playerAttack(player), damage * 0.6f)) {
+                        any = true
+                        dev.henny.hha_arius.gear.Frostbite.add(t, 25f)
+                        if (!GearCombat.isHeavy(t)) {
+                            val side = if (e.boundingBox.center.subtract(plane.origin).dotProduct(plane.normal) >= 0) 1.0 else -1.0
+                            GearCombat.push(t, t.entityPos.subtract(plane.normal.multiply(side)), 0.8, 0.3)
+                        }
+                    }
+                }
+            }
+        }
+        if (any) Resonance.markCombat(player)
+        val end = plane.origin.add(plane.forward.multiply(plane.length))
+        GearVfx.shockwave(world, Vfx.Style.HEAVEN, end, 5f, 12, 1.2f)
+        GearSounds.play(world, plane.origin.add(plane.forward.multiply(plane.length * 0.5)), "clear_cut.split", SoundEvents.BLOCK_GLASS_BREAK, 1.2f, 0.6f)
+        GearSounds.play(world, end, "clear_cut.split", SoundEvents.ITEM_TRIDENT_THUNDER.value(), 0.45f, 1.7f)
     }
 
     private fun cutBlocks(player: ServerPlayerEntity, world: ServerWorld, plane: CutPlane) {

@@ -67,8 +67,8 @@ fun EirholmFight.addRidge(from: Vec3d, to: Vec3d, gaps: List<Double> = emptyList
             }
         }
         // Seit 1.8.0 keine durchgehende Wand mehr (Crix: „die Eiswände fucken ab, die kleinen Eisdinger sind geil“):
-        // eine lockere Spur kleiner Eisdornen, 1–2 hoch, mit Abstand; man läuft zwischen ihnen hindurch.
-        val h = spikeH(col.x, col.z)
+        // eine lockere Spur kleiner Eisdornen mit Abstand; man läuft zwischen ihnen hindurch. Seit 1.8.1 nur noch 1 hoch.
+        val h = minOf(1, spikeH(col.x, col.z))
         if (h == 0) continue
         val cells = ArrayList<Pair<BlockPos, net.minecraft.block.BlockState>>()
         for (y in 0 until h) cells += ground.up(y) to (if (y == h - 1) Blocks.BLUE_ICE else Blocks.PACKED_ICE).defaultState

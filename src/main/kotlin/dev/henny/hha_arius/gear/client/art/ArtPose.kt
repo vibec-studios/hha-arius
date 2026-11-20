@@ -532,23 +532,36 @@ internal object ArtPose {
     }
 
     /**
-     * Kampfhaltung (Rechtsauslage: linke Seite vorn). Fäuste auf Brusthöhe und etwas seitlich, damit Gesicht und Skin
-     * frei bleiben (Crix 17.11.: vorher Fäuste vor dem Gesicht); leichtes Atmen.
+     * Kampfhaltung (seit 1.8.1 neu, Crix: „die Kampfhaltung ist immer noch Schrott“). Minecraft-Arme sind starr
+     * (Schulter → Faust gerade), daher entsteht die Haltung über Richtungen statt über Ellbogen:
+     * * Rechtsauslage: Rumpf deutlich eingedreht (linke Schulter vorn), leicht vorgebeugt, Kinn gesenkt.
+     * * Vordere (linke) Faust gestreckt auf Kinnhöhe vor der Mittellinie, die hintere (rechte) Faust schräg nach innen
+     *   vor das Brustbein gezogen: zwei Fäuste übereinander auf der Mittellinie statt zwei waagerechter Arme.
+     * * Breiter, versetzter Stand: vorderer Fuß vorn und leicht einwärts, hinterer weit zurück und nach außen gedreht;
+     *   die Hüfte sinkt, bis beide Füße stehen.
+     * * Leben: Wippen auf den Fußballen, leichtes Pendeln des Oberkörpers, die vordere Faust kreist minimal.
      */
     fun guard(p: Pose, c: Ctx, t: Float) {
-        // Seit 1.8.0 eine richtige Kampfhaltung (Crix: „gib dem Nahkampfmodus einen richtigen Stand“): tiefer, breiter
-        // Stand in Rechtsauslage, Rumpf eingedreht, vordere Faust höher und weiter vorn, hintere Faust am Kinn, ein
-        // leichtes Wippen auf den Fußballen wie ein Kampfsportler.
         p.reset()
         val b = breathe(t)
-        val bob = sin(t * 0.32f) * (1f - c.walk)
-        p.tYaw = 0.42f; p.tPitch = 0.1f + 0.015f * b
-        p.drop = 1.0f + 0.35f * bob
-        p.rHand.set(-2.6f, 2.2f + 0.25f * b + 0.2f * bob, -5.6f); p.rPalm.set(1f, 0.3f, -0.2f)
-        p.lHand.set(2.0f, 1.2f + 0.25f * breathe(t, phase = 0.6f) + 0.2f * bob, -9.8f); p.lPalm.set(-1f, 0.35f, -0.25f)
-        p.rLeg(0.4f, 0.38f, 0.14f); p.lLeg(-0.44f, -0.22f, -0.14f)
-        p.legW = 1f - c.walk
-        p.headP = 0.12f
+        val still = 1f - c.walk
+        val bob = sin(t * 0.36f) * still
+        val weave = sin(t * 0.17f) * still
+        p.tYaw = 0.55f + 0.04f * weave
+        p.tPitch = 0.16f + 0.015f * b
+        p.tRoll = 0.035f * weave
+        p.drop = 0.6f + 0.4f * (0.5f + 0.5f * bob)
+        // Vordere Faust: Kinnhöhe, gestreckt, kleine Kreise.
+        p.lHand.set(1.2f + 0.3f * sin(t * 0.3f), -0.9f + 0.3f * cos(t * 0.3f) + 0.2f * b, -12.5f)
+        p.lPalm.set(-0.9f, 0.3f, -0.3f)
+        // Hintere Faust: schräg nach innen vor das Brustbein, deckt Kinn und Körper.
+        p.rHand.set(0.2f, 4.6f + 0.25f * b + 0.2f * bob, -7.2f)
+        p.rPalm.set(0.8f, 0.45f, -0.4f)
+        // Beine: vorn links leicht einwärts, hinten rechts weit zurück und nach außen gedreht.
+        p.lLeg(-0.46f, -0.16f, -0.12f)
+        p.rLeg(0.5f, 0.62f, 0.16f)
+        p.legW = still
+        p.headP = 0.2f
     }
 
     /** Magiemodus: lockere, offene Hände neben der Hüfte, ruhiger Stand. */

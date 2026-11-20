@@ -47,7 +47,7 @@ enum class ArtAction {
     /** Maße der Yang-Brücke (seit 1.4.2); arg = Länge · 16 + Breite. */
     BRIDGE_DIMS,
 
-    /** Seit 1.8.0: Kombo wählen; arg = ComboStyle-Ordinal. */
+    /** Seit 1.8.0 Kombo-Auswahl; seit 1.8.1 ohne Wirkung (Kombos nur über die Klickfolge), bleibt für die Ordinalzahlen. */
     COMBO_SELECT;
 
     companion object {
@@ -141,18 +141,17 @@ data class ArtCutS2C(val positions: LongArray, val states: IntArray, val axis: I
 }
 
 /**
- * Seit 1.8.0: Kombo-Stand für das eigene HUD. [style] = gewählte Kombo, [progress] = getroffene Tasten der Folge,
- * [chain] = Kettencode (siehe GauntletCombat), [move] = letzter Schlag (Move-Ordinal, −1 keiner), [finisher] = der
- * letzte Schlag war ein Finisher.
+ * Kombo-Stand für das eigene HUD (seit 1.8.1): [seq] = bisher getroffene L/R-Folge (leer = keine Kette), [move] =
+ * letzter Schlag (Move-Ordinal, −1 keiner), [finisher] = Ordinal der eben vollendeten [Combo] (−1 keine).
  */
-data class ComboS2C(val style: Int, val progress: Int, val chain: Int, val move: Int, val finisher: Boolean) : CustomPayload {
+data class ComboS2C(val seq: String, val move: Int, val finisher: Int) : CustomPayload {
     override fun getId(): CustomPayload.Id<out CustomPayload> = ID
 
     companion object {
         val ID = CustomPayload.Id<ComboS2C>(HhaArius.id("art_combo"))
         val CODEC: PacketCodec<RegistryByteBuf, ComboS2C> = PacketCodec.of(
-            { v, buf -> buf.writeVarInt(v.style); buf.writeVarInt(v.progress); buf.writeVarInt(v.chain); buf.writeVarInt(v.move + 1); buf.writeBoolean(v.finisher) },
-            { buf -> ComboS2C(buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt() - 1, buf.readBoolean()) },
+            { v, buf -> buf.writeString(v.seq, 16); buf.writeVarInt(v.move + 1); buf.writeVarInt(v.finisher + 1) },
+            { buf -> ComboS2C(buf.readString(16), buf.readVarInt() - 1, buf.readVarInt() - 1) },
         )
     }
 }

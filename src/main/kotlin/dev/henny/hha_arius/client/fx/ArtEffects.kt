@@ -328,6 +328,13 @@ class CutPlaneFx(private val origin: Vec3d, private val vec: Vec3d, private val 
         span = if (horizontal) right else up
     }
 
+    /** Seit 1.8.1: Solvanes Geist jagt die Ebene entlang, danach der Riss (siehe [ClearCutFx]). */
+    private val awakening = ClearCutFx(origin, fwd, span, vec.length(), half)
+
+    override fun tick(world: ClientWorld) {
+        awakening.tick(world, age)
+    }
+
     /**
      * Seit 1.8.0 (Crix, mit Bild einer riesigen Lichtklinge): Beim Loslassen wächst aus den Händen eine gewaltige Klinge
      * aus Licht – breiter weißer Kern, blauer Saum, weicher Schein, Spitze –, schwingt in 5 Ticks durch die Schnittebene
@@ -364,6 +371,7 @@ class CutPlaneFx(private val origin: Vec3d, private val vec: Vec3d, private val 
 
     override fun render(d: VfxDraw, matrices: MatrixStack, t: Float) {
         giantBlade(d, t)
+        awakening.render(d, matrices, t)
         val end = origin.add(vec)
         val sheet = (1f - t / 7f).coerceIn(0f, 1f)
         if (sheet > 0f) d.band(VfxLayers.GLOW_ADD, origin, end, span, half, withAlpha(0xFFFFFFFF.toInt(), 0.55f * sheet), withAlpha(ArtColors.ICE, 0.25f * sheet))
