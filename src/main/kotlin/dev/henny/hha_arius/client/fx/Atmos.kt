@@ -5,6 +5,9 @@ import dev.henny.hha.client.vfx.VfxLayers
 import dev.henny.hha.client.vfx.lerpColor
 import dev.henny.hha.client.vfx.withAlpha
 import dev.henny.hha_arius.arena.ArenaDimension
+import dev.henny.hha_arius.arena.ArenaLayout
+import dev.henny.hha_arius.arena.FarPlan
+import dev.henny.hha_arius.arena.Highland
 import dev.henny.hha_arius.net.AtmosMode
 import dev.henny.hha_arius.net.AtmosS2C
 import net.minecraft.block.Blocks
@@ -93,7 +96,14 @@ object Atmos {
         return world.registryKey == ArenaDimension.WORLD
     }
 
+    /**
+     * Seit 1.8.1: In der Arena-Dimension ist immer Sturm. Hat der Server (noch) keine Stimmung geschickt – Nachzügler,
+     * nach dem Kampf, beim Wiederbetreten –, gilt das Schneetreiben ([AtmosMode.SNOW]).
+     */
+    private fun stormOn(): Boolean = inEirholm()
+
     private fun current(): Mood {
+        if (!active) return MOODS[AtmosMode.SNOW]
         val t = blend.coerceIn(0f, 1f)
         val s = t * t * (3 - 2 * t)
         fun f(a: Float, b: Float) = a + (b - a) * s
@@ -110,7 +120,7 @@ object Atmos {
     /** Für den Mixin auf den Umgebungswerten: ersetzt Nebel, Himmel und Licht in Eirholm. */
     @JvmStatic
     fun override(attribute: EnvironmentAttribute<*>, value: Any?): Any? {
-        if (!active || !inEirholm()) return value
+        if (!stormOn()) return value
         val m = current()
         return when (attribute) {
             EnvironmentAttributes.FOG_START_DISTANCE_VISUAL -> if (value is Float) fogStart(m) else value
@@ -128,7 +138,7 @@ object Atmos {
      */
     @JvmStatic
     fun enforceFog(data: FogData) {
-        if (!active || !inEirholm()) return
+        if (!stormOn()) return
         val m = current()
         data.environmentalStart = fogStart(m)
         data.environmentalEnd = fogEnd(m)
@@ -139,7 +149,7 @@ object Atmos {
         if (blend < 1f) blend = (blend + 1f / blendTicks).coerceAtMost(1f)
         veils.removeIf { ++it.age >= it.life }
         glints.removeIf { ++it.age >= it.life }
-        if (!active || world.registryKey != ArenaDimension.WORLD) return
+        if (world.registryKey != ArenaDimension.WORLD) return
         val client = MinecraftClient.getInstance()
         val cam = client.gameRenderer.camera.cameraPos
         val m = current()
@@ -186,19 +196,45 @@ object Atmos {
         val cam = d.cam
         val time = age + d.tickDelta
         val clear = (1f - (m.snow - 0.6f) / 1.6f).coerceIn(0.1f, 1f)
-        // Polarlichter
-        for (band in 0 until 3) {
-            val path = ArrayList<Vec3d>(32)
-            val baseA = band * 2.1 + 0.4
-            for (j in 0 until 32) {
-                val q = j / 31.0
-                val ang = baseA + (q - 0.5) * 1.6
-                val dist = 230.0 + 40.0 * sin(q * 5.0 + band)
-                val y = 120.0 + band * 18.0 + 10.0 * sin(q * 7.0 + time * 0.01 + band)
-                path.add(Vec3d(cam.x + cos(ang) * dist, cam.y + y, cam.z + sin(ang) * dist))
+        // Polarlichter: senkrechte Vorhänge, unten hell, nach oben und zu den Enden weich auslaufend (seit 1.8.1 – das
+        // alte flache Band hatte harte Kanten und wirkte im Flug wie eine durchsichtige Fläche am Himmel). Hoch über dem
+        // Hochland verankert, nicht an der Kamera, und nur, wenn der Sturm aufreißt.
+        val aurora = (clear - 0.35f).coerceAtLeast(0f) / 0.65f
+        if (aurora > 0.01f) {
+            val vc = d.buffer(VfxLayers.FLOW_ADD)
+            val skyY = ArenaLayout.BASE_Y + 150.0
+            for (band in 0 until 3) {
+                val baseA = band * 2.1 + 0.4
+                val col = when (band) { 0 -> 0xFF7FE8D0.toInt(); 1 -> 0xFF8FB8FF.toInt(); else -> 0xFFB79CFF.toInt() }
+                val segs = 40
+                var prev: Vec3d? = null
+                var prevA = 0f
+                for (j in 0..segs) {
+                    val q = j / segs.toDouble()
+                    val ang = baseA + (q - 0.5) * 1.6
+                    val dist = 260.0 + 40.0 * sin(q * 5.0 + band)
+                    val wave = 8.0 * sin(q * 7.0 + time * 0.01 + band)
+                    val p = Vec3d(cam.x + cos(ang) * dist + wave, skyY + band * 16.0, cam.z + sin(ang) * dist - wave)
+                    val a = (0.2f * aurora * fx * sin(q * PI).toFloat() * (0.7f + 0.3f * sin(q * 23.0 + time * 0.05).toFloat())).coerceAtLeast(0f)
+                    val o = prev
+                    if (o != null) {
+                        val h = 46.0 + 14.0 * sin(q * 9.0 + time * 0.02)
+                        val u0 = (j - 1) * 0.08f - time * 0.002f
+                        val u1 = j * 0.08f - time * 0.002f
+                        // unterer Saum (weich einblenden) und Vorhang (nach oben ausblenden)
+                        with(d) { vc.put(o.x, o.y - 6.0, o.z, u0, 1f, withAlpha(col, 0f)) }
+                        with(d) { vc.put(p.x, p.y - 6.0, p.z, u1, 1f, withAlpha(col, 0f)) }
+                        with(d) { vc.put(p.x, p.y, p.z, u1, 0.85f, withAlpha(col, a)) }
+                        with(d) { vc.put(o.x, o.y, o.z, u0, 0.85f, withAlpha(col, prevA)) }
+                        with(d) { vc.put(o.x, o.y, o.z, u0, 0.85f, withAlpha(col, prevA)) }
+                        with(d) { vc.put(p.x, p.y, p.z, u1, 0.85f, withAlpha(col, a)) }
+                        with(d) { vc.put(p.x, p.y + h, p.z, u1, 0f, withAlpha(lerpColor(col, 0xFFB79CFF.toInt(), 0.5f), 0f)) }
+                        with(d) { vc.put(o.x, o.y + h, o.z, u0, 0f, withAlpha(lerpColor(col, 0xFFB79CFF.toInt(), 0.5f), 0f)) }
+                    }
+                    prev = p
+                    prevA = a
+                }
             }
-            val col = when (band) { 0 -> 0xFF7FE8D0.toInt(); 1 -> 0xFF8FB8FF.toInt(); else -> 0xFFB79CFF.toInt() }
-            d.ribbon(VfxLayers.FLOW_ADD, path, { q -> 14.0 + 8.0 * sin(q * 9.0 + time * 0.02) }, { q -> withAlpha(col, (0.22f * clear * fx * sin(q * PI).toFloat()).coerceAtLeast(0f)) }, uScale = 0.05f, uOffset = -time * 0.004f)
         }
         // Treibende Eisfunken
         val wx = cos(windAngle)
@@ -242,23 +278,86 @@ object Atmos {
 
     private val VfxDrawUp = Vec3d(0.0, 1.0, 0.0)
 
-    /** Frostrand im HUD (nur im Heiligtum). */
+    /**
+     * Hochland-Stimmung (seit 1.8.1): Über den Resten des Ordens der weißen Klinge (Klingen, Türme, Schwurkreise,
+     * Klingengräber) steigen langsam Lichtfunken auf; über dem Tor der Klinge auf dem Gipfel steht eine schwache
+     * Lichtsäule (Wegweiser durch den Sturm); bei aufreißendem Himmel ein 22°-Halo um die Sonne wie in Polarnächten.
+     * Die Lage kommt aus denselben Formeln wie der Bau ([Highland], [FarPlan]); die Instanz ergibt sich aus der Kamera.
+     */
+    private fun landmarks(d: VfxDraw, m: Mood) {
+        val fx = AriusClientConfig.fx.coerceIn(0f, 1f)
+        if (fx <= 0f) return
+        val cam = d.cam
+        val time = age + d.tickDelta
+        val slot = Math.floorDiv(kotlin.math.floor(cam.x).toInt() + ArenaLayout.SLOT_SPACING / 2, ArenaLayout.SLOT_SPACING)
+        val o = ArenaLayout.origin(slot)
+        val rx = cam.x - o.x
+        val rz = cam.z - o.z
+        val vis = visibility().toDouble()
+        for (lm in Highland.landmarks) {
+            val dx = lm.x + 0.5 - rx
+            val dz = lm.z + 0.5 - rz
+            val dist = kotlin.math.sqrt(dx * dx + dz * dz)
+            if (dist > 96.0) continue
+            val fade = (1.0 - dist / (vis + 20.0)).coerceIn(0.0, 1.0).toFloat()
+            if (fade <= 0.02f) continue
+            val n = (10 * fx).toInt()
+            for (i in 0 until n) {
+                val seed = lm.seed * 0.001 + i * 1.618
+                val ph = ((time * 0.006 + seed) % 1.0)
+                val a = seed * 6.283
+                val r = 1.0 + (i % 4) * 1.6
+                val p = Vec3d(o.x + lm.x + 0.5 + cos(a + time * 0.01) * r, o.y + lm.base + ph * 14.0, o.z + lm.z + 0.5 + sin(a + time * 0.01) * r)
+                val tw = (0.6 + 0.4 * sin(time * 0.2 + i)).toFloat()
+                d.billboard(AriusLayers.MOON_FLARE, p, 0.18 + 0.1 * tw, withAlpha(0xFFBFE6FF.toInt(), 0.8f * fade * tw * sin(ph * PI).toFloat()))
+            }
+        }
+        // Lichtsäule über dem Tor der Klinge
+        val gate = FarPlan.SUMMIT_GATE
+        val g = Vec3d(o.x + gate.x + 0.5, o.y + gate.y + 10.0, o.z + gate.z + 0.5)
+        val gd = g.distanceTo(cam)
+        if (gd in 40.0..700.0) {
+            val a = (0.16f * fx * (1f - (gd / 700.0).toFloat())).coerceAtLeast(0f)
+            d.band(AriusLayers.MOON_GLOW, g, g.add(0.0, 90.0, 0.0), d.camRight, 1.6, withAlpha(0xFFCFEFFF.toInt(), a), withAlpha(0xFFCFEFFF.toInt(), 0f))
+        }
+        // 22°-Halo um die Sonne (feste Tageszeit, Sonne im Osten), nur bei klarer Sicht
+        val clear = ((m.fogEnd - 120f) / 150f).coerceIn(0f, 1f)
+        if (clear > 0.02f) {
+            val sunDir = Vec3d(1.0, 0.62, 0.15).normalize()
+            val sun = cam.add(sunDir.multiply(220.0))
+            val (ax, az) = dev.henny.hha.client.vfx.basisOf(sunDir)
+            val rr = 220.0 * kotlin.math.tan(Math.toRadians(22.0))
+            d.ring(AriusLayers.MOON_GLOW, sun, ax, az, rr - 4.0, rr + 3.0, withAlpha(0xFFFFE6C8.toInt(), 0.12f * clear * fx), withAlpha(0xFFBFD8FF.toInt(), 0f), segments = 72)
+        }
+    }
+
+    /** Sichtweite der laufenden Stimmung in Blöcken (Nebelende, in Böen kürzer). */
+    fun visibility(): Float = if (stormOn()) fogEnd(current()) else 200f
+
+    /** Frostrand, Whiteout und (je nach Modus) Bildschirmflocken im HUD (nur im Heiligtum). */
     fun renderHud(ctx: net.minecraft.client.gui.DrawContext) {
-        if (!active || !inEirholm()) return
-        if (SnowStorm.screenMode()) SnowStorm.renderScreen(ctx, current().snow, MinecraftClient.getInstance().renderTickCounter.getTickProgress(true))
+        if (!stormOn()) return
+        val snow = current().snow
+        val td = MinecraftClient.getInstance().renderTickCounter.getTickProgress(true)
+        // Ohne Shaderpack zeichnet die Welt den Sturm; in Böen fliegen trotzdem ein paar Flocken „ins Gesicht“.
+        SnowStorm.renderScreen(ctx, snow, td, if (SnowStorm.screenMode()) 1f else SnowStorm.gustScreenShare())
+        SnowStorm.renderWhiteout(ctx, snow)
         SnowStorm.renderVignette(ctx)
     }
 
     fun render(d: VfxDraw) {
-        if (!active || !inEirholm()) return
+        if (!stormOn()) return
         val m = current()
         SnowStorm.render(d, m.snow)
         life(d, m)
+        landmarks(d, m)
+        // Schneeschleier: weiche Rauchbänke (runde Ränder) statt der alten Rauschquadrate, nah ausgeblendet.
         for (v in veils) {
             val t = (v.age + d.tickDelta) / v.life
-            val k = (sin(t * PI) * m.veil * 0.22).toFloat().coerceIn(0f, 0.3f)
+            val near = ((v.pos.distanceTo(d.cam) - v.size * 0.6) / 6.0).coerceIn(0.0, 1.0)
+            val k = (sin(t * PI) * m.veil * 0.3 * near).toFloat().coerceIn(0f, 0.32f)
             if (k <= 0.005f) continue
-            d.billboard(VfxLayers.FLOW_ALPHA, v.pos, v.size, withAlpha(0xFFFFFFFF.toInt(), k), (v.seed * 6.0) + t * 0.6)
+            d.billboard(AriusLayers.VEIL, v.pos, v.size, withAlpha(0xFFD3DDE9.toInt(), k), (v.seed * 6.0) + t * 0.6)
         }
         for (g in glints) {
             val t = (g.age + d.tickDelta) / g.life

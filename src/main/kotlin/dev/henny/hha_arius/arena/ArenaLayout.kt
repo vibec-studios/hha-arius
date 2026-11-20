@@ -120,58 +120,63 @@ object ArenaLayout {
      * des Plateaus (wie die offene Gipfelarena eines Wukong-Bosses), Blick auf Horn und Gletscher, mit Kristallsäulen.
      * Eben gezogen in [FarPlan.top] (Terrasse), Säulen und Zuschauerhügel aus FarPlan.balcony.
      * Der Name `VAULT` bleibt im Code (früher das Herzgewölbe unter dem Plateau).
+     * Seit 1.8.1 (Crix: „die Arena, in der Arius im weißen Modus kämpft, ist viel zu nah und viel zu klein“): weit im
+     * Osten (330 Blöcke vom Tempel) und fast doppelt so groß (Radius 62 statt 34). Von hier beginnt die Jagd
+     * ([FarPlan.huntWaypoints]).
      */
-    val VAULT = BlockPos(70, 0, -10)
-    const val VAULT_R = 34
+    val VAULT = BlockPos(330, 0, 0)
+    const val VAULT_R = 62
 
     /** Kein Deckengewölbe: Obergrenze nur für den Drachenkörper. */
-    const val VAULT_CEIL = 80
+    const val VAULT_CEIL = 100
 
-    /** Eiskristall-Säulen auf dem Balkon (Deckung gegen Solvane, nicht gegen den Null-Schnitt). */
+    /** Eiskristall-Säulen auf dem Feld (Deckung gegen Solvane, nicht gegen den Null-Schnitt). */
     val VAULT_PILLARS: List<BlockPos> = (0 until 8).map { i ->
         val a = (i + 0.5) / 8.0 * 2.0 * PI
-        BlockPos(VAULT.x + Math.round(sin(a) * 17.0).toInt(), VAULT.y, VAULT.z + Math.round(cos(a) * 17.0).toInt())
+        BlockPos(VAULT.x + Math.round(sin(a) * 31.0).toInt(), VAULT.y, VAULT.z + Math.round(cos(a) * 31.0).toInt())
     }
 
-    /** Solvanes Liegeplatz im Finale (Nordrand des Balkons, Blick zur Nadel). */
-    val VAULT_REST = Vec3d(VAULT.x + 0.5, VAULT.y.toDouble(), VAULT.z - 21.5)
+    /** Solvanes Liegeplatz im Finale (Nordrand des Feldes, vor der großen Steinklinge). */
+    val VAULT_REST = Vec3d(VAULT.x + 0.5, VAULT.y.toDouble(), VAULT.z - 40.5)
 
-    /** Landepunkte auf dem Balkon (nach dem Aufstieg im Lichtstrom). */
-    val VAULT_LANDING: List<Vec3d> = listOf(Vec3d(-3.5, 0.0, 6.5), Vec3d(-9.5, 0.0, 4.5), Vec3d(2.5, 0.0, 4.5),
-        Vec3d(-6.5, 0.0, 10.5), Vec3d(-0.5, 0.0, 10.5), Vec3d(-3.5, 0.0, 14.5)).map { Vec3d(VAULT.x + it.x, VAULT.y + it.y, VAULT.z + it.z) }
+    /** Landepunkte auf dem Feld (nach dem Ritt), südlich der Mitte. */
+    val VAULT_LANDING: List<Vec3d> = listOf(Vec3d(-6.5, 0.0, 11.5), Vec3d(-17.5, 0.0, 8.5), Vec3d(4.5, 0.0, 8.5),
+        Vec3d(-11.5, 0.0, 19.5), Vec3d(-0.5, 0.0, 19.5), Vec3d(-6.5, 0.0, 26.5)).map { Vec3d(VAULT.x + it.x, VAULT.y + it.y, VAULT.z + it.z) }
 
     // --- Drachenhorst (Abschnitt II, seit 1.8.0) --------------------------------------------------------------------
 
     /**
      * Crix (19.11.): „Gib dem Drachen eine eigene Arena, die größer ist, damit er da auch passt.“ Ein Felskessel im
      * Westen des Hochlands: ebener Boden (Radius [AERIE_R]) mit Runenkreisen, ringsum zerklüftete Fels- und Eiswände bis
-     * [AERIE_RIM], im Norden die Rippen und Wirbel eines uralten Drachen, sechs Kristallsäulen als Deckung. Öffnung nach
+     * [AERIE_RIM], im Norden die Rippen und Wirbel eines uralten Drachen, acht Kristallsäulen als Deckung. Öffnung nach
      * Osten (dorther trägt Solvane die Spieler herein).
+     * Seit 1.8.1 (Crix: „viel zu nah am Tempel und viel zu klein“): 330 Blöcke westlich des Tempels und gut dreimal so
+     * groß (Boden Radius 88 statt 50), damit die 96 Blöcke lange Schlange darin kreisen kann.
      */
-    val AERIE = BlockPos(-112, 0, -55)
-    const val AERIE_R = 50
-    const val AERIE_RIM = 66
+    val AERIE = BlockPos(-330, 0, -60)
+    const val AERIE_R = 88
+    const val AERIE_RIM = 118
 
     /** Landeplätze im Horst (Ostseite, Blick nach Westen in den Kessel). */
-    val AERIE_LANDING: List<Vec3d> = listOf(Vec3d(28.5, 0.0, 0.5), Vec3d(30.5, 0.0, -4.5), Vec3d(30.5, 0.0, 5.5),
-        Vec3d(33.5, 0.0, -1.5), Vec3d(33.5, 0.0, 3.5), Vec3d(36.5, 0.0, 0.5)).map { Vec3d(AERIE.x + it.x, it.y, AERIE.z + it.z) }
+    val AERIE_LANDING: List<Vec3d> = listOf(Vec3d(58.5, 0.0, 0.5), Vec3d(60.5, 0.0, -4.5), Vec3d(60.5, 0.0, 5.5),
+        Vec3d(63.5, 0.0, -1.5), Vec3d(63.5, 0.0, 3.5), Vec3d(66.5, 0.0, 0.5)).map { Vec3d(AERIE.x + it.x, it.y, AERIE.z + it.z) }
 
     /** Arius sieht im Horst von einem Felspfeiler vor dem Nordrand zu (Lauffläche des Vorsprungs). */
-    val AERIE_SEAT = Vec3d(AERIE.x + 0.5, 12.0, AERIE.z - 46.5)
+    val AERIE_SEAT = Vec3d(AERIE.x + 0.5, 14.0, AERIE.z - 80.5)
 
     /** Zuschauerpunkt (k. o.) im Horst: Felspfeiler im Nordosten. */
-    val AERIE_WATCH = Vec3d(AERIE.x + 38.5, 10.0, AERIE.z - 27.5)
+    val AERIE_WATCH = Vec3d(AERIE.x + 66.5, 12.0, AERIE.z - 50.5)
 
     /** Kristallsäulen im Horst (Deckung, Wurfgeschosse für Solvane). Mittelpunkte auf Laufhöhe. */
-    val AERIE_PILLARS: List<BlockPos> = (0 until 6).map { i ->
-        val a = (i + 0.25) / 6.0 * 2.0 * PI
-        BlockPos(AERIE.x + Math.round(sin(a) * 31.0).toInt(), 0, AERIE.z + Math.round(cos(a) * 31.0).toInt())
+    val AERIE_PILLARS: List<BlockPos> = (0 until 8).map { i ->
+        val a = (i + 0.25) / 8.0 * 2.0 * PI
+        BlockPos(AERIE.x + Math.round(sin(a) * 50.0).toInt(), 0, AERIE.z + Math.round(cos(a) * 50.0).toInt())
     }
 
-    /** Landepunkte für Solvane im Horst (Ring r 22 um die Mitte). */
-    val AERIE_SPOTS: List<Vec3d> = (0 until 10).map { i ->
-        val a = i / 10.0 * 2.0 * PI
-        Vec3d(AERIE.x + 0.5 + sin(a) * 22.0, 0.0, AERIE.z + 0.5 + cos(a) * 22.0)
+    /** Landepunkte für Solvane im Horst (Ring r 40 um die Mitte). */
+    val AERIE_SPOTS: List<Vec3d> = (0 until 12).map { i ->
+        val a = i / 12.0 * 2.0 * PI
+        Vec3d(AERIE.x + 0.5 + sin(a) * 40.0, 0.0, AERIE.z + 0.5 + cos(a) * 40.0)
     }
 
     // --- Fernlandschaft und die Nadel (Auftritt von Nivaris) --------------------------------------------------------
@@ -218,8 +223,8 @@ object ArenaLayout {
     /** Zuschauerpunkt (k. o., Nachzügler) in Abschnitt I/II: Fels westlich des Klingengrabs (seit 1.4.2). */
     val WATCH_UPPER = Vec3d(-24.5, 4.0, -49.5)
 
-    /** Zuschauerpunkt in Abschnitt III: kleiner Eisvorsprung westlich neben dem Balkon (erhöht). */
-    val WATCH_VAULT = Vec3d(VAULT.x + 0.5, VAULT.y + 6.0, VAULT.z + 30.5)
+    /** Zuschauerpunkt in Abschnitt III: kleiner Felshügel am Südrand des Feldes (erhöht, neben dem Start der Jagd). */
+    val WATCH_VAULT = Vec3d(VAULT.x - 12.5, VAULT.y + 6.0, VAULT.z + 54.5)
 
     /**
      * Begrenzung des gesamten Bauvolumens (für Neubau/Aufräumen), relativ. Der Tempel liegt am Nordrand des Plateaus
@@ -230,9 +235,16 @@ object ArenaLayout {
     const val BOUND_Y_MIN = -8
     const val BOUND_Y_MAX = 30
 
-    /** Fernlandschaft (Nadel, Schlucht, Gletscherzüge) reicht weiter: bis z [FAR_Z_MAX], x ±[FAR_X], y [FAR_Y_MIN]..[SPIRE_TOP]. */
+    /**
+     * Fernlandschaft (Nadel, Massiv, Berge der Jagd, Horst, Feld, Hochland): seit 1.8.1 x [FAR_X_MIN]..[FAR_X_MAX],
+     * z [FAR_Z_MIN]..[FAR_Z_MAX], y [FAR_Y_MIN]..[SPIRE_TOP]. [FAR_X] ist nur noch die Breite der Schneewellen um das
+     * Plateau.
+     */
     const val FAR_X = 182
-    const val FAR_Z_MAX = 430
+    const val FAR_X_MIN = -464
+    const val FAR_X_MAX = 416
+    const val FAR_Z_MIN = -192
+    const val FAR_Z_MAX = 440
     const val FAR_Y_MIN = -80
 
     fun at(origin: BlockPos, rel: BlockPos): BlockPos = origin.add(rel)

@@ -13,13 +13,13 @@
         "particle": {
           "type": "minecraft:snowflake"
         },
-        "probability": 0.012
+        "probability": 0.022
       },
       {
         "particle": {
           "type": "minecraft:white_ash"
         },
-        "probability": 0.004
+        "probability": 0.006
       }
     ],
     "minecraft:visual/fog_color": "#c6d6e8",
