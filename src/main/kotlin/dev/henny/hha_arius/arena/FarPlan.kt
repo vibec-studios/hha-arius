@@ -204,6 +204,29 @@ internal object FarPlan {
         return Vec(ArenaLayout.SPIRE.x + 0.5 + sin(a) * r, floor(pathY[k]) + 1.0, ArenaLayout.SPIRE.z + 0.5 + kotlin.math.cos(a) * r)
     }
 
+    /**
+     * Route der Jagd (relativ, Laufhöhe): vom Fuß des Bergs über Weg, Kletterstufen und Brücken hinauf; der letzte
+     * Punkt ist das Tor zur Gipfelarena (dort endet die Jagd). Arius läuft sie entlang, der Sturm hält die Spieler darauf.
+     */
+    // placeholder – replaced by the world layout
+    fun huntWaypoints(): List<BlockPos> {
+        val out = ArrayList<BlockPos>()
+        var lastArc = -1e9
+        for (i in pathY.indices) {
+            if (pathArc[i] - lastArc < 10.0 && i != pathY.size - 1) continue
+            lastArc = pathArc[i]
+            val p = pathPoint(i)
+            out.add(BlockPos.ofFloored(p.x, p.y, p.z))
+        }
+        // Vom Wegende ein Stück nach innen auf die Gipfelschulter: das Tor zur Gipfelarena.
+        val end = pathPoint(pathY.size - 1)
+        val dx = ArenaLayout.SPIRE.x + 0.5 - end.x
+        val dz = ArenaLayout.SPIRE.z + 0.5 - end.z
+        val d = hypot(dx, dz).coerceAtLeast(1e-6)
+        out.add(BlockPos.ofFloored(end.x + dx / d * 8.0, SHOULDER_Y + 1.0, end.z + dz / d * 8.0))
+        return out
+    }
+
     /** Wegindex unter (x, z) mit etwas Toleranz am Rand oder −1. */
     fun pathIndexNear(x: Double, z: Double, slack: Double): Int {
         val dx = x - (ArenaLayout.SPIRE.x + 0.5)

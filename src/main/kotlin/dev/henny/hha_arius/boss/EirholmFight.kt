@@ -132,11 +132,22 @@ class EirholmFight(
     val summit: Vec3d
         get() = abs(Vec3d(ArenaLayout.SPIRE.x + 0.5, dev.henny.hha_arius.arena.FarPlan.SHOULDER_Y + 1.0, ArenaLayout.SPIRE.z + 0.5))
 
-    /** Landeplätze im Finale: auf dem Feld oder auf dem Gipfel (Ring nördlich des Horns). */
-    fun finaleSpots(): List<Vec3d> = if (!onSummit) ArenaLayout.VAULT_LANDING else (0 until 6).map { i ->
-        val a = Math.PI + (i - 2.5) * 0.28
-        Vec3d(ArenaLayout.SPIRE.x + 0.5 + kotlin.math.sin(a) * 16.0, dev.henny.hha_arius.arena.FarPlan.SHOULDER_Y + 1.0, ArenaLayout.SPIRE.z + 0.5 + kotlin.math.cos(a) * 16.0)
+    /**
+     * Landeplätze im Finale: auf dem Feld oder auf dem Gipfel. Seit 1.9.0 am Rand der Gipfelarena auf der Seite, von der
+     * die Jagd ankommt (letzter Punkt von [dev.henny.hha_arius.arena.FarPlan.huntWaypoints]), nicht mitten darin.
+     */
+    fun finaleSpots(): List<Vec3d> {
+        if (!onSummit) return ArenaLayout.VAULT_LANDING
+        val c = summitCenterRel
+        val gate = dev.henny.hha_arius.arena.FarPlan.huntWaypoints().lastOrNull()?.let { Vec3d(it.x + 0.5, c.y, it.z + 0.5) }
+        val toGate = gate?.subtract(c)?.let { Vec3d(it.x, 0.0, it.z) }?.takeIf { it.lengthSquared() > 1e-4 }?.normalize() ?: Vec3d(0.0, 0.0, 1.0)
+        val side = Vec3d(-toGate.z, 0.0, toGate.x)
+        return (0 until 6).map { i -> c.add(toGate.multiply(9.0 + (i / 3) * 1.6)).add(side.multiply(((i % 3) - 1) * 2.2)) }
     }
+
+    /** Mitte der Gipfelarena (relativ, Laufhöhe): nördlich des Horns auf der Gipfelschulter. */
+    val summitCenterRel: Vec3d
+        get() = Vec3d(ArenaLayout.SPIRE.x + 0.5, dev.henny.hha_arius.arena.FarPlan.SHOULDER_Y + 1.0, ArenaLayout.SPIRE.z + 0.5 - 19.0)
 
     var phase = Phase.BUILD
         private set
@@ -199,10 +210,6 @@ class EirholmFight(
     var ariusLeads = true
     var taktBroken = false
 
-    /** Finale: gewonnene Austausche; offen für den Konter. */
-    var exchangesWon = 0
-    var exchangeOpen = false
-
     /** Seit wann das Duellziel feststeht. */
     var duelTarget: UUID? = null
     private var announcedTarget: UUID? = null
@@ -232,6 +239,9 @@ class EirholmFight(
     private val tasks = ArrayList<Runner>()
 
     val moves = AriusMoves(this)
+
+    /** Sichtbares Eis ohne Kollision (Dornen, Splitter, Gletscherschollen), siehe [Shards]. */
+    val shards = Shards(this)
     val dragon = NivarisMoves(this)
     val scenes = Scenes(this)
 
@@ -258,7 +268,7 @@ class EirholmFight(
             phase <= Phase.CUT -> abs(Vec3d.of(ArenaLayout.TEMPLE)).add(0.5, 0.0, 0.5)
             // Seit 1.8.0 kämpft Solvane in ihrem eigenen Horst im Westen (Crix: größere Arena für den Drachen).
             phase <= Phase.COLLAPSE -> abs(Vec3d.of(ArenaLayout.AERIE)).add(0.5, 0.0, 0.5)
-            onSummit -> summit.add(0.0, 0.0, -19.0)
+            onSummit -> abs(summitCenterRel)
             else -> abs(Vec3d.of(ArenaLayout.VAULT)).add(0.5, 0.0, 0.5)
         }
 
@@ -268,7 +278,7 @@ class EirholmFight(
             phase == Phase.GLACIER -> ArenaLayout.AERIE_R - 3.0 // Drachenhorst (seit 1.8.0)
             phase <= Phase.COLLAPSE -> 600.0 // Ritt auf Solvanes Rücken
             chasing -> 600.0
-            onSummit -> 12.0 // Gipfelschulter nördlich des Horns (seit 1.8.0 größer, Schulter r 34)
+            onSummit -> 13.0 // Gipfelschulter nördlich des Horns (seit 1.8.0 größer, Schulter r 34)
             else -> 70.0 // offenes Feld (seit 1.4.2)
         }
 
@@ -497,9 +507,28 @@ class EirholmFight(
             }
         }
         if (ended) return
+        shards.tick()
+        watchHealing(active)
         arius?.let { if (it.open && now >= ariusOpenUntil) it.open = false }
         if (world.time % 5L == 0L) updateBars()
-        keepInArena(active)
+        // In der Jagd hält der Sturm die Spieler auf der Route (Hunt.keepOnRoute), nicht der Arenaboden.
+        if (!chasing) keepInArena(active)
+    }
+
+    /**
+     * Seit 1.9.0 (Wukong): Wer mitten im Kampf trinkt oder isst, den bemerkt Arius und bestraft ihn ([AriusMoves.healPunish]).
+     * Nur in den Abschnitten, in denen er selbst kämpft, und nicht in Szenen.
+     */
+    private fun watchHealing(active: List<ServerPlayerEntity>) {
+        if (!ariusVulnerable || chasing) return
+        if (phase != Phase.TEMPLE && phase != Phase.VAULT && phase != Phase.FINALE) return
+        for (p in active) {
+            if (!p.isUsingItem || p.itemUseTime !in 1..8) continue
+            if (!p.activeItem.contains(net.minecraft.component.DataComponentTypes.CONSUMABLE)) continue
+            val a = arius ?: return
+            if (p.squaredDistanceTo(a) > 30.0 * 30.0) continue
+            moves.noticeHeal(p)
+        }
     }
 
     /** Wer aus der Arena fällt (z. B. über den Rand), wird zurückgesetzt. */
@@ -561,7 +590,7 @@ class EirholmFight(
         val showDragon = phase == Phase.GLACIER || (phase == Phase.VAULT && !dragonDowned)
         sync(ariusBar, viewers, showArius)
         sync(dragonBar, viewers, showDragon)
-        ariusBar.percent = if (phase == Phase.FINALE) (1f - exchangesWon / 3f).coerceIn(0f, 1f) else (ariusHp / ariusMax).coerceIn(0f, 1f)
+        ariusBar.percent = (ariusHp / ariusMax).coerceIn(0f, 1f)
         dragonBar.percent = (dragonHp / dragonMax).coerceIn(0f, 1f)
         val lead = phase == Phase.VAULT && !dragonDowned
         ariusBar.name = Text.literal(if (lead && ariusLeads) "▶ " else "").append(Text.translatable(if (arius?.form == AriusForm.WHITE) "hha_arius.bar.arius_heir" else "hha_arius.bar.arius"))
@@ -603,7 +632,7 @@ class EirholmFight(
         if (!ariusVulnerable) return 0f
         val f = fighters[player.uuid]
         val front = isInFront(a, source.position ?: player.entityPos)
-        // Parierhaltung: Nahkampf löst Parade & Tritt aus.
+        // Konterhaltung: Nahkampf wird pariert und mit einer Kombo bestraft (seit 1.9.0, Wukong).
         if (!projectile && now < guardUntil && !guardTriggered && player.squaredDistanceTo(a) < 5.0 * 5.0) {
             guardTriggered = true
             moves.counter(player, guardWhite)
@@ -615,15 +644,8 @@ class EirholmFight(
             return 0f
         }
         val open = now < ariusOpenUntil
-        var dmg = amount * (if (open) 1.5f else 0.7f)
-        if (phase == Phase.FINALE) {
-            if (exchangeOpen) {
-                exchangeOpen = false
-                scenes.exchangeWon(player)
-                return 1f
-            }
-            return 0f
-        }
+        // Während der Konter-Kombo gilt seine Deckung: Treffer zählen nur halb.
+        var dmg = amount * (if (open) 1.5f else if (moves.countering) 0.35f else 0.7f)
         if (open) ariusOpenDamage += dmg
         dmg = min(dmg, ariusHp + 1f)
         ariusHp -= dmg
@@ -635,7 +657,7 @@ class EirholmFight(
                 push(f.hitsOutside, 40)
                 if (f.hitsOutside.size >= 3) {
                     f.hitsOutside.clear()
-                    moves.sidestepFrom(player)
+                    if (!projectile && player.squaredDistanceTo(a) < 5.0 * 5.0) moves.reactTo(player, a.form == AriusForm.WHITE) else moves.sidestepFrom(player)
                 }
             }
         }
@@ -1042,6 +1064,7 @@ class EirholmFight(
         ariusBar.clearPlayers()
         dragonBar.clearPlayers()
         moves.cleanup()
+        shards.clear()
         arius?.discard()
         nivaris?.discard()
         nivarisHead?.discard()

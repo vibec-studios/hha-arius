@@ -104,6 +104,11 @@ abstract class AriusFx(val life: Int) {
                     if (AriusClientConfig.flash) ScreenFlash.start(p.a, p.life)
                     null
                 }
+                FxKind.DEBRIS_CLOUD -> DebrisCloudFx(pos, p.a.toDouble().coerceIn(1.0, 40.0), p.life)
+                FxKind.TIME_SLOW -> {
+                    CineGrade.slow(p.life, p.a)
+                    null
+                }
                 null -> null
             }
         }
@@ -682,5 +687,51 @@ class FrozenStarFx(private val ground: Vec3d, private val radius: Double, privat
         }
         // Fallspur
         if (fall > 0f) d.band(VfxLayers.FLOW_ADD, c, c.add(0.0, 18.0 * fall, 0.0), d.camRight, r * 0.8, withAlpha(cold, 0.6f), withAlpha(cold, 0f), uScale = 0.3f, uOffset = -t * 0.2f)
+    }
+}
+
+
+/**
+ * Staub- und Eissplitterwolke (seit 1.9.0, Gletscherbruch im Weißen Horizont): dicke Schneeschwaden quellen auf und
+ * steigen, Eissplitter fliegen im Bogen heraus. Nur gezeichnet (keine Partikel), also auch weit weg von der Kamera.
+ */
+class DebrisCloudFx(private val center: Vec3d, private val radius: Double, life: Int) : AriusFx(life) {
+    private class Puff(val off: Vec3d, val rise: Double, val grow: Double, val spin: Double, val tint: Float)
+    private class Bit(val vel: Vec3d, val size: Double, val spin: Double)
+
+    private val rng = java.util.Random(center.hashCode().toLong())
+    private val puffs = List(16) {
+        val a = rng.nextDouble() * PI * 2
+        val r = rng.nextDouble() * radius * 0.55
+        Puff(Vec3d(cos(a) * r, rng.nextDouble() * radius * 0.3, sin(a) * r), 0.04 + rng.nextDouble() * 0.08, 0.35 + rng.nextDouble() * 0.5, (rng.nextDouble() - 0.5) * 3.0, rng.nextFloat())
+    }
+    private val bits = List(22) {
+        val a = rng.nextDouble() * PI * 2
+        val up = 0.25 + rng.nextDouble() * 0.5
+        val out = 0.25 + rng.nextDouble() * 0.6
+        Bit(Vec3d(cos(a) * out, up, sin(a) * out).multiply(radius / 10.0 + 0.4), 0.15 + rng.nextDouble() * radius * 0.04, rng.nextDouble() * 20.0)
+    }
+
+    override val persistent: Boolean get() = true
+
+    override fun render(d: VfxDraw, matrices: MatrixStack, t: Float) {
+        val k = fadeInOut(t, 3f, life * 0.45f)
+        val s = (t / life).coerceIn(0f, 1f).toDouble()
+        for (p in puffs) {
+            val pos = center.add(p.off.multiply(1.0 + s * 0.8)).add(0.0, p.rise * t, 0.0)
+            val size = radius * (0.3 + p.grow * (1.0 - (1.0 - s) * (1.0 - s)))
+            val col = lerpColor(0xFFC9D3DD.toInt(), 0xFFF4F8FC.toInt(), p.tint)
+            d.billboard(VfxLayers.CLOUD_ALPHA, pos, size, withAlpha(col, 0.62f * k), (p.spin * t) % 360.0)
+        }
+        for (b in bits) {
+            if (t > life * 0.6f) continue
+            val tt = t.toDouble()
+            val pos = center.add(b.vel.x * tt, b.vel.y * tt - 0.03 * radius / 10.0 * tt * tt, b.vel.z * tt)
+            val a = Math.toRadians(b.spin * tt)
+            val ax = Vec3d(cos(a), 0.0, sin(a)).multiply(b.size)
+            val ay = Vec3d(0.0, b.size * 1.6, 0.0)
+            val az = Vec3d(-sin(a), 0.0, cos(a)).multiply(b.size * 0.6)
+            d.box(VfxLayers.SHARD_ALPHA, pos, ax, ay, az, withAlpha(0xFFCFEFFF.toInt(), 0.85f * k))
+        }
     }
 }
