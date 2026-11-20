@@ -123,8 +123,8 @@ object Atmos {
     }
 
     /**
-     * Für den Mixin auf dem FogRenderer: schreibt die Sturm-Nebeldistanz nach dem Atmosphären-Nebel noch einmal fest.
-     * Mods wie NoFog oder ClearViews setzen den Nebel innerhalb des Modifiers auf „unendlich“, danach greift das hier.
+     * Für den Mixin auf dem FogRenderer: schreibt die Sturm-Nebeldistanz kurz vor dem Nebel-Puffer noch einmal fest.
+     * Mods wie NoFog, ClearViews oder bactromod setzen den Atmosphären-Nebel vorher auf „unendlich“.
      */
     @JvmStatic
     fun enforceFog(data: FogData) {
