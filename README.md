@@ -15,17 +15,22 @@ Craft the **Seal of the White Blade** (nether star, 4 blue ice, 2 echo shards, 2
 starts to fall upward, and everyone within 12 blocks is taken into the Sanctum of the White Blade, a separate dimension that is
 rebuilt from vanilla blocks for every attempt. Nothing in your survival world is ever damaged.
 
-1. **The Temple of the White Blade**: Arius alone. Readable stances, sword combos, wind steps, a parry that punishes greedy
-   attacks, frost walls that close escape routes. Below 40 % he takes you seriously and adapts to repeated tactics,
-   within limits.
+1. **The Temple of the White Blade**: Arius alone, in three stances (flowing, overhead, sheathed iai). Long combo chains
+   with delayed strikes and feints, and a perfect counter: hit him in his counter stance and he parries and punishes
+   with a full combo. He also breaks off your healing. Below 40 % he takes you seriously and adapts to repeated
+   tactics, within limits.
 2. **The Cut**: the wind turns, the hall goes silent, a single line crosses the temple. He strikes, nothing happens for
-   a moment, then the temple splits along the line and slides apart. He kicks you through the breaking gate.
-3. **The Glacier Threshold**: Solvane alone while Arius watches. Her breath leaves ice ridges; lure her dive into a
-   ridge to bring her down, choke her breath with hits to the throat, punish her landings.
-4. **The Heart of the Glacier**: she crashes through the ice, Arius sheds his dark armour and fights in white. They fight
-   **in rhythm**: one leads, the other supports, and resonance attacks have clear safe paths. Break the rhythm and the
-   partner is open. Once per fight: **the white hole**, a core that pushes instead of pulls.
-5. **The last clear moment**: no storm, no dragon. Three exchanges against his drawn-from-the-sheath cut.
+   a moment, then the temple splits along the line and slides apart. He knocks you out through the breaking gate.
+3. **The Aerie**: Solvane alone in her own arena far to the west, while Arius watches. She circles in wide loops,
+   dives along lit lanes and slams the ground, rains ice spears, coils around you and, once per air phase, draws in
+   *Winter's Wrath* – find the gold zone or choke her breath with hits to the throat. After each big attack she is
+   open.
+4. **The ride**: for over a minute you hold on to an ice spike on her back, through the storm around the mountain.
+5. **The Heart of the Glacier**: Arius sheds his dark armour and fights in white on an open field far to the east,
+   **in rhythm** with Solvane: duo attacks such as *Dragon Ride* and *Cross Cut* have clear safe paths. Once per
+   fight: **the white hole** – deal enough damage to break it, or find the golden lanes.
+6. **The Heir's Wrath**: he chases you over three ever higher mountains and their bridges up to the Gate of the Blade.
+7. **The summit**: a last real duel. Below half health he draws fully for *The Last Horizon*.
 
 Every attack is announced on the ground through HHA's telegraph system. **Gold always means safe or open.** Vanilla
 movement, shield and bow are enough to win. Dying in the sanctum knocks you out instead: you keep everything and rejoin
@@ -57,8 +62,9 @@ other HHA sets: chestplate → *White Core* (Ability 1), leggings → *Frost Ste
 (Ability 3, replaces Ultra), plus passives on helmet, chestplate and boots. The kit is available via
 `/hha kit hha_arius.eirholm`.
 
-**Arius' Gauntlets**: one main-hand item that shows both hands. *Melee mode*: jab, cross, body hook, side kick, spin
-kick, palm parry with counter – real animations in first and third person. *Magic mode*: a two-step spell wheel
+**Arius' Gauntlets**: one main-hand item that shows both hands. *Melee mode*: a fighting stance and combos entered
+only as left/right-click sequences (e.g. L-L-R, R-L-R), each with its own strikes and finisher; sneak + right-click
+parries – real animations in first and third person. *Magic mode*: a two-step spell wheel
 (technique key, default R) with 13 techniques of Wind, Ice and Yang (attack, defence, movement, constructs such as
 platform, bridge and ice wall, and a light glider). Switch modes with the mode key (default V).
 
@@ -70,6 +76,36 @@ arena).
 Armour, gauntlets and Solvane share one resource, **frost resonance**. It recharges passively (faster out of combat and
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
+
+### New in 1.9.0
+- **Arius, in the style of a final duel:**
+  - three stances;
+  - a perfect counter: hit his counter stance and he parries, then punishes with a full combo (replaces the feint-and-kick);
+  - long chains with delayed strikes and feints;
+  - he breaks off your potions and food.
+- **Solvane:**
+  - a new loong head (snout, antlers, mane, whiskers);
+  - a smooth, serpentine body that no longer clips through itself, drops segments or snaps around;
+  - a new moveset: wide circling, glacier dives with ground slams, ice hail, coil crush, *Winter's Wrath*.
+- **The ride:** over a minute long. You hold on to an ice spike on her back instead of sitting; after one slip you
+  hang on with one hand.
+- **Real duo attacks:** *Dragon Ride* and *Cross Cut*.
+- **White Hole:** a short, escalating charge that you can break with damage.
+- **The Heir's Wrath:**
+  - a real chase, without teleports, over three ever higher mountains, real bridges and open tunnels;
+  - you only enter the summit through the Gate of the Blade.
+- **The summit:** the last quick-time event and the exchanges are replaced by a real duel.
+- **The world:**
+  - the Aerie and the white-form field are much larger and much farther away;
+  - the highland has frost forests, frozen lakes and ruins of the White Blade order;
+  - the Frozen Star is a proper ice moon.
+- **Cutscenes:** reworked flight to the Aerie (no more teleporting), the White Horizon as a collapsing glacier, the
+  knock-out through the gate, and a visible mountain when Solvane awakens.
+- **Snowstorm:** clearly visible flakes and gusts. It also shows with fog mods such as NoFog, ClearViews, bactromod
+  and Sodium Extra.
+- **No more ice walls** from either boss.
+- **Gauntlets:** a new fighting stance; combos are only left/right-click sequences (no extra key bindings).
+- **Clear Cut:** a ghostly Solvane bursts out of the blade, and the cut splits open a second time.
 
 ### New in 1.8.0
 - **Bigger Arius:** taller and broader, with a blockier head. Phase I lasts longer and has four new attacks.
