@@ -42,6 +42,7 @@ object QteClient {
             wasDown = key()?.let { down(it) } == true
         }
         ClientTickEvents.END_CLIENT_TICK.register { tick(it) }
+        RideClient.init()
     }
 
     private fun key(): KeyBinding? {
@@ -105,6 +106,7 @@ object QteClient {
     /** Wird aus [dev.henny.hha_arius.mixin.client.QteHudMixin] gerufen – auch während HHA-Szenen. */
     @JvmStatic
     fun render(ctx: DrawContext, td: Float) {
+        RideClient.renderHud(ctx)
         if (id < 0 && result == 0) return
         // Zeitlupen-Schleier: dunkle, kalte Ränder, solange ein Prompt offen ist (wie die Zeitlupe in Action-Szenen).
         if (result == 0) {

@@ -1,8 +1,9 @@
 """Nivaris, die Alte vom Eirgletscher: uralte weiße Drachin, jetzt als langer Schlangendrache (96 Blöcke, 40 Glieder).
 
 Erkennungsmerkmale (wie beim alten Vierbeiner, siehe _reference_nivaris_quadruped.py):
-1. Krone aus nach hinten gekämmten Eishörnern am Hinterkopf, wie ein gebrochener Heiligenschein; ein Horn abgebrochen,
-   an einer Stelle fehlt eines ganz. Dazu Eisbart unter dem Kinn, lange Barteln und Wangenstacheln.
+1. Kopf eines östlichen Drachen (seit 1.8.1, vorher eine Krone aus Eishörnern): langer Kamelkopf mit wulstiger Nase,
+   zwei Hirschgeweihe aus altem Elfenbein, Mähne aus Eishaar an Wangen und Nacken, Rinderohren, lange Barteln von der
+   Oberlippe und ein Kinnbart.
 2. Augen: rechtes golden, linkes eisblau (rechts = -x, Blick nach -z).
 3. Rückenkamm aus Kristallplatten (auf jedem zweiten Glied), dazwischen kleine Dornen.
 4. Schwanzfächer aus Eisklingen nach dem letzten Glied.
@@ -667,7 +668,7 @@ def eye_paint(side):
         dv = (y - (c.y + c.h / 2)) / (c.h / 2)
         if abs(dv) > 0.74 or abs(du) > 0.86:
             return ramp(AGE, 0.12)                      # Lidrand
-        if abs(du) < 0.17 and face != 'front':
+        if abs(du) < (0.26 if face == 'front' else 0.17) and abs(dv) < 0.62:
             return (hexc('#120c08'), pal[1][:3] + (140,), 'eyes')     # Schlitzpupille
         k = 1 - math.hypot(du, dv) * 0.6
         col = ramp(pal, 0.4 + k * 0.6)
@@ -704,14 +705,26 @@ def snout_paint(seed=63):
 
 
 def nose_paint(face, p, c):
+    """Nasenwulst: oben zwei schmale, schräge Nüstern (dunkel, heller Rand), vorn eine glatte, glänzende Kuppe mit
+    feiner Mittelfurche (von vorn soll nichts wie ein zweites Augenpaar wirken)."""
     x, y, z = p
-    if face == 'front' and -3.5 < y < -3.0 and 1.5 < abs(x) < 2.5:
-        return hexc('#3a4050')                                       # Nüstern (schmale Schlitze oben außen)
-    if face == 'front' and -3.0 < y < -2.5 and 1.5 < abs(x) < 2.5:
-        return hexc('#7a8292')
-    if face == 'front' and y > c.y + c.h - 0.5:
-        return ramp(MOUTH, 0.3)
-    return head_hide(69)(face, p, c)
+    if face == 'top':
+        for sx in (-1.7, 1.7):
+            u = (x - sx) * 0.9 - (z - (c.z + 1.4)) * 0.45 * (1 if sx > 0 else -1)
+            w = (z - (c.z + 1.4)) * 0.9
+            d = math.hypot(u * 1.6, w * 0.7)
+            if d < 0.7:
+                return hexc('#2a3040')                                   # Nüster
+            if d < 1.15:
+                return ramp(PEARL, 0.66)                                 # wulstiger Rand
+    col = head_hide(69)(face, p, c)
+    if isinstance(col[0], tuple):
+        col = col[0]
+    if face == 'front':
+        if abs(x) < 0.25 and y < c.y + c.h - 0.8:
+            return mix(col, hexc('#8b93a3'), 0.5)                        # Mittelfurche
+        return mix(col, hexc('#ffffff'), 0.2)
+    return col
 
 
 def jaw_paint():
@@ -781,18 +794,129 @@ def horn(name, pivot, rot, segs, seed, broken=False, tine=None):
     return root
 
 
-def whisker(side):
-    """Lange Bartel an der Oberlippe: fließt flach nach hinten an der Wange vorbei (Kette; der Renderer darf die
-    Glieder whisker_<s>_1..3 sanft schwingen lassen)."""
+# --- Seit 1.8.1 (Crix: „das Gesicht sieht immer noch komisch aus“): Kopf eines östlichen Drachen (Loong) -------------
+# Langer, leicht nach oben geschwungener Kamelkopf mit wulstiger Nase, Lippenwülsten und langem Unterkiefer; große,
+# runde Augen unter schweren Brauen; zwei verzweigte Hirschgeweihe, die nach hinten oben schwingen; eine Mähne aus
+# Eishaar an Wangen und Nacken; kleine Rinderohren; zwei lange Barteln von der Oberlippe und ein Kinnbart.
+
+ANTLER = rgb('#4d4a45', '#7a7466', '#a9a18c', '#d3cbb4', '#efe9d8', '#fffbf0')     # Geweih: altes Elfenbein
+MANE = rgb('#1d3b5c', '#3f6f9c', '#76a7cf', '#acd2ec', '#dcefff', '#ffffff')        # Mähne: Eishaar
+
+
+def antler_paint(seed, tip_glow=0):
+    """Geweih: Elfenbein mit Ringwülsten an der Wurzel, glatter zur Spitze; Spitze kalt leuchtend (Kanal eyes)."""
+    def paint(face, p, c):
+        x, y, z = p
+        rel = (c.y + c.h - y) / c.h                 # 0 = Wurzel, 1 = Spitze (wächst nach -y)
+        a, b = _plane(face, p)
+        v = 0.5 + LIGHT[face] * 1.2 + rel * 0.18
+        if rel < 0.55 and (y * 1.6) % 1.0 < 0.22:
+            v -= 0.16                               # Ringwulst
+        v += (vnoise(a * 1.4, b * 1.4, seed, seed) - 0.5) * 0.16
+        if _edge_dist(face, p, c) < 0.5:
+            v += 0.06
+        col = ramp(ANTLER, v)
+        if tip_glow and rel > 0.78:
+            return (mix(col, hexc('#dff3ff'), 0.6), (170, 220, 255, tip_glow), 'eyes')
+        return col
+    return paint
+
+
+def mane_paint(seed, tip_glow=0):
+    """Eishaar: Strähnen entlang +z (zur Spitze heller und durchscheinend weiß), dunkle Fugen zwischen den Strähnen."""
+    def paint(face, p, c):
+        x, y, z = p
+        rel = (z - c.z) / c.d
+        a, b = _plane(face, p)
+        strand = math.sin((x * 2.3 + y * 1.7) * 1.9 + seed) * 0.5 + 0.5
+        v = 0.42 + rel * 0.45 + LIGHT[face] * 0.9 + (strand - 0.5) * 0.22
+        if strand < 0.12:
+            v -= 0.12
+        v += (vnoise(a * 2, b * 2, z * 0.5, seed) - 0.5) * 0.1
+        col = ramp(MANE, v)
+        if tip_glow and rel > 0.8:
+            return (mix(col, hexc('#f0faff'), 0.5), (180, 225, 255, tip_glow), 'eyes')
+        return col
+    return paint
+
+
+def antler(side):
+    """Hirschgeweih: Hauptstange in vier Gliedern, die sich nach hinten krümmt; Sprossen nach vorn oben und außen.
+    Wächst entlang -y."""
     s = -1 if side == 'r' else 1
-    links = [(1, 5, (0, 0, 0)), (1, 6, (-8, -s * 14, 0)), (1, 6, (-6, -s * 14, 0)), (1, 5, (10, -s * 8, 0))]
+    beam = [(2.5, 5, 0), (2, 5, -16), (1.5, 4.5, -18), (1, 4, -14)]
+    tines = {1: [(4.5, 48, 0)], 2: [(3.5, 30, s * 38)], 3: [(2.5, 34, -s * 20)]}
+    root = cur = None
+    prev = 0
+    for i, (w, l, bend) in enumerate(beam):
+        last = i == len(beam) - 1
+        c = Cube(-w / 2, -l, -w / 2, w, l, w, antler_paint(200 + i + (side == 'l') * 10, 120 if last else 0),
+                 reso=ice_reso if i else None)
+        if cur is None:
+            cur = root = Part(f'antler_{side}', (s * 3.25, -7, -2.5), (-34, 0, s * 18), cubes=[c])
+        else:
+            nxt = Part(f'antler_{side}_{i}', (0, -prev + 0.5, 0), (bend, 0, 0), cubes=[c])
+            cur.add(nxt)
+            cur = nxt
+        for k, (ln, pitch, roll) in enumerate(tines.get(i, [])):
+            tw = 1.0 if ln < 4 else 1.5
+            cur.add(Part(f'antler_{side}_{i}_tine{k}', (0, -l * 0.55, 0), (pitch, 0, roll), cubes=[
+                Cube(-tw / 2, -ln, -tw / 2, tw, ln, tw, antler_paint(220 + i * 3 + k, 110))]))
+        prev = l
+    return root
+
+
+def mane_tuft(name, pivot, rot, length, width, seed, bend=-16):
+    """Eine Strähne: flaches Blatt entlang +z, das zweite Glied knickt um [bend] Grad ab (hängt nach)."""
+    l1 = round(length * 0.55 * 2) / 2
+    l2 = round((length - l1) * 2) / 2
+    w2 = max(0.5, width - 0.5)
+    tuft = Part(name, pivot, rot, cubes=[Cube(-0.5, -width / 2, 0, 1, width, l1, mane_paint(seed))])
+    tuft.add(Part(f'{name}_tip', (0, 0, l1 - 0.5), (bend, 0, 0), cubes=[
+        Cube(-0.5, -w2 / 2, 0, 1, w2, l2, mane_paint(seed + 1, 70))]))
+    return tuft
+
+
+def mane(side):
+    """Mähne an Wange und Kieferwinkel: vier Strähnen wehen nach hinten, leicht nach außen."""
+    s = -1 if side == 'r' else 1
+    spec = [(-4, 11, 14, 14), (-1, 14, 4, 18), (2, 13, -8, 20), (5, 10, -20, 16)]
+    tufts = [mane_tuft(f'mane_{side}_{i}', (0, y, 0), (pitch, s * yaw, 0), ln, 2 if i in (1, 2) else 1.5,
+                       240 + i * 2 + (side == 'l'))
+             for i, (y, ln, pitch, yaw) in enumerate(spec)]
+    return Part(f'mane_{side}', (s * 6, -1, -3), cubes=[], children=tufts)
+
+
+def mane_top():
+    """Nackenmähne zwischen den Geweihen: drei Strähnen, die über den Halsansatz nach hinten wehen."""
+    tufts = [mane_tuft('mane_top_0', (0, 0, 0), (24, 0, 0), 12, 3, 260),
+             mane_tuft('mane_top_1', (-2, 0.5, -1), (18, -16, 0), 10, 2.5, 262),
+             mane_tuft('mane_top_2', (2, 0.5, -1), (18, 16, 0), 10, 2.5, 264)]
+    return Part('mane_top', (0, -7, 0), cubes=[], children=tufts)
+
+
+def ear(side):
+    """Kleines Rinderohr hinter dem Auge, nach hinten außen gelegt."""
+    s = -1 if side == 'r' else 1
+    hh = head_hide(90 + (side == 'l'))
+    return Part(f'ear_{side}', (s * 5, -6.5, -5), (22, s * 40, 0), cubes=[
+        Cube(-0.5, -1.5, 0, 1, 3, 4.5, hh),
+        Cube(-0.5, -1, 4.5, 1, 2, 1.5, hh),
+    ])
+
+
+def whisker(side):
+    """Lange Bartel von der Oberlippe neben der Nase: schwingt erst nach außen, dann weit nach hinten und hängt durch
+    (Kette; der Renderer lässt die Glieder whisker_<s>_1..3 sanft schwingen)."""
+    s = -1 if side == 'r' else 1
+    links = [(1, 6, (0, 0, 0)), (1, 7, (-8, s * 4, 0)), (1, 7, (-6, -s * 14, 0)), (1, 7, (-4, -s * 16, 0))]
     root = cur = None
     prev = 0
     for i, (w, l, rot) in enumerate(links):
-        paint = ice(0.74 + i * 0.05, 150 + i, '+z', tip_glow=80 if i == 3 else 0, edge=0.08)
+        paint = ice(0.74 + i * 0.05, 150 + i, '+z', tip_glow=90 if i == 3 else 0, edge=0.08)
         c = Cube(-w / 2, -w / 2, 0, w, w, l, paint, ch='eyes')
         if cur is None:
-            cur = root = Part(f'whisker_{side}', (s * 3.5, -0.5, -18), (4, s * 62, 0), cubes=[c])
+            cur = root = Part(f'whisker_{side}', (s * 4, -1.5, -21), (-10, s * 32, 0), cubes=[c])
         else:
             nxt = Part(f'whisker_{side}_{i}', (0, 0, prev - 0.25), rot, cubes=[c])
             cur.add(nxt)
@@ -801,71 +925,48 @@ def whisker(side):
     return root
 
 
-def frill(side):
-    """Wangenstacheln hinter dem Kiefer: drei kurze Eisdornen, nach hinten gekämmt."""
-    s = -1 if side == 'r' else 1
-    spikes = []
-    for i, (y, ln, pitch, roll) in enumerate(((-2, 8, -72, 30), (0.5, 6, -86, 36), (3, 4, -100, 40))):
-        segs = [(2, ln * 0.5, 0), (1.5, round(ln * 0.6) / 2, -10), (1, ln * 0.5 - round(ln * 0.6) / 2, -10)]
-        spikes.append(horn(f'frill_{side}_{i}', (0, y, 0), (pitch, 0, s * roll), segs, 170 + i * 4 + (side == 'l')))
-    return Part(f'frill_{side}', (s * 6.5, 0, 0), cubes=[], children=spikes)
-
-
 def head():
     skull = skull_paint()
     hh = head_hide(66)
     cubes = [
-        Cube(-6, -6, -10, 12, 10, 13, skull, reso=hide_reso),                   # Schädel
-        Cube(-4.5, -7, -9.5, 9, 1, 11.5, hh),                                    # Schädeldach
-        Cube(-6.5, -8, -12, 4.5, 2.5, 7.5, head_hide(67)),                       # Brauenwulst rechts
-        Cube(2, -8, -12, 4.5, 2.5, 7.5, head_hide(68)),                          # Brauenwulst links
-        Cube(-7, -3.5, -9, 1.5, 7, 10, hh),                                      # Wange rechts
-        Cube(5.5, -3.5, -9, 1.5, 7, 10, hh),                                     # Wange links
-        Cube(-6.5, -5.5, -11, 1, 2, 3, eye_paint('r'), ch='eyes'),               # Auge rechts (golden)
-        Cube(5.5, -5.5, -11, 1, 2, 3, eye_paint('l'), ch='eyes'),                # Auge links (eisblau)
-        Cube(-4.5, -4.5, -15.5, 9, 5.5, 6, snout_paint(63)),                     # Oberkiefer hinten
-        Cube(-3.5, -4, -20, 7, 5, 5, snout_paint(64)),                           # Oberkiefer vorn (schmaler)
-        Cube(-2.5, -5.5, -19.5, 5, 1.5, 10, head_hide(69)),                      # Nasenrücken
-        Cube(-1.5, -6.5, -15, 3, 1, 5.5, head_hide(70)),                         # Nasenkamm
-        Cube(-3, -3.5, -21, 6, 4, 1, nose_paint),                                # Nasenspitze
-        Cube(-3.5, 1, -19.5, 1, 2, 1, claw(0.6, 1, '+y')),                       # Fänge oben
-        Cube(2.5, 1, -19.5, 1, 2, 1, claw(0.6, 2, '+y')),
-        Cube(-5, -5, 3, 10, 9, 1.5, hh),                                         # Nacken in den Hals
+        Cube(-5.5, -6, -11, 11, 9.5, 13, skull, reso=hide_reso),                # Schädel
+        Cube(-4.5, -7, -10, 9, 1, 11, hh),                                       # Schädeldach (gerundet)
+        Cube(-5, -5, 2, 10, 9, 1.5, hh),                                         # Hinterhaupt in den Hals
+        Cube(-6.5, -8.5, -13.5, 4, 2.5, 6, head_hide(67)),                       # Brauenwulst rechts (überhängend)
+        Cube(2.5, -8.5, -13.5, 4, 2.5, 6, head_hide(68)),                        # Brauenwulst links
+        Cube(-6.5, -9.5, -9, 2, 1.5, 3.5, head_hide(71)),                        # Brauendorn rechts
+        Cube(4.5, -9.5, -9, 2, 1.5, 3.5, head_hide(72)),                         # Brauendorn links
+        Cube(-7, -6.5, -12.5, 2, 3.5, 4.5, eye_paint('r'), ch='eyes'),           # Auge rechts (golden), groß
+        Cube(5, -6.5, -12.5, 2, 3.5, 4.5, eye_paint('l'), ch='eyes'),            # Auge links (eisblau)
+        Cube(-6.5, -3, -10.5, 1.5, 6.5, 9, hh),                                  # Wange rechts
+        Cube(5, -3, -10.5, 1.5, 6.5, 9, hh),                                     # Wange links
+        Cube(-4.5, -5, -17, 9, 6, 6, snout_paint(63)),                           # Oberkiefer hinten
+        Cube(-4, -4.5, -22.5, 8, 5.5, 5.5, snout_paint(64)),                     # Oberkiefer vorn
+        Cube(-2.5, -6, -20, 5, 1, 9, head_hide(69)),                             # Nasenrücken
+        Cube(-3.5, -7, -24.5, 7, 4, 4.5, nose_paint),                            # Nasenwulst (hochgezogen)
+        Cube(-3.5, -3, -24, 7, 4, 1.5, snout_paint(65)),                         # Oberlippe vorn
+        Cube(-5, -1.5, -21, 1, 2.5, 7, head_hide(73)),                           # Lippenwulst rechts
+        Cube(4, -1.5, -21, 1, 2.5, 7, head_hide(74)),                            # Lippenwulst links
+        Cube(-3.5, 1, -23, 1, 2.5, 1, claw(0.6, 1, '+y')),                       # Fänge oben vorn
+        Cube(2.5, 1, -23, 1, 2.5, 1, claw(0.6, 2, '+y')),
+        Cube(-4, 1, -16.5, 1, 2, 1, claw(0.62, 8, '+y')),                        # Säbelzähne oben
+        Cube(3, 1, -16.5, 1, 2, 1, claw(0.62, 9, '+y')),
     ]
-    beard = Part('beard', (0, 3.5, -10), (38, 0, 0), cubes=[
-        Cube(-2, 0, -1, 4, 3.5, 2.5, ice(0.55, 180, '+y', edge=0.2)),
-        Cube(-1.5, 3.5, -0.5, 3, 3, 2, ice(0.65, 181, '+y', edge=0.2)),
-        Cube(-1, 6.5, 0, 2, 3, 1.5, ice(0.75, 182, '+y', edge=0.2), reso=ice_reso),
-        Cube(-0.5, 9.5, 0.5, 1, 2, 1, ice(0.85, 183, '+y', edge=0.2)),
+    beard = Part('beard', (0, 3, -14), (42, 0, 0), cubes=[
+        Cube(-2, 0, -1, 4, 3.5, 2.5, mane_paint(180)),
+        Cube(-1.5, 3.5, -0.5, 3, 3.5, 2, mane_paint(181)),
+        Cube(-1, 7, 0, 2, 3, 1.5, mane_paint(182, 60), reso=ice_reso),
+        Cube(-0.5, 10, 0.5, 1, 2.5, 1, mane_paint(183, 90)),
     ])
     jaw = Part('jaw', (0, 1, -4), cubes=[
-        Cube(-3.5, 0, -16, 7, 2.5, 12.5, jaw_paint()),                            # Unterkiefer vorn
-        Cube(-5.5, 0, -5, 11, 3.5, 6.5, head_hide(65)),                          # Kieferwinkel
-        Cube(-2.5, 2.5, -15.5, 5, 1, 7, jaw_paint()),                            # Kinn
-        Cube(-3, -1.5, -15, 1, 1.5, 1, claw(0.6, 3, '-y')),                      # Fänge unten
-        Cube(2, -1.5, -15, 1, 1.5, 1, claw(0.6, 4, '-y')),
+        Cube(-3.5, 0, -19, 7, 2.5, 15, jaw_paint()),                              # Unterkiefer vorn
+        Cube(-5.5, 0, -6.5, 11, 4, 8, head_hide(65)),                            # Kieferwinkel
+        Cube(-2.5, 2.5, -18.5, 5, 1, 8, jaw_paint()),                            # Kinn
+        Cube(-3, -1.5, -18, 1, 1.5, 1, claw(0.6, 3, '-y')),                      # Fänge unten
+        Cube(2, -1.5, -18, 1, 1.5, 1, claw(0.6, 4, '-y')),
     ], children=[beard])
-    # Krone: Hörner im Halbkreis um den Hinterkopf (0 = senkrecht nach oben), weit nach hinten gekämmt und gebogen.
-    # (Winkel, Länge, abgebrochen, Seitenspross); bei +118 Grad fehlt ein Horn ganz (nur der Sockel).
-    halo = [(-104, 11, False, None, -26), (-66, 17, False, None, -34), (-30, 22, False, None, -46),
-            (4, 6, True, None, -40), (36, 21, False, (1, 5), -46), (72, 16, False, None, -32)]
-    horns = []
-    for i, (ang, ln, broken, tine, sweep) in enumerate(halo):
-        a = math.radians(ang)
-        pivot = (math.sin(a) * 5.5, -math.cos(a) * 5.5, 0)
-        if broken:
-            segs = [(3, 3.5, 0), (2.5, 2.5, -8)]
-        else:
-            n = 4 if ln > 14 else 3
-            widths = [2.5, 2, 1.5, 1] if n == 4 else [2.5, 1.5, 1]
-            segs = [(widths[k], round(ln / n * 2) / 2, 0 if k == 0 else -13 - k * 3) for k in range(n)]
-        horns.append(horn(f'horn_{i}', pivot, (sweep, 0, ang), segs, 100 + i * 5, broken=broken, tine=tine))
-    socket = math.radians(118)
-    crown = Part('crown', (0, -1.5, 1.5), cubes=[
-        Cube(-5, -1.5, -1.5, 10, 3, 3, ice(0.45, 120, '-y', edge=0.15)),
-        Cube(math.sin(socket) * 5.5 - 1.5, -math.cos(socket) * 5.5 - 1, -1.5, 3, 2, 3, ice(0.4, 121, '-y', edge=0.1)),
-    ], children=horns)
-    return Part('head', cubes=cubes, children=[jaw, crown, whisker('r'), whisker('l'), frill('r'), frill('l')])
+    return Part('head', cubes=cubes, children=[jaw, antler('r'), antler('l'), mane('r'), mane('l'), mane_top(),
+                                               ear('r'), ear('l'), whisker('r'), whisker('l')])
 
 
 # ---------------------------------------------------------------------------------------------------------------------

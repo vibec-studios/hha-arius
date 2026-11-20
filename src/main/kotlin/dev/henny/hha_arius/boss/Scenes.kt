@@ -889,102 +889,15 @@ class Scenes(private val f: EirholmFight) {
     /** Nackenansatz der Drachin (wo Arius steht), Weltkoordinaten. */
     private fun neckOf(d: NivarisEntity): Vec3d = d.entityPos.add(f.facing(d).multiply(1.2)).add(0.0, NivarisShape.SPINE_UP + 1.0, 0.0)
 
-    /** Flugbahn des Ritts (relativ), Catmull-Rom: Horst → Nordflanke des Bergs → durch den Sturm → Feld im Osten. */
-    private val rideWaypoints = listOf(
-        Vec3d(-104.0, 6.0, -45.0), Vec3d(-86.0, 26.0, -18.0), Vec3d(-56.0, 50.0, 24.0), Vec3d(-18.0, 66.0, 58.0),
-        Vec3d(24.0, 72.0, 70.0), Vec3d(62.0, 58.0, 62.0), Vec3d(96.0, 36.0, 40.0), Vec3d(104.0, 18.0, 12.0),
-        Vec3d(84.0, 8.0, -4.0), Vec3d(72.0, 4.0, -8.0),
-    )
-
-    private fun rideAt(u: Double): Vec3d {
-        val pts = rideWaypoints
-        val n = pts.size - 1
-        val x = (u * n).coerceIn(0.0, n - 1e-6)
-        val i = x.toInt()
-        val t = x - i
-        val p0 = pts[maxOf(0, i - 1)]
-        val p1 = pts[i]
-        val p2 = pts[minOf(n, i + 1)]
-        val p3 = pts[minOf(n, i + 2)]
-        val t2 = t * t
-        val t3 = t2 * t
-        fun c(a: Double, b: Double, cc: Double, dd: Double) = 0.5 * (2 * b + (-a + cc) * t + (2 * a - 5 * b + 4 * cc - dd) * t2 + (-a + 3 * b - 3 * cc + dd) * t3)
-        return f.abs(Vec3d(c(p0.x, p1.x, p2.x, p3.x), c(p0.y, p1.y, p2.y, p3.y), c(p0.z, p1.z, p2.z, p3.z)))
-    }
-
+    /** Der Ritt selbst (Flugbahn, Griffe, Quick-Time-Events) steht seit 1.8.1 in [DragonRide] / [RideRoute]. */
     private fun ride(): Script = script {
         val a = f.arius ?: return@script
         val d = f.nivaris ?: return@script
-        val total = 380
-        val slips = HashMap<java.util.UUID, Int>()
-        val fallen = HashSet<java.util.UUID>()
-        var round: Qte.Round? = null
-        var roundEnd = 0
-        val events = mapOf(
-            70 to Triple(Qte.Kind.MASH, 6, "hha_arius.qte.hold_on"),
-            175 to Triple(Qte.Kind.SNEAK, 1, "hha_arius.qte.duck"),
-            265 to Triple(Qte.Kind.MASH, 8, "hha_arius.qte.hold_dive"),
-        )
-        f.atmos(dev.henny.hha_arius.net.AtmosMode.SNOW, 40)
-        d.flying = true
-        d.play(NivarisPose.GLIDE)
-        a.play(AriusPose.IDLE)
-        for (i in 0..total) {
-            val u = i / total.toDouble()
-            // sanft anfahren und ausrollen
-            val e = u * u * (3 - 2 * u) * 0.35 + u * 0.65
-            val pos = rideAt(e)
-            val ahead = rideAt((e + 0.012).coerceAtMost(1.0))
-            f.place(d, pos)
-            f.face(d, if (ahead.squaredDistanceTo(pos) > 1e-4) ahead.add(ahead.subtract(pos).multiply(4.0)) else pos.add(f.facing(d)))
-            f.place(a, neckOf(d))
-            a.yaw = d.yaw; a.headYaw = d.yaw; a.bodyYaw = d.yaw
-            // wer abgerutscht und noch nicht gefallen ist, sitzt wieder auf
-            for (p in f.players()) if (p.uuid !in fallen && p.vehicle !== d) p.startRiding(d, true, true)
-            if (i % 24 == 0) cue("nivaris.wing", pos, 4f, 0.75f + (i % 48) * 0.002f)
-            if (i == 120) cue("nivaris.roar", pos, 5f, 0.85f)
-            if (i == 175) shown {
-                // Eisbogen über ihnen: dicht unter einem Felsgrat hindurch
-                f.calls.roomShake(pos, 5f, 30f)
-                Vfx.shockwave(f.world, Vfx.Style.STORM, pos.add(0.0, 4.0, 0.0), 8f, 14, 1.2f)
-            }
-            if (i == 230) f.atmos(dev.henny.hha_arius.net.AtmosMode.BLIZZARD, 20)
-            if (i == 300) f.atmos(dev.henny.hha_arius.net.AtmosMode.VAULT, 40)
-            events[i]?.let { (kind, count, text) ->
-                val riders = f.players().filter { it.vehicle === d }
-                if (riders.isNotEmpty()) {
-                    round = Qte.start(riders, kind, 40, count, text)
-                    roundEnd = i + 40
-                    f.calls.roomShake(pos, 4f, 40f)
-                }
-            }
-            val r = round
-            if (r != null && (i >= roundEnd || r.done())) {
-                Qte.close(r)
-                for (p in f.players()) {
-                    if (p.uuid !in r.players || r.success(p)) continue
-                    val n = (slips[p.uuid] ?: 0) + 1
-                    slips[p.uuid] = n
-                    f.calls.hitShake(p.entityPos, 3f, 6f)
-                    if (n >= 2) {
-                        // fällt: der Lichtstrom fängt ihn auf, am Feld wird er abgesetzt
-                        fallen.add(p.uuid)
-                        p.stopRiding()
-                        p.sendMessage(net.minecraft.text.Text.translatable("hha_arius.msg.ride_fall").formatted(net.minecraft.util.Formatting.RED), true)
-                    } else {
-                        Damage.hit(p, d, Damage.Kind.IMPACT, 4f, 1f)
-                        p.sendMessage(net.minecraft.text.Text.translatable("hha_arius.msg.ride_slip").formatted(net.minecraft.util.Formatting.GOLD), true)
-                    }
-                }
-                round = null
-            }
-            yield(Unit)
-        }
-        round?.let { Qte.close(it) }
+        yieldAll(DragonRide(f).play(::neckOf))
         // Landung am Feld: absteigen, sanft fallen, die Gefallenen stehen schon dort.
         for ((j, p) in f.players().withIndex()) {
             if (p.vehicle === d) p.stopRiding()
-            if (p.uuid in fallen || p.squaredDistanceTo(d) > 40.0 * 40.0) {
+            if (p.squaredDistanceTo(d) > 40.0 * 40.0) {
                 val s = f.abs(ArenaLayout.VAULT_LANDING[j % ArenaLayout.VAULT_LANDING.size])
                 p.teleport(f.world, s.x, s.y + 1.0, s.z, emptySet(), 180f, 0f, false)
             }

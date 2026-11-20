@@ -228,20 +228,40 @@ enum class Anim(val loop: Boolean = false) {
 }
 
 /**
- * Vorgegebene Kombos (seit 1.8.0, Crix: „Kombos auswählen, frei oder vorgegeben, und man sieht, welche Tasten man
- * drücken muss“). [keys]: L = Angriff (Linksklick), R = Tritt (Rechtsklick), am Boden ohne Sprint. Wer die Folge
- * vollständig trifft, verwandelt den letzten Schlag in einen Finisher (mehr Schaden, eigener Effekt, mehr Resonanz).
+ * Kombos der Handschuhe (seit 1.8.1, Crix: „die Kombos funktionieren nicht richtig, weil sie Tasten nutzen, die man
+ * schon belegt hat“): Eine Kombo ist **nur** die Reihenfolge von Links- (L) und Rechtsklicks (R) innerhalb des
+ * Verbindungsfensters, keine Auswahl, kein Schleichen, kein Sprint. Wer eine Folge vollständig trifft, verwandelt den
+ * letzten Schlag in ihren Finisher (mehr Schaden, eigener Effekt, mehr Resonanz). Die Folgen sind präfixfrei; jeder
+ * Anfang einer Folge hat seinen eigenen Schlag ([ComboTree]).
  */
-enum class ComboStyle(val key: String, val keys: String) {
-    FREESTYLE("freestyle", ""),
-    STORM("storm", "LLLR"),
-    GLACIER("glacier", "LLLLR"),
-    TAIL("tail", "RRRR"),
-    BREAKER("breaker", "LRR");
+enum class Combo(val key: String, val keys: String, val finisher: Move) {
+    STORM("storm", "LLR", Move.FLYING_KICK),
+    GLACIER_FIST("glacier_fist", "LLLL", Move.UPPERCUT),
+    GLACIER("glacier", "LLLR", Move.AXE_KICK),
+    HEARTBREAKER("heartbreaker", "LRL", Move.PALM_BLAST),
+    AVALANCHE("avalanche", "LRR", Move.LOW_SWEEP),
+    TAIL("tail", "RRR", Move.SPIN_KICK),
+    LOTUS("lotus", "RLR", Move.WHIRL_KICK),
+    HAILSTORM("hailstorm", "RLL", Move.FLURRY);
 
     companion object {
-        fun of(raw: Int): ComboStyle = entries.getOrElse(raw) { FREESTYLE }
+        fun of(raw: Int): Combo? = entries.getOrNull(raw)
+        fun finishedBy(seq: String): Combo? = entries.firstOrNull { it.keys == seq }
     }
+}
+
+/** Welcher Schlag auf eine L/R-Folge kommt (Anfänge der Kombos und deren Finisher). */
+object ComboTree {
+    private val steps = mapOf(
+        "L" to Move.JAB, "LL" to Move.CROSS, "LLL" to Move.HOOK, "LR" to Move.KNEE,
+        "R" to Move.SIDE_KICK, "RR" to Move.ROUNDHOUSE, "RL" to Move.CROSS,
+    )
+
+    /** Schlag für die Folge [seq] oder null, wenn sie weder Anfang noch ganze Kombo ist. */
+    fun move(seq: String): Move? = Combo.finishedBy(seq)?.finisher ?: steps[seq]
+
+    /** Kombos, die mit [seq] beginnen (noch nicht vollständig). */
+    fun continuations(seq: String): List<Combo> = Combo.entries.filter { it.keys.length > seq.length && it.keys.startsWith(seq) }
 }
 
 /** Packen und Lesen der zusammengesetzten Anim-Parameter (siehe [Anim]). */
@@ -265,6 +285,9 @@ object ArtTimings {
     const val CAST_RELEASE = 8
     const val ART_RELEASE = 20
     const val ART_HIT = 3
+
+    /** Seit 1.8.1: der Riss – so viele Ticks nach dem Schnitt reißt die Naht auf und trifft ein zweites Mal. */
+    const val ART_SPLIT = 12
     const val WHITE_HOLE = 30
     const val WHITE_HOLE_CAST = 20
 

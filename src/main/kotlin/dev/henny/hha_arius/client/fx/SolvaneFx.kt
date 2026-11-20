@@ -138,7 +138,9 @@ class BladeStream(
         if (s1 - s0 > 0.002f) {
             val n = 40
             val pts = List(n + 1) { at(s0 + (s1 - s0) * it / n, e) }
-            val scale = pts.map { max(1.0, it.distanceTo(d.cam) / 22.0) }
+            // Breite wächst mit dem Abstand, seit 1.8.1 aber höchstens auf das 2,5-Fache: weit entfernt (Flug zum Horst)
+            // wurden die flachen Bänder sonst zu großen durchscheinenden Flächen am Himmel.
+            val scale = pts.map { max(1.0, it.distanceTo(d.cam) / 22.0).coerceAtMost(2.5) }
             fun idx(x: Float) = (x * n).toInt().coerceIn(0, n)
             // Schweif dünn und blass, zum Kopf hin dick und weiß.
             d.tube(VfxLayers.GLOW_ADD, pts, { 0.03 + 0.08 * it * scale[idx(it)] }, { withAlpha(WHITE, fade * (0.25f + 0.75f * it)) }, sides = 6)
@@ -154,7 +156,7 @@ class BladeStream(
                 if (side.lengthSquared() < 1e-6) side = X
                 side = side.normalize()
                 val up = side.crossProduct(tan).normalize()
-                val sc = max(1.0, p.distanceTo(d.cam) / 22.0)
+                val sc = max(1.0, p.distanceTo(d.cam) / 22.0).coerceAtMost(2.5)
                 val ang = m.angle + t * m.spin
                 val rad = m.radius * sc * (0.4 + 0.6 * u)
                 val c = p.add(side.multiply(cos(ang) * rad)).add(up.multiply(sin(ang) * rad))

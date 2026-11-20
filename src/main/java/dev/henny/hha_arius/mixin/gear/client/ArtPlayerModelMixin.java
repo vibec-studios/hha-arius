@@ -18,5 +18,7 @@ public abstract class ArtPlayerModelMixin {
     @Inject(method = "setAngles(Lnet/minecraft/client/render/entity/state/PlayerEntityRenderState;)V", at = @At("TAIL"))
     private void hhaArius$artPose(PlayerEntityRenderState state, CallbackInfo ci) {
         ArtPose.apply((PlayerEntityModel) (Object) this, state);
+        // Seit 1.8.1: Ritt auf Solvane – festhalten am Eisdorn statt sitzen.
+        dev.henny.hha_arius.client.fx.RideClient.applyPose((PlayerEntityModel) (Object) this, state);
     }
 }

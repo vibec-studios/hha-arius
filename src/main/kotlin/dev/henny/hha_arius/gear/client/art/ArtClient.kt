@@ -276,8 +276,8 @@ object ArtClient {
         modeDown = modeNow
         val techNow = tech.isPressed
         if (techNow && !techDown && inGame) {
-            // Seit 1.8.0: im Nahkampfmodus öffnet die Technik-Taste die Kombo-Auswahl, im Magiemodus das Zauberrad.
-            if (gauntlets) client.setScreen(if (mode(player) == GauntletMode.MELEE) ComboScreen(tech) else SpellWheelScreen(tech))
+            // Seit 1.8.1 öffnet die Technik-Taste in beiden Modi das Zauberrad (Kombos nur über Links-/Rechtsklick).
+            if (gauntlets) client.setScreen(SpellWheelScreen(tech))
             else if (solvane && !artHeld) {
                 send(ArtAction.ART_PRESS, if (player.isSneaking) 1 else 0)
                 artHeld = true
@@ -346,7 +346,7 @@ object ArtClient {
     private fun renderHud(context: DrawContext, tickDelta: Float) {
         val client = MinecraftClient.getInstance()
         val player = client.player ?: return
-        if (client.options.hudHidden || client.currentScreen is SpellWheelScreen || client.currentScreen is ComboScreen) return
+        if (client.options.hudHidden || client.currentScreen is SpellWheelScreen) return
         val cx = context.scaledWindowWidth / 2
         val cy = context.scaledWindowHeight / 2
         val anim = ArtAnims.get(player.id)
