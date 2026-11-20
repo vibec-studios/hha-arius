@@ -3,9 +3,14 @@ package dev.henny.hha_arius.boss
 import dev.henny.hha.logic.Vfx
 import dev.henny.hha.logic.boss.Telegraph
 import dev.henny.hha_arius.net.FxKind
+import net.minecraft.component.DataComponentTypes
 import net.minecraft.entity.Entity
+import net.minecraft.entity.effect.StatusEffectInstance
+import net.minecraft.entity.effect.StatusEffects
 import net.minecraft.item.Items
 import net.minecraft.server.network.ServerPlayerEntity
+import net.minecraft.text.Text
+import net.minecraft.util.Formatting
 import net.minecraft.util.Hand
 import net.minecraft.util.math.Vec3d
 import kotlin.math.cos
@@ -15,18 +20,31 @@ import kotlin.math.sqrt
 /**
  * Ariusʼ Moveset (Konzept 3.1, 5.2). Jede Attacke: Ansage über [Telegraph] (Form = Trefferfläche), Pose mit genau
  * derselben Ausholzeit, Treffer zur Trefferzeit, danach ein echtes Fenster (goldene Rune).
+ *
+ * Seit 1.9.0 nach dem Vorbild des letzten Bosses aus Black Myth: Wukong (Crix: „mehr Elemente vom Endboss“):
+ * * **Haltungen** ([Stance]): fließend (Ketten, Finten), Himmelshaltung (Klinge hoch, schwere, verzögerte Hiebe) und
+ *   Scheidenhaltung (Iai: schnelle Züge und Konter). Jeder Wechsel ist sichtbar und hörbar angesagt.
+ * * **Perfekter Konter**: Wer in die Konterhaltung schlägt (oder blind auf ihn einhämmert), wird pariert, die Deckung
+ *   bricht kurz, und es folgt eine echte Kombo (jeder Folgeschlag angesagt, ab dem zweiten ausweichbar).
+ * * **Lange Ketten** mit wechselndem Rhythmus, **verzögerte** Schläge und **Finten** (angesagter Stoß, der nie kommt).
+ * * **Heilen bestrafen**: Wer trinkt oder isst, den holt er mit einem Windschritt ein und unterbricht ihn.
+ * * Keine Eiswände und keine Dornenreihen aus Blöcken mehr: Eis ist nur noch sichtbar ([Shards]), nichts versperrt Wege.
  */
 class AriusMoves(private val f: EirholmFight) {
 
     private val rnd = java.util.Random()
     private var nextGuard = 0L
-    private var nextWall = 0L
+    private var nextLane = 0L
     private var nextGrip = 0L
     private var nextStab = 0L
     private var nextNull = 0L
     private var nextSidestep = 0L
     private var nextBlade = 0L
     private var nextThorns = 0L
+    private var nextChain = 0L
+    private var nextFeint = 0L
+    private var nextReact = 0L
+    private var nextHealPunish = 0L
 
     /** Die gerade allein fliegende Klinge (Item-Anzeige), falls ein Klingenflug läuft. */
     private var flyingBlade: net.minecraft.entity.decoration.DisplayEntity.ItemDisplayEntity? = null
@@ -35,11 +53,140 @@ class AriusMoves(private val f: EirholmFight) {
     var acting = false
         private set
 
-    /** Läuft eine Konter-Sequenz (Parade & Tritt, Luftkombination)? */
+    /** Läuft eine Konter-Sequenz (Parade und Bestrafung)? */
     var countering = false
         private set
 
     private val style = Vfx.Style.HEAVEN
+
+    // --- Haltungen (seit 1.9.0) ----------------------------------------------------------------------------------------
+
+    enum class Stance { FLOW, HEAVEN, SHEATH }
+
+    var stance = Stance.FLOW
+        private set
+    private var stanceUntil = 0L
+
+    /** Neue Begegnung oder neuer Abschnitt: zurück in die fließende Haltung. */
+    fun resetStance(start: Stance = Stance.FLOW, ticks: Int = 260) {
+        stance = start
+        stanceUntil = f.now + ticks
+    }
+
+    /** Darf die Klinge in die Scheide (nur Solvane selbst, nicht die Eisklinge der weißen Form)? */
+    private fun canSheath(): Boolean = f.arius?.bladeState == AriusBlade.HELD
+
+    /** Haltungswechsel mit Ansage: Pose, Rune, Klang, Aktionsleiste. */
+    private fun shiftStance(next: Stance): Script = script {
+        val a = f.arius ?: return@script
+        stance = next
+        stanceUntil = f.now + 200 + rnd.nextInt(120)
+        f.target()?.let { f.face(a, it.entityPos) }
+        when (next) {
+            Stance.HEAVEN -> { a.sheathed = false; a.play(AriusPose.CUT_CHARGE) }
+            Stance.SHEATH -> { a.sheathed = true; a.play(AriusPose.IAI_STANCE) }
+            Stance.FLOW -> { a.sheathed = false; a.play(AriusPose.IDLE) }
+        }
+        f.sound("lead.switch", a.entityPos, 1.8f, if (next == Stance.HEAVEN) 0.7f else 1.2f)
+        f.sound(if (next == Stance.SHEATH) "iai.glint" else "arius.guard", a.entityPos, 1.6f, 0.9f)
+        Vfx.rune(f.world, if (next == Stance.HEAVEN) Vfx.Style.STORM else style, Vec3d(a.x, f.floorAt(a) + 0.05, a.z), 1.8f, 30, a)
+        f.fx(FxKind.REVERSE_WIND, a.entityPos.add(0.0, 1.0, 0.0), a = 5f, life = 22)
+        val key = "hha_arius.stance.${next.name.lowercase()}"
+        for (p in f.players()) p.sendMessage(Text.translatable(key).formatted(if (next == Stance.HEAVEN) Formatting.GOLD else Formatting.AQUA), true)
+        wait(16)
+    }
+
+    /** Läuft die Haltung ab? Dann wechseln (nie zweimal dieselbe). */
+    private fun nextStance(allowSheath: Boolean): Stance? {
+        if (f.now < stanceUntil) return null
+        val options = Stance.entries.filter { it != stance && (allowSheath || it != Stance.SHEATH) }
+        return options[rnd.nextInt(options.size)]
+    }
+
+    // --- Heilen bestrafen (seit 1.9.0) ---------------------------------------------------------------------------------
+
+    /** Wen er gerade beim Heilen erwischt hat (wird beim nächsten freien Moment bestraft). */
+    var healTarget: java.util.UUID? = null
+        private set
+
+    /** Vom Kampf-Tick: ein Spieler hat angefangen zu trinken/essen. */
+    fun noticeHeal(player: ServerPlayerEntity) {
+        if (healTarget != null || f.now < nextHealPunish || countering) return
+        healTarget = player.uuid
+    }
+
+    /** Soll er laufende Beinarbeit abbrechen (Heilen bestrafen, Konter läuft)? */
+    private fun interrupted(): Boolean = healTarget != null || countering
+
+    private fun healing(p: ServerPlayerEntity): Boolean = p.isUsingItem && p.activeItem.contains(DataComponentTypes.CONSUMABLE)
+
+    private fun interruptHeal(p: ServerPlayerEntity) {
+        val stack = p.activeItem
+        p.stopUsingItem()
+        if (!stack.isEmpty) p.itemCooldownManager.set(stack, 40)
+        p.sendMessage(Text.translatable("hha_arius.msg.heal_punish").formatted(Formatting.RED), true)
+        f.sound("transform.shatter", p.entityPos, 1.4f, 1.6f)
+        Vfx.flare(f.world, Vfx.Style.STORM, p.entityPos.add(0.0, 1.2, 0.0), 1.2f, 6)
+    }
+
+    /**
+     * Wer heilt, wird eingeholt: kurze Ansage (eine Bahn auf ihn), Windschritt bis vor ihn, Hieb. Wer noch trinkt oder
+     * isst, wird unterbrochen (der Gegenstand ist 2 s gesperrt). Wer rechtzeitig aufhört und ausweicht, lässt ihn ins
+     * Leere laufen: dann steht er offen.
+     */
+    fun healPunish(): Script = script {
+        val a = f.arius ?: return@script
+        val id = healTarget ?: return@script
+        healTarget = null
+        nextHealPunish = f.now + 140
+        val t = f.players().firstOrNull { it.uuid == id } ?: return@script
+        if (!healing(t) || Hold.isHeld(t)) return@script
+        acting = true
+        try {
+            f.face(a, t.entityPos)
+            val from = a.entityPos
+            val dir = flatDir(from, t.entityPos)
+            val dist = sqrt(from.squaredDistanceTo(t.entityPos))
+            val end = f.clampToArena(from.add(dir.multiply(minOf(dist + 2.0, 28.0))), 1.0)
+            val stop = f.clampToArena(from.add(dir.multiply(maxOf(0.0, minOf(dist - 1.4, 28.0)))), 1.0)
+            val line = f.calls.line(from, end, 2.4f, 10, Telegraph.Pace.QUICK)
+            a.play(AriusPose.LUNGE, line.ticks)
+            f.sound("arius.wind_step", from, 2.4f, 1.5f)
+            f.sound("iai.glint", from, 1.6f, 1.4f)
+            wait(line.ticks - 3)
+            f.fx(FxKind.DASH_STREAK, from, stop, life = 12)
+            for (i in 1..3) {
+                f.place(a, Vec3d(from.x, f.floorY, from.z).lerp(Vec3d(stop.x, f.floorY, stop.z), i / 3.0))
+                yield(Unit)
+            }
+            f.face(a, t.entityPos)
+            f.sound("arius.slash", a.entityPos, 2.4f, 1.2f)
+            slash(a.entityPos, f.facing(a), 3.6f)
+            var caught = false
+            for (p in line.hits(f.players())) {
+                if (healing(p)) { interruptHeal(p); caught = true }
+                f.hurt(p, 9f)
+                dev.henny.hha.logic.Fx.launchPlayer(p, dir.multiply(0.5).add(0.0, 0.3, 0.0))
+            }
+            if (!caught) {
+                f.openArius(26)
+                a.play(AriusPose.STAGGER)
+                wait(26)
+                return@script
+            }
+            // Nachsetzen: ein angesagter Rückhandhieb.
+            val c = f.calls.cone(a.entityPos, f.facing(a), 4.4f, 70f, 10, Telegraph.Pace.FOLLOW_UP)
+            a.play(AriusPose.COMBO_2, c.ticks)
+            wait(c.ticks)
+            f.sound("arius.slash", a.entityPos, 2f, 0.95f)
+            for (p in c.hits(f.players())) f.hurt(p, 8f)
+            slash(a.entityPos, f.facing(a), 4.4f)
+            f.openArius(20)
+            wait(20)
+        } finally {
+            acting = false
+        }
+    }
 
     // --- Grundlagen -----------------------------------------------------------------------------------------------------
 
@@ -59,12 +206,16 @@ class AriusMoves(private val f: EirholmFight) {
         return sqrt(dx * dx + dz * dz)
     }
 
-    /** Geht auf das Ziel zu, bis es näher als [range] ist (höchstens [maxTicks]). */
+    /** Geht auf das Ziel zu, bis es näher als [range] ist (höchstens [maxTicks]); bricht ab, wenn jemand heilt. */
     private suspend fun SequenceScope<Unit>.approach(target: ServerPlayerEntity, range: Double, maxTicks: Int, white: Boolean) {
         val a = f.arius ?: return
         a.play(AriusPose.IDLE)
         var n = 0
         while (n++ < maxTicks && target.isAlive && flatDist(a, target) > range) {
+            if (healTarget != null && !countering) {
+                yieldAll(healPunish())
+                a.play(AriusPose.IDLE)
+            }
             f.stepToward(a, target.entityPos, walkSpeed(white, flatDist(a, target)))
             yield(Unit)
         }
@@ -76,8 +227,12 @@ class AriusMoves(private val f: EirholmFight) {
         val a = f.arius ?: return
         val t = f.target() ?: return wait(ticks)
         val sign = if (rnd.nextBoolean()) 1.0 else -1.0
-        a.play(AriusPose.IDLE)
+        if (stance == Stance.FLOW) a.play(AriusPose.IDLE)
         repeat(ticks) {
+            if (interrupted()) {
+                waitUntil(160) { !countering }
+                return
+            }
             val d = flatDist(a, t)
             val around = flatDir(t.entityPos, a.entityPos)
             val tangent = Vec3d(-around.z * sign, 0.0, around.x * sign)
@@ -97,7 +252,6 @@ class AriusMoves(private val f: EirholmFight) {
 
     private fun slash(at: Vec3d, dir: Vec3d, range: Float) {
         val mid = at.add(0.0, 1.1, 0.0)
-        // Seit 1.8.0 eine eigene Hiebsichel (wechselnd waagerecht und schräg), dazu die alten Bögen.
         f.fx(FxKind.SLASH_ARC, mid, dir, a = range, b = listOf(0f, 0.35f, -0.3f)[slashTilt++ % 3].coerceAtLeast(0f), life = 12)
         Vfx.crescent(f.world, style, mid, dir, range, 2.6f, 8)
         Vfx.crescent(f.world, Vfx.Style.STORM, mid.add(0.0, 0.25, 0.0), dir, range * 1.15f, 1.1f, 5)
@@ -112,67 +266,110 @@ class AriusMoves(private val f: EirholmFight) {
     /** Ein Zug in Abschnitt I (Rauhreif-Form). */
     fun turnTemple(): Script = script {
         val a = f.arius ?: return@script
+        if (healTarget != null) {
+            yieldAll(healPunish())
+            return@script
+        }
         val t = f.target() ?: return@script wait(10)
         val hpFrac = f.ariusHp / f.ariusMax
         val unlocked = hpFrac <= 0.7f
         val serious = hpFrac <= 0.4f
+        // Ab 85 % wechselt er die Haltung.
+        if (hpFrac <= 0.85f) nextStance(allowSheath = canSheath())?.let { yieldAll(shiftStance(it)) }
         val d = flatDist(a, t)
         val now = f.now
         acting = true
         try {
-            when {
-                f.adapt == EirholmFight.Adapt.ARROWS && d > 6 -> {
-                    yieldAll(arrowWalk(t))
-                    yieldAll(combo(false, serious))
+            when (stance) {
+                Stance.HEAVEN -> yieldAll(heavenTurn(t, false, serious))
+                Stance.SHEATH -> yieldAll(sheathTurn(t, false, serious))
+                Stance.FLOW -> when {
+                    f.adapt == EirholmFight.Adapt.ARROWS && d > 6 -> {
+                        yieldAll(arrowWalk(t))
+                        yieldAll(chain(false, if (serious) 6 else 4))
+                    }
+                    now >= nextChain && d < 10 && rnd.nextFloat() < 0.4f -> {
+                        nextChain = now + 260
+                        yieldAll(chain(false, if (serious) 5 + rnd.nextInt(3) else 4 + rnd.nextInt(2)))
+                    }
+                    now >= nextLotus && d < 9 && rnd.nextFloat() < 0.3f -> {
+                        nextLotus = now + 420
+                        yieldAll(frostLotus(false))
+                    }
+                    now >= nextFeint && d < 9 && rnd.nextFloat() < 0.35f -> {
+                        nextFeint = now + 300
+                        yieldAll(feint(false))
+                    }
+                    now >= nextGuard && d < 7 && rnd.nextFloat() < 0.35f -> {
+                        nextGuard = now + 360
+                        yieldAll(guard(false, serious))
+                    }
+                    now >= nextStepChain && d in 5.0..18.0 && rnd.nextFloat() < 0.35f -> {
+                        nextStepChain = now + 300
+                        yieldAll(stepChain(false))
+                    }
+                    now >= nextJavelin && d in 7.0..22.0 && rnd.nextFloat() < 0.4f -> {
+                        nextJavelin = now + 340
+                        yieldAll(iceJavelin(false))
+                    }
+                    unlocked && now >= nextThorns && d in 4.0..20.0 && rnd.nextFloat() < 0.4f -> {
+                        nextThorns = now + 400
+                        yieldAll(frostThorns(false))
+                    }
+                    unlocked && now >= nextBlade && d in 5.0..18.0 && rnd.nextFloat() < 0.35f -> {
+                        nextBlade = now + 560
+                        yieldAll(flyingBladeAttack(false))
+                    }
+                    unlocked && now >= nextLane && rnd.nextFloat() < 0.4f -> {
+                        nextLane = now + 520
+                        yieldAll(frostLane(serious))
+                    }
+                    unlocked && d in 4.0..10.0 && now >= nextGrip && evading(t) -> {
+                        nextGrip = now + 360
+                        yieldAll(grip(t))
+                    }
+                    unlocked && d > 9 && now >= nextStab -> {
+                        nextStab = now + 320
+                        yieldAll(stabGround())
+                    }
+                    d in 6.0..16.0 -> yieldAll(lunge(t, false))
+                    else -> yieldAll(combo(false, serious))
                 }
-                // Seit 1.8.0 vier neue Angriffe, schon ab Beginn gemischt
-                now >= nextLotus && d < 9 && rnd.nextFloat() < 0.35f -> {
-                    nextLotus = now + 420
-                    yieldAll(frostLotus(false))
-                }
-                now >= nextChain && d in 5.0..18.0 && rnd.nextFloat() < 0.35f -> {
-                    nextChain = now + 300
-                    yieldAll(stepChain(false))
-                }
-                now >= nextJavelin && d in 7.0..22.0 && rnd.nextFloat() < 0.4f -> {
-                    nextJavelin = now + 340
-                    yieldAll(iceJavelin(false))
-                }
-                unlocked && now >= nextSky && rnd.nextFloat() < 0.3f -> {
-                    nextSky = now + 480
-                    yieldAll(skyLeap(false))
-                }
-                now >= nextGuard && d < 6 && rnd.nextFloat() < 0.3f -> {
-                    nextGuard = now + 400
-                    yieldAll(guard(false, serious))
-                }
-                unlocked && now >= nextThorns && d in 4.0..20.0 && rnd.nextFloat() < 0.4f -> {
-                    nextThorns = now + 400
-                    yieldAll(frostThorns(false))
-                }
-                unlocked && now >= nextBlade && d in 5.0..18.0 && rnd.nextFloat() < 0.35f -> {
-                    nextBlade = now + 560
-                    yieldAll(flyingBladeAttack(false))
-                }
-                unlocked && now >= nextWall && rnd.nextFloat() < 0.45f -> {
-                    nextWall = now + 520
-                    yieldAll(wallStrip(serious))
-                }
-                unlocked && d in 4.0..10.0 && now >= nextGrip && evading(t) -> {
-                    nextGrip = now + 360
-                    yieldAll(grip(t))
-                }
-                unlocked && d > 9 && now >= nextStab -> {
-                    nextStab = now + 320
-                    yieldAll(stabGround())
-                }
-                d in 6.0..16.0 -> yieldAll(lunge(t, false))
-                else -> yieldAll(combo(false, serious))
             }
         } finally {
             acting = false
         }
         yieldAll(script { footwork(if (serious) 10 else 18, false) })
+    }
+
+    /** Himmelshaltung: schwere, verzögerte Hiebe von oben, Himmelssprung, Gletscherstoß. */
+    private fun heavenTurn(t: ServerPlayerEntity, white: Boolean, serious: Boolean): Script = script {
+        val a = f.arius ?: return@script
+        val d = flatDist(a, t)
+        when {
+            d > 12 && rnd.nextFloat() < 0.6f -> yieldAll(skyLeap(white))
+            rnd.nextFloat() < 0.22f -> yieldAll(stabGround())
+            else -> yieldAll(heavenCleave(white, serious))
+        }
+        if (stance == Stance.HEAVEN) a.play(AriusPose.CUT_CHARGE)
+    }
+
+    /** Scheidenhaltung: Iai-Züge mit wechselndem Zeitpunkt, Konterhaltung, Windschritt-Kette. */
+    private fun sheathTurn(t: ServerPlayerEntity, white: Boolean, serious: Boolean): Script = script {
+        val a = f.arius ?: return@script
+        val d = flatDist(a, t)
+        when {
+            d < 6 && f.now >= nextGuard && rnd.nextFloat() < 0.45f -> {
+                nextGuard = f.now + 260
+                yieldAll(iaiCounter(white))
+            }
+            d in 5.0..18.0 && rnd.nextFloat() < 0.25f -> yieldAll(stepChain(white))
+            else -> yieldAll(iaiDraw(white, if (serious) 3 else 2))
+        }
+        if (stance == Stance.SHEATH) {
+            a.sheathed = true
+            a.play(AriusPose.IAI_STANCE)
+        }
     }
 
     /** Ein Zug als Taktgeber in Abschnitt III (weiße Form). */
@@ -201,6 +398,10 @@ class AriusMoves(private val f: EirholmFight) {
         Vfx.shockwave(f.world, Vfx.Style.HEAVEN, spot, 12f, 18, 2f)
         f.fx(FxKind.CLEAR_WAVE, spot, a = 14f, life = 20)
         f.calls.roomShake(spot, 6f, 40f)
+        for (k in 0 until 12) {
+            val ang = k / 12.0 * Math.PI * 2
+            spike(spot.add(cos(ang) * 8.0, 0.0, sin(ang) * 8.0), 2 + rnd.nextInt(2), 40)
+        }
         a.play(AriusPose.IDLE)
         wait(10)
     }
@@ -233,12 +434,23 @@ class AriusMoves(private val f: EirholmFight) {
 
     fun turnWhite(): Script = script {
         val a = f.arius ?: return@script
+        if (healTarget != null) {
+            yieldAll(healPunish())
+            return@script
+        }
         val t = f.target() ?: return@script wait(10)
+        nextStance(allowSheath = false)?.let { yieldAll(shiftStance(it)) }
         val d = flatDist(a, t)
         val now = f.now
         acting = true
         try {
-            when {
+            if (stance == Stance.HEAVEN) {
+                yieldAll(heavenTurn(t, true, true))
+            } else when {
+                now >= nextChain && d < 10 && rnd.nextFloat() < 0.4f -> {
+                    nextChain = now + 240
+                    yieldAll(chain(true, 5 + rnd.nextInt(3)))
+                }
                 now >= nextNull && rnd.nextFloat() < 0.35f -> {
                     nextNull = now + 300
                     yieldAll(nullCut(t))
@@ -252,6 +464,10 @@ class AriusMoves(private val f: EirholmFight) {
                     nextSoul = now + 460
                     yieldAll(absoluteZeroSoul(t))
                 }
+                now >= nextFeint && d < 9 && rnd.nextFloat() < 0.35f -> {
+                    nextFeint = now + 280
+                    yieldAll(feint(true))
+                }
                 now >= nextBlade && rnd.nextFloat() < 0.4f -> {
                     nextBlade = now + 420
                     yieldAll(flyingBladeAttack(true))
@@ -260,12 +476,12 @@ class AriusMoves(private val f: EirholmFight) {
                     nextThorns = now + 320
                     yieldAll(frostThorns(true))
                 }
-                now >= nextGuard && d < 6 && rnd.nextFloat() < 0.3f -> {
-                    nextGuard = now + 360
+                now >= nextGuard && d < 7 && rnd.nextFloat() < 0.35f -> {
+                    nextGuard = now + 320
                     yieldAll(guard(true, false))
                 }
-                now >= nextChain && d in 5.0..18.0 && rnd.nextFloat() < 0.35f -> {
-                    nextChain = now + 260
+                now >= nextStepChain && d in 5.0..18.0 && rnd.nextFloat() < 0.35f -> {
+                    nextStepChain = now + 260
                     yieldAll(stepChain(true))
                 }
                 now >= nextSky && rnd.nextFloat() < 0.25f -> {
@@ -292,11 +508,72 @@ class AriusMoves(private val f: EirholmFight) {
     }
 
     /**
+     * Ein Zug im Finale (seit 1.9.0 ein echter Kampf statt der drei Austausche): alle drei Haltungen, Iai-Züge aus der
+     * Scheide, lange Ketten, Finten, Konter. [desperate] = unter 50 %: schnellere Wechsel, längere Ketten.
+     */
+    fun turnFinale(desperate: Boolean): Script = script {
+        val a = f.arius ?: return@script
+        if (healTarget != null) {
+            yieldAll(healPunish())
+            return@script
+        }
+        val t = f.target() ?: return@script wait(10)
+        nextStance(allowSheath = canSheath())?.let {
+            yieldAll(shiftStance(it))
+            if (desperate) stanceUntil -= 80
+        }
+        val d = flatDist(a, t)
+        val now = f.now
+        acting = true
+        try {
+            when (stance) {
+                Stance.SHEATH -> yieldAll(sheathTurn(t, false, desperate))
+                Stance.HEAVEN -> yieldAll(heavenTurn(t, false, desperate))
+                Stance.FLOW -> when {
+                    now >= nextChain && d < 10 && rnd.nextFloat() < 0.45f -> {
+                        nextChain = now + 220
+                        yieldAll(chain(false, if (desperate) 6 + rnd.nextInt(3) else 5 + rnd.nextInt(2)))
+                    }
+                    now >= nextFeint && d < 9 && rnd.nextFloat() < 0.4f -> {
+                        nextFeint = now + 240
+                        yieldAll(feint(false))
+                    }
+                    now >= nextGuard && d < 7 && rnd.nextFloat() < 0.35f -> {
+                        nextGuard = now + 300
+                        yieldAll(guard(false, desperate))
+                    }
+                    now >= nextNull && rnd.nextFloat() < 0.3f -> {
+                        nextNull = now + 320
+                        yieldAll(nullCut(t))
+                    }
+                    now >= nextStepChain && d in 5.0..18.0 && rnd.nextFloat() < 0.4f -> {
+                        nextStepChain = now + 260
+                        yieldAll(stepChain(false))
+                    }
+                    now >= nextLotus && d < 9 && rnd.nextFloat() < 0.3f -> {
+                        nextLotus = now + 400
+                        yieldAll(frostLotus(false))
+                    }
+                    d > 6 -> yieldAll(lunge(t, desperate))
+                    else -> yieldAll(combo(false, true))
+                }
+            }
+        } finally {
+            acting = false
+        }
+        yieldAll(script { footwork(if (desperate) 8 else 12, false) })
+    }
+
+    /**
      * Begleitung, während Nivaris führt: ein einzelner Hieb gegen einen Spieler ohne laufende Boss-Ansage, sonst
-     * Stellungswechsel in die Flanke.
+     * Stellungswechsel in die Flanke. Wer heilt, wird auch jetzt eingeholt.
      */
     fun support(): Script = script {
         val a = f.arius ?: return@script
+        if (healTarget != null) {
+            yieldAll(healPunish())
+            return@script
+        }
         val victim = f.players().firstOrNull { flatDist(a, it) < 4.2 && !f.calls.hasBossTelegraph(it) && !Hold.isHeld(it) && !Hold.inGrace(it) }
         acting = true
         try {
@@ -328,10 +605,304 @@ class AriusMoves(private val f: EirholmFight) {
         }
     }
 
-    // --- Seit 1.8.0: neue Angriffe in Abschnitt I (Crix: „stirbt echt schnell und hat nicht viele coole Angriffe“) ---
+    // --- Seit 1.9.0: Wukong-Elemente ------------------------------------------------------------------------------------
+
+    /**
+     * Lange Kette: 4–8 Glieder aus Hieben links/rechts, Drehschnitt, Stoß, Windschritt und Aufwärtsschnitt in wechselndem
+     * Rhythmus. Meist schnelle Folgeschläge, dazwischen ein **verzögerter** Schlag (lange Ansage, er hält die Klinge
+     * oben), am Ende ein schwerer Abschluss und ein langes Fenster.
+     */
+    fun chain(white: Boolean, length: Int): Script = script {
+        val a = f.arius ?: return@script
+        var t = f.target() ?: return@script
+        yieldAll(script { approach(t, 3.8, 50, white) })
+        var last = -1
+        for (k in 0 until length) {
+            t = f.target() ?: break
+            if (flatDist(a, t) > 5.5) {
+                f.sound("arius.wind_step", a.entityPos, 1.4f, 1.3f)
+                val from = a.entityPos
+                repeat(5) { f.stepToward(a, t.entityPos, 0.8); yield(Unit) }
+                f.fx(FxKind.DASH_STREAK, from, a.entityPos, life = 8)
+            }
+            f.face(a, t.entityPos)
+            val dir = f.facing(a)
+            val finisher = k == length - 1
+            val delayed = !finisher && k > 0 && rnd.nextFloat() < 0.22f
+            var link = if (finisher) 6 + rnd.nextInt(2) else rnd.nextInt(6)
+            if (link == last) link = (link + 1) % 6
+            last = link
+            val windup = when {
+                k == 0 -> 14
+                finisher -> 18
+                delayed -> 24 + rnd.nextInt(6)
+                else -> 9 + rnd.nextInt(3)
+            }
+            val pace = if (k == 0 || delayed || finisher) Telegraph.Pace.HEAVY else Telegraph.Pace.FOLLOW_UP
+            val dmg = (if (white) 8.5f else 7.5f) + if (finisher) 4f else 0f
+            when (link) {
+                0, 1 -> {
+                    val c = f.calls.cone(a.entityPos, dir, 4.6f, 60f, windup, pace)
+                    a.play(if (link == 0) AriusPose.COMBO_1 else AriusPose.COMBO_2, c.ticks)
+                    wait(c.ticks - 2)
+                    repeat(2) { f.stepToward(a, a.entityPos.add(dir), 0.3, faceIt = false); yield(Unit) }
+                    f.sound("arius.slash", a.entityPos, 2f, 1.0f + k * 0.05f)
+                    for (p in c.hits(f.players())) f.hurt(p, dmg)
+                    slash(a.entityPos, dir, 4.6f)
+                }
+                2 -> {
+                    val r = f.calls.ring(a.entityPos, 3.8f, windup, pace = pace)
+                    a.play(AriusPose.SPIN_CUT, r.ticks)
+                    wait(r.ticks)
+                    f.sound("arius.slash", a.entityPos, 2f, 0.85f)
+                    for (p in r.hits(f.players())) f.hurt(p, dmg)
+                    Vfx.shockwave(f.world, style, a.entityPos, 3.8f, 10, 1.2f)
+                    f.fx(FxKind.SLASH_ARC, a.entityPos.add(0.0, 1.0, 0.0), dir, a = 3.8f, b = 0f, life = 10)
+                }
+                3 -> {
+                    val from = a.entityPos
+                    val line = f.calls.line(from, f.clampToArena(from.add(dir.multiply(7.0)), 1.0), 2f, windup, pace)
+                    a.play(AriusPose.COMBO_3, line.ticks)
+                    wait(line.ticks - 2)
+                    repeat(2) { f.stepToward(a, a.entityPos.add(dir), 0.5, faceIt = false); yield(Unit) }
+                    f.sound("arius.thrust", a.entityPos, 2.2f)
+                    for (p in line.hits(f.players())) f.hurt(p, dmg + 1f)
+                    Vfx.crescent(f.world, style, a.entityPos.add(0.0, 1.2, 0.0), dir, 6f, 1.2f, 7)
+                }
+                4 -> {
+                    val from = a.entityPos
+                    val to = f.clampToArena(from.add(dir.multiply(7.5)), 1.0)
+                    val line = f.calls.line(from, to, 2.2f, windup, pace)
+                    a.play(AriusPose.LUNGE, line.ticks)
+                    f.sound("arius.wind_step", from, 1.6f, 1.1f)
+                    wait(line.ticks)
+                    f.fx(FxKind.DASH_STREAK, from, to, life = 10)
+                    for (p in line.hits(f.players())) f.hurt(p, dmg)
+                    var n = 0
+                    while (n++ < 6 && !f.stepToward(a, to, AriusTimings.LUNGE_SPEED, faceIt = false)) yield(Unit)
+                    f.sound("arius.slash", a.entityPos, 2f, 1.15f)
+                }
+                5 -> {
+                    val c = f.calls.cone(a.entityPos, dir, 3.8f, 70f, windup, pace)
+                    a.play(AriusPose.LAUNCH, c.ticks)
+                    wait(c.ticks)
+                    f.sound("arius.slash", a.entityPos, 2f, 1.3f)
+                    for (p in c.hits(f.players())) {
+                        f.hurt(p, dmg)
+                        dev.henny.hha.logic.Fx.launchPlayer(p, dir.multiply(0.25).add(0.0, 0.75, 0.0))
+                    }
+                    f.fx(FxKind.SLASH_ARC, a.entityPos.add(0.0, 1.0, 0.0), dir, a = 3.8f, b = 1f, life = 10)
+                }
+                6 -> {
+                    // Abschluss: Gletscherstoß im Sprung auf das Ziel.
+                    val spot = f.clampToArena(Vec3d(t.x, f.floorY, t.z), 1.0)
+                    val ring = f.calls.ring(spot, 3.8f, windup, pace = Telegraph.Pace.HEAVY)
+                    a.play(AriusPose.STAB_GROUND, ring.ticks)
+                    val from = a.entityPos
+                    for (i in 1..ring.ticks) {
+                        val kk = i / ring.ticks.toDouble()
+                        f.place(a, from.lerp(spot, kk * kk).add(0.0, sin(kk * Math.PI) * 2.2, 0.0))
+                        yield(Unit)
+                    }
+                    f.place(a, spot)
+                    f.sound("arius.stab_ground", spot, 2.6f, 0.9f)
+                    f.calls.roomShake(spot, 3f, 24f)
+                    Vfx.shockwave(f.world, style, spot, 4.5f, 12, 1.6f)
+                    for (p in ring.hits(f.players())) {
+                        f.hurt(p, dmg, Damage.Kind.IMPACT)
+                        dev.henny.hha.logic.Fx.launchPlayer(p, flatDir(spot, p.entityPos).multiply(0.7).add(0.0, 0.45, 0.0))
+                    }
+                    for (q in 0 until 8) spike(spot.add(cos(q * Math.PI / 4) * 3.2, 0.0, sin(q * Math.PI / 4) * 3.2), 2, 30)
+                }
+                else -> {
+                    // Abschluss: schwerer Rückwärtsschnitt nach einem Windschritt hinter das Ziel.
+                    val behind = f.clampToArena(t.entityPos.add(flatDir(a.entityPos, t.entityPos).multiply(2.2)), 1.0)
+                    f.sound("arius.wind_step", a.entityPos, 2f)
+                    val from = a.entityPos
+                    repeat(4) { f.stepToward(a, behind, 1.0, faceIt = false); yield(Unit) }
+                    f.fx(FxKind.DASH_STREAK, from, a.entityPos, life = 10)
+                    f.face(a, t.entityPos)
+                    val d2 = f.facing(a)
+                    val c = f.calls.cone(a.entityPos, d2, 4.4f, 80f, windup, Telegraph.Pace.HEAVY)
+                    a.play(AriusPose.COMBO_4, c.ticks)
+                    wait(c.ticks)
+                    f.sound("arius.slash", a.entityPos, 2.4f, 0.8f)
+                    for (p in c.hits(f.players())) f.hurt(p, dmg)
+                    slash(a.entityPos, d2, 4.4f)
+                }
+            }
+            if (delayed) f.sound("iai.glint", a.entityPos, 1.2f, 0.7f)
+            wait(if (finisher) 0 else 2)
+        }
+        f.openArius(30)
+        wait(30)
+    }
+
+    /**
+     * Finte: Er holt angesagt zum Stoß aus – und bricht ihn halb ab. Seitschritt, und aus der Drehung kommt der echte
+     * Schlag (Drehschnitt oder flacher Fegeschnitt), schnell angesagt. Wer früh ausweicht, läuft hinein.
+     */
+    fun feint(white: Boolean): Script = script {
+        val a = f.arius ?: return@script
+        val t = f.target() ?: return@script
+        yieldAll(script { approach(t, 4.6, 40, white) })
+        f.face(a, t.entityPos)
+        val from = a.entityPos
+        val dir = f.facing(a)
+        val group = f.calls.boss()
+        group.line(from, f.clampToArena(from.add(dir.multiply(7.0)), 1.0), 2f, 24, Telegraph.Pace.HEAVY)
+        a.play(AriusPose.COMBO_3, 24)
+        f.sound("arius.guard", from, 1.4f, 1.2f)
+        wait(12)
+        group.end()
+        // Abgebrochen: Seitschritt aus der Linie.
+        val sign = if (rnd.nextBoolean()) 1 else -1
+        a.sideSign = sign
+        a.play(AriusPose.SIDESTEP)
+        f.sound("arius.wind_step", a.entityPos, 1.6f, 1.5f)
+        val side = Vec3d(-dir.z * sign, 0.0, dir.x * sign)
+        val goal = f.clampToArena(a.entityPos.add(side.multiply(2.2)).add(dir.multiply(1.0)), 1.0)
+        repeat(5) { f.stepToward(a, goal, 0.5, faceIt = false); f.face(a, t.entityPos); yield(Unit) }
+        if (rnd.nextBoolean()) {
+            val ring = f.calls.ring(a.entityPos, 4f, 10, pace = Telegraph.Pace.FOLLOW_UP)
+            a.play(AriusPose.SPIN_CUT, ring.ticks)
+            wait(ring.ticks)
+            f.sound("arius.slash", a.entityPos, 2.2f, 0.9f)
+            for (p in ring.hits(f.players())) f.hurt(p, if (white) 11f else 10f)
+            Vfx.shockwave(f.world, style, a.entityPos, 4f, 10, 1.2f)
+            f.fx(FxKind.SLASH_ARC, a.entityPos.add(0.0, 1.0, 0.0), dir, a = 4f, b = 0f, life = 10)
+        } else {
+            val d2 = flatDir(a.entityPos, t.entityPos)
+            val cone = f.calls.cone(a.entityPos, d2, 5.2f, 110f, 12, Telegraph.Pace.FOLLOW_UP)
+            a.play(AriusPose.STRIP_SLASH, cone.ticks)
+            wait(cone.ticks)
+            f.sound("arius.slash", a.entityPos, 2.2f, 0.75f)
+            for (p in cone.hits(f.players())) if (f.grounded(p)) f.hurt(p, if (white) 11f else 10f)
+            Vfx.crescent(f.world, style, a.entityPos.add(0.0, 0.4, 0.0), d2, 5.2f, 3f, 8)
+        }
+        f.openArius(22)
+        wait(22)
+    }
+
+    /**
+     * Himmelshieb (Himmelshaltung): Die Klinge steht hoch über der Schulter; der Hieb kommt nach einem von drei
+     * Zeitpunkten (die Ansage zeigt den wahren). Eine Schockwelle läuft die Linie entlang. Ernst: ein zweiter Hieb mit
+     * dem umgekehrten Rhythmus.
+     */
+    fun heavenCleave(white: Boolean, serious: Boolean): Script = script {
+        val a = f.arius ?: return@script
+        var t = f.target() ?: return@script
+        yieldAll(script { approach(t, 5.5, 40, white) })
+        val delays = intArrayOf(14, 22, 32)
+        var pick = rnd.nextInt(3)
+        val swings = if (serious) 2 else 1
+        for (k in 0 until swings) {
+            t = f.target() ?: break
+            f.face(a, t.entityPos)
+            val from = a.entityPos
+            val dir = f.facing(a)
+            val to = f.clampToArena(from.add(dir.multiply(13.0)), 0.5)
+            val windup = delays[pick]
+            val group = f.calls.boss()
+            val line = group.line(from, to, 3.2f, windup, Telegraph.Pace.HEAVY)
+            val near = group.cone(from, dir, 3.6f, 80f, windup, Telegraph.Pace.HEAVY)
+            a.play(AriusPose.CUT_CHARGE)
+            f.sound("cut.charge", from, 1.6f, 1.3f)
+            f.fx(FxKind.EDGE, from, life = windup, e1 = a)
+            wait((windup - 6).coerceAtLeast(0))
+            a.play(AriusPose.CUT_RELEASE, 6)
+            wait(line.remaining.coerceAtLeast(0))
+            f.sound("cut.strike", from, 2.6f, 1.2f)
+            f.sound("arius.stab_ground", to, 2.2f, 0.7f)
+            f.calls.roomShake(from, 4f, 26f)
+            f.fx(FxKind.SEAM, from.add(0.0, 0.15, 0.0), to.add(0.0, 0.15, 0.0), a = 2.5f, life = 18)
+            f.fx(FxKind.SLASH_ARC, from.add(dir.multiply(2.0)).add(0.0, 1.4, 0.0), dir, a = 5f, b = 1f, life = 12)
+            for (i in 1..4) f.fx(FxKind.CLEAR_WAVE, from.lerp(to, i / 4.0), a = 2.5f, life = 12)
+            val hit = (line.hits(f.players()) + near.hits(f.players())).distinct()
+            for (p in hit) {
+                f.hurt(p, if (white) 14f else 13f, Damage.Kind.IMPACT)
+                dev.henny.hha_arius.gear.Frostbite.add(p, 15f)
+            }
+            for (i in 2..8 step 2) spike(from.lerp(to, i / 9.0).add(Vec3d(-dir.z, 0.0, dir.x).multiply(if (i % 4 == 0) 1.2 else -1.2)), 2, 26)
+            // Der zweite Hieb kommt mit dem umgekehrten Rhythmus (früh nach spät, spät nach früh).
+            pick = 2 - pick
+            wait(if (k < swings - 1) 6 else 0)
+        }
+        a.play(AriusPose.STAGGER)
+        f.openArius(28)
+        wait(28)
+    }
+
+    /**
+     * Iai-Zug aus der Scheidenhaltung: [count] Züge, jeder eine lange Bahn durch das Ziel; der Zeitpunkt wechselt
+     * zwischen schnell und verzögert (die Ansage zeigt ihn), er gleitet durch die Bahn und steckt die Klinge zurück.
+     */
+    fun iaiDraw(white: Boolean, count: Int): Script = script {
+        val a = f.arius ?: return@script
+        for (k in 0 until count) {
+            val t = f.target() ?: break
+            f.face(a, t.entityPos)
+            a.sheathed = canSheath()
+            a.play(AriusPose.IAI_STANCE)
+            val from = a.entityPos
+            val dir = flatDir(from, t.entityPos)
+            val dist = sqrt(from.squaredDistanceTo(t.entityPos))
+            val to = f.clampToArena(from.add(dir.multiply(dist + 4.0)), 1.0)
+            val windup = if (rnd.nextFloat() < 0.4f) 30 + rnd.nextInt(8) else 14 + rnd.nextInt(4)
+            val line = f.calls.line(from, to, 1.8f, windup, Telegraph.Pace.HEAVY)
+            f.sound("iai.glint", from, 2.2f, if (windup > 24) 0.7f else 1.3f)
+            wait(line.ticks)
+            a.sheathed = false
+            a.play(AriusPose.IAI_DRAW, 1)
+            f.sound("iai.draw", from, 3f)
+            val struck = line.hits(f.players())
+            for (i in 1..4) {
+                f.place(a, Vec3d(from.x, f.floorY, from.z).lerp(Vec3d(to.x, f.floorY, to.z), i / 4.0))
+                yield(Unit)
+            }
+            f.fx(FxKind.DASH_STREAK, from, to, life = 10)
+            f.fx(FxKind.SEAM, from.add(0.0, 1.1, 0.0), to.add(0.0, 1.1, 0.0), a = 1.2f, life = 12)
+            Vfx.crescent(f.world, Vfx.Style.HEAVEN, from.add(0.0, 1.1, 0.0), dir, sqrt(from.squaredDistanceTo(to)).toFloat(), 1.2f, 6)
+            for (p in struck) f.hurt(p, if (white) 13f else 12f, Damage.Kind.NULL_CUT)
+            wait(8)
+            f.face(a, (f.target() ?: t).entityPos)
+            if (canSheath()) a.sheathed = true
+            a.play(AriusPose.IAI_STANCE)
+            f.sound("arius.guard", a.entityPos, 1.2f, 1.5f)
+            wait(6)
+        }
+        f.openArius(24)
+        wait(24)
+    }
+
+    /**
+     * Konter aus der Scheidenhaltung: Er wartet, die Hand am Griff. Wer zuschlägt, wird mit einem Iai-Zug pariert und
+     * bestraft ([counter]). Wer nicht anbeißt, bekommt den Zug trotzdem – verzögert und weit.
+     */
+    fun iaiCounter(white: Boolean): Script = script {
+        val a = f.arius ?: return@script
+        f.target()?.let { f.face(a, it.entityPos) }
+        a.sheathed = canSheath()
+        a.play(AriusPose.IAI_STANCE)
+        val ticks = if (white) AriusTimings.GUARD_TICKS_WHITE + 8 else AriusTimings.GUARD_TICKS + 8
+        f.guardUntil = f.now + ticks
+        f.guardWhite = white
+        f.guardTriggered = false
+        Vfx.rune(f.world, style, Vec3d(a.x, f.floorAt(a) + 0.05, a.z), 1.6f, ticks, a)
+        f.sound("iai.glint", a.entityPos, 1.8f, 0.8f)
+        waitUntil(ticks) { f.guardTriggered }
+        f.guardUntil = 0
+        if (f.guardTriggered) {
+            waitUntil(160) { !countering }
+            return@script
+        }
+        yieldAll(iaiDraw(white, 1))
+    }
+
+    // --- Seit 1.8.0: Angriffe in Abschnitt I ---------------------------------------------------------------------------
 
     private var nextLotus = 0L
-    private var nextChain = 0L
+    private var nextStepChain = 0L
     private var nextJavelin = 0L
     private var nextSky = 0L
 
@@ -361,10 +932,8 @@ class AriusMoves(private val f: EirholmFight) {
             f.fx(FxKind.SEAM, c.add(0.0, 0.1, 0.0), to.add(0.0, 0.1, 0.0), a = 1.2f, life = 14)
             f.fx(FxKind.SLASH_ARC, c.add(dir.multiply(5.0)).add(0.0, 0.4, 0.0), dir, a = 4f, b = 0.9f, life = 10)
             for (p in line.hits(f.players())) f.hurt(p, if (white) 10f else 9f)
-            val placed = ArrayList<net.minecraft.util.math.BlockPos>()
-            placed += spike(c.add(dir.multiply(4.0)), 1)
-            placed += spike(c.add(dir.multiply(8.0)), 2)
-            f.task(script { wait(30); f.edits.revert(placed) })
+            spike(c.add(dir.multiply(4.0)), 1, 30)
+            spike(c.add(dir.multiply(8.0)), 2, 30)
         }
         wait((bloom.ticks - elapsed).coerceAtLeast(0))
         f.sound("arius.stab_ground", c, 2.4f, 1.1f)
@@ -380,6 +949,7 @@ class AriusMoves(private val f: EirholmFight) {
     /** Windschritt-Kette: drei blitzschnelle Schritte im Zickzack auf das Ziel zu, bei jedem ein Hieb. */
     fun stepChain(white: Boolean): Script = script {
         val a = f.arius ?: return@script
+        if (stance == Stance.SHEATH) a.sheathed = false
         for (k in 0 until 3) {
             val t = f.target() ?: break
             val from = a.entityPos
@@ -433,6 +1003,7 @@ class AriusMoves(private val f: EirholmFight) {
     fun skyLeap(white: Boolean): Script = script {
         val a = f.arius ?: return@script
         val t = f.target() ?: return@script
+        a.sheathed = false
         val from = a.entityPos
         val spot = Vec3d(t.x, f.floorY, t.z)
         val ring = f.calls.ring(spot, 3.8f, 30, pace = Telegraph.Pace.HEAVY)
@@ -463,12 +1034,10 @@ class AriusMoves(private val f: EirholmFight) {
             f.hurt(p, if (white) 13f else 12f, Damage.Kind.IMPACT)
             dev.henny.hha.logic.Fx.launchPlayer(p, flatDir(spot, p.entityPos).multiply(0.8).add(0.0, 0.5, 0.0))
         }
-        val placed = ArrayList<net.minecraft.util.math.BlockPos>()
         for (k in 0 until 10) {
             val ang = k / 10.0 * Math.PI * 2
-            placed += spike(spot.add(cos(ang) * 4.6, 0.0, sin(ang) * 4.6), 1 + rnd.nextInt(2))
+            spike(spot.add(cos(ang) * 4.6, 0.0, sin(ang) * 4.6), 1 + rnd.nextInt(2), 50)
         }
-        f.task(script { wait(50); f.edits.revert(placed) })
         f.openArius(30)
         wait(30)
     }
@@ -478,13 +1047,14 @@ class AriusMoves(private val f: EirholmFight) {
     /**
      * Klingenflug: Arius lässt die Klinge los, sie wirbelt magisch durch die Luft (flach gelegt, dreht wie ein Rotor) und
      * fliegt zwei bzw. drei angesagte Bahnen auf Spieler. Gleichzeitig rückt Arius selbst nach und tritt: Drehtritt,
-     * dann Fronttritt, der weit zurückwirft. Danach kehrt die Klinge in seine Hand zurück. Die Bahnen laufen als eigene
-     * Aufgabe neben seinen Tritten.
+     * dann Fronttritt. Danach kehrt die Klinge in seine Hand zurück. Die Bahnen laufen als eigene Aufgabe neben seinen
+     * Tritten.
      */
     fun flyingBladeAttack(white: Boolean): Script = script {
         val a = f.arius ?: return@script
         val t0 = f.target() ?: return@script
         val keep = a.bladeState
+        a.sheathed = false
         f.face(a, t0.entityPos)
         a.play(AriusPose.ARROW_CUT, 8)
         wait(6)
@@ -507,7 +1077,6 @@ class AriusMoves(private val f: EirholmFight) {
                 var pos = hand
                 for (k in 0 until passes) {
                     val target = (if (k == 0) t0 else f.players().randomOrNull()) ?: break
-                    // Steigen und Ausrichten über dem Ziel-Rand, wirbelnd; dann Ansage und Flug quer durch das Ziel.
                     val dir = flatDir(pos, target.entityPos)
                     val start = f.clampToArena(target.entityPos.subtract(dir.multiply(7.0)), 2.0).let { Vec3d(it.x, f.floorY + 1.3, it.z) }
                     val end = f.clampToArena(target.entityPos.add(dir.multiply(7.0)), 2.0).let { Vec3d(it.x, f.floorY + 1.3, it.z) }
@@ -538,7 +1107,6 @@ class AriusMoves(private val f: EirholmFight) {
                         yield(Unit)
                     }
                 }
-                // Zurück in die Hand
                 val back = f.arius ?: return@script
                 for (i in 1..8) {
                     val h = back.entityPos.add(0.0, 1.3, 0.0)
@@ -552,7 +1120,6 @@ class AriusMoves(private val f: EirholmFight) {
                 done = true
             }
         })
-        // Arius: nachrücken und treten, solange die Klinge fliegt.
         try {
             for (kick in 0 until 2) {
                 val t = f.target() ?: break
@@ -566,9 +1133,9 @@ class AriusMoves(private val f: EirholmFight) {
                 f.sound("arius.kick", a.entityPos, 2f, if (front) 0.85f else 1.05f)
                 for (p in cone.hits(f.players())) {
                     f.hurt(p, if (front) 10f else 8f)
-                    dev.henny.hha.logic.Fx.launchPlayer(p, dir.multiply(if (front) 1.25 else 0.8).add(0.0, if (front) 0.45 else 0.3, 0.0))
+                    dev.henny.hha.logic.Fx.launchPlayer(p, dir.multiply(if (front) 0.9 else 0.6).add(0.0, if (front) 0.4 else 0.3, 0.0))
                 }
-                shown0 { Vfx.shockwave(f.world, style, a.entityPos.add(dir.multiply(1.6)), if (front) 2.6f else 2.0f, 10, 0.8f) }
+                Vfx.shockwave(f.world, style, a.entityPos.add(dir.multiply(1.6)), if (front) 2.6f else 2.0f, 10, 0.8f)
                 wait(if (front) 14 else 8)
             }
             waitUntil(120) { done }
@@ -582,14 +1149,13 @@ class AriusMoves(private val f: EirholmFight) {
         wait(18)
     }
 
-    private inline fun shown0(block: () -> Unit) = block()
-
     // --- Frostdornen (seit 1.2.2, angelehnt an Dornenmagie eines Ritters aus Elden Ring) -----------------------------
 
     /**
      * Frostdornen: Arius reißt die Klinge über den Boden, eine Reihe Eisdornen bricht in schneller Folge von ihm bis
      * hinter das Ziel aus dem Boden (angesagte Linie). Wer getroffen wird, wird aufgespießt hochgeschleudert. In der
-     * weißen Form folgt ein Dornenkranz um ihn selbst (angesagter Ring). Die Dornen stehen kurz und zersplittern dann.
+     * weißen Form folgt ein Dornenkranz um ihn selbst (angesagter Ring). Seit 1.9.0 sind die Dornen nur sichtbar
+     * (Block-Anzeigen): sie versperren keinen Weg.
      */
     fun frostThorns(white: Boolean): Script = script {
         val a = f.arius ?: return@script
@@ -603,14 +1169,13 @@ class AriusMoves(private val f: EirholmFight) {
         a.play(AriusPose.STRIP_SLASH, line.ticks)
         wait(line.ticks)
         f.sound("arius.frost_strip", from, 2.5f, 0.7f)
-        val placed = ArrayList<net.minecraft.util.math.BlockPos>()
         val len = sqrt(from.squaredDistanceTo(to))
         val steps = (len / 1.5).toInt().coerceAtLeast(3)
         var struck = false
         for (i in 1..steps) {
             val p = from.lerp(to, i / steps.toDouble())
-            placed += spike(p.add(dir.multiply(0.0)), 2 + rnd.nextInt(2))
-            placed += spike(p.add(Vec3d(-dir.z, 0.0, dir.x).multiply(if (i % 2 == 0) 0.9 else -0.9)), 1 + rnd.nextInt(2))
+            spike(p, 2 + rnd.nextInt(2), 34)
+            spike(p.add(Vec3d(-dir.z, 0.0, dir.x).multiply(if (i % 2 == 0) 0.9 else -0.9)), 1 + rnd.nextInt(2), 34)
             if (i % 2 == 0) f.sound("arius.ice_wall", p, 1.3f, 1.3f + i * 0.02f)
             if (!struck && i >= steps / 2) {
                 struck = true
@@ -628,7 +1193,7 @@ class AriusMoves(private val f: EirholmFight) {
             f.sound("arius.stab_ground", a.entityPos, 2.5f, 0.9f)
             for (k in 0 until 14) {
                 val ang = k / 14.0 * 2 * Math.PI
-                placed += spike(a.entityPos.add(cos(ang) * 3.2, 0.0, sin(ang) * 3.2), 3)
+                spike(a.entityPos.add(cos(ang) * 3.2, 0.0, sin(ang) * 3.2), 3, 24)
             }
             for (pl in ring.hits(f.players())) {
                 f.hurt(pl, 8f)
@@ -636,28 +1201,13 @@ class AriusMoves(private val f: EirholmFight) {
             }
         }
         wait(26)
-        for (pos in placed) {
-            if (rnd.nextInt(2) == 0) f.world.spawnParticles(net.minecraft.particle.BlockStateParticleEffect(net.minecraft.particle.ParticleTypes.BLOCK, net.minecraft.block.Blocks.PACKED_ICE.defaultState), pos.x + 0.5, pos.y + 0.5, pos.z + 0.5, 6, 0.3, 0.3, 0.3, 0.1)
-        }
-        if (placed.isNotEmpty()) f.sound("transform.shatter", a.entityPos, 1.5f, 1.6f)
-        f.edits.revert(placed)
+        f.sound("transform.shatter", a.entityPos, 1.5f, 1.6f)
         wait(8)
     }
 
-    /** Ein Eisdorn (h Blöcke, blaue Spitze) auf der Lauffläche, nur auf freiem Boden und nie in einem Spieler. */
-    private fun spike(at: Vec3d, h: Int): List<net.minecraft.util.math.BlockPos> {
-        val ground = Vec3d(at.x, f.floorY, at.z)
-        if (!f.passable(ground)) return emptyList()
-        if (f.players().any { it.squaredDistanceTo(ground.add(0.0, 1.0, 0.0)) < 1.2 }) return emptyList()
-        val base = net.minecraft.util.math.BlockPos.ofFloored(ground)
-        if (f.world.getBlockState(base.down()).isAir) return emptyList()
-        val list = ArrayList<Pair<net.minecraft.util.math.BlockPos, net.minecraft.block.BlockState>>()
-        for (y in 0 until h) {
-            val pos = base.up(y)
-            if (!f.world.getBlockState(pos).isAir) break
-            list += pos to (if (y == h - 1) net.minecraft.block.Blocks.BLUE_ICE else net.minecraft.block.Blocks.PACKED_ICE).defaultState
-        }
-        return f.edits.fill(list)
+    /** Ein Eisdorn (h Blöcke) auf der Lauffläche: nur sichtbar, keine Kollision, verschwindet nach [life] Ticks. */
+    private fun spike(at: Vec3d, h: Int, life: Int) {
+        f.shards.spike(Vec3d(at.x, f.floorY, at.z), h + 0.3 + rnd.nextDouble() * 0.6, life, width = 0.55 + rnd.nextDouble() * 0.3)
     }
 
     /** Klinge flach gelegt (Spitze nach vorn) und um die Hochachse gedreht: wirbelt wie ein Rotor. */
@@ -687,6 +1237,7 @@ class AriusMoves(private val f: EirholmFight) {
     fun combo(white: Boolean, serious: Boolean): Script = script {
         val a = f.arius ?: return@script
         var t = f.target() ?: return@script
+        a.sheathed = false
         yieldAll(script { approach(t, 3.6, 50, white) })
         if (f.adapt == EirholmFight.Adapt.BACK) yieldAll(spinCut())
 
@@ -701,11 +1252,12 @@ class AriusMoves(private val f: EirholmFight) {
         for (p in c1.hits(f.players())) f.hurt(p, 10f)
         slash(a.entityPos, dir, 4.5f)
 
-        // Hieb 2 (Folgehieb)
+        // Hieb 2 (Folgehieb), gelegentlich verzögert
         t = f.target() ?: return@script
         f.face(a, t.entityPos)
         dir = f.facing(a)
-        val c2 = f.calls.cone(a.entityPos, dir, 4.5f, 55f, AriusTimings.ARIUS_WINDUP[AriusPose.COMBO_2], Telegraph.Pace.FOLLOW_UP)
+        val delayed = serious && rnd.nextFloat() < 0.3f
+        val c2 = f.calls.cone(a.entityPos, dir, 4.5f, 55f, if (delayed) 24 else AriusTimings.ARIUS_WINDUP[AriusPose.COMBO_2], if (delayed) Telegraph.Pace.HEAVY else Telegraph.Pace.FOLLOW_UP)
         a.play(AriusPose.COMBO_2, c2.ticks)
         wait(c2.ticks)
         f.sound("arius.slash", a.entityPos, 2f, 0.95f)
@@ -791,6 +1343,7 @@ class AriusMoves(private val f: EirholmFight) {
     // --- A2 / W2: Windschritt ----------------------------------------------------------------------------------------
 
     fun lunge(target: ServerPlayerEntity, white: Boolean): Script = script {
+        f.arius?.sheathed = false
         yieldAll(lungeOnce(target, AriusTimings.ARIUS_WINDUP[AriusPose.LUNGE], Telegraph.Pace.HEAVY, last = !white))
         if (white) {
             val t = f.target() ?: return@script
@@ -836,26 +1389,46 @@ class AriusMoves(private val f: EirholmFight) {
         }
     }
 
-    // --- A3: Frostwand → Froststreifen -------------------------------------------------------------------------------
+    // --- A3: Frostbahn → Streifenhieb (seit 1.9.0 statt der Frostwand) ------------------------------------------------
 
-    fun wallStrip(serious: Boolean): Script = script {
+    /**
+     * Frostbahn: Er legt die Hand auf den Boden, eine Bahn aus Raureif schießt quer durch das Feld (angesagt). Sie
+     * versperrt nichts: Wer darin steht, wird kurz verlangsamt und friert an (Frostaufbau), solange sie glitzert. Dann
+     * fegt der Streifenhieb über den Boden. Ersetzt die alte Frostwand (Crix: „Arius macht immer noch Eiswände“).
+     */
+    fun frostLane(serious: Boolean): Script = script {
         val a = f.arius ?: return@script
         val t = f.farthestFrom(a.entityPos) ?: return@script
         f.face(a, t.entityPos)
+        a.sheathed = false
         val toT = flatDir(a.entityPos, t.entityPos)
         val side = Vec3d(-toT.z, 0.0, toT.x).multiply(if (rnd.nextBoolean()) 1.0 else -1.0)
-        val mid = t.entityPos.add(side.multiply(3.5))
-        val wallFrom = f.clampToArena(mid.subtract(toT.multiply(7.0)), 1.0)
-        val wallTo = f.clampToArena(mid.add(toT.multiply(7.0)), 1.0)
-        val wall = f.calls.line(wallFrom, wallTo, 1.6f, AriusTimings.ARIUS_WINDUP[AriusPose.WALL_CAST])
-        a.play(AriusPose.WALL_CAST, wall.ticks)
-        f.sound("arius.ice_wall", mid, 2f, 0.8f)
-        wait(wall.ticks)
-        for (p in wall.hits(f.players())) {
+        val mid = t.entityPos.add(side.multiply(2.5))
+        val laneFrom = f.clampToArena(mid.subtract(toT.multiply(8.0)), 1.0).let { Vec3d(it.x, f.floorY, it.z) }
+        val laneTo = f.clampToArena(mid.add(toT.multiply(8.0)), 1.0).let { Vec3d(it.x, f.floorY, it.z) }
+        val lane = f.calls.line(laneFrom, laneTo, 2.6f, AriusTimings.ARIUS_WINDUP[AriusPose.WALL_CAST])
+        a.play(AriusPose.WALL_CAST, lane.ticks)
+        f.sound("arius.ice_wall", mid, 2f, 1.1f)
+        wait(lane.ticks)
+        f.sound("arius.frost_strip", mid, 2.2f, 0.9f)
+        f.fx(FxKind.SEAM, laneFrom.add(0.0, 0.08, 0.0), laneTo.add(0.0, 0.08, 0.0), a = 0.6f, life = 90)
+        val len = sqrt(laneFrom.squaredDistanceTo(laneTo))
+        val n = (len / 3.0).toInt().coerceAtLeast(2)
+        for (i in 0..n) f.fx(FxKind.FIELD, laneFrom.lerp(laneTo, i / n.toDouble()), a = 1.8f, life = 90)
+        for (p in lane.hits(f.players())) {
             f.hurt(p, 6f, Damage.Kind.IMPACT)
-            dev.henny.hha.logic.Fx.launchPlayer(p, side.multiply(-0.7).add(0.0, 0.3, 0.0))
+            slowDown(p, 40)
         }
-        f.raiseWall(wallFrom, wallTo, 3, AriusTimings.WALL_LIFE)
+        // Die Bahn glitzert noch eine Weile: verlangsamt, baut Frost auf – blockiert aber nichts.
+        f.task(script {
+            repeat(9) {
+                wait(10)
+                for (p in f.players()) if (laneDist(p.entityPos, laneFrom, laneTo) <= 1.4 && kotlin.math.abs(p.y - f.floorY) < 1.5) {
+                    slowDown(p, 20)
+                    dev.henny.hha_arius.gear.Frostbite.add(p, 6f)
+                }
+            }
+        })
         if (serious && rnd.nextBoolean()) {
             wait(AriusTimings.STRIP_DELAY)
             yieldAll(stabGround())
@@ -878,11 +1451,27 @@ class AriusMoves(private val f: EirholmFight) {
         wait(AriusTimings.STRIP_OPEN)
     }
 
-    // --- A4 / W3: Parierhaltung ----------------------------------------------------------------------------------------
+    private fun laneDist(p: Vec3d, a: Vec3d, b: Vec3d): Double {
+        val vx = b.x - a.x
+        val vz = b.z - a.z
+        val len2 = vx * vx + vz * vz
+        val t = if (len2 < 1e-9) 0.0 else (((p.x - a.x) * vx + (p.z - a.z) * vz) / len2).coerceIn(0.0, 1.0)
+        val dx = p.x - (a.x + vx * t)
+        val dz = p.z - (a.z + vz * t)
+        return sqrt(dx * dx + dz * dz)
+    }
 
+    // --- A4 / W3: Konterhaltung ----------------------------------------------------------------------------------------
+
+    /**
+     * Konterhaltung (seit 1.9.0 statt „Parade und Tritt“): Er hebt die Klinge quer vor die Brust und wartet. Wer in
+     * dieses Fenster schlägt, wird pariert und bekommt eine echte Kombo ([counter]). Wer nicht anbeißt, lässt ihn ins
+     * Leere warten – dann taumelt er und steht offen.
+     */
     fun guard(white: Boolean, serious: Boolean): Script = script {
         val a = f.arius ?: return@script
         f.target()?.let { f.face(a, it.entityPos) }
+        a.sheathed = false
         val ticks = if (white) AriusTimings.GUARD_TICKS_WHITE else if (serious) AriusTimings.GUARD_TICKS_SERIOUS else AriusTimings.GUARD_TICKS
         a.play(AriusPose.GUARD)
         f.guardUntil = f.now + ticks
@@ -893,7 +1482,7 @@ class AriusMoves(private val f: EirholmFight) {
         waitUntil(ticks) { f.guardTriggered }
         f.guardUntil = 0
         if (f.guardTriggered) {
-            waitUntil(40) { !countering }
+            waitUntil(160) { !countering }
             return@script
         }
         a.play(AriusPose.STAGGER)
@@ -901,80 +1490,111 @@ class AriusMoves(private val f: EirholmFight) {
         wait(AriusTimings.GUARD_UNTOUCHED_OPEN)
     }
 
-    /** Vom Treffer-Handler: Nahkampftreffer in der Haltung → Parade & Tritt bzw. Luftkombination. */
+    /**
+     * Perfekter Konter: Er fängt den Schlag mit der Klinge ab (Funken, Klang), die Deckung des Angreifers bricht kurz,
+     * und es folgt eine echte Kombo. Der erste Gegenschlag trifft im Bruch, alle weiteren sind angesagt und ab dem zweiten
+     * ausweichbar oder blockbar. Vom Treffer-Handler (Konterhaltung) oder als Reaktion auf blindes Einhämmern.
+     */
     fun counter(player: ServerPlayerEntity, white: Boolean) {
         val a = f.arius ?: return
-        f.sound("arius.parry", a.entityPos, 2.4f, 1.1f)
-        Vfx.flare(f.world, style, a.entityPos.add(0.0, 1.3, 0.0), 1.4f, 6)
-        if (!Hold.canGrab(player)) {
-            dev.henny.hha.logic.Fx.launchPlayer(player, flatDir(a.entityPos, player.entityPos).multiply(0.9).add(0.0, 0.3, 0.0))
-            return
-        }
+        if (countering) return
+        f.face(a, player.entityPos)
+        f.sound("arius.parry", a.entityPos, 2.8f, 1.15f)
+        f.sound("solvane.parry", a.entityPos, 2f, 0.9f)
+        Vfx.flare(f.world, Vfx.Style.STORM, a.entityPos.add(0.0, 1.3, 0.0).add(f.facing(a).multiply(0.8)), 1.8f, 8)
+        f.fx(FxKind.SLASH_ARC, a.entityPos.add(0.0, 1.3, 0.0), flatDir(a.entityPos, player.entityPos), a = 2.2f, b = 0.9f, life = 8)
+        f.calls.hitShake(player.entityPos, 2.5f, 8f)
+        player.sendMessage(Text.translatable("hha_arius.msg.parried").formatted(Formatting.RED), true)
         countering = true
-        f.task(if (white) airCombo(player) else parryKick(player))
+        a.play(AriusPose.GUARD)
+        f.task(punish(player, white))
     }
 
-    private fun parryKick(player: ServerPlayerEntity): Script = script {
-        val a = f.arius ?: run { countering = false; return@script }
-        try {
-            Hold.freeze(player, 18)
-            f.face(a, player.entityPos)
-            a.play(AriusPose.PARRY_KICK, AriusTimings.ARIUS_WINDUP[AriusPose.PARRY_KICK])
-            wait(AriusTimings.ARIUS_WINDUP[AriusPose.PARRY_KICK])
-            if (!Hold.isHeld(player) || !f.canSequence(player)) return@script
-            val dir = flatDir(a.entityPos, player.entityPos)
-            f.hurtHeld(player, 8f)
-            if (!Hold.isHeld(player) || !f.canSequence(player)) return@script
-            f.sound("arius.kick", player.entityPos, 2.4f)
-            f.sound("hold.impact", player.entityPos, 1.8f)
-            f.calls.hitShake(player.entityPos, 3f, 8f)
-            val landing = f.clampToArena(player.entityPos.add(dir.multiply(7.0)), 1.5)
-            Hold.switchToLaunch(player, dir.multiply(1.15).add(0.0, 0.42, 0.0), 26, landing, f.landingSpot(player))
-            wait(10)
-        } finally {
-            countering = false
-        }
+    /** Antwort auf blindes Einhämmern außerhalb der Fenster: Seitschritt oder (häufiger, je ernster) perfekter Konter. */
+    fun reactTo(player: ServerPlayerEntity, white: Boolean) {
+        if (acting || countering || f.now < nextReact) return
+        nextReact = f.now + 100
+        val serious = f.ariusHp <= f.ariusMax * 0.6f || white || f.phase == EirholmFight.Phase.FINALE
+        if (Hold.canGrab(player) && rnd.nextFloat() < (if (serious) 0.6f else 0.35f)) counter(player, white) else sidestepFrom(player)
     }
 
-    private fun airCombo(player: ServerPlayerEntity): Script = script {
+    private fun punish(player: ServerPlayerEntity, white: Boolean): Script = script {
         val a = f.arius ?: run { countering = false; return@script }
         try {
-            Hold.freeze(player, 24)
+            val held = Hold.canGrab(player)
+            if (held) Hold.freeze(player, 12)
+            // 1) Gegenschlag im Bruch der Deckung
             f.face(a, player.entityPos)
-            a.play(AriusPose.LAUNCH, AriusTimings.ARIUS_WINDUP[AriusPose.LAUNCH])
-            wait(AriusTimings.ARIUS_WINDUP[AriusPose.LAUNCH])
-            if (!Hold.isHeld(player) || !f.canSequence(player)) return@script
-            f.hurtHeld(player, 6f)
-            if (!Hold.isHeld(player) || !f.canSequence(player)) return@script
-            f.sound("arius.slash", player.entityPos, 2f, 1.25f)
-            val start = player.entityPos
-            val apex = start.add(0.0, 4.0, 0.0)
-            Hold.freeze(player, 20, apex)
-            player.teleport(f.world, apex.x, apex.y, apex.z, emptySet(), player.yaw, player.pitch, false)
-            // Arius springt nach.
-            val ground = a.entityPos
-            a.play(AriusPose.AIR_KICK, AriusTimings.ARIUS_WINDUP[AriusPose.AIR_KICK])
-            val ticks = AriusTimings.ARIUS_WINDUP[AriusPose.AIR_KICK]
-            for (i in 1..ticks) {
-                val k = i / ticks.toDouble()
-                val pos = ground.lerp(apex.subtract(flatDir(ground, apex).multiply(1.2)), k).add(0.0, sin(k * Math.PI) * 0.8, 0.0)
-                f.place(a, Vec3d(pos.x, ground.y + (apex.y - ground.y - 0.6) * k, pos.z))
-                f.face(a, apex)
-                yield(Unit)
-            }
-            if (!Hold.isHeld(player) || !f.canSequence(player)) return@script
-            f.hurtHeld(player, 8f)
-            if (!Hold.isHeld(player) || !f.canSequence(player)) return@script
-            f.sound("arius.kick", apex, 2.4f, 0.8f)
-            f.calls.hitShake(apex, 3f, 8f)
-            val dir = flatDir(ground, apex)
-            val landing = f.clampToArena(apex.add(dir.multiply(4.0)).let { Vec3d(it.x, f.floorY, it.z) }, 1.5)
-            Hold.switchToLaunch(player, dir.multiply(0.7).add(0.0, -0.9, 0.0), 20, landing, f.landingSpot(player))
-            for (i in 1..6) {
-                f.place(a, a.entityPos.lerp(Vec3d(a.x, f.floorY, a.z), i / 6.0))
-                yield(Unit)
-            }
+            a.sheathed = false
+            a.play(AriusPose.COMBO_2, 8)
             wait(8)
+            if (!f.canSequence(player)) return@script
+            f.sound("arius.slash", player.entityPos, 2.4f, 1.2f)
+            slash(a.entityPos, flatDir(a.entityPos, player.entityPos), 3.8f)
+            if (Hold.isHeld(player)) f.hurtHeld(player, 7f, Damage.Kind.SOLVANE) else f.hurt(player, 7f)
+            f.calls.hitShake(player.entityPos, 3f, 8f)
+            wait(4)
+            // 2)–n) Angesagte Folgeschläge auf den, der sich erwischen ließ (oder den Nächsten).
+            val steps = if (white) 4 else 3
+            for (k in 0 until steps) {
+                val t = player.takeIf { f.canSequence(it) && it in f.players() } ?: f.nearestTo(a.entityPos) ?: break
+                if (flatDist(a, t) > 4.5) repeat(4) { f.stepToward(a, t.entityPos, 0.7); yield(Unit) }
+                f.face(a, t.entityPos)
+                val dir = f.facing(a)
+                when (k) {
+                    0 -> {
+                        val c = f.calls.cone(a.entityPos, dir, 4.6f, 65f, 10, Telegraph.Pace.FOLLOW_UP)
+                        a.play(AriusPose.COMBO_1, c.ticks)
+                        wait(c.ticks)
+                        f.sound("arius.slash", a.entityPos, 2.2f, 1.05f)
+                        for (p in c.hits(f.players())) f.hurt(p, 8f)
+                        slash(a.entityPos, dir, 4.6f)
+                    }
+                    1 -> {
+                        val r = f.calls.ring(a.entityPos, 3.8f, 11, pace = Telegraph.Pace.FOLLOW_UP)
+                        a.play(AriusPose.SPIN_CUT, r.ticks)
+                        wait(r.ticks)
+                        f.sound("arius.slash", a.entityPos, 2.2f, 0.85f)
+                        for (p in r.hits(f.players())) f.hurt(p, 8f)
+                        Vfx.shockwave(f.world, style, a.entityPos, 3.8f, 10, 1.2f)
+                    }
+                    2 -> {
+                        // Abschluss mit wechselndem Zeitpunkt: Stoß, früh oder spät.
+                        val from = a.entityPos
+                        val late = rnd.nextBoolean()
+                        val line = f.calls.line(from, f.clampToArena(from.add(dir.multiply(7.5)), 1.0), 2.2f, if (late) 24 else 13, Telegraph.Pace.HEAVY)
+                        a.play(AriusPose.COMBO_3, line.ticks)
+                        if (late) f.sound("iai.glint", from, 1.4f, 0.7f)
+                        wait(line.ticks - 2)
+                        repeat(2) { f.stepToward(a, a.entityPos.add(dir), 0.5, faceIt = false); yield(Unit) }
+                        f.sound("arius.thrust", a.entityPos, 2.4f)
+                        for (p in line.hits(f.players())) {
+                            f.hurt(p, 12f)
+                            dev.henny.hha.logic.Fx.launchPlayer(p, dir.multiply(0.6).add(0.0, 0.3, 0.0))
+                        }
+                        Vfx.crescent(f.world, style, a.entityPos.add(0.0, 1.2, 0.0), dir, 7f, 1.4f, 7)
+                    }
+                    else -> {
+                        // Weiße Form: Windschritt durch und Aufwärtsschnitt.
+                        val from = a.entityPos
+                        val to = f.clampToArena(from.add(dir.multiply(6.0)), 1.0)
+                        val line = f.calls.line(from, to, 2.2f, 10, Telegraph.Pace.FOLLOW_UP)
+                        a.play(AriusPose.LAUNCH, line.ticks)
+                        wait(line.ticks)
+                        f.fx(FxKind.DASH_STREAK, from, to, life = 10)
+                        f.place(a, Vec3d(to.x, f.floorY, to.z))
+                        f.sound("arius.slash", to, 2.2f, 1.3f)
+                        for (p in line.hits(f.players())) {
+                            f.hurt(p, 9f)
+                            dev.henny.hha.logic.Fx.launchPlayer(p, Vec3d(0.0, 0.8, 0.0))
+                        }
+                    }
+                }
+                wait(2)
+            }
+            a.play(AriusPose.STAGGER)
+            f.openArius(24)
+            wait(10)
         } finally {
             countering = false
         }
@@ -1020,6 +1640,7 @@ class AriusMoves(private val f: EirholmFight) {
 
     fun stabGround(): Script = script {
         val a = f.arius ?: return@script
+        a.sheathed = false
         val center = a.entityPos
         val group = f.calls.boss()
         val windup = AriusTimings.ARIUS_WINDUP[AriusPose.STAB_GROUND]
@@ -1043,6 +1664,7 @@ class AriusMoves(private val f: EirholmFight) {
 
     fun nullCut(target: ServerPlayerEntity): Script = script {
         val a = f.arius ?: return@script
+        a.sheathed = false
         f.face(a, target.entityPos)
         val dir = flatDir(a.entityPos, target.entityPos)
         val to = f.clampToArena(a.entityPos.add(dir.multiply(24.0)), 0.5)
@@ -1078,7 +1700,7 @@ class AriusMoves(private val f: EirholmFight) {
         val a = f.arius ?: return
         projectile?.discard()
         if (!acting || a.pose == AriusPose.GUARD || a.pose == AriusPose.IDLE) {
-            if (a.pose != AriusPose.GUARD) a.play(AriusPose.ARROW_CUT)
+            if (a.pose != AriusPose.GUARD && a.pose != AriusPose.IAI_STANCE) a.play(AriusPose.ARROW_CUT)
         }
         f.sound("arius.arrow_cut", a.entityPos, 1.6f, 1f + rnd.nextFloat() * 0.2f)
         Vfx.crescent(f.world, style, a.entityPos.add(0.0, 1.3, 0.0), f.facing(a), 1.6f, 1.2f, 5)
@@ -1100,7 +1722,9 @@ class AriusMoves(private val f: EirholmFight) {
             repeat(6) { f.stepToward(a, goal, 0.4, faceIt = false); f.face(a, player.entityPos); yield(Unit) }
         })
     }
+}
 
-    @Suppress("unused")
-    private fun ring(center: Vec3d, radius: Double, angle: Double) = Vec3d(center.x + sin(angle) * radius, center.y, center.z + cos(angle) * radius)
+/** Kurz verlangsamt (Frostbahn). */
+private fun slowDown(p: ServerPlayerEntity, ticks: Int) {
+    p.addStatusEffect(StatusEffectInstance(StatusEffects.SLOWNESS, ticks, 1, false, true, true))
 }

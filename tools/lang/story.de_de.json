@@ -67,8 +67,6 @@
  "hha_arius.hint.choke": "Solvane erstickt an ihrem Atem!",
  "hha_arius.hint.takt_break": "Taktbruch! Der Partner steht offen.",
  "hha_arius.hint.dragon_down": "Solvane ist niedergerungen. Arius kämpft allein weiter.",
- "hha_arius.hint.exchange": "Jetzt!",
- "hha_arius.hint.exchange_won": "Austausch gewonnen (%s/3)",
  "hha_arius.client.fx": "Eigene Partikel des Arius-Kampfs: %s %%",
  "hha_arius.client.flash_on": "Bildblitze des Arius-Kampfs: an",
  "hha_arius.client.flash_off": "Bildblitze des Arius-Kampfs: aus",

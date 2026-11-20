@@ -70,7 +70,7 @@ object AriusCommands {
             EirholmFight.Phase.TEMPLE -> f.ariusHp = 0f
             EirholmFight.Phase.GLACIER -> f.dragonHp = 0f
             EirholmFight.Phase.VAULT -> f.ariusHp = 0f
-            EirholmFight.Phase.FINALE -> f.exchangesWon = 3
+            EirholmFight.Phase.FINALE -> f.ariusHp = 0f
         }
         return 1
     }

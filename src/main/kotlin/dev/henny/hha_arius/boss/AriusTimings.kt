@@ -113,7 +113,6 @@ object AriusTimings {
     const val STRIP_DELAY = 10
     const val STRIP_WINDUP = 24
     const val STRIP_OPEN = 20
-    const val WALL_LIFE = 180
 
     // --- Sequenzen ------------------------------------------------------------------------------------------------
 
@@ -144,19 +143,9 @@ object AriusTimings {
     const val RESONANCE_WARN = 20
     const val RESONANCE_EVERY = 320 // seit 1.8.0 öfter Duo-Angriffe (vorher 400)
     const val TAKT_BREAK_OPEN = 50
-    const val CORE_BUILD = 60
-    const val CORE_PULSE_EVERY = 36
-    const val CORE_CORRIDOR_WARN = 30
-    const val CORE_FRONT_SPEED = 0.6
-    const val CORE_LULL = 20
-    const val CORE_STRIKE = 26
+    /** Weißes Loch (seit 1.9.0 kurz und sich steigernd): Sammeln mit wachsendem Sog, dann die angesagte Entladung. */
+    const val CORE_BUILD = 110
+    const val CORE_STRIKE = 40
     const val CORE_END_OPEN = 100
 
-    // --- Finale -----------------------------------------------------------------------------------------------------
-
-    @JvmField
-    val IAI_LINE = intArrayOf(30, 24, 18)
-    const val IAI_OPEN = 50
-    const val IAI_RESET = 40
-    const val PERFECT_BLOCK = 10
 }

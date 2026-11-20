@@ -274,6 +274,12 @@ enum class FxKind {
 
     /** Seit 1.8.0: Windschritt-Nachbilder von pos nach dir (absolut). */
     DASH_STREAK,
+
+    /** Seit 1.9.0: Staub- und Eissplitterwolke (Gletscherbruch, Aufprall), pos = Mitte, a = Radius. Auch auf große Entfernung. */
+    DEBRIS_CLOUD,
+
+    /** Seit 1.9.0: Zeitlupen-Look (Farbentzug, Vignette, Zeitwellen) für life Ticks, a = Stärke 0..1. */
+    TIME_SLOW,
 }
 
 /**

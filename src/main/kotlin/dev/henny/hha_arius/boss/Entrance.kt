@@ -44,8 +44,12 @@ fun entrance(f: EirholmFight): Script = script {
         Entrance.landed(f, spot)
         return@script
     }
-    val scene = CineScene(f) { Entrance.landed(f, spot) }
-    yieldAll(scene.play(if (f.farReady) Entrance.full(f, scene, spot) else Entrance.short(f, scene, spot)))
+    // Seit 1.9.0: Während die Kamera am Berg filmt, stehen die Körper unsichtbar zwischen Plateau und Berg, damit der
+    // Server das Gelände lädt (Crix: „man sieht den Berg kaum“).
+    val vantage = Vantage(f)
+    val scene = CineScene(f) { vantage.restore(); Entrance.landed(f, spot) }
+    yieldAll(scene.play(if (f.farReady) Entrance.full(f, scene, spot, vantage) else Entrance.short(f, scene, spot)))
+    vantage.restore()
 }
 
 /**
@@ -326,7 +330,13 @@ internal object Entrance {
         return d
     }
 
-    fun full(f: EirholmFight, scene: CineScene, spot: Vec3d): Script = script {
+    /** Aussichtspunkt für den Auftritt: auf halbem Weg zwischen den Landeplätzen und der Nadel, westlich der Kluft. */
+    private fun lookout(f: EirholmFight): Vec3d {
+        val land = ArenaLayout.LANDING[0]
+        return f.abs(Vec3d(ArenaLayout.CUT_X - 24.0, 0.0, (land.z + ArenaLayout.SPIRE.z) / 2.0))
+    }
+
+    fun full(f: EirholmFight, scene: CineScene, spot: Vec3d, vantage: Vantage): Script = script {
         val a = f.arius
         // Noch kein Sturm: leichter Schnee, die Nadel steht leer im Dunst (Solvane ist noch Klinge).
         f.atmos(AtmosMode.SNOW, 40)
@@ -350,6 +360,8 @@ internal object Entrance {
         // 1b) Er lässt Solvane los: der Lichtstrom zieht zur Nadel (84 Ticks, Ankunft 10 Ticks danach).
         val arrival = f.abs(EntrancePath.HEAD_REST)
         yieldAll(release(f, scene, arrival))
+        // Ab hier filmt die Kamera am Berg: Körper an den Aussichtspunkt (im Sturm lädt das Gelände nach).
+        vantage.move(lookout(f))
 
         // 2) Sturm: Blick vom Südrand des Plateaus in das Weiß, langsame Fahrt nach vorn (70 Ticks). Der Strom kommt an,
         //    erst dann verdichtet sich der Sturm, und im Weiß legen sich die Windungen um die Nadel.
@@ -407,11 +419,13 @@ internal object Entrance {
         // 5) Die Wolken reißen auf: weite Einstellung vom Rand der Schlucht (110 Ticks), 70 Blöcke vor der Nadel auf
         //    halber Höhe ihres oberen Drittels. Die Kamera weicht zurück und steigt; das obere Drittel (y 110..185) füllt
         //    das Bild (Start: y 110 bei −0,6, Kopf über dem Gipfel bei +0,95 der Bildhöhe), der Kopf hebt sich hinein.
-        f.atmos(AtmosMode.REVEAL, 70)
-        val revealFrom = spire(f, -34.0, 118.0, -70.0)
-        val revealTo = spire(f, -44.0, 132.0, -80.0)
+        // Seit 1.9.0 weiter weg und höher (Crix: „man sieht den Berg kaum“): die ganze obere Hälfte des Massivs, die Nadel
+        // und die Windungen im Bild, und die klare Luft blendet schneller ein.
+        f.atmos(AtmosMode.REVEAL, 36)
+        val revealFrom = spire(f, -70.0, 120.0, -150.0)
+        val revealTo = spire(f, -84.0, 136.0, -162.0)
         scene.line(
-            revealFrom, revealTo, spire(f, 0.0, 138.0, 0.0), spire(f, 0.0, 152.0, 0.0), 110, 64.0, 70.0,
+            revealFrom, revealTo, spire(f, 0.0, 128.0, 0.0), spire(f, 0.0, 150.0, 0.0), 110, 58.0, 54.0,
         )
         sound(f, "glacier.crack", near(f, -10.0, 40.0, 80.0), 3f, 0.5f)
         wait(30)
@@ -432,7 +446,8 @@ internal object Entrance {
         scene.once { Cine.title(it, "entity.hha_arius.nivaris", "hha_arius.cine.nivaris", 70) }
         wait(60 - AriusTimings.NIVARIS_WINDUP[NivarisPose.ROAR])
 
-        // 7) Sie löst sich vom Fels und gleitet über die Schlucht (220 Ticks, drei Einstellungen).
+        // 7) Sie löst sich vom Fels und gleitet über die Schlucht (220 Ticks, drei Einstellungen). Klare Sicht dafür.
+        f.atmos(AtmosMode.REVEAL, 20)
         d.mode = NivarisMode.UNCOIL
         d.flying = true
         d.play(NivarisPose.GLIDE)
@@ -445,7 +460,11 @@ internal object Entrance {
             when (t) {
                 0 -> scene.line(near(f, -62.0, 172.0, 116.0), near(f, -66.0, 158.0, 98.0), look(0, 25.0), look(85, 25.0), 85, 66.0, 74.0)
                 85 -> scene.line(near(f, -14.0, 128.0, 98.0), near(f, -22.0, 76.0, 48.0), look(85, 30.0), look(165, 30.0), 80, 76.0, 80.0)
-                165 -> scene.line(rel(f, -7.0, 5.0, -25.0), rel(f, -4.0, 4.0, -21.0), look(165, 20.0), spot.add(0.0, 4.0, -2.0), 105, 74.0, 66.0)
+                165 -> {
+                    // Die Kamera ist zurück am Plateau: die Körper auch.
+                    vantage.restore()
+                    scene.line(rel(f, -7.0, 5.0, -25.0), rel(f, -4.0, 4.0, -21.0), look(165, 20.0), spot.add(0.0, 4.0, -2.0), 105, 74.0, 66.0)
+                }
             }
             when (t) {
                 4 -> sound(f, "nivaris.wing", head, 6f, 0.5f)
