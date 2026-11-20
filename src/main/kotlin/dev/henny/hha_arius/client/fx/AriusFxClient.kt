@@ -28,6 +28,7 @@ object AriusFxClient {
     fun init() {
         AriusClientConfig.load()
         ArtPipelines.init()
+        AriusLayers.init()
         Impacts.init()
         CutLens.init()
         QteClient.init()

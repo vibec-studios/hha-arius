@@ -201,18 +201,35 @@ class DashStreakFx(private val from: Vec3d, private val to: Vec3d, life: Int) : 
 }
 
 /**
- * „Der gefrorene Stern“ als Mond (seit 1.8.0, Crix: „der Meteor/Mond braucht mehr Design und Animation“):
- * 1. Ein gleißender Punkt hoch über dem Ziel; Lichtfunken spiralen hinein, Strahlen.
- * 2. Er wächst zum Mond: eisblaue Kugel mit dunkleren Kratern, die sich langsam dreht, ein schräger Lichtring und
- *    kreisende Eissplitter; von außen wachsen Kristallzacken.
- * 3. Sturz: Schweif aus Licht und Frostrauch, auf dem Boden wächst der Schatten, Luftflimmern.
+ * „Der gefrorene Stern“ als Mond (seit 1.8.0, Crix: „der Meteor/Mond braucht mehr Design und Animation“; seit 1.8.1
+ * neu gebaut, Crix: „der Mond sieht immer noch schlecht aus“):
+ * 1. Ein gleißender Punkt hoch über dem Ziel; Lichtfunken spiralen hinein.
+ * 2. Er wächst zum Mond: eine fein unterteilte Eiskugel mit echter Beleuchtung (Licht, Schattengrenze, blaues
+ *    Erdlicht auf der Nachtseite), Kratern mit hellen Rändern, dunkleren Eisebenen („Maria“) und Kornstruktur. Beim
+ *    Gefrieren nimmt er zu – von der schmalen Sichel bis zum Vollmond –, leuchtende Eisrisse ziehen über die Tagseite,
+ *    ein weicher Halo, eine Korona und ein dünner Eishalo umgeben ihn, Frostnebel kreist, ein schräger Ring aus
+ *    Eissplittern dreht sich, von außen wachsen Kristallzacken.
+ * 3. Sturz: Schweif aus Licht und Frostrauch, auf dem Boden wächst der Schatten.
  * 4. Einschlag: Blitz, Splitter fliegen auseinander, Druckwelle, Frostkrater, der noch kurz glimmt.
+ * Körper und Leuchten liegen auf eigenen Ebenen ohne Vanilla-Nebel ([AriusLayers]): auch im Whiteout der Jagd sichtbar.
  */
 class MoonFx(private val ground: Vec3d, private val radius: Double, private val impactAt: Int, life: Int) : AriusFx(life) {
-    private val craters: List<Vec3d> = (0 until 9).map { i ->
-        val a = i * 2.39996
-        val e = ((i * 0.618) % 1.0) * 2 - 1
-        Vec3d(cos(a) * sqrt(1 - e * e), e, sin(a) * sqrt(1 - e * e))
+
+    private class Crater(val dir: Vec3d, val size: Double, val depth: Float)
+
+    private val craters: List<Crater> = (0 until 16).map { i ->
+        val a = i * 2.39996 + 0.7
+        val e = ((i * 0.618 + 0.31) % 1.0) * 2 - 1
+        val s = sqrt(1 - e * e)
+        Crater(Vec3d(cos(a) * s, e, sin(a) * s), 0.12 + ((i * 0.377) % 1.0) * 0.26, 0.55f + ((i * 0.53) % 1.0).toFloat() * 0.45f)
+    }
+
+    /** Eisrisse: Großkreisbögen (Achse, Startwinkel, Länge). */
+    private val cracks: List<DoubleArray> = (0 until 6).map { i ->
+        val a = i * 1.9 + 0.4
+        val e = ((i * 0.41 + 0.2) % 1.0) * 2 - 1
+        val s = sqrt(1 - e * e)
+        doubleArrayOf(cos(a) * s, e, sin(a) * s, i * 1.3, 0.9 + (i % 3) * 0.4)
     }
 
     override fun tick(world: ClientWorld) {
@@ -225,6 +242,11 @@ class MoonFx(private val ground: Vec3d, private val radius: Double, private val 
                 val p = c.add(cos(a) * dd, (r.nextDouble() - 0.5) * 8.0, sin(a) * dd)
                 val v = c.subtract(p).multiply(0.06)
                 world.addParticleClient(ParticleTypes.END_ROD, p.x, p.y, p.z, v.x, v.y, v.z)
+            }
+            if (age > impactAt * 0.4 && r.nextFloat() < 0.6f * particlesAllowed()) {
+                val a = r.nextDouble() * PI * 2
+                val rr = radius * 0.7 * (1.0 + r.nextDouble())
+                world.addParticleClient(ParticleTypes.SNOWFLAKE, c.x + cos(a) * rr, c.y + (r.nextDouble() - 0.5) * rr, c.z + sin(a) * rr, 0.0, -0.05, 0.0)
             }
         } else if (age < impactAt + 3) {
             repeat((60 * particlesAllowed()).toInt()) {
@@ -242,6 +264,34 @@ class MoonFx(private val ground: Vec3d, private val radius: Double, private val 
         return ground.add(0.0, 40.0 * (1.0 - f * f) + 1.0, 0.0)
     }
 
+    /** Drehung der Oberfläche: um eine leicht geneigte Achse. */
+    private fun spin(n: Vec3d, ang: Double): Vec3d {
+        val x = n.x * cos(ang) - n.z * sin(ang)
+        val z = n.x * sin(ang) + n.z * cos(ang)
+        val tilt = 0.41
+        return Vec3d(x, n.y * cos(tilt) - z * sin(tilt), n.y * sin(tilt) + z * cos(tilt))
+    }
+
+    /** Helligkeit der Oberfläche (Albedo 0..1) in Richtung [s] (Oberflächenkoordinaten, nicht gedreht). */
+    private fun albedo(s: Vec3d): Float {
+        // Eisebenen: weiche, große Flecken
+        val mare = (sin(s.x * 3.1 + 1.2) * sin(s.y * 2.7 + 0.4) * sin(s.z * 3.4 + 2.1)).toFloat()
+        var a = 0.82f - (mare.coerceAtLeast(0f) * 0.55f)
+        // Korn
+        a += (sin(s.x * 23.0 + s.y * 17.0) * sin(s.z * 19.0 - s.x * 7.0)).toFloat() * 0.04f
+        for (c in craters) {
+            val dot = (s.x * c.dir.x + s.y * c.dir.y + s.z * c.dir.z).coerceIn(-1.0, 1.0)
+            val d = kotlin.math.acos(dot) / c.size
+            if (d > 1.25) continue
+            a += when {
+                d < 0.75 -> -0.32f * c.depth * (1f - (d / 0.75).toFloat() * 0.4f)
+                d < 1.0 -> 0.22f * c.depth
+                else -> 0.08f * c.depth * (1f - ((d - 1.0) / 0.25).toFloat())
+            }
+        }
+        return a.coerceIn(0.05f, 1f)
+    }
+
     override fun render(d: VfxDraw, matrices: MatrixStack, t: Float) {
         if (t >= impactAt) {
             impact(d, t - impactAt)
@@ -256,29 +306,63 @@ class MoonFx(private val ground: Vec3d, private val radius: Double, private val 
         val cold = 0xFFBFE8FF.toInt()
         val warm = 0xFFFFF0C8.toInt()
         val col = lerpColor(warm, cold, freeze)
+        val view = d.cam.subtract(c).normalize()
         // 1) Lichtpunkt und Strahlen
-        d.billboard(VfxLayers.FLARE_ADD, c, 3.0 + 4.0 * form, withAlpha(0xFFFFFFFF.toInt(), 0.9f * form))
+        d.billboard(AriusLayers.MOON_FLARE, c, 3.0 + 4.0 * form, withAlpha(0xFFFFFFFF.toInt(), 0.9f * form * (1f - grow * 0.6f)))
         d.billboard(VfxLayers.RAYS_ADD, c, r * 6.0 + 10.0 * form, withAlpha(warm, 0.45f * form * (1f - freeze * 0.7f)), t * 0.8)
-        // 2) Mondkörper mit Kratern, dreht sich
         if (grow > 0f) {
-            d.sphere(VfxLayers.SHARD_ALPHA, c, r, { up -> withAlpha(lerpColor(lerpColor(0xFF7FA8D0.toInt(), col, 0.6f), 0xFFFFFFFF.toInt(), (0.45f + 0.55f * up).coerceIn(0f, 1f)), 0.95f * grow) }, lat = 14, lon = 24)
-            val spin = t * 0.03
-            for (cr in craters) {
-                val v = Vec3d(cr.x * cos(spin) - cr.z * sin(spin), cr.y, cr.x * sin(spin) + cr.z * cos(spin))
-                val camDir = d.cam.subtract(c).normalize()
-                if (v.dotProduct(camDir) < 0.2) continue
-                d.billboard(VfxLayers.SMOKE_ALPHA, c.add(v.multiply(r * 1.01)), r * 0.38, withAlpha(0xFF46607E.toInt(), 0.35f * grow))
+            // Licht: von schräg hinten (Sichel) nach vorn (Vollmond), während er gefriert
+            val side = view.crossProduct(UPV).let { if (it.lengthSquared() < 1e-6) AriusFx.X else it.normalize() }
+            val phi = (1.0 - freeze) * 2.3 + 0.15
+            val light = view.multiply(cos(phi)).add(side.multiply(sin(phi))).add(0.0, 0.3, 0.0).normalize()
+            val spinA = t * 0.012
+            // 2a) Halo und Korona hinter dem Körper
+            d.billboard(AriusLayers.MOON_GLOW, c, r * 5.5, withAlpha(lerpColor(col, 0xFF6FA8E8.toInt(), 0.4f), 0.28f * grow))
+            d.billboard(AriusLayers.MOON_GLOW, c, r * 2.9, withAlpha(col, 0.55f * grow))
+            // 2b) Körper
+            sphere(d, c, r, light, spinA, grow, freeze)
+            // 2c) Randlicht (Fresnel): heller Saum auf der beleuchteten Seite
+            val (ra, rb) = dev.henny.hha.client.vfx.basisOf(view)
+            d.ring(AriusLayers.MOON_GLOW, c, ra, rb, r * 0.97, r * 1.12, withAlpha(0xFFFFFFFF.toInt(), 0.35f * grow * freeze), withAlpha(cold, 0f), segments = 64)
+            // 2d) Eisrisse auf der Tagseite
+            if (freeze > 0.15f) for (cr in cracks) {
+                val axis = Vec3d(cr[0], cr[1], cr[2])
+                val (u, v) = dev.henny.hha.client.vfx.basisOf(axis)
+                var prev: Vec3d? = null
+                val n = 10
+                for (k in 0..n) {
+                    val a = cr[3] + cr[4] * k / n * freeze
+                    val sDir = u.multiply(cos(a)).add(v.multiply(sin(a)))
+                    val w = spin(sDir, spinA)
+                    val p = c.add(w.multiply(r * 1.012))
+                    val lit = w.dotProduct(light)
+                    val front = w.dotProduct(view)
+                    val o = prev
+                    if (o != null && front > 0.12 && lit > -0.2) {
+                        val pulse = (0.6 + 0.4 * sin(t * 0.3 + cr[3])).toFloat()
+                        d.band(AriusLayers.MOON_GLOW, o, p, view, r * 0.035, withAlpha(0xFFDFFBFF.toInt(), 0.75f * freeze * pulse), withAlpha(0xFF7FD8FF.toInt(), 0.6f * freeze * pulse))
+                    }
+                    prev = p
+                }
             }
-            d.billboard(VfxLayers.GLOW_ADD, c, r * 3.6, withAlpha(col, 0.4f * grow))
-            // schräger Lichtring
+            // 2e) Feiner Eishalo (dünner Ring wie ein 22°-Halo) und kreisender Frostnebel
+            d.ring(AriusLayers.MOON_GLOW, c, ra, rb, r * 3.3, r * 3.45, withAlpha(0xFFE8F6FF.toInt(), 0.18f * grow * freeze), withAlpha(0xFFBFD8FF.toInt(), 0.05f * grow * freeze), segments = 72)
+            for (i in 0 until 7) {
+                val a = i / 7.0 * PI * 2 + t * 0.02
+                val p = c.add(ra.multiply(cos(a) * r * 1.6)).add(rb.multiply(sin(a) * r * 1.6))
+                d.billboard(AriusLayers.VEIL, p, r * 1.4, withAlpha(0xFFDCE8F5.toInt(), 0.22f * grow * freeze), a * 2.0)
+            }
+            // 2f) schräger Ring aus Eissplittern
             val ax = Vec3d(1.0, 0.35, 0.0).normalize()
             val az = Vec3d(0.0, -0.2, 1.0).normalize()
-            d.ring(VfxLayers.GLOW_ADD, c, ax, az, r * 1.5, r * 1.75, withAlpha(0xFFFFFFFF.toInt(), 0.1f * grow), withAlpha(cold, 0.55f * grow), segments = 48)
-            // kreisende Eissplitter
-            for (i in 0 until 10) {
-                val a = i / 10.0 * PI * 2 + t * 0.06
-                val p = c.add(ax.multiply(cos(a) * r * 2.1)).add(az.multiply(sin(a) * r * 2.1))
-                d.box(VfxLayers.SHARD_ALPHA, p, AriusFx.X.multiply(0.25), UPV.multiply(0.4), AriusFx.Z.multiply(0.25), withAlpha(0xFFDDF2FF.toInt(), 0.8f * grow))
+            d.ring(AriusLayers.MOON_GLOW, c, ax, az, r * 1.55, r * 1.62, withAlpha(0xFFFFFFFF.toInt(), 0.3f * grow), withAlpha(cold, 0.3f * grow), segments = 72)
+            d.ring(AriusLayers.MOON_GLOW, c, ax, az, r * 1.7, r * 1.95, withAlpha(cold, 0.18f * grow), withAlpha(cold, 0f), segments = 72)
+            for (i in 0 until 14) {
+                val a = i / 14.0 * PI * 2 + t * 0.05
+                val rr = r * (1.7 + 0.15 * sin(i * 2.3))
+                val p = c.add(ax.multiply(cos(a) * rr)).add(az.multiply(sin(a) * rr))
+                val s = 0.15 + 0.12 * ((i * 0.37) % 1.0)
+                d.box(AriusLayers.MOON, p, AriusFx.X.multiply(s), UPV.multiply(s * 1.8), AriusFx.Z.multiply(s), withAlpha(0xFFDDF2FF.toInt(), 0.9f * grow))
             }
         }
         // Kristallzacken beim Gefrieren
@@ -286,17 +370,58 @@ class MoonFx(private val ground: Vec3d, private val radius: Double, private val 
             val a = i * 2.39996
             val e = (i * 0.618 % 1.0) * 2 - 1
             val dir = Vec3d(cos(a) * sqrt(1 - e * e), e, sin(a) * sqrt(1 - e * e))
-            d.band(VfxLayers.GLOW_ADD, c.add(dir.multiply(r * 0.95)), c.add(dir.multiply(r * (1.0 + 0.7 * freeze))), d.camUp, r * 0.12, withAlpha(0xFFFFFFFF.toInt(), 0.85f * freeze), withAlpha(cold, 0.15f * freeze))
+            if (dir.dotProduct(view) < -0.2) continue
+            d.band(AriusLayers.MOON_GLOW, c.add(dir.multiply(r * 0.95)), c.add(dir.multiply(r * (1.0 + 0.6 * freeze))), view, r * 0.08, withAlpha(0xFFFFFFFF.toInt(), 0.7f * freeze), withAlpha(cold, 0.1f * freeze))
         }
         // 3) Sturz: Schweif, Rauch, Schatten am Boden
         if (f > 0f) {
             d.band(VfxLayers.FLOW_ADD, c, c.add(0.0, 26.0 * f, 0.0), d.camRight, r * 1.1, withAlpha(cold, 0.7f), withAlpha(cold, 0f), uScale = 0.25f, uOffset = -t * 0.25f)
-            d.band(VfxLayers.GLOW_ADD, c, c.add(0.0, 16.0 * f, 0.0), d.camRight, r * 0.55, withAlpha(0xFFFFFFFF.toInt(), 0.8f), withAlpha(0xFFFFFFFF.toInt(), 0f))
-            for (i in 1..5) d.billboard(VfxLayers.SMOKE_ALPHA, c.add(0.0, i * 4.0 * f, 0.0), r * (1.2 + i * 0.3), withAlpha(0xFFE6EEF6.toInt(), 0.25f * (1f - i / 6f)))
+            d.band(AriusLayers.MOON_GLOW, c, c.add(0.0, 16.0 * f, 0.0), d.camRight, r * 0.55, withAlpha(0xFFFFFFFF.toInt(), 0.8f), withAlpha(0xFFFFFFFF.toInt(), 0f))
+            for (i in 1..5) d.billboard(AriusLayers.VEIL, c.add(0.0, i * 4.0 * f, 0.0), r * (1.2 + i * 0.3), withAlpha(0xFFE6EEF6.toInt(), 0.3f * (1f - i / 6f)))
         }
         val shadow = (t / impactAt).coerceIn(0f, 1f)
         d.disc(VfxLayers.SMOKE_ALPHA, ground.add(0.0, 0.07, 0.0), AriusFx.X, AriusFx.Z, radius * (0.3 + 0.7 * shadow), withAlpha(0xFF1B2A44.toInt(), 0.35f * shadow))
         d.ring(VfxLayers.GLOW_ADD, ground.add(0.0, 0.08, 0.0), AriusFx.X, AriusFx.Z, radius - 0.35, radius, withAlpha(cold, 0f), withAlpha(cold, 0.6f * shadow), segments = 64)
+    }
+
+    /** Fein unterteilte, beleuchtete Mondkugel (Farbe je Ecke aus Albedo, Licht und Erdlicht). */
+    private fun sphere(d: VfxDraw, c: Vec3d, r: Double, light: Vec3d, spinA: Double, grow: Float, freeze: Float) {
+        val lat = 22
+        val lon = 40
+        val cols = IntArray((lat + 1) * (lon + 1))
+        val pts = arrayOfNulls<Vec3d>((lat + 1) * (lon + 1))
+        val night = 0xFF14233F.toInt()
+        val shade = 0xFF4E6E96.toInt()
+        val iceLo = lerpColor(0xFFC9B48A.toInt(), 0xFF8FB6DE.toInt(), freeze)
+        val iceHi = lerpColor(0xFFFFF4DC.toInt(), 0xFFF4FBFF.toInt(), freeze)
+        for (i in 0..lat) for (j in 0..lon) {
+            val th = PI * i / lat
+            val ph = 2 * PI * j / lon
+            val s = Vec3d(sin(th) * cos(ph), cos(th), sin(th) * sin(ph))
+            val w = spin(s, spinA)
+            pts[i * (lon + 1) + j] = c.add(w.multiply(r))
+            val alb = albedo(s)
+            val ndl = w.dotProduct(light)
+            val lit = (((ndl + 0.12) / 0.5).coerceIn(0.0, 1.0)).let { it * it * (3 - 2 * it) }.toFloat()
+            val surf = lerpColor(iceLo, iceHi, alb)
+            val dark = lerpColor(night, shade, alb * 0.6f)
+            cols[i * (lon + 1) + j] = withAlpha(lerpColor(dark, surf, lit), 0.97f * grow)
+        }
+        val vc = d.buffer(AriusLayers.MOON)
+        for (i in 0 until lat) for (j in 0 until lon) {
+            val a = i * (lon + 1) + j
+            val b = (i + 1) * (lon + 1) + j
+            val u0 = j / lon.toFloat()
+            val u1 = (j + 1) / lon.toFloat()
+            val v0 = i / lat.toFloat()
+            val v1 = (i + 1) / lat.toFloat()
+            with(d) {
+                vc.put(pts[a]!!, u0, v0, cols[a])
+                vc.put(pts[b]!!, u0, v1, cols[b])
+                vc.put(pts[b + 1]!!, u1, v1, cols[b + 1])
+                vc.put(pts[a + 1]!!, u1, v0, cols[a + 1])
+            }
+        }
     }
 
     private fun impact(d: VfxDraw, s: Float) {

@@ -279,7 +279,7 @@ class EirholmFight(
             phase <= Phase.COLLAPSE -> 600.0 // Ritt auf Solvanes Rücken
             chasing -> 600.0
             onSummit -> 13.0 // Gipfelschulter nördlich des Horns (seit 1.8.0 größer, Schulter r 34)
-            else -> 70.0 // offenes Feld (seit 1.4.2)
+            else -> ArenaLayout.VAULT_R + 8.0 // offenes Feld (seit 1.4.2; wächst mit der Arena)
         }
 
     /** Hält einen Punkt in der laufenden Arena. */
