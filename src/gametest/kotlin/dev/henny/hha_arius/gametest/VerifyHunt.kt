@@ -25,6 +25,10 @@ class VerifyHunt : FabricClientGameTest {
 
     override fun runTest(context: ClientGameTestContext) = VerifyKit.run(context, "hunt") {
         startFull()
+        if ("far" in parts) {
+            far()
+            if (parts.size == 1) return@run
+        }
         val h = reachHunt()
         if (h == null) {
             log("FEHLER: Jagd nicht erreicht, Phase ${phase()}")
@@ -48,6 +52,57 @@ class VerifyHunt : FabricClientGameTest {
         if ("tunnel" in parts) caves.firstOrNull { it.first == "LAKE" }?.let { tunnel(h, it.second, it.third) }
         if ("fan" in parts) bridge(h, spans[1], "b3")
         log("fertig")
+    }
+
+    /** Fernlandschaft: Standbilder aus mehreren Blickwinkeln und Bildzeit mit und ohne die Fern-Berge. */
+    private fun VerifyKit.far() {
+        waitUntil(900, 2) {
+            server { srv -> Cine.requestSkip(player(srv)) }
+            !client { dev.henny.hha.client.cine.CinePlayer.active }
+        }
+        tick(20)
+        cmd("gamemode creative @p")
+        cmd("time set 6000")
+        val spots = listOf(
+            Triple("temple_south", Vec3d(0.5, 6.0, -44.0), Vec3d(0.0, 60.0, 250.0)),
+            Triple("plateau_high", Vec3d(-30.0, 60.0, -120.0), Vec3d(0.0, 80.0, 250.0)),
+            Triple("east_field", Vec3d(300.0, 12.0, 40.0), Vec3d(0.0, 90.0, 250.0)),
+            Triple("west", Vec3d(-300.0, 30.0, 120.0), Vec3d(0.0, 90.0, 250.0)),
+            Triple("summit", Vec3d(0.5, 190.0, 225.0), Vec3d(-260.0, 40.0, 0.0)),
+        )
+        for ((name, rel, look) in spots) {
+            server { srv ->
+                val p = player(srv)
+                val f = fight() ?: return@server
+                p.abilities.flying = true
+                p.sendAbilitiesUpdate()
+                val at = f.abs(rel)
+                val d = f.abs(look).subtract(at)
+                val yaw = (Math.toDegrees(atan2(d.z, d.x)) - 90.0).toFloat()
+                val pitch = (-Math.toDegrees(atan2(d.y, sqrt(d.x * d.x + d.z * d.z)))).toFloat()
+                p.teleport(p.entityWorld as ServerWorld, at.x, at.y, at.z, emptySet(), yaw, pitch, false)
+                p.velocity = Vec3d.ZERO
+            }
+            tick(120)
+            settle(400)
+            tick(40)
+            shot("far_$name")
+            val on = frameMs()
+            client { dev.henny.hha_arius.client.fx.HighlandViewClient.debugOff = true }
+            val off = frameMs()
+            client { dev.henny.hha_arius.client.fx.HighlandViewClient.debugOff = false }
+            log("far $name: frame %.2f ms with mountains, %.2f ms without; %s".format(on, off, client { dev.henny.hha_arius.client.fx.HighlandViewClient.debugStats() }))
+        }
+        cmd("gamemode survival @p")
+    }
+
+    /** Mittlere Zeit eines echten Bildes (ohne Tick-Warten). */
+    private fun VerifyKit.frameMs(n: Int = 40): Double = client { c ->
+        val delta = net.fabricmc.fabric.mixin.client.gametest.screenshot.DeltaTrackerDefaultValueAccessor.create(1f)
+        repeat(5) { c.gameRenderer.render(delta, true) }
+        val t0 = System.nanoTime()
+        repeat(n) { c.gameRenderer.render(delta, true) }
+        (System.nanoTime() - t0) / (n * 1e6)
     }
 
     private fun VerifyKit.reachHunt(): Hunt? {

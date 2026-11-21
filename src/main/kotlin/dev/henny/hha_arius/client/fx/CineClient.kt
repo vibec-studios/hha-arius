@@ -53,22 +53,16 @@ object CineClient {
         }
         ClientTickEvents.END_CLIENT_TICK.register { _ ->
             if (chaseLeft > 0) chaseLeft--
-            val want = if (CinePlayer.active) 1f else 0f
-            sceneView += (want - sceneView).coerceIn(-0.04f, 0.04f)
         }
         ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> chaseLeft = 0 }
     }
 
-    /** 0 = Spielersicht, 1 = Szene: weicher Übergang der Sichtweite. */
-    private var sceneView = 0f
-
     /**
-     * Nebelwert [value] in einer Szene zum weiten Wert [wide] schieben, damit der Berg zu sehen ist. Stimmungen mit
-     * dichtem Sturm ([moodEnd] unter 40 Blöcken) bleiben, wie sie sind.
+     * Nebelwert [value] zum weiten Wert [wide] schieben, damit die Berge zu sehen sind (seit 1.12.0 immer, nicht nur in
+     * Szenen). Stimmungen mit dichtem Sturm ([moodEnd] unter 40 Blöcken) bleiben, wie sie sind.
      */
     fun widenFog(value: Float, moodEnd: Float, wide: Float): Float {
-        if (sceneView <= 0f) return value
-        val k = sceneView * ((moodEnd - 40f) / 90f).coerceIn(0f, 1f)
+        val k = ((moodEnd - 40f) / 90f).coerceIn(0f, 1f)
         return value + (maxOf(value, wide) - value) * k
     }
 
