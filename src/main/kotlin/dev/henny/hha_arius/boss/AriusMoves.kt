@@ -1541,7 +1541,6 @@ class AriusMoves(private val f: EirholmFight) {
         f.sound("solvane.parry", a.entityPos, 2f, 0.9f)
         Vfx.flare(f.world, Vfx.Style.STORM, a.entityPos.add(0.0, 1.3, 0.0).add(f.facing(a).multiply(0.8)), 1.8f, 8)
         f.fx(FxKind.SLASH_ARC, a.entityPos.add(0.0, 1.3, 0.0), flatDir(a.entityPos, player.entityPos), a = 2.2f, b = 0.9f, life = 8)
-        player.sendMessage(Text.translatable("hha_arius.msg.parried").formatted(Formatting.RED), true)
         countering = true
         a.play(AriusPose.GUARD)
         f.task(punish(player, white))

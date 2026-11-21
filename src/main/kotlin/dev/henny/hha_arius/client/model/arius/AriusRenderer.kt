@@ -37,6 +37,9 @@ class AriusRenderer(context: EntityRendererFactory.Context) :
     private val darkGlow = RenderLayers.eyes(tex("arius_dark_glow"))
     private val whiteGlow = RenderLayers.eyes(tex("arius_white_glow"))
     private val eyes = RenderLayers.eyes(tex("arius_eyes"))
+    private val whiteSeams = RenderLayers.entityTranslucentEmissive(tex("arius_white_glow"))
+    private val darkSeams = RenderLayers.entityTranslucentEmissive(tex("arius_dark_glow"))
+    private val redEyes = RenderLayers.entityTranslucentEmissive(tex("arius_eyes"))
     private val items = context.itemModelManager
     private val iceBlade = AriusBlade.iceStack()
     private var bladeChain: List<ModelPart>? = null
@@ -60,6 +63,13 @@ class AriusRenderer(context: EntityRendererFactory.Context) :
                     val extra = if (state.lead) 0.7f + 0.2f * sin(state.age * 0.25f) else (base - 0.85f) * 4f
                     batch.submitModel(contextModel, state, matrices, eyes, FULL_BRIGHT, OverlayTexture.DEFAULT_UV, tint(extra), null, 0, null)
                 }
+                // Konterhaltung: Nähte und Augen brennen blutrot (deckend gemischt, damit es auf weißer Rüstung sichtbar bleibt).
+                if (state.counter && state.form != AriusForm.ECHO) {
+                    val burn = 0.82f + 0.18f * sin(state.age * 0.62f)
+                    val seams = if (state.form == AriusForm.WHITE) whiteSeams else darkSeams
+                    batch.submitModel(contextModel, state, matrices, seams, FULL_BRIGHT, OverlayTexture.DEFAULT_UV, counterTint(burn), null, 0, null)
+                    batch.submitModel(contextModel, state, matrices, redEyes, FULL_BRIGHT, OverlayTexture.DEFAULT_UV, counterTint(1f), null, 0, null)
+                }
                 // Set the actor's current pose before sampling bones; queue submission itself defers model drawing.
                 contextModel.setAngles(state)
                 if (state.blade == AriusBlade.ICE && !state.sheathed) renderIceBlade(matrices, queue, state)
@@ -69,6 +79,8 @@ class AriusRenderer(context: EntityRendererFactory.Context) :
     }
 
     private fun tint(alpha: Float): Int = ((MathHelper.clamp(alpha, 0f, 1f) * 255f).toInt() shl 24) or 0xFFFFFF
+
+    private fun counterTint(alpha: Float): Int = ((MathHelper.clamp(alpha, 0f, 1f) * 255f).toInt() shl 24) or 0xFF1E2C
 
     private fun renderIceBlade(matrices: MatrixStack, queue: OrderedRenderCommandQueue, state: AriusRenderState) {
         val blade = bladeChain ?: chainTo(AriusModel.Keys.SOLVANE)?.also { bladeChain = it } ?: return

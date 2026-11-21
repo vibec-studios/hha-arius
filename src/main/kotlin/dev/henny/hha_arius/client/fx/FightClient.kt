@@ -121,6 +121,8 @@ object PunishCam {
 
     private var axis: Vec3d? = null
     private var mid: Vec3d? = null
+    private var aim: Vec3d? = null
+    private var distVel = 0.0
     private var midVel = Vec3d.ZERO
     private var sep = 2.0
     private var dist = 0.0
@@ -157,6 +159,8 @@ object PunishCam {
 
     private fun clearRig() {
         axis = null
+        aim = null
+        distVel = 0.0
         mid = null
         midVel = Vec3d.ZERO
         dist = 0.0
@@ -183,12 +187,10 @@ object PunishCam {
         val rawAxis = Vec3d(ep.x - pp.x, 0.0, ep.z - pp.z)
         val rawSep = rawAxis.length()
         val fixed = axis ?: (if (rawSep < 1e-3) Vec3d(0.0, 0.0, 1.0) else rawAxis.multiply(1.0 / rawSep)).also { axis = it }
-        val actors = pp.lerp(ep, 0.5).add(0.0, 1.55, 0.0)
-        // Keep the landing and airborne beats in the same composition. Only track sustained horizontal travel.
-        val previous = mid ?: actors
-        val shift = Vec3d(actors.x - previous.x, 0.0, actors.z - previous.z)
-        val wantMid = previous.add(shift.normalize().multiply((shift.length() - 1.3).coerceAtLeast(0.0)))
-        // Kritisch gedämpfte Feder: Auch wenn das Opfer per Teleport springt, ändert sich die Geschwindigkeit der Kamera nur weich.
+        // Zwei Stufen: Tiefpass auf den Mittelpunkt, dann kritisch gedämpfte Feder. So bleiben Stöße des Opfers ein weicher Schub.
+        val actors = pp.lerp(ep, 0.5).add(0.0, 1.45, 0.0)
+        val wantMid = aim?.lerp(actors, AIM_FILTER) ?: actors
+        aim = wantMid
         val first = mid == null
         var m = mid ?: wantMid
         if (!first) {
@@ -206,8 +208,16 @@ object PunishCam {
         val out = offset.multiply(1.0 / full)
         val hit = world.raycast(RaycastContext(m, m.add(out.multiply(full)), RaycastContext.ShapeType.COLLIDER, RaycastContext.FluidHandling.NONE, player))
         val allowed = if (hit.type == HitResult.Type.BLOCK) (hit.pos.distanceTo(m) * 0.85).coerceAtLeast(1.0) else full
-        // Vor einer Wand schnell heran, danach langsam wieder zurück.
-        dist = if (first) allowed else dist + (allowed - dist) * (if (allowed < dist) 0.4 else 0.07)
+        // Vor einer Wand zügig heran, danach langsam zurück; die Beschleunigung bleibt begrenzt, damit es nie ruckt.
+        if (first) {
+            dist = allowed
+            distVel = 0.0
+        } else {
+            val wantVel = (allowed - dist) * (if (allowed < dist) 0.3 else 0.07)
+            val limit = if (allowed < dist) 0.075 else 0.018
+            distVel += (wantVel - distVel).coerceIn(-limit, limit)
+            dist = (dist + distVel).coerceAtLeast(0.6)
+        }
         val next = m.add(out.multiply(dist))
         prevRigPos = rigPos ?: next
         rigPos = next
@@ -215,7 +225,8 @@ object PunishCam {
         rigLook = m
     }
 
-    private const val FOLLOW = 0.045
+    private const val FOLLOW = 0.1
+    private const val AIM_FILTER = 0.24
 
     fun reset() {
         on = false
