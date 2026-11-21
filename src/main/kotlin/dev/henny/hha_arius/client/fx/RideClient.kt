@@ -43,9 +43,8 @@ import kotlin.math.sin
  * * **Sinnvolle QTE-Ausweichhaltungen:** Ducken presst Körper und Kamera tief flach an Solvanes Rückgrat unter die
  *   festen Bögen; Hochziehen hebt Körper und angezogene Beine hoch über die festen Eisgrate; Hämmern/Stützen ziehen
  *   spürbar am Eisdorn.
- * * **Mehrspieler-Sync:** Jeder Client gleicht lokal und für alle Mitspieler den Reitzustand gegen den
- *   DataTracker ([NivarisEntity.syncedRiderIds]) und die S2C-Pakete ab; beim Absteigen werden Pose, Armlänge und
- *   Vehicle-Referenz sofort bereinigt.
+ * * **Mehrspieler:** Wer auf ihr reitet, entscheidet allein die Mitfahrerliste des Servers (siehe
+ *   [NivarisEntity]); steigt jemand ab, verschwinden Haltung, Armlänge und Griff bei allen Clients.
  */
 object RideClient {
 
@@ -93,9 +92,6 @@ object RideClient {
                 grips.remove(p.entityId)
                 actionAnims.remove(p.entityId)
                 mountAnims.remove(p.entityId)
-                ctx.client().world?.getEntityById(p.entityId)?.let { e ->
-                    if (e.vehicle is NivarisEntity) e.stopRiding()
-                }
             } else {
                 grips[p.entityId] = p.grip
             }
@@ -106,9 +102,6 @@ object RideClient {
                 grips.remove(p.entityId)
                 actionAnims.remove(p.entityId)
                 mountAnims.remove(p.entityId)
-                ctx.client().world?.getEntityById(p.entityId)?.let { e ->
-                    if (e.vehicle is NivarisEntity) e.stopRiding()
-                }
             } else {
                 seats[p.entityId] = p.seat
             }
@@ -152,14 +145,13 @@ object RideClient {
     }
 
     /**
-     * Mehrspieler-Abgleich je Tick: prüft den lokalen Spieler und alle fremden Spieler gegen [NivarisEntity.syncedRiderIds],
-     * löst steckengebliebene Vehicle-Bindungen sofort und startet beim frischen Aufsitzen den weichen Aufsprung-Bogen.
+     * Je Tick: räumt den Zustand abgestiegener Spieler auf und startet beim frischen Aufsitzen den weichen Aufsprung-Bogen.
      */
     private fun reconcile(world: net.minecraft.client.world.ClientWorld) {
         for (p in world.players) {
             val v = p.vehicle
             if (v is NivarisEntity) {
-                if (v.isRemoved || (v.hasSyncedRiders && p.id !in v.syncedRiderIds)) {
+                if (v.isRemoved) {
                     p.stopRiding()
                     clearEntity(p.id)
                 } else if (p.id !in mountAnims) {
@@ -179,7 +171,7 @@ object RideClient {
         for (e in world.entities) {
             if (e is AriusEntity) {
                 val v = e.vehicle
-                if (v is NivarisEntity && (v.isRemoved || (v.hasSyncedRiders && e.id !in v.syncedRiderIds))) {
+                if (v is NivarisEntity && v.isRemoved) {
                     e.stopRiding()
                     seats.remove(e.id)
                 }
@@ -201,7 +193,6 @@ object RideClient {
         if (e == null || e !is PlayerEntity) return 0
         val v = e.vehicle as? NivarisEntity ?: return 0
         if (v.isRemoved) return 0
-        if (v.hasSyncedRiders && e.id !in v.syncedRiderIds) return 0
         if (seats[e.id] == RideSeats.NONE) return 0
         val g = grips[e.id]
         if (g != null && g <= 0) return 0
