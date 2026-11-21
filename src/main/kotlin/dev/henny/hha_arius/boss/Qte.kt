@@ -50,6 +50,10 @@ object Qte {
         fun anySuccess(): Boolean = results.values.any { it }
     }
 
+    /** Nur Sichtprüfung (src/gametest): beantwortet jede Runde sofort, sonst null. */
+    @JvmField
+    var testAnswer: ((Kind) -> Boolean)? = null
+
     private var nextId = 1
     private val rounds = HashMap<Int, Round>()
 
@@ -71,6 +75,7 @@ object Qte {
         if (rounds.size > 32) rounds.keys.sorted().take(rounds.size - 32).forEach { rounds.remove(it) }
         val payload = QteS2C(round.id, kind.ordinal, ticks, count, text)
         for (p in players) if (ServerPlayNetworking.canSend(p, QteS2C.ID)) ServerPlayNetworking.send(p, payload) else round.results[p.uuid] = false
+        testAnswer?.let { answer -> for (p in players) round.results[p.uuid] = answer(kind) }
         return round
     }
 

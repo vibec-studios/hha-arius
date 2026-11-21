@@ -30,6 +30,80 @@ class VerifyDragon : FabricClientGameTest {
             stopFight()
         }
         if ("ride" in scenes) rideScene()
+        if ("reveal" in scenes) {
+            revealScene()
+            stopFight()
+        }
+        if ("route" in scenes) routeScene()
+    }
+
+    /** Auftritt bis zur Landung und Aufsteigen der Spieler in dichten Bildern. */
+    private fun VerifyKit.revealScene() {
+        startFull()
+        server { fight()?.let { f -> f.startDirector(dev.henny.hha_arius.boss.entrance(f)) } }
+        film("reveal", 860, 12)
+    }
+
+    /** Vom Pfiff über den ganzen Ritt bis zum Abwurf: Bilder an jedem Hindernis, Tempo und Geländeabstand im Protokoll. */
+    private fun VerifyKit.routeScene() {
+        startStage(2)
+        tick(60)
+        var answers = 0
+        val failing = System.getProperty("arius.verify.fail", "2,5").split(',').mapNotNull { it.trim().toIntOrNull() }.toSet()
+        dev.henny.hha_arius.boss.Qte.testAnswer = { kind ->
+            val n = answers++
+            log("qte #$n $kind -> ${n !in failing}")
+            n !in failing
+        }
+        server { fight()?.let { f -> f.startDirector(f.scenes.collapse()) } }
+        film("pick", 900, 10) { client { c -> c.player?.hasVehicle() != true } }
+        film("pick2", 90, 6)
+        val route = dev.henny.hha_arius.boss.RideRoute.points()
+        val arcs = dev.henny.hha_arius.boss.RideRoute.obstacleArcs
+        var last: Vec3d? = null
+        var lastSpeed = 0.0
+        var maxSpeed = 0.0
+        var maxAccel = 0.0
+        var minClear = Double.MAX_VALUE
+        var idx = 0
+        var n = 0
+        val shots = IntArray(arcs.size)
+        while (n++ < 2600 && client { c -> c.player?.hasVehicle() == true }) {
+            val pos = server { fight()?.nivaris?.entityPos } ?: break
+            val rel = server { fight()?.let { pos.subtract(it.origin.x.toDouble(), it.origin.y.toDouble(), it.origin.z.toDouble()) } } ?: break
+            var best = Double.MAX_VALUE
+            for (k in maxOf(0, idx - 8)..minOf(route.size - 1, idx + 40)) {
+                val dq = route[k].squaredDistanceTo(rel)
+                if (dq < best) { best = dq; idx = k }
+            }
+            val s = idx * 0.5
+            last?.let {
+                val v = it.distanceTo(pos)
+                maxSpeed = maxOf(maxSpeed, v)
+                if (n > 3) maxAccel = maxOf(maxAccel, kotlin.math.abs(v - lastSpeed))
+                lastSpeed = v
+            }
+            last = pos
+            val top = server { srv -> player(srv).entityWorld.getTopY(net.minecraft.world.Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, kotlin.math.floor(pos.x).toInt(), kotlin.math.floor(pos.z).toInt()).toDouble() }
+            val near = arcs.indexOfFirst { kotlin.math.abs(it - s) < 13.0 }
+            if (top > -60.0 && near < 0) minClear = minOf(minClear, pos.y - top)
+            if (near >= 0 && n % 3 == 0 && shots[near] < 10) {
+                val third = near % 2 == 1
+                client { c -> c.options.perspective = if (third) Perspective.THIRD_PERSON_BACK else Perspective.FIRST_PERSON }
+                shot("ob%d_%02d".format(near, shots[near]++))
+            } else if (n % 90 == 0) {
+                client { c -> c.options.perspective = Perspective.FIRST_PERSON }
+                shot("fly_%03d".format(n / 90))
+            }
+            tick()
+        }
+        client { c -> c.options.perspective = Perspective.FIRST_PERSON }
+        log("ride: ticks=$n maxSpeed=%.3f maxAccel=%.3f minClear=%.1f".format(maxSpeed, maxAccel, minClear))
+        film("drop", 260, 4) { phase() < EirholmFight.Phase.VAULT }
+        film("after", 40, 10)
+        val riders = server { fight()?.nivaris?.passengerList?.size }
+        log("riders after drop on server: $riders, client vehicle: ${client { c -> c.player?.hasVehicle() }}")
+        dev.henny.hha_arius.boss.Qte.testAnswer = null
     }
 
     private fun fmt(v: Vec3d) = "%.1f/%.1f/%.1f".format(v.x, v.y, v.z)

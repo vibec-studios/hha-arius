@@ -940,7 +940,8 @@ class NivarisBody {
             System.arraycopy(fYaw, 0, restTarget, 0, BODY)
             restAnchor = null
         } else {
-            val coiled = e.pose == dev.henny.hha_arius.boss.NivarisPose.LIE_DOWN
+            // Seit 1.12.0 rollt sie sich nie mehr ein (Crix: „nicht so geil, wie er sich einrollt“): liegend eine ruhige Linie.
+            val coiled = false
             val back = kotlin.math.atan2(-f.z, -f.x)
             val anchor = restAnchor
             if (anchor == null || anchor.squaredDistanceTo(spine) > 12.0 * 12.0 || coiled != restCoiled) {

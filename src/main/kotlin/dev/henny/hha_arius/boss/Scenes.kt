@@ -666,23 +666,23 @@ class Scenes(private val f: EirholmFight) {
         val mid = if (riders.isEmpty()) start.add(toward.multiply(10.0)) else riders.map { it.entityPos }.fold(Vec3d.ZERO) { acc, v -> acc.add(v) }.multiply(1.0 / riders.size)
         // Halbtotale von der Seite: sie flach im Schnee, davor die Spieler.
         val look0 = start.lerp(mid, 0.4).add(0.0, 1.5, 0.0)
-        scene.line(look0.add(sideD.multiply(20.0)).add(0.0, 4.5, 0.0), look0.add(sideD.multiply(16.0)).add(0.0, 3.6, 0.0), look0, look0.add(0.0, 0.5, 0.0), 70, 60.0, 54.0)
+        scene.line(look0.add(sideD.multiply(26.0)).add(0.0, 6.5, 0.0), look0.add(sideD.multiply(21.0)).add(0.0, 5.0, 0.0), look0, look0.add(0.0, 1.5, 0.0), 96, 62.0, 56.0)
         shown { f.say("dragon.carry", 60) }
         cue("resonance.chime", perch, 3f, 1.1f)
         d.eyeGlow = 100
         wait(16)
-        // 2) Der Lichtstrom hebt jeden an seinen Dorn auf ihrem Rücken.
+        // 2) Der Lichtstrom zieht jeden sichtbar im Bogen an seinen Dorn (nacheinander, von der Seite gefilmt).
         val mounted = HashSet<java.util.UUID>()
         RideSeats.assign(f)
         for ((i, p) in f.players().withIndex()) {
-            if (i > 0) wait(5)
+            if (i > 0) wait(9)
             if (!p.isAlive || p.isRemoved) continue
             mounted.add(p.uuid)
-            shown { f.fx(FxKind.THREAD, p.entityPos, life = 24, e1 = p, e2 = d) }
+            shown { f.fx(FxKind.THREAD, p.entityPos, life = 34, e1 = p, e2 = d) }
             cue("resonance.chime", p.entityPos, 1.6f, 1.3f + i * 0.05f)
             p.startRiding(d, true, true)
         }
-        wait(30)
+        wait(40)
         // 3) Sie stößt sich ab, streicht über den Tempel, Arius springt auf ihren Kopf. Seit 1.11.0 ist der ganze Flug eine
         //    einzige Bahn ([DragonRail]): über das Plateau, nach Westen, in weitem Bogen um den Kessel und von Westen herein.
         d.play(NivarisPose.TAKEOFF, 6)
@@ -693,16 +693,22 @@ class Scenes(private val f: EirholmFight) {
         d.flying = true
         d.play(NivarisPose.GLIDE)
         val toD = flatDir(perch, start)
-        val pickup = perch.add(0.0, 16.0, 0.0).add(toD.multiply(6.0))
+        val pickup = perch.add(0.0, 22.0, 0.0).add(toD.multiply(6.0))
+        // Seit 1.12.0 durch die Ostöffnung hinein (vorher quer über den Felsrand) und in einem weiten Bogen zur Mitte,
+        // immer südlich der Rippen.
         val rail = DragonRail.path(
             start, toward.add(0.0, 0.3, 0.0),
-            listOf(pickup, aerie.add(96.0, 36.0, -34.0), aerie.add(26.0, 30.0, -60.0), aerie.add(-46.0, 20.0, -36.0), aerie.add(-42.0, 8.0, 0.0), aerie),
+            listOf(
+                pickup, aerie.add(176.0, 44.0, 6.0), aerie.add(124.0, 32.0, 0.0), aerie.add(74.0, 20.0, 0.0), aerie.add(34.0, 18.0, -34.0),
+                aerie.add(-22.0, 15.0, -40.0), aerie.add(-54.0, 11.0, -8.0), aerie.add(-36.0, 7.0, 16.0), aerie.add(-12.0, 3.0, 6.0), aerie,
+            ),
+            30.0,
         )
         val len = DragonRail.length(rail)
         fun pace(q: Double) = when {
-            q < 40.0 -> 0.5 + 1.2 * (q / 40.0)
-            q > len - 46.0 -> 0.55 + 1.15 * ((len - q) / 46.0).coerceIn(0.0, 1.0)
-            else -> 1.7
+            q < 50.0 -> 0.42 + 0.56 * (q / 50.0)
+            q > len - 70.0 -> 0.42 + 0.56 * ((len - q) / 70.0).coerceIn(0.0, 1.0)
+            else -> 0.98
         }
         // Dauer bis zu einer Stelle der Bahn (für die Kameraeinstellungen).
         fun ticksTo(q: Double): Int {

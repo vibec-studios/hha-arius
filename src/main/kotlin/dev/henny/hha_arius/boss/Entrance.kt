@@ -80,8 +80,9 @@ object EntrancePath {
 
     private val WAYPOINTS = listOf(
         HEAD_RAISED, near(0.5, 194.0, 134.0), near(10.0, 182.0, 114.0), near(36.0, 150.0, 92.0), near(56.0, 108.0, 68.0),
-        // Seit 1.11.0 flacherer Endanflug über dem Plateau, damit der lange Leib waagerecht ausschwebt statt senkrecht nach oben zu ragen.
-        near(46.0, 56.0, 42.0), Vec3d(22.0, 24.0, 28.0), Vec3d(7.0, 12.5, 16.0), Vec3d(0.5, 7.5, 5.0), Vec3d(0.5, 6.0, -4.0),
+        // Seit 1.12.0 (Crix: „sein Körper geht bei der Landung so weird nach oben“): Der 96 Blöcke lange Leib liegt zur Landung
+        // auf den letzten 96 Blöcken der Bahn. Die laufen darum flach über das Plateau aus, statt steil vom Berg zu kommen.
+        near(66.0, 62.0, 52.0), Vec3d(58.0, 28.0, 30.0), Vec3d(36.0, 15.0, 26.0), Vec3d(15.0, 9.5, 16.0), Vec3d(3.0, 7.0, 5.0), Vec3d(0.5, 6.0, -4.0),
     )
 
     /**

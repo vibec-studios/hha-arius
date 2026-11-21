@@ -250,6 +250,9 @@ object RideRoute {
         best * STEP
     }
 
+    /** Bogenlängen der festen Hindernisse (für die Sichtprüfung). */
+    val obstacleArcs: List<Double> get() = RideLandmarks.all.map { it.s }
+
     /** Punkt bei Bogenlänge [s] (Blöcke ab dem Start), relativ. */
     fun at(s: Double): Vec3d {
         val p = points()
