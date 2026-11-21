@@ -112,7 +112,8 @@ object Portals {
 
     private fun frameFrom(world: World, start: BlockPos, axis: Direction.Axis): Frame? {
         val along = if (axis == Direction.Axis.X) Direction.EAST else Direction.SOUTH
-        var p = start
+        // Vanilla reicht beim Berühren eine veränderliche Position herein; der Rahmen darf sie nicht festhalten.
+        var p = start.toImmutable()
         // nach unten bis auf den Rahmen
         var n = 0
         while (open(world.getBlockState(p.down()))) {
