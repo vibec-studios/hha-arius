@@ -89,6 +89,8 @@ loom {
         System.getProperty("arius.verify")?.let { name ->
             vmArg("-Darius.verify=$name")
             vmArg("-Xmx6G")
+            // Mods der echten Instanz mitladen (Pfade mit ; getrennt), damit die Sichtprüfung deren Rendering sieht.
+            System.getProperty("arius.verify.addmods")?.let { vmArg("-Dfabric.addMods=$it") }
             System.getProperties().stringPropertyNames().filter { it.startsWith("arius.verify.") }.forEach { key ->
                 vmArg("-D$key=${System.getProperty(key)}")
             }
