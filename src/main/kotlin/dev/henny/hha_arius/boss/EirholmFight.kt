@@ -676,7 +676,6 @@ class EirholmFight(
         dmg = moves.summit.limit(dmg)
         dmg = min(dmg, ariusHp + 1f)
         ariusHp -= dmg
-        if (phase == Phase.FINALE && ariusHp <= 0f) moves.summit.onFinalBlow()
         record(player, dmg)
         moves.onAllyHit(player, dmg)
         if (f != null) {
@@ -1039,7 +1038,6 @@ class EirholmFight(
         Hold.drop(player)
         AriusNet.send(player, MusicS2C("", 20))
         AriusNet.send(player, dev.henny.hha_arius.net.AtmosS2C(-1, 1))
-        AriusNet.send(player, dev.henny.hha_arius.net.SilenceS2C(0f, 1))
         ariusBar.removePlayer(player)
         dragonBar.removePlayer(player)
         if (players().isEmpty() && phase != Phase.BUILD && !ended) {

@@ -51,6 +51,8 @@ class VerifyBoss : FabricClientGameTest {
                 "clash", "laststand" -> lastStand()
                 "shield" -> shield()
                 "tele" -> teleGallery()
+                "path" -> pathing()
+                "pace" -> pace()
                 else -> log("unknown case $c")
             }
             cmd("hhaarius stop")
@@ -640,7 +642,7 @@ class VerifyBoss : FabricClientGameTest {
             check(waitUntil(1200, 1) { server { fight()?.moves?.summit?.stage == 2 } })
             lookAtArius()
             shot("last_stand_windup")
-            check(waitUntil(180, 1) { server { fight()?.moves?.summit?.stage == 3 } })
+            check(waitUntil(400, 1) { server { fight()?.moves?.summit?.stage == 3 } })
             lookAtArius()
             shot("last_stand_open")
             check(server { srv ->
@@ -655,7 +657,7 @@ class VerifyBoss : FabricClientGameTest {
                 f.arius!!.damage(f.world, f.world.damageSources.playerAttack(player(srv)), f.ariusMax)
                 check(f.ariusHp <= 0f)
             }
-            log("last stand: tracked thrust, opening and lethal player hit passed with a knocked-out and disconnected ally")
+            log("storm breaks: three cuts, opening and lethal player hit passed with a knocked-out and disconnected ally")
         } finally {
             server { srv ->
                 for (b in bots) srv.playerManager.getPlayer(b.id)?.networkHandler?.onDisconnected(
@@ -706,6 +708,104 @@ class VerifyBoss : FabricClientGameTest {
         }
     }
 
+    /** Arius muss um die Säulen des Tempels zum Spieler finden, ohne Festhängen und ohne Laufen auf der Stelle. */
+    private fun VerifyKit.pathing() {
+        temple()
+        server { fight()?.let { f -> f.startDirector(dev.henny.hha_arius.boss.script { while (true) yield(Unit) }) } }
+        tick(5)
+        val c = server { fight()!!.arenaCenter.let { Vec3d(it.x, fight()!!.floorY, it.z) } }
+        val r = server { fight()!!.arenaRadius }
+        val rnd = java.util.Random(7)
+        var worst = 0
+        var failed = 0
+        var totalRatio = 0.0
+        var runs = 0
+        for (i in 0 until 14) {
+            fun free(): Vec3d {
+                repeat(200) {
+                    val ang = rnd.nextDouble() * Math.PI * 2
+                    val rr = (r - 3.0) * Math.sqrt(rnd.nextDouble())
+                    val p = c.add(Math.cos(ang) * rr, 0.0, Math.sin(ang) * rr)
+                    if (server { fight()!!.passable(p) && !fight()!!.world.getBlockState(net.minecraft.util.math.BlockPos.ofFloored(p).down()).isAir }) return p
+                }
+                return c
+            }
+            val from = free()
+            val to = free()
+            if (from.distanceTo(to) < 10.0) continue
+            server { srv ->
+                val f = fight()!!
+                f.place(f.arius!!, from)
+                player(srv).teleport(f.world, to.x, to.y, to.z, emptySet(), 0f, 0f, false)
+            }
+            tick(2)
+            var stuck = 0
+            var maxStuck = 0
+            var walked = 0.0
+            var last = from
+            var t = 0
+            var reached = false
+            while (t < 260) {
+                val now = server { srv ->
+                    val f = fight()!!
+                    val a = f.arius!!
+                    f.stepToward(a, player(srv).entityPos, 0.3)
+                    a.entityPos
+                }
+                val step = now.distanceTo(last)
+                walked += step
+                if (step < 0.02) stuck++ else stuck = 0
+                maxStuck = maxOf(maxStuck, stuck)
+                last = now
+                tick(1)
+                t++
+                if (Math.hypot(now.x - to.x, now.z - to.z) < 1.2) {
+                    reached = true
+                    break
+                }
+            }
+            val straight = Math.hypot(from.x - to.x, from.z - to.z)
+            if (!reached) failed++ else {
+                totalRatio += walked / straight
+                runs++
+            }
+            worst = maxOf(worst, maxStuck)
+            log("path %d: straight %.1f walked %.1f ticks %d reached=%s longest stall %d, ends %.1f from goal, from=%s to=%s".format(i, straight, walked, t, reached, maxStuck, Math.hypot(last.x - to.x, last.z - to.z), from, to))
+        }
+        log("path: failed=$failed, longest stall=$worst ticks, average detour x%.2f over $runs runs".format(if (runs > 0) totalRatio / runs else 0.0))
+    }
+
+    /** Abstände der Züge in der letzten Phase, mit einem Spieler, der ausweicht. */
+    private fun VerifyKit.pace() {
+        finaleFight()
+        val log = ArrayList<Long>()
+        server { srv ->
+            val f = fight()!!
+            f.moves.debugTurns = log
+            f.ariusHp = f.ariusMax * 0.62f
+            val a = f.arius!!
+            val at = a.entityPos.add(6.0, 0.0, 0.0)
+            player(srv).teleport(f.world, at.x, at.y, at.z, emptySet(), 90f, 0f, false)
+        }
+        val rnd = java.util.Random(11)
+        for (t in 0 until 1500) {
+            if (t % 25 == 0) server { srv ->
+                val f = fight() ?: return@server
+                val p = player(srv)
+                val a = f.arius ?: return@server
+                val ang = rnd.nextDouble() * Math.PI * 2
+                val rr = 5.0 + rnd.nextDouble() * 6.0
+                val at = f.clampToArena(a.entityPos.add(Math.cos(ang) * rr, 0.0, Math.sin(ang) * rr), 2.0)
+                if (f.passable(Vec3d(at.x, f.floorY, at.z))) p.teleport(f.world, at.x, f.floorY, at.z, emptySet(), p.yaw, p.pitch, false)
+                f.ariusHp = maxOf(f.ariusHp, f.ariusMax * 0.55f)
+            }
+            tick(1)
+        }
+        val gaps = log.zipWithNext { x, y -> y - x }
+        log("pace: ${log.size} turns in 1500 ticks, gaps min=${gaps.minOrNull()} median=${gaps.sorted().getOrNull(gaps.size / 2)} max=${gaps.maxOrNull()}")
+        server { fight()?.moves?.debugTurns = null }
+    }
+
     private fun VerifyKit.shield() {
         temple()
         faceArius(3.0)
@@ -725,6 +825,7 @@ class VerifyBoss : FabricClientGameTest {
             check(p.isBlocking)
             Damage.hit(p, a, Damage.Kind.SOLVANE, 3f, 1f)
             check(p.health == before && p.itemCooldownManager.isCoolingDown(shield) && !p.isBlocking)
+            log("shield: cooldown after one block = ${p.itemCooldownManager.getCooldownProgress(shield, 0f)}")
             Damage.hit(p, a, Damage.Kind.SOLVANE, 3f, 1f)
             check(p.health < before)
         }
