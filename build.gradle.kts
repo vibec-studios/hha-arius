@@ -77,6 +77,8 @@ fabricApi {
 loom {
     runs.matching { it.name == "clientGameTest" }.configureEach {
         vmArg("-Dfabric.client.gametest.disableNetworkSynchronizer=true")
+        // Testfenster sollen den Desktop nicht stören: Absturz nur ins Log statt Dialog, der den Lauf offen hält.
+        vmArg("-Dfabric.noGui=true")
         // Trailer-Aufnahme (src/gametest/.../TrailerCapture.kt): nur mit -Darius.trailer=true, sonst läuft nur der Starttest.
         if (System.getProperty("arius.trailer") == "true") {
             vmArg("-Darius.trailer=true")
@@ -96,4 +98,9 @@ loom {
             }
         }
     }
+}
+
+// Test-Clients laufen stumm: OpenAL ohne Ausgabegerät, die Sound-Engine selbst läuft normal weiter.
+tasks.matching { it.name == "runClientGameTest" }.configureEach {
+    (this as JavaForkOptions).environment("ALSOFT_DRIVERS", "null")
 }
