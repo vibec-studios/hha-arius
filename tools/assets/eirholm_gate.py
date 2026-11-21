@@ -1,4 +1,4 @@
-"""Generate the carved frost-veined gate stone, luminous aurora portal sheet, and layered portal panel models."""
+"""Generate the Rime Gate stone (four weathered variants), the frozen-veil portal sheet and the layered panel models."""
 import json
 import math
 import random
@@ -14,122 +14,134 @@ def clamp(v: float, lo: int = 0, hi: int = 255) -> int:
     return max(lo, min(hi, round(v)))
 
 
-def frame_stone():
-    """Carved alpine dark slate ashlar with frosted bevels and inlaid glowing glacier-cyan crystal veins."""
-    rng = random.Random(71)
-    im = Image.new("RGB", (32, 32))
-    noise = [[rng.gauss(0, 2.6) for _ in range(32)] for _ in range(32)]
+def smooth(x: float) -> float:
+    x = max(0.0, min(1.0, x))
+    return x * x * (3 - 2 * x)
 
-    # Precompute smooth frost-crystal vein intensity along two organic rune-like fractures.
-    vein_pts = [
-        (3.0, 9.0), (6.0, 8.2), (9.5, 6.5), (13.0, 5.8), (16.5, 7.2),
-        (17.0, 25.0), (20.5, 24.0), (24.0, 22.0), (27.5, 21.5), (29.5, 23.0),
-    ]
 
-    def seg_dist(px, py, ax, ay, bx, by):
-        vx, vy = bx - ax, by - ay
-        l2 = vx * vx + vy * vy
-        t = 0.0 if l2 < 1e-6 else max(0.0, min(1.0, ((px - ax) * vx + (py - ay) * vy) / l2))
-        return math.hypot(px - (ax + vx * t), py - (ay + vy * t))
+def value_noise(size: int, cells: int, rng: random.Random):
+    """Seamless value noise with `cells` lattice cells across the tile."""
+    lattice = [[rng.random() for _ in range(cells)] for _ in range(cells)]
+    out = [[0.0] * size for _ in range(size)]
+    for y in range(size):
+        fy = y / size * cells
+        y0 = int(fy) % cells
+        y1 = (y0 + 1) % cells
+        ty = smooth(fy - int(fy))
+        for x in range(size):
+            fx = x / size * cells
+            x0 = int(fx) % cells
+            x1 = (x0 + 1) % cells
+            tx = smooth(fx - int(fx))
+            a = lattice[y0][x0] + (lattice[y0][x1] - lattice[y0][x0]) * tx
+            b = lattice[y1][x0] + (lattice[y1][x1] - lattice[y1][x0]) * tx
+            out[y][x] = a + (b - a) * ty
+    return out
 
-    segs = [(vein_pts[i], vein_pts[i + 1]) for i in (0, 1, 2, 3, 5, 6, 7, 8)]
 
-    for y in range(32):
-        row, dy = divmod(y, 16)
-        for x in range(32):
-            dx = (x + 11 * row) % 32
-            # Layered slate strata + fine stone grain.
-            strata = 4.2 * math.sin((x * 0.28 + y * 0.62) + 0.7 * math.sin(x * 0.2))
-            grain = noise[y][x] + strata
-            # Deep carved mortar joints & frosted top bevel.
-            bevel = 0.0
-            frost = 0.0
-            if dx == 0 or dy == 0:
-                bevel = -26.0
-            elif dx == 31 or dy == 15:
-                bevel = -12.0
-            elif dy == 1:
-                bevel = 16.0
-                frost = 0.45
-            elif dx == 1:
-                bevel = 9.0
-                frost = 0.15
-            elif dy == 2 and dx in range(2, 30):
-                frost = 0.14 * (0.5 + 0.5 * math.sin(x * 0.7 + row * 2.1))
-            # Subtle inset border groove inside each ashlar block.
-            if (dx in (3, 28) and 3 <= dy <= 12) or (dy in (3, 12) and 3 <= dx <= 28):
-                bevel -= 6.0
+def seg_dist(px, py, ax, ay, bx, by):
+    vx, vy = bx - ax, by - ay
+    l2 = vx * vx + vy * vy
+    t = 0.0 if l2 < 1e-6 else max(0.0, min(1.0, ((px - ax) * vx + (py - ay) * vy) / l2))
+    return math.hypot(px - (ax + vx * t), py - (ay + vy * t))
 
-            d_vein = min(seg_dist(x, y, a[0], a[1], b[0], b[1]) for a, b in segs)
-            vein_core = math.exp(-(d_vein / 0.72) ** 2)
-            vein_glow = math.exp(-(d_vein / 2.2) ** 2) * 0.38
 
-            r = 40.0 + grain * 0.85 + bevel + frost * 58.0 + vein_glow * 30.0 + vein_core * 88.0
-            g = 53.0 + grain * 0.95 + bevel + frost * 74.0 + vein_glow * 78.0 + vein_core * 158.0
-            b = 70.0 + grain * 1.05 + bevel + frost * 88.0 + vein_glow * 105.0 + vein_core * 172.0
+def crack(rng: random.Random, size: int):
+    """A thin hairline fracture that wanders across part of the stone."""
+    x, y = rng.uniform(4, size - 4), rng.uniform(4, size - 4)
+    ang = rng.uniform(0, math.tau)
+    pts = [(x, y)]
+    for _ in range(rng.randint(3, 5)):
+        ang += rng.uniform(-0.8, 0.8)
+        step = rng.uniform(3.0, 6.0)
+        x = max(3.0, min(size - 3.0, x + math.cos(ang) * step))
+        y = max(3.0, min(size - 3.0, y + math.sin(ang) * step))
+        pts.append((x, y))
+    return list(zip(pts, pts[1:]))
+
+
+def frame_stone(variant: int):
+    """Dark glacial basalt: one hewn block per cell, chipped edges, frost settled on the top and a faint ice fracture."""
+    size = 32
+    rng = random.Random(4100 + variant * 37)
+    coarse = value_noise(size, 4, rng)
+    fine = value_noise(size, 11, rng)
+    grain = [[rng.gauss(0, 1.0) for _ in range(size)] for _ in range(size)]
+    segs = crack(rng, size) + (crack(rng, size) if variant % 2 == 0 else [])
+    chips = [(rng.randrange(size), rng.choice((0, 1, size - 2, size - 1))) for _ in range(5)]
+    chips += [(rng.choice((0, 1, size - 2, size - 1)), rng.randrange(size)) for _ in range(5)]
+    im = Image.new("RGB", (size, size))
+    for y in range(size):
+        for x in range(size):
+            edge = min(x, y, size - 1 - x, size - 1 - y)
+            tone = 34 + 20 * (coarse[y][x] - 0.5) + 13 * (fine[y][x] - 0.5) + grain[y][x] * 1.6
+            # Hewn edge: a dark joint, then a soft lit bevel on the upper left.
+            if edge == 0:
+                tone -= 15
+            elif edge == 1:
+                tone += 7 if (x <= y and x < size / 2) or y < size / 2 else -5
+            if any(abs(x - cx) + abs(y - cy) <= 1 for cx, cy in chips):
+                tone -= 10
+            # Frost gathers on the upper part of the stone and in its joints.
+            frost = smooth((6.5 - y + 5 * (fine[y][x] - 0.5)) / 6.5) * 0.5
+            frost += smooth((2.4 - edge) / 2.4) * 0.14
+            frost *= 0.45 + coarse[y][x]
+            d = min((seg_dist(x, y, a[0], a[1], b[0], b[1]) for a, b in segs), default=9.0)
+            core = math.exp(-((d / 0.62) ** 2))
+            halo = math.exp(-((d / 2.1) ** 2)) * 0.32
+            r = tone * 0.92 + frost * 92 + halo * 16 + core * 62
+            g = tone * 1.08 + frost * 112 + halo * 44 + core * 118
+            b = tone * 1.34 + frost * 126 + halo * 62 + core * 142
             im.putpixel((x, y), (clamp(r), clamp(g), clamp(b)))
-    im.save(BLOCKS / "rime_gate_stone.png")
+    return im
 
 
-def aurora():
-    """Seamless 64x64x32 animated aurora rift with emerald/glacier/violet ribbons, crystalline shimmer, and rising motes."""
-    size, frames = 64, 32
+def veil():
+    """A frozen veil: slow pale filaments over a deep night-blue void, seamless in space and time (2x2 blocks)."""
+    size, frames = 64, 24
     sheet = Image.new("RGBA", (size, size * frames))
-    rng = random.Random(103)
-    # Rising frost-star motes that loop seamlessly in Y and pulse smoothly in phase.
-    motes = [
-        (rng.uniform(0, size), rng.uniform(0, size), rng.uniform(0, math.tau),
-         rng.choice((1, 1, 2)), rng.uniform(0.55, 1.0), rng.choice((0, 1)))
-        for _ in range(34)
-    ]
-
+    rng = random.Random(211)
+    motes = [(rng.uniform(0, size), rng.uniform(0, size), rng.uniform(0, math.tau), rng.choice((1, 1, 2)), rng.uniform(0.5, 1.0)) for _ in range(16)]
     for frame in range(frames):
         t = math.tau * frame / frames
-        im = Image.new("RGBA", (size, size))
         buf = [[None] * size for _ in range(size)]
         for y in range(size):
             v = math.tau * y / size
             for x in range(size):
                 u = math.tau * x / size
-                # Multi-harmonic flowing aurora curtains (seamless in u, v, and t).
-                warp1 = 0.62 * math.sin(v - t) + 0.34 * math.cos(u + v + t)
-                warp2 = 0.48 * math.sin(2.0 * v + t) + 0.26 * math.sin(u - 2.0 * v - t)
-                swirl = u + warp1
-
-                curtain_a = ((1.0 + math.cos(swirl * 2.0 + 0.55 * math.sin(v + t))) * 0.5) ** 3.6
-                curtain_b = ((1.0 + math.cos((u - warp2) * 3.0 + math.sin(v - t))) * 0.5) ** 4.8
-                filament = ((1.0 + math.cos(swirl * 4.0 + 1.15 * math.sin(v - t))) * 0.5) ** 18.0
-                shimmer = ((1.0 + math.sin(u * 3.0 - v * 2.0 + t)) * 0.5) ** 6.0 * curtain_a
-                depth = 0.5 + 0.5 * math.sin(v + 1.15 * math.cos(swirl + t))
-
-                # Color palette: deep midnight abyss -> aurora emerald-cyan -> glacier ice -> arcane violet accent -> white-gold core.
-                r = 9.0 + 16.0 * depth + 24.0 * curtain_a + 78.0 * curtain_b + 132.0 * filament + 65.0 * shimmer
-                g = 18.0 + 34.0 * depth + 148.0 * curtain_a + 64.0 * curtain_b + 158.0 * filament + 95.0 * shimmer
-                b = 48.0 + 52.0 * depth + 136.0 * curtain_a + 142.0 * curtain_b + 148.0 * filament + 90.0 * shimmer
-                a = 196.0 + 42.0 * curtain_a + 24.0 * curtain_b + 30.0 * filament
-                buf[y][x] = [r, g, b, a]
-
-        # Add soft twinkling crystalline frost motes (cross-bloom so they look luminous, not harsh dots).
-        for mx, my, phase, speed, bright, kind in motes:
+                # Domain warp (integer harmonics keep the tile seamless).
+                wu = u + 0.75 * math.sin(v + t) + 0.32 * math.sin(2 * v - u + t)
+                wv = v + 0.55 * math.cos(u - t) + 0.26 * math.sin(2 * u + v - t)
+                # Ridged filaments: thin bright lines where the wave crosses zero.
+                a = 1 - abs(math.sin(wu + 0.5 * math.sin(wv)))
+                b = 1 - abs(math.sin(2 * wu - wv + t))
+                c = 1 - abs(math.sin(wv + 2 * wu - t))
+                thread = a ** 14 * 0.95 + b ** 22 * 0.6 + c ** 30 * 0.4
+                body = (0.5 + 0.5 * math.sin(wu - wv + t)) ** 2
+                depth = 0.5 + 0.5 * math.sin(wv + math.cos(wu))
+                r = 7 + 12 * depth + 20 * body + 200 * thread
+                g = 15 + 26 * depth + 62 * body + 222 * thread
+                bl = 40 + 44 * depth + 84 * body + 214 * thread
+                al = 214 + 16 * body + 25 * min(1.0, thread * 1.6)
+                buf[y][x] = [r, g, bl, al]
+        for mx, my, phase, speed, bright in motes:
             cy = (my - frame * speed * (size / frames)) % size
-            cx = (mx + 1.8 * math.sin(t + phase)) % size
-            glint = ((0.5 + 0.5 * math.sin(t * 2.0 + phase)) ** 1.6) * bright
-            if glint < 0.08:
+            cx = (mx + 1.4 * math.sin(t + phase)) % size
+            glint = (0.5 + 0.5 * math.sin(t * 2 + phase)) ** 2 * bright
+            if glint < 0.1:
                 continue
-            ix, iy = int(round(cx)) % size, int(round(cy)) % size
-            # 0 = ice-cyan mote, 1 = pale gold-white starlight mote
-            cr, cg, cb = (155.0, 235.0, 255.0) if kind == 0 else (255.0, 236.0, 185.0)
+            ix, iy = int(cx) % size, int(cy) % size
             for oy in (-1, 0, 1):
                 for ox in (-1, 0, 1):
-                    w = 1.0 if (ox == 0 and oy == 0) else (0.42 if (ox == 0 or oy == 0) else 0.14)
-                    px = (ix + ox) % size
-                    py = (iy + oy) % size
-                    cell = buf[py][px]
-                    cell[0] += cr * glint * w
-                    cell[1] += cg * glint * w
-                    cell[2] += cb * glint * w
-                    cell[3] = min(255.0, cell[3] + 50.0 * glint * w)
-
+                    w = 1.0 if ox == 0 and oy == 0 else (0.28 if ox == 0 or oy == 0 else 0.0)
+                    if not w:
+                        continue
+                    cell = buf[(iy + oy) % size][(ix + ox) % size]
+                    cell[0] += 200 * glint * w
+                    cell[1] += 232 * glint * w
+                    cell[2] += 245 * glint * w
+                    cell[3] = min(255, cell[3] + 40 * glint * w)
+        im = Image.new("RGBA", (size, size))
         for y in range(size):
             for x in range(size):
                 c = buf[y][x]
@@ -139,7 +151,7 @@ def aurora():
 
 
 def panels():
-    """Two-layer volumetric portal panel models so the aurora has crystalline depth from every angle."""
+    """Two offset layers per cell give the veil parallax from every angle."""
     variants = {}
     for tile in range(5):
         name = "eirholm_gate" if tile == 4 else f"eirholm_gate_{tile}"
@@ -150,18 +162,14 @@ def panels():
                 "parent": "hha_arius:block/eirholm_gate",
                 "elements": [
                     {
-                        "from": [0, 0, 7.65],
-                        "to": [16, 16, 8.35],
-                        "shade": False,
+                        "from": [0, 0, 7.65], "to": [16, 16, 8.35], "shade": False,
                         "faces": {
                             "north": {"uv": [u + 8, v, u, v + 8], "texture": "#portal"},
                             "south": {"uv": [u, v, u + 8, v + 8], "texture": "#portal"},
                         },
                     },
                     {
-                        "from": [0, 0, 6.8],
-                        "to": [16, 16, 9.2],
-                        "shade": False,
+                        "from": [0, 0, 6.8], "to": [16, 16, 9.2], "shade": False,
                         "faces": {
                             "north": {"uv": [u, v, u + 8, v + 8], "texture": "#portal"},
                             "south": {"uv": [u + 8, v, u, v + 8], "texture": "#portal"},
@@ -178,8 +186,18 @@ def panels():
     (ASSETS / "blockstates/eirholm_gate.json").write_text(json.dumps({"variants": variants}, indent=2) + "\n")
 
 
+def stones():
+    names = ["rime_gate_stone"] + [f"rime_gate_stone_{i}" for i in range(1, 4)]
+    for i, name in enumerate(names):
+        frame_stone(i).save(BLOCKS / f"{name}.png")
+        if i:
+            (ASSETS / f"models/block/{name}.json").write_text(json.dumps({"parent": "minecraft:block/cube_all", "textures": {"all": f"hha_arius:block/{name}"}}, indent=2) + "\n")
+    state = {"variants": {"": [{"model": f"hha_arius:block/{n}"} for n in names]}}
+    (ASSETS / "blockstates/rime_gate_stone.json").write_text(json.dumps(state, indent=2) + "\n")
+
+
 if __name__ == "__main__":
-    frame_stone()
-    aurora()
+    stones()
+    veil()
     panels()
     print("ok")

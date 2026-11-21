@@ -44,7 +44,8 @@ import net.minecraft.world.tick.ScheduledTickView
  * Blöcke der Welt-Überarbeitung 1.10.0:
  * * **Raureif-Torstein** ([FRAME]): Rahmen des Tors nach Eirholm (wie ein Netherportal, 2–21 breit, 3–21 hoch, Ecken
  *   egal). Mit dem Siegel von Eirholm angeklickt, füllt sich der Rahmen mit dem Tor.
- * * **Tor nach Eirholm** ([PORTAL]): wirbelndes Frostlicht. Wer zwei Sekunden darin steht, bricht nach Eirholm auf; in Eirholm selbst führt es nach dem Sieg zurück ([Portals]).
+ * * **Tor nach Eirholm** ([PORTAL]): wirbelndes Frostlicht, trägt das eingesetzte Siegel. Wer zwei Sekunden darin steht,
+ *   bricht nach Eirholm auf; in Eirholm selbst führt es nach dem Sieg zurück ([Portals]).
  * * **Hängebrückendeck** ([DECK]): unsichtbare, stabile Kollision (1–8 Schichten wie Schnee) unter den Planken, die der
  *   Client schwingend zeichnet.
  */
@@ -93,7 +94,7 @@ class RimeFrameBlock(settings: Settings) : Block(settings) {
     override fun onUseWithItem(stack: ItemStack, state: BlockState, world: World, pos: BlockPos, player: PlayerEntity, hand: Hand, hit: BlockHitResult): ActionResult {
         if (!Portals.isActivator(stack)) return ActionResult.PASS_TO_DEFAULT_BLOCK_ACTION
         if (world !is ServerWorld || player !is ServerPlayerEntity) return ActionResult.SUCCESS
-        return if (Portals.ignite(world, pos, player)) ActionResult.SUCCESS else ActionResult.FAIL
+        return if (Portals.ignite(world, pos, player, stack)) ActionResult.SUCCESS else ActionResult.FAIL
     }
 }
 
@@ -119,7 +120,11 @@ class EirholmGateBlock(settings: Settings) : Block(settings) {
     ): BlockState {
         val axis = state.get(AXIS)
         val inPlane = direction.axis == Direction.Axis.Y || direction.axis == axis
-        if (inPlane && !PortalBlocks.isGate(neighborState) && !PortalBlocks.isFrame(neighborState)) return net.minecraft.block.Blocks.AIR.defaultState
+        if (inPlane && !PortalBlocks.isGate(neighborState) && !PortalBlocks.isFrame(neighborState)) {
+            // Der Rahmen ist gebrochen: Das eingesetzte Siegel fällt heraus (je zusammenhängendem Tor genau eines).
+            if (world is ServerWorld) Portals.gateCollapsed(world, pos)
+            return net.minecraft.block.Blocks.AIR.defaultState
+        }
         return state
     }
 
@@ -135,14 +140,13 @@ class EirholmGateBlock(settings: Settings) : Block(settings) {
             world.playSoundClient(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5, SoundEvents.BLOCK_AMETHYST_BLOCK_RESONATE, SoundCategory.BLOCKS, 0.4f, 0.6f + random.nextFloat() * 0.3f, false)
         }
         val x = state.get(AXIS) == Direction.Axis.X
-        repeat(2) {
-            val px = pos.x + if (x) random.nextDouble() else 0.5 + (random.nextDouble() - 0.5) * 0.3
-            val pz = pos.z + if (x) 0.5 + (random.nextDouble() - 0.5) * 0.3 else random.nextDouble()
-            val py = pos.y + random.nextDouble()
-            val out = (random.nextDouble() - 0.5) * 0.12
-            world.addParticleClient(ParticleTypes.SNOWFLAKE, px, py, pz, if (x) 0.0 else out, 0.02, if (x) out else 0.0)
+        // Wenige, feine Funken: Die großen Schneeflocken verdeckten früher das ganze Tor.
+        if (random.nextInt(5) == 0) {
+            val px = pos.x + if (x) random.nextDouble() else 0.5 + (random.nextDouble() - 0.5) * 0.5
+            val pz = pos.z + if (x) 0.5 + (random.nextDouble() - 0.5) * 0.5 else random.nextDouble()
+            val out = (random.nextDouble() - 0.5) * 0.03
+            world.addParticleClient(ParticleTypes.END_ROD, px, pos.y + random.nextDouble(), pz, if (x) 0.0 else out, 0.012, if (x) out else 0.0)
         }
-        if (random.nextInt(3) == 0) world.addParticleClient(ParticleTypes.END_ROD, pos.x + random.nextDouble(), pos.y + random.nextDouble(), pos.z + random.nextDouble(), 0.0, 0.01, 0.0)
     }
 
     companion object {

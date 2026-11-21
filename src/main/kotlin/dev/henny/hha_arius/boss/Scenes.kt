@@ -1954,7 +1954,16 @@ class Scenes(private val f: EirholmFight) {
             a.sheathed = true
             shown { f.say("end.take", 80) }
             f.victory()
-            wait(67)
+            // Seit 1.12.0 entsteht das Rückkehrtor erst jetzt: Die Kamera schaut zu, wie es aus dem Fels wächst und zündet.
+            if (f.onSummit) {
+                val g = FarPlan.RETURN_GATES.first()
+                val gx = (g.x0 + g.x1) / 2.0 + 0.5
+                val gy = (g.y0 + g.y1) / 2.0
+                val mid = rel(gx, gy, g.z + 0.5)
+                wait(8)
+                scene.line(rel(gx - 5.5, gy + 1.2, g.z + 10.5), rel(gx - 2.6, gy + 0.5, g.z + 7.5), mid, mid, 62, 60.0, 52.0)
+                wait(62)
+            } else wait(67)
             scene.home(18)
             wait(18)
         }))
