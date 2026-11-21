@@ -1,0 +1,16 @@
+{
+  "hha_arius.counter.warn": "NICHT SCHLAGEN!",
+  "hha_arius.counter.warn_sub": "Konterhaltung: warte, bis das Rot erlischt",
+  "hha_arius.counter.open": "JETZT!",
+  "hha_arius.parry.now": "PARIEREN!",
+  "hha_arius.clash.now": "JETZT!",
+  "hha_arius.msg.clash_early": "Zu früh geschlagen!",
+  "hha_arius.feat.white_hole_twist": "Die Umkehr",
+  "hha_arius.feat.white_hole_twist.sub": "Stell dich in die Lichtsplitter und wirf sie in den Kern",
+  "hha_arius.hint.white_hole_feed": "Lichtsplitter im Kern: %s von %s. Bleib in einem goldenen Kreis!",
+  "hha_arius.hint.white_hole_backlash": "Die Energie schlägt auf ihn zurück!",
+  "hha_arius.feat.all_out": "Er holt alles heraus",
+  "hha_arius.feat.all_out.sub": "Klingen, Atem, Monde, Horizont und das Loch",
+  "hha_arius.duo.harmony": "Duo-Technik: Einklang",
+  "hha_arius.duo.harmony.sub": "Nach seinem Hieb kommt ihr Biss: geh zur Seite"
+}

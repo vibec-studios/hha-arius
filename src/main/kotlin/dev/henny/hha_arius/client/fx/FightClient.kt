@@ -55,19 +55,26 @@ object FightClient {
         ClientPlayNetworking.registerGlobalReceiver(BeatS2C.ID) { p, ctx -> beat(p, ctx.client()) }
         ClientPlayNetworking.registerGlobalReceiver(SilenceS2C.ID) { p, _ -> SilenceLens.set(p.strength, p.fade) }
         ClientPlayNetworking.registerGlobalReceiver(ParryCueS2C.ID) { p, _ -> ParryHud.onCue(p) }
+        ClientPlayNetworking.registerGlobalReceiver(dev.henny.hha_arius.net.ClashCueS2C.ID) { p, _ -> ClashHud.handle(p) }
         ClientTickEvents.END_CLIENT_TICK.register { client ->
             if (client.isPaused) return@register
             PunishCam.tick(client)
             SilenceLens.tick()
             ParryHud.tick(client)
+            CounterStance.tick(client)
         }
         net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback.EVENT.register { ctx, _ ->
             ImpactFrame.render(ctx)
-            if (!MinecraftClient.getInstance().options.hudHidden) ParryHud.renderHud(ctx)
+            if (!MinecraftClient.getInstance().options.hudHidden) {
+                ParryHud.renderHud(ctx)
+                CounterStance.renderHud(ctx)
+                ClashHud.render(ctx)
+            }
         }
         WorldRenderEvents.END_MAIN.register { context ->
             SilenceLens.render()
             ParryHud.renderWorld(context)
+            CounterStance.renderWorld(context)
         }
         ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> reset() }
     }
@@ -76,6 +83,8 @@ object FightClient {
         PunishCam.reset()
         SilenceLens.reset()
         ParryHud.clear()
+        CounterStance.clear()
+        ClashHud.clear()
         ImpactFrame.reset()
     }
 
@@ -96,6 +105,11 @@ object FightClient {
 /**
  * Persönliche Kampfkamera der Konter-Bestrafung: seitlich auf Arius und den eigenen Spieler, langsamer Schwenk, weich
  * ein- und ausgeblendet, nie in der Wand. Endet spätestens nach der mitgeschickten Dauer von selbst.
+ *
+ * Seit 1.11.0 ruckelt sie nicht mehr: Vorher folgte sie Bild für Bild den Rohpositionen. Der Server versetzt das Opfer
+ * bei jedem Treffer per Teleport, und die Achse Spieler–Arius drehte sich dabei mit, sodass jeder Schlag die ganze Kamera
+ * herumriss. Jetzt ist die Blickachse beim Start festgelegt, Mitte, Abstand und Kameraort laufen im Tick gedämpft mit,
+ * und gezeichnet wird zwischen den letzten beiden Ticks. Die Hand der ersten Person ist solange ausgeblendet.
  */
 object PunishCam {
     private var on = false
@@ -106,11 +120,33 @@ object PunishCam {
     private var age = 0
     private var side = 1.0
 
+    private var axis: Vec3d? = null
+    private var mid: Vec3d? = null
+    private var midVel = Vec3d.ZERO
+    private var sep = 2.0
+    private var dist = 0.0
+    private var rigPos: Vec3d? = null
+    private var prevRigPos: Vec3d? = null
+    private var rigLook: Vec3d? = null
+    private var prevRigLook: Vec3d? = null
+
+    /** Für die Sichtprüfung: Kameraort und Blickziel des letzten Ticks. */
+    fun debugRig(): Pair<Vec3d, Vec3d>? {
+        val p = rigPos ?: return null
+        val l = rigLook ?: return null
+        return p to l
+    }
+
+    /** Die Hand der ersten Person bleibt verborgen, solange die Kamera (auch beim Aus- und Einblenden) aktiv ist. */
+    @JvmStatic
+    fun hidesHands(): Boolean = on || k > 0f
+
     fun set(on: Boolean, focus: Int, ticks: Int) {
         if (on) {
             if (!this.on && k <= 0.01f) {
                 age = 0
                 side = if (Math.random() < 0.5) 1.0 else -1.0
+                clearRig()
             }
             this.on = true
             if (focus >= 0) this.focus = focus
@@ -120,18 +156,69 @@ object PunishCam {
         }
     }
 
+    private fun clearRig() {
+        axis = null
+        mid = null
+        midVel = Vec3d.ZERO
+        dist = 0.0
+        rigPos = null
+        prevRigPos = null
+        rigLook = null
+        prevRigLook = null
+    }
+
     fun tick(client: MinecraftClient) {
         prevK = k
         if (on && (ArtAnims.ticks >= until || client.player?.isAlive != true)) on = false
         val want = if (on) 1f else 0f
         k = if (want > k) (k + 0.2f).coerceAtMost(1f) else (k - 0.14f).coerceAtLeast(0f)
-        if (k > 0f) age++
+        if (k <= 0f) {
+            clearRig()
+            return
+        }
+        age++
+        val player = client.player ?: return
+        val world = client.world ?: return
+        val pp = player.entityPos
+        val ep = world.getEntityById(focus)?.entityPos ?: pp.add(player.rotationVector.multiply(2.0))
+        val rawAxis = Vec3d(ep.x - pp.x, 0.0, ep.z - pp.z)
+        val rawSep = rawAxis.length()
+        val fixed = axis ?: (if (rawSep < 1e-3) Vec3d(0.0, 0.0, 1.0) else rawAxis.multiply(1.0 / rawSep)).also { axis = it }
+        val wantMid = pp.lerp(ep, 0.5).add(0.0, 1.15, 0.0)
+        // Kritisch gedämpfte Feder: Auch wenn das Opfer per Teleport springt, ändert sich die Geschwindigkeit der Kamera nur weich.
+        val first = mid == null
+        var m = mid ?: wantMid
+        if (!first) {
+            midVel = midVel.add(wantMid.subtract(m).multiply(FOLLOW)).subtract(midVel.multiply(2.0 * sqrt(FOLLOW)))
+            m = m.add(midVel)
+        }
+        mid = m
+        sep += (rawSep.coerceAtMost(7.0) - sep) * 0.1
+        val across = Vec3d(-fixed.z, 0.0, fixed.x).multiply(side)
+        val ang = Math.toRadians(-25.0 + age * 0.4)
+        val dir = across.multiply(cos(ang)).add(fixed.multiply(sin(ang)))
+        val wantDist = 3.6 + sep * 0.55
+        val offset = dir.multiply(wantDist).add(0.0, 0.85, 0.0)
+        val full = offset.length()
+        val out = offset.multiply(1.0 / full)
+        val hit = world.raycast(RaycastContext(m, m.add(out.multiply(full)), RaycastContext.ShapeType.COLLIDER, RaycastContext.FluidHandling.NONE, player))
+        val allowed = if (hit.type == HitResult.Type.BLOCK) (hit.pos.distanceTo(m) * 0.85).coerceAtLeast(1.0) else full
+        // Vor einer Wand schnell heran, danach langsam wieder zurück.
+        dist = if (first) allowed else dist + (allowed - dist) * (if (allowed < dist) 0.4 else 0.07)
+        val next = m.add(out.multiply(dist))
+        prevRigPos = rigPos ?: next
+        rigPos = next
+        prevRigLook = rigLook ?: m
+        rigLook = m
     }
+
+    private const val FOLLOW = 0.09
 
     fun reset() {
         on = false
         k = 0f
         prevK = 0f
+        clearRig()
     }
 
     private fun ease(t: Double) = t * t * (3 - 2 * t)
@@ -147,26 +234,15 @@ object PunishCam {
     fun apply(cam: Vec3d, yaw: Float, pitch: Float, td: Float): DoubleArray? {
         val kk = (prevK + (k - prevK) * td).toDouble()
         if (kk <= 0.001) return null
-        val client = MinecraftClient.getInstance()
-        val player = client.player ?: return null
-        val world = client.world ?: return null
-        val pp = player.getLerpedPos(td)
-        val e = world.getEntityById(focus)
-        val ep = e?.getLerpedPos(td) ?: pp.add(player.rotationVector.multiply(2.0))
-        val mid = pp.lerp(ep, 0.5).add(0.0, 1.15, 0.0)
-        var axis = Vec3d(ep.x - pp.x, 0.0, ep.z - pp.z)
-        val sep = axis.length()
-        axis = if (sep < 1e-3) Vec3d(0.0, 0.0, 1.0) else axis.multiply(1.0 / sep)
-        val across = Vec3d(-axis.z, 0.0, axis.x).multiply(side)
-        val t = age + td
-        val ang = Math.toRadians(-25.0 + t * 0.55)
-        val dir = across.multiply(cos(ang)).add(axis.multiply(sin(ang)))
-        var target = mid.add(dir.multiply(3.4 + sep * 0.55)).add(0.0, 0.85, 0.0)
-        val hit = world.raycast(RaycastContext(mid, target, RaycastContext.ShapeType.COLLIDER, RaycastContext.FluidHandling.NONE, player))
-        if (hit.type == HitResult.Type.BLOCK) target = mid.lerp(hit.pos, 0.85)
+        val p1 = rigPos ?: return null
+        val p0 = prevRigPos ?: p1
+        val l1 = rigLook ?: return null
+        val l0 = prevRigLook ?: l1
+        val target = p0.lerp(p1, td.toDouble())
+        val focusAt = l0.lerp(l1, td.toDouble())
         val w = ease(kk)
         val pos = cam.lerp(target, w)
-        val look = mid.subtract(pos)
+        val look = focusAt.subtract(pos)
         val flat = sqrt(look.x * look.x + look.z * look.z)
         val wantYaw = Math.toDegrees(atan2(-look.x, look.z))
         val wantPitch = -Math.toDegrees(atan2(look.y, flat))
@@ -323,6 +399,9 @@ object ParryHud {
 
     private const val GOLD = 0xFFFFD45A.toInt()
 
+    /** Ein Klick wirkt auf dem Server frühestens im nächsten Tick (gemessen, siehe VerifyBoss „parry“). */
+    private const val PRESS_DELAY = 1f
+
     private fun now(): Float = ArtAnims.ticks.toFloat()
 
     /** Zeit für Hin- und Rückweg in Ticks (der Rechtsklick muss vor dem Treffer beim Server sein). */
@@ -333,7 +412,9 @@ object ParryHud {
     }
 
     private fun holding(client: MinecraftClient): Boolean =
-        AriusClientConfig.parryCue && client.player?.mainHandStack?.isOf(GearItems.SOLVANE) == true
+        // In der Konter-Bestrafung und anderen gehaltenen Momenten kann man nicht parieren, also auch keine Anzeige.
+        AriusClientConfig.parryCue && !PunishCam.hidesHands() && !HoldClient.isHeld() &&
+            client.player?.mainHandStack?.isOf(GearItems.SOLVANE) == true
 
     fun onCue(p: ParryCueS2C) {
         if (p.ticks < 0) {
@@ -342,7 +423,7 @@ object ParryHud {
         }
         if (p.lead > 0) lead = p.lead
         val client = MinecraftClient.getInstance()
-        fromServer[p.attacker] = Cue(p.attacker, null, now() + p.ticks - rtt(client), p.color, p.lead.coerceAtLeast(2))
+        fromServer[p.attacker] = Cue(p.attacker, null, now() + p.ticks - rtt(client) - PRESS_DELAY, p.color, p.lead.coerceAtLeast(2))
     }
 
     fun clear() {
@@ -357,6 +438,7 @@ object ParryHud {
         if (!holding(client)) return
         val player = client.player ?: return
         scanTelegraphs(client, player.entityPos)
+        announce(client)
     }
 
     // --- HHA-Bossansagen (Client-Effekte, weich über Reflexion: HHA 0.8 und 0.9) --------------------------------------
@@ -426,7 +508,7 @@ object ParryHud {
                     else -> continue
                 }
                 if (!inside) continue
-                fromTelegraphs.add(Cue(-1, origin.add(0.0, 1.6, 0.0), t + left - ping, GOLD, lead))
+                fromTelegraphs.add(Cue(-1, origin.add(0.0, 1.6, 0.0), t + left - ping - PRESS_DELAY, GOLD, lead))
             }
         } catch (ex: Throwable) {
             broken = true
@@ -446,13 +528,44 @@ object ParryHud {
         return sqrt(dx * dx + dz * dz)
     }
 
+    /** Die nächsten Schläge; Formen derselben Ansage (gleicher Treffer-Tick) zählen als einer. */
     private fun upcoming(): List<Cue> {
         val t = now()
-        return (fromServer.values + fromTelegraphs).filter { it.deadline - t in -6f..40f }.sortedBy { it.deadline }.take(3)
+        val out = ArrayList<Cue>(3)
+        for (c in (fromServer.values + fromTelegraphs).filter { it.deadline - t in -6f..40f }.sortedBy { it.deadline }) {
+            if (out.none { kotlin.math.abs(it.deadline - c.deadline) <= 1f }) out.add(c)
+            if (out.size == 3) break
+        }
+        return out
     }
 
-    /** Fenster offen: von (Frist − Haltung + 2) bis zur Frist. */
-    private fun open(c: Cue, t: Float): Boolean = t >= c.deadline - c.lead + 2 && t <= c.deadline
+    /** Gemessen mit echten Treffern im Kampf-Tick: Eine Haltung von n Ticks fängt Klicks ab, die 0 bis n − 1 Ticks vor der Frist liegen. */
+    private fun span(c: Cue): Int = (c.lead - 1).coerceAtLeast(1)
+
+    /** Fenster offen: Ein Klick von (Frist − [span]) bis zur Frist fängt den Schlag genau ab. */
+    private fun open(c: Cue, t: Float): Boolean = t >= c.deadline - span(c) && t < c.deadline + 1f
+
+    /** Für die Sichtprüfung: aktueller Client-Tick relativ zu Öffnen und Schließen des nächsten Fensters. */
+    fun debugEdges(): Pair<Float, Float>? {
+        val c = upcoming().firstOrNull() ?: return null
+        return (now() - (c.deadline - span(c))) to (now() - c.deadline)
+    }
+
+    private const val GATE = 16f
+    private const val DOT = 2.5f
+    private var announced = Float.NEGATIVE_INFINITY
+
+    /** Ring: läuft gleichmäßig auf das Fadenkreuz zu, kreuzt das goldene Tor beim Öffnen und ist zur Frist ein Punkt. */
+    private fun radius(c: Cue, t: Float): Float = DOT + (c.deadline - t) * (GATE - DOT) / span(c)
+
+    /** Ein Ton genau beim Öffnen des Fensters (je Schlag einmal). */
+    private fun announce(client: MinecraftClient) {
+        val c = upcoming().firstOrNull() ?: return
+        if (!open(c, now()) || kotlin.math.abs(c.deadline - announced) <= 3f) return
+        announced = c.deadline
+        val event = net.minecraft.registry.Registries.SOUND_EVENT.get(HhaArius.id("iai.glint")) ?: return
+        client.player?.playSound(event, 0.9f, 1.9f)
+    }
 
     fun renderHud(ctx: DrawContext) {
         val client = MinecraftClient.getInstance()
@@ -463,31 +576,39 @@ object ParryHud {
         val t = now() + td
         val cx = ctx.scaledWindowWidth / 2
         val cy = ctx.scaledWindowHeight / 2
+        val first = cues.first()
+        val nowOpen = open(first, t)
+        // Das Tor: Hier beginnt das Fenster.
+        ring(ctx, cx, cy, GATE, withAlpha(if (nowOpen) GOLD else 0xFFFFFFFF.toInt(), if (nowOpen) 0.95f else 0.3f), if (nowOpen) 2 else 1)
         for ((i, c) in cues.withIndex()) {
-            val opensAt = c.deadline - c.lead + 2
-            val toOpen = opensAt - t
-            val base = 9f + i * 3f
+            val past = t - c.deadline
             when {
-                open(c, t) -> {
-                    // Golden: jetzt klicken. Pulsiert; zur Frist hin enger.
-                    val k = ((t - opensAt) / (c.deadline - opensAt).coerceAtLeast(1f)).coerceIn(0f, 1f)
-                    val pulse = 0.75f + 0.25f * sin(t * 2.2f)
-                    ring(ctx, cx, cy, base + 1.5f * (1f - k), withAlpha(GOLD, pulse), 2)
-                    ring(ctx, cx, cy, base + 4f, withAlpha(GOLD, 0.35f * pulse), 1)
+                past > 1f -> {
+                    val a = (1f - past / 6f).coerceIn(0f, 1f) * 0.6f
+                    if (a > 0f) ring(ctx, cx, cy, GATE, withAlpha(0xFFE04040.toInt(), a), 1)
                 }
-                toOpen > 0f -> {
-                    // Zieht sich zusammen: trifft den Grundring genau, wenn das Fenster aufgeht.
-                    val r = base + (toOpen / 24f).coerceIn(0f, 1f) * 46f
-                    val a = (1f - toOpen / 40f).coerceIn(0.25f, 0.9f)
-                    ring(ctx, cx, cy, r, withAlpha(c.color, a), 1)
-                    ring(ctx, cx, cy, base, withAlpha(0xFFFFFFFF.toInt(), 0.18f), 1)
-                }
+                open(c, t) -> ring(ctx, cx, cy, radius(c, t).coerceAtLeast(DOT), withAlpha(GOLD, 1f), 2)
                 else -> {
-                    // Vorbei: kurz rot verblassend.
-                    val a = (1f + (t - c.deadline) / 6f).coerceIn(0f, 1f) * 0.5f
-                    if (a > 0f) ring(ctx, cx, cy, base, withAlpha(0xFFE04040.toInt(), a), 1)
+                    val r = radius(c, t).coerceAtMost(70f)
+                    ring(ctx, cx, cy, r, withAlpha(c.color, (1f - (r - GATE) / 60f).coerceIn(0.3f, 0.95f) * (if (i == 0) 1f else 0.6f)), 1)
                 }
             }
+        }
+        if (nowOpen) {
+            val left = ((first.deadline - t) / span(first)).coerceIn(0f, 1f)
+            ctx.fill(cx - 2, cy - 2, cx + 2, cy + 2, withAlpha(GOLD, 1f))
+            val font = client.textRenderer
+            val text = net.minecraft.text.Text.translatable("hha_arius.parry.now").formatted(net.minecraft.util.Formatting.BOLD)
+            val m = ctx.matrices
+            m.pushMatrix()
+            m.translate(cx.toFloat(), cy - 30f)
+            val s = 1.6f + 0.5f * left
+            m.scale(s, s)
+            ctx.drawTextWithShadow(font, text, -font.getWidth(text) / 2, -4, withAlpha(GOLD, 1f))
+            m.popMatrix()
+            // Restzeit des Fensters als schrumpfender Balken.
+            val half = (24f * left).toInt()
+            ctx.fill(cx - half, cy + 22, cx + half, cy + 24, withAlpha(GOLD, 0.95f))
         }
     }
 

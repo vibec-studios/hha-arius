@@ -136,7 +136,13 @@ class AriusEntity(type: EntityType<out AriusEntity>, world: World) : EirholmPupp
         builder.add(LEAD, false)
         builder.add(OPEN, false)
         builder.add(BLADE, AriusBlade.HELD)
+        builder.add(COUNTER, false)
     }
+
+    /** Seit 1.11.0: Konterhaltung aktiv (wer jetzt zuschlägt, wird pariert). Der Client zeigt das unübersehbar an. */
+    var counterStance: Boolean
+        get() = dataTracker.get(COUNTER)
+        set(value) = dataTracker.set(COUNTER, value)
 
     /** [AriusForm]. */
     var form: Int
@@ -188,6 +194,7 @@ class AriusEntity(type: EntityType<out AriusEntity>, world: World) : EirholmPupp
         private val LEAD: TrackedData<Boolean> = DataTracker.registerData(AriusEntity::class.java, TrackedDataHandlerRegistry.BOOLEAN)
         private val OPEN: TrackedData<Boolean> = DataTracker.registerData(AriusEntity::class.java, TrackedDataHandlerRegistry.BOOLEAN)
         private val BLADE: TrackedData<Int> = DataTracker.registerData(AriusEntity::class.java, TrackedDataHandlerRegistry.INTEGER)
+        private val COUNTER: TrackedData<Boolean> = DataTracker.registerData(AriusEntity::class.java, TrackedDataHandlerRegistry.BOOLEAN)
 
         /** Trefferbox 0,7 × 1,95 (185 cm). Leben verwaltet der Kampf; das Attribut ist nur für die Anzeige. */
         fun attributes(): DefaultAttributeContainer.Builder = MobEntity.createMobAttributes()

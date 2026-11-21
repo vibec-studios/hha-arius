@@ -1068,7 +1068,7 @@ class Scenes(private val f: EirholmFight) {
             if (!whiteHoleDone && f.ariusHp <= f.ariusMax * 0.5f) {
                 whiteHoleDone = true
                 MusicCue.play(f, "white_hole", 30)
-                yieldAll(WhiteHoleBlast(f).run()) // seit 1.10.0: stößt ab
+                yieldAll(WhiteHoleBlast(f).run()) // seit 1.11.0 mit Umkehr
                 MusicCue.play(f, "heart", 40)
                 continue
             }
@@ -1655,12 +1655,12 @@ class Scenes(private val f: EirholmFight) {
      * Der Letzte Horizont: Er springt an den Rand der Gipfelarena, über ihm wächst die Lichtklinge; drei Bahnen quer über
      * die Arena, dazwischen zwei goldene Lücken. Wer in einer Bahn steht, wird zerschnitten. Danach steht er lange offen.
      */
-    private fun lastHorizon(a: AriusEntity): Script = script {
+    fun lastHorizon(a: AriusEntity, cross: Boolean = false): Script = script {
         val c = f.arenaCenter.let { Vec3d(it.x, f.floorY, it.z) }
         val r = f.arenaRadius
         val t = f.target()
-        val axis = t?.let { flatDir(c, it.entityPos) }?.let { Vec3d(-it.z, 0.0, it.x) } ?: Vec3d(1.0, 0.0, 0.0)
-        val normal = Vec3d(-axis.z, 0.0, axis.x)
+        var axis = t?.let { flatDir(c, it.entityPos) }?.let { Vec3d(-it.z, 0.0, it.x) } ?: Vec3d(1.0, 0.0, 0.0)
+        var normal = Vec3d(-axis.z, 0.0, axis.x)
         val edge = f.clampToArena(c.subtract(normal.multiply(r)), 1.0)
         val from = a.entityPos
         a.play(AriusPose.LAUNCH, 6)
@@ -1670,9 +1670,11 @@ class Scenes(private val f: EirholmFight) {
             yield(Unit)
         }
         f.face(a, c)
-        a.play(AriusPose.CUT_CHARGE)
-        val ticks = 56
         for (p in f.audience()) Cine.title(listOf(p), "hha_arius.feat.last_horizon", "hha_arius.feat.last_horizon.sub", 50)
+        // Seit 1.11.0: In der letzten Phase kommt er über Kreuz, der zweite Schnitt quer zum ersten.
+        for (swing in 0 until (if (cross) 2 else 1)) {
+        a.play(AriusPose.CUT_CHARGE)
+        val ticks = if (swing == 0) 56 else 40
         f.fxAll(FxKind.GIANT_BLADE, a.entityPos, a = 18f, b = ticks.toFloat(), life = ticks + 20, e1 = a)
         f.ambient("cut.charge", a.entityPos, 4f, 0.7f)
         f.ambient("cut.reverse_wind", a.entityPos, 3f, 0.9f)
@@ -1699,6 +1701,11 @@ class Scenes(private val f: EirholmFight) {
             val m = c.add(axis.multiply(o * r))
             f.fx(FxKind.SEAM, m.subtract(normal.multiply(r)).add(0.0, 0.2, 0.0), m.add(normal.multiply(r)).add(0.0, 0.2, 0.0), a = 6f, life = 24)
             Vfx.crescent(f.world, Vfx.Style.HEAVEN, m.add(0.0, 1.2, 0.0), normal, (r * 2).toFloat(), 3f, 10)
+        }
+        val turned = axis
+        axis = normal
+        normal = Vec3d(-turned.x, 0.0, -turned.z)
+        if (cross && swing == 0) wait(10)
         }
         a.play(AriusPose.STAGGER)
         f.openArius(60)

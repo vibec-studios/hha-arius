@@ -37,6 +37,9 @@ class AriusRenderState : LivingEntityRenderState() {
     var eyeGlow = 40
     var lead = false
     var open = false
+
+    /** Seit 1.11.0: Konterhaltung (eigene, tiefe Haltung, siehe [AriusModel]). */
+    var counter = false
     var sideSign = 1
     var walk = 0f
     var walkPhase = 0f
@@ -269,6 +272,7 @@ class AriusModel(root: ModelPart, private val bladeOnly: Boolean = false) : Enti
         var time = Float.NaN
         var sheath = 0f
         var open = 0f
+        var counter = 0f
 
         /** Federn: je Feder Lage, Geschwindigkeit; dazu der Antrieb im letzten Bild. */
         val spring = FloatArray(SPRINGS * 2)
@@ -750,6 +754,7 @@ class AriusModel(root: ModelPart, private val bladeOnly: Boolean = false) : Enti
         val emptyHanded = state.sheathed || state.blade == AriusBlade.NONE
         m.sheath += ((if (emptyHanded) 1f else 0f) - m.sheath) * k
         m.open += ((if (state.open) 1f else 0f) - m.open) * k
+        m.counter += ((if (state.counter) 1f else 0f) - m.counter) * (1f - exp(-min(dt, 5f) * 0.55f))
 
         // Posenwechsel: Startwert ist die zuletzt gezeigte Haltung.
         if (m.changedAge != state.poseChangedAge) {
@@ -857,6 +862,29 @@ class AriusModel(root: ModelPart, private val bladeOnly: Boolean = false) : Enti
             armL.roll += 0.12f * open
             armL.pitch += 0.12f * open
             hips.originY += 0.6f * open
+        }
+
+        // Seit 1.11.0, Konterhaltung: tief geduckt, Oberkörper vorgebeugt, Kopf hoch, die Klinge steil vor dem Gesicht.
+        // Klar anders als Ruhe- und Angriffshaltungen, und sie zittert leicht vor Spannung.
+        val guardK = m.counter
+        if (guardK > 0.01f) {
+            val tense = sin(age * 2.1f) * 0.012f * guardK
+            hips.originY += 2.2f * guardK
+            chest.pitch += 0.2f * guardK
+            head.pitch -= 0.22f * guardK
+            part(Keys.THIGH_R).pitch -= 0.34f * guardK
+            part(Keys.THIGH_L).pitch -= 0.34f * guardK
+            part(Keys.SHIN_R).pitch += 0.58f * guardK
+            part(Keys.SHIN_L).pitch += 0.58f * guardK
+            part(Keys.FOOT_R).pitch -= 0.24f * guardK
+            part(Keys.FOOT_L).pitch -= 0.24f * guardK
+            if (pose != AriusPose.IAI_STANCE) {
+                armR.pitch -= 0.62f * guardK
+                armR.roll += 0.14f * guardK + tense
+                armL.pitch -= 0.34f * guardK
+            } else {
+                armR.roll += tense
+            }
         }
 
         // Gehen: echter Gang mit Gewichtsverlagerung, Beckendrehung, Gegenrotation der Schultern, Armpendel.

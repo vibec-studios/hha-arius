@@ -153,7 +153,7 @@ object EirholmAbilities {
                     if (dist > 2.0 && to.multiply(1.0 / dist).dotProduct(look) < cos(Math.toRadians(32.0))) continue
                     val target = e as LivingEntity
                     target.timeUntilRegen = 0
-                    target.damage(world, world.damageSources.playerAttack(player), dmg)
+                    dev.henny.hha_arius.boss.PlayerHit.marked(dev.henny.hha_arius.boss.PlayerHit.Kind.ABILITY) { target.damage(world, world.damageSources.playerAttack(player), dmg) }
                     target.addStatusEffect(StatusEffectInstance(StatusEffects.SLOWNESS, GearConfig.ticks("breath_slow_ticks"), 2, false, true, true), player)
                     target.frozenTicks = (target.frozenTicks + 12).coerceAtMost(target.minFreezeDamageTicks + 40)
                     Frostbite.add(target, 6f)
@@ -206,7 +206,7 @@ object EirholmAbilities {
                     if (a > cur && !(dx * dx + dz * dz < 2.25)) continue
                     hit.add(e.id)
                     val target = e as LivingEntity
-                    target.damage(world, world.damageSources.playerAttack(player), dmg)
+                    dev.henny.hha_arius.boss.PlayerHit.marked(dev.henny.hha_arius.boss.PlayerHit.Kind.ABILITY) { target.damage(world, world.damageSources.playerAttack(player), dmg) }
                     if (!GearCombat.isHeavy(target)) GearCombat.push(target, at, 0.9, 0.45)
                     target.addStatusEffect(StatusEffectInstance(StatusEffects.SLOWNESS, 60, 2, false, true, true), player)
                     target.frozenTicks = (target.frozenTicks + 40).coerceAtMost(target.minFreezeDamageTicks + 60)
@@ -272,7 +272,7 @@ object EirholmAbilities {
         for (e in world.getOtherEntities(player, Box.of(at, radius * 2, radius * 2, radius * 2))) {
             if (!GearCombat.canHit(player, e) || e.squaredDistanceTo(at) > radius * radius) continue
             val target = e as LivingEntity
-            target.damage(world, world.damageSources.playerAttack(player), dmg)
+            dev.henny.hha_arius.boss.PlayerHit.marked(dev.henny.hha_arius.boss.PlayerHit.Kind.ABILITY) { target.damage(world, world.damageSources.playerAttack(player), dmg) }
             if (!GearCombat.isHeavy(target)) GearCombat.push(target, at, 0.6, 0.55)
             target.addStatusEffect(StatusEffectInstance(StatusEffects.SLOWNESS, 40, 1, false, true, true), player)
             Resonance.markCombat(player)
@@ -383,7 +383,7 @@ object EirholmAbilities {
                 entity is ProjectileEntity && GearCombat.isHostileProjectile(player, entity) -> cutProjectile(world, entity)
                 GearCombat.canHit(player, entity) -> {
                     val target = entity as LivingEntity
-                    target.damage(world, world.damageSources.playerAttack(player), damage)
+                    dev.henny.hha_arius.boss.PlayerHit.marked(dev.henny.hha_arius.boss.PlayerHit.Kind.ABILITY) { target.damage(world, world.damageSources.playerAttack(player), damage) }
                     GearCombat.push(target, center, push, 0.35)
                     anyHit = true
                 }

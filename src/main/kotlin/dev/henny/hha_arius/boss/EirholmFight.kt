@@ -100,6 +100,9 @@ class EirholmFight(
     /** Seit 1.10.0: Leben und Schaden folgen der Zahl der Kämpfenden. */
     val scaling = PlayerScaling(this)
 
+    /** Seit 1.11.0: Umrechnung der Spielertreffer (Fähigkeiten, Streitkolben). */
+    val burst = BossBurst()
+
     fun fighter(player: ServerPlayerEntity): Fighter? = fighters[player.uuid]
 
     fun isParticipant(player: ServerPlayerEntity): Boolean = player.uuid in fighters
@@ -206,6 +209,9 @@ class EirholmFight(
 
     /** Haltungen: Ende in Welt-Ticks; Parierhaltung löst bei Nahkampf die Sequenz aus. */
     var guardUntil = 0L
+
+    /** Seit 1.11.0: Die Konterhaltung greift erst ab diesem Tick (ein schon laufender Schlag wird nicht bestraft). */
+    var guardFrom = 0L
     var guardWhite = false
     var guardTriggered = false
     var arrowCutUntil = 0L
@@ -518,7 +524,10 @@ class EirholmFight(
         if (ended) return
         shards.tick()
         watchHealing(active)
-        arius?.let { if (it.open && now >= ariusOpenUntil) it.open = false }
+        arius?.let {
+            if (it.open && now >= ariusOpenUntil) it.open = false
+            if (it.counterStance && now >= guardUntil) it.counterStance = false
+        }
         if (world.time % 5L == 0L) updateBars()
         // In der Jagd hält der Sturm die Spieler auf der Route (Hunt.keepOnRoute), nicht der Arenaboden.
         if (!chasing) keepInArena(active)
@@ -624,10 +633,12 @@ class EirholmFight(
         val player = attackerOf(source) ?: return 0f
         if (fighters[player.uuid]?.ko == true || Hold.isHeld(player)) return 0f
         val projectile = source.source is ProjectileEntity
+        // Seit 1.11.0: Fähigkeiten zählen mehr, Streitkolben-Stürze sind gedeckelt (nur echte Treffer auf einen Boss).
+        val scaled = if (boss === arius || boss === nivaris || boss === nivarisHead) burst.scale(player, source, amount, now) else amount
         return when {
-            boss === arius -> hitArius(player, source, amount, projectile)
-            boss === nivaris -> hitDragon(player, source, amount, projectile, if (projectile) null else DragonAim.takeZone(player))
-            boss === nivarisHead -> hitDragon(player, source, amount, projectile, NivarisMoves.Zone.HEAD)
+            boss === arius -> hitArius(player, source, scaled, projectile)
+            boss === nivaris -> hitDragon(player, source, scaled, projectile, if (projectile) null else DragonAim.takeZone(player))
+            boss === nivarisHead -> hitDragon(player, source, scaled, projectile, NivarisMoves.Zone.HEAD)
             else -> 0f
         }
     }
@@ -644,7 +655,7 @@ class EirholmFight(
         val f = fighters[player.uuid]
         val front = isInFront(a, source.position ?: player.entityPos)
         // Konterhaltung: Nahkampf wird pariert und mit einer Kombo bestraft (seit 1.9.0, Wukong).
-        if (!projectile && now < guardUntil && !guardTriggered && player.squaredDistanceTo(a) < 5.0 * 5.0) {
+        if (!projectile && now >= guardFrom && now < guardUntil && !guardTriggered && player.squaredDistanceTo(a) < 5.0 * 5.0) {
             guardTriggered = true
             moves.counter(player, guardWhite)
             return 0f

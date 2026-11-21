@@ -143,6 +143,7 @@ class AriusRenderer(context: EntityRendererFactory.Context) :
         state.eyeGlow = entity.eyeGlow
         state.lead = entity.lead
         state.open = entity.open
+        state.counter = entity.counterStance
         state.sideSign = entity.sideSign
         state.walk = entity.walkAmount
         state.walkPhase = entity.walkPhase

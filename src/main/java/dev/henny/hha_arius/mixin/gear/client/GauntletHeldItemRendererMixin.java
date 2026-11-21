@@ -28,6 +28,11 @@ public abstract class GauntletHeldItemRendererMixin {
         AbstractClientPlayerEntity player, float tickProgress, float pitch, Hand hand, float swingProgress, ItemStack item,
         float equipProgress, MatrixStack matrices, OrderedRenderCommandQueue queue, int light, CallbackInfo ci
     ) {
+        // Seit 1.11.0: In der Kamera der Konter-Bestrafung keine Hand und kein Gegenstand der ersten Person.
+        if (dev.henny.hha_arius.client.fx.PunishCam.hidesHands()) {
+            ci.cancel();
+            return;
+        }
         if (player.isUsingSpyglass()) return;
         if (GauntletFirstPerson.render((HeldItemRenderer) (Object) this, player, tickProgress, hand, item, equipProgress, matrices, queue, light)) {
             ci.cancel();

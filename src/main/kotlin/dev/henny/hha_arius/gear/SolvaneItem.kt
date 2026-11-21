@@ -182,41 +182,98 @@ object SolvaneEdge {
     }
 }
 
-/** Konterhaltung: 8 Ticks, wehrt einen Nahkampftreffer oder ein Geschoss ab. */
+/**
+ * Konterhaltung: wehrt einen Nahkampftreffer oder ein Geschoss ab.
+ *
+ * Seit 1.11.0 gilt das Fenster ab dem Klick volle [GearConfig] `solvane_counter_ticks`, auch wenn man die Taste sofort
+ * wieder loslässt. Vorher beendete das Loslassen die Haltung: Ein kurzes Tippen schützte nur ein bis zwei Ticks, während
+ * die Anzeige das ganze Fenster versprach. Kommt der Klick wegen der Leitung knapp nach einem Boss-Treffer an, zählt er
+ * noch als Parade und der Schaden wird erstattet.
+ */
 object SolvaneCounter {
 
-    private class Window(val until: Long)
+    private class Window(val until: Long, val hand: Hand)
+
+    private class RecentHit(val tick: Long, val taken: Float)
 
     private val windows = HashMap<UUID, Window>()
+    private val recent = HashMap<UUID, RecentHit>()
 
     fun init() {
         ServerLivingEntityEvents.ALLOW_DAMAGE.register { entity, source, _ ->
             if (entity is ServerPlayerEntity) !tryCounter(entity, source) else true
         }
-        ServerPlayConnectionEvents.DISCONNECT.register { handler, _ -> windows.remove(handler.player.uuid) }
+        ServerLivingEntityEvents.AFTER_DAMAGE.register { entity, source, _, taken, blocked ->
+            if (entity is ServerPlayerEntity && !blocked && taken > 0f && dev.henny.hha_arius.boss.BossGuard.isBoss(source)) {
+                recent[entity.uuid] = RecentHit(GearTasks.now, taken)
+            }
+        }
+        GearTasks.everyTick { expire() }
+        ServerPlayConnectionEvents.DISCONNECT.register { handler, _ ->
+            windows.remove(handler.player.uuid)
+            recent.remove(handler.player.uuid)
+        }
+    }
+
+    /** Abgelaufene Fenster schließen: Wer nichts abgefangen hat, bekommt die längere Abklingzeit. */
+    private fun expire() {
+        if (windows.isEmpty()) return
+        val server = GearServer.current ?: return
+        val it = windows.entries.iterator()
+        while (it.hasNext()) {
+            val (id, w) = it.next()
+            if (GearTasks.now <= w.until) continue
+            it.remove()
+            val player = server.playerManager.getPlayer(id) ?: continue
+            val stack = player.getStackInHand(w.hand)
+            if (stack.isOf(GearItems.SOLVANE)) Cooldowns.set(player, stack, GearConfig.key("solvane_counter_cooldown_fail"))
+        }
     }
 
     /** Seit 1.10.0: Ist gerade eine Konterhaltung offen (Stille-Duell auf dem Gipfel)? */
     fun active(player: ServerPlayerEntity): Boolean {
         val w = windows[player.uuid] ?: return false
-        return GearTasks.now <= w.until && player.isUsingItem && player.activeItem.isOf(GearItems.SOLVANE)
+        return GearTasks.now <= w.until && player.getStackInHand(w.hand).isOf(GearItems.SOLVANE)
     }
 
     fun start(player: ServerPlayerEntity, hand: Hand) {
-        windows[player.uuid] = Window(GearTasks.now + GearConfig.ticks("solvane_counter_ticks"))
+        if (active(player)) return
+        windows[player.uuid] = Window(GearTasks.now + GearConfig.ticks("solvane_counter_ticks"), hand)
         GearSounds.play(player.entityWorld, player.entityPos, "arius.guard", SoundEvents.ITEM_ARMOR_EQUIP_NETHERITE.value(), 0.5f, 1.5f)
+        forgiveLateClick(player, hand)
     }
 
-    /** Haltung endet ohne Treffer (Zeit um oder losgelassen): längere Abklingzeit. */
-    fun finish(player: ServerPlayerEntity, stack: ItemStack) {
-        if (windows.remove(player.uuid) == null) return
-        Cooldowns.set(player, stack, GearConfig.key("solvane_counter_cooldown_fail"))
+    /**
+     * Der Klick kam knapp nach dem Treffer an (Ping): Der Spieler hat ihn rechtzeitig gedrückt, der Server sah ihn nur zu
+     * spät. Dann gilt er als Parade und der Schaden kommt zurück. Höchstens [MAX_LATE] Ticks.
+     */
+    private fun forgiveLateClick(player: ServerPlayerEntity, hand: Hand) {
+        val hit = recent.remove(player.uuid) ?: return
+        val late = (player.networkHandler.latency / 100 + 1).coerceIn(1, MAX_LATE)
+        if (GearTasks.now - hit.tick > late || dev.henny.hha_arius.boss.Hold.isHeld(player) || !player.isAlive) return
+        player.health = (player.health + hit.taken).coerceAtMost(player.maxHealth)
+        val stack = player.getStackInHand(hand)
+        windows.remove(player.uuid)
+        Cooldowns.set(player, stack, GearConfig.key("solvane_counter_cooldown_success"))
+        Resonance.gain(player, GearConfig.num("resonance_gain_counter"))
+        val at = player.eyePos.add(player.rotationVector.multiply(0.8)).add(0.0, -0.3, 0.0)
+        GearVfx.flare(player.entityWorld, Vfx.Style.HEAVEN, at, 0.8f, 6)
+        GearSounds.play(player.entityWorld, at, "solvane.parry", SoundEvents.ITEM_SHIELD_BLOCK.value(), 1f, 1.2f)
+        player.stopUsingItem()
     }
+
+    private const val MAX_LATE = 3
+
+    /** Loslassen beendet das Fenster nicht mehr; es läuft bis zu seinem Ende ([expire]). */
+    @Suppress("UNUSED_PARAMETER")
+    fun finish(player: ServerPlayerEntity, stack: ItemStack) = Unit
 
     private fun tryCounter(player: ServerPlayerEntity, source: DamageSource): Boolean {
         val window = windows[player.uuid] ?: return false
         if (GearTasks.now > window.until) return false
-        if (!player.isUsingItem || !player.activeItem.isOf(GearItems.SOLVANE)) return false
+        if (!player.getStackInHand(window.hand).isOf(GearItems.SOLVANE)) return false
+        // Inszenierte Treffer (Konter-Bestrafung, Griffe) lassen sich nicht parieren.
+        if (dev.henny.hha_arius.boss.Hold.isHeld(player)) return false
         // Seit 1.7.0 auch gegen Bosse (deren Treffer „ignorieren Schilde“) und jeden Mob; nur Explosionen nicht.
         if (source.isIn(DamageTypeTags.IS_EXPLOSION)) return false
         val boss = dev.henny.hha_arius.boss.BossGuard.isBoss(source)
@@ -246,7 +303,7 @@ object SolvaneCounter {
             else -> if (!boss) return false
         }
 
-        val stack = player.activeItem
+        val stack = player.getStackInHand(window.hand)
         windows.remove(player.uuid)
         Cooldowns.set(player, stack, GearConfig.key("solvane_counter_cooldown_success"))
         Resonance.gain(player, GearConfig.num("resonance_gain_counter"))

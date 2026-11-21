@@ -1,0 +1,16 @@
+{
+  "hha_arius.counter.warn": "DON'T STRIKE!",
+  "hha_arius.counter.warn_sub": "Counter stance: wait until the red fades",
+  "hha_arius.counter.open": "NOW!",
+  "hha_arius.parry.now": "PARRY!",
+  "hha_arius.clash.now": "NOW!",
+  "hha_arius.msg.clash_early": "You struck too early!",
+  "hha_arius.feat.white_hole_twist": "The Reversal",
+  "hha_arius.feat.white_hole_twist.sub": "Stand in the light shards and hurl them into the core",
+  "hha_arius.hint.white_hole_feed": "Light shards in the core: %s of %s. Stay in a golden circle!",
+  "hha_arius.hint.white_hole_backlash": "The energy crashes back on him!",
+  "hha_arius.feat.all_out": "He holds nothing back",
+  "hha_arius.feat.all_out.sub": "Blades, breath, moons, horizon and the hole",
+  "hha_arius.duo.harmony": "Duo Art: Harmony",
+  "hha_arius.duo.harmony.sub": "After his blade comes her bite: step aside"
+}

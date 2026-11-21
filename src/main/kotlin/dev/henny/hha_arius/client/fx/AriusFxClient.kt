@@ -132,6 +132,11 @@ object AriusFxClient {
         effects.filterIsInstance<WhiteHoleFx>().minByOrNull { it.center.squaredDistanceTo(pos) }?.takeIf { it.center.squaredDistanceTo(pos) < 64.0 }?.collapseNow()
     }
 
+    /** Bosskampf: das weiße Loch bei [pos] kippt in den Sog. */
+    fun invertWhiteHole(pos: net.minecraft.util.math.Vec3d) {
+        effects.filterIsInstance<WhiteHoleFx>().minByOrNull { it.center.squaredDistanceTo(pos) }?.takeIf { it.center.squaredDistanceTo(pos) < 64.0 }?.invert()
+    }
+
     fun reset() {
         effects.clear()
         DragonVeil.reset()

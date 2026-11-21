@@ -907,14 +907,10 @@ class AriusMoves(private val f: EirholmFight) {
         f.target()?.let { f.face(a, it.entityPos) }
         a.sheathed = canSheath()
         a.play(AriusPose.IAI_STANCE)
-        val ticks = if (white) AriusTimings.GUARD_TICKS_WHITE + 4 else AriusTimings.GUARD_TICKS + 4
-        f.guardUntil = f.now + ticks
-        f.guardWhite = white
-        f.guardTriggered = false
-        Vfx.rune(f.world, style, Vec3d(a.x, f.floorAt(a) + 0.05, a.z), 1.6f, ticks, a)
-        f.sound("iai.glint", a.entityPos, 1.8f, 0.8f)
+        val ticks = (if (white) AriusTimings.GUARD_TICKS_WHITE + 4 else AriusTimings.GUARD_TICKS + 4) + AriusTimings.COUNTER_GRACE
+        raiseCounter(a, ticks, white)
         waitUntil(ticks) { f.guardTriggered }
-        f.guardUntil = 0
+        lowerCounter(a)
         if (f.guardTriggered) {
             waitUntil(220) { !countering }
             return@script
@@ -1497,15 +1493,11 @@ class AriusMoves(private val f: EirholmFight) {
         val a = f.arius ?: return@script
         f.target()?.let { f.face(a, it.entityPos) }
         a.sheathed = false
-        val ticks = if (white) AriusTimings.GUARD_TICKS_WHITE else if (serious) AriusTimings.GUARD_TICKS_SERIOUS else AriusTimings.GUARD_TICKS
+        val ticks = (if (white) AriusTimings.GUARD_TICKS_WHITE else if (serious) AriusTimings.GUARD_TICKS_SERIOUS else AriusTimings.GUARD_TICKS) + AriusTimings.COUNTER_GRACE
         a.play(AriusPose.GUARD)
-        f.guardUntil = f.now + ticks
-        f.guardWhite = white
-        f.guardTriggered = false
-        Vfx.rune(f.world, style, Vec3d(a.x, f.floorAt(a) + 0.05, a.z), 1.3f, ticks, a)
-        f.sound("arius.guard", a.entityPos, 1.6f)
+        raiseCounter(a, ticks, white)
         waitUntil(ticks) { f.guardTriggered }
-        f.guardUntil = 0
+        lowerCounter(a)
         if (f.guardTriggered) {
             waitUntil(220) { !countering }
             return@script
@@ -1522,7 +1514,9 @@ class AriusMoves(private val f: EirholmFight) {
      */
     fun counter(player: ServerPlayerEntity, white: Boolean) {
         val a = f.arius ?: return
-        if (countering) return
+        if (countering && !reacting) return
+        reacting = false
+        a.counterStance = false
         f.face(a, player.entityPos)
         f.sound("arius.parry", a.entityPos, 2.8f, 1.15f)
         f.sound("solvane.parry", a.entityPos, 2f, 0.9f)
@@ -1540,7 +1534,66 @@ class AriusMoves(private val f: EirholmFight) {
         if (acting || countering || f.now < nextReact) return
         nextReact = f.now + 100
         val serious = f.ariusHp <= f.ariusMax * 0.6f || white || f.phase == EirholmFight.Phase.FINALE
-        if (Hold.canGrab(player) && rnd.nextFloat() < (if (serious) 0.6f else 0.35f)) counter(player, white) else sidestepFrom(player)
+        if (Hold.canGrab(player) && rnd.nextFloat() < (if (serious) 0.6f else 0.35f)) reactStance(white) else sidestepFrom(player)
+    }
+
+    // --- Konterhaltung sichtbar machen (seit 1.11.0) ----------------------------------------------------------------------
+
+    /** Läuft gerade die kurze Reaktions-Haltung gegen blindes Einhämmern? */
+    private var reacting = false
+
+    /**
+     * Öffnet die Konterhaltung für [ticks]: Der Client zeigt sie am Flag [AriusEntity.counterStance] (rote Klinge, Ring,
+     * Warnung), ein tiefer, pulsierender Ton läuft mit. Die ersten [AriusTimings.COUNTER_GRACE] Ticks greift sie noch
+     * nicht, damit ein bereits laufender Schlag nicht bestraft wird.
+     */
+    private fun raiseCounter(a: AriusEntity, ticks: Int, white: Boolean) {
+        val until = f.now + ticks
+        f.guardFrom = f.now + AriusTimings.COUNTER_GRACE
+        f.guardUntil = until
+        f.guardWhite = white
+        f.guardTriggered = false
+        a.counterStance = true
+        f.ambient("arius.guard", a.entityPos, 2.6f, 0.6f)
+        f.ambient("iai.glint", a.entityPos, 2.4f, 0.55f)
+        f.task(script {
+            var n = 0
+            while (f.now < until && a.counterStance && !f.guardTriggered) {
+                if (n % 7 == 0) f.ambient("iai.glint", a.entityPos, 1.6f, 0.5f + n * 0.015f)
+                n++
+                yield(Unit)
+            }
+        })
+    }
+
+    /** Schließt die Konterhaltung; ohne Treffer mit hörbarem Ende (ab jetzt darf man wieder schlagen). */
+    private fun lowerCounter(a: AriusEntity) {
+        f.guardUntil = 0
+        a.counterStance = false
+        if (!f.guardTriggered) f.ambient("transform.shatter", a.entityPos, 1.6f, 1.5f)
+    }
+
+    /**
+     * Antwort auf blindes Einhämmern: Statt ohne Vorwarnung zu kontern, geht er sichtbar in die Konterhaltung. Wer
+     * aufhört, trifft ihn danach offen; wer weiterschlägt, wird pariert.
+     */
+    private fun reactStance(white: Boolean) {
+        val a = f.arius ?: return
+        countering = true
+        reacting = true
+        a.sheathed = false
+        a.play(AriusPose.GUARD)
+        val ticks = AriusTimings.REACT_STANCE
+        raiseCounter(a, ticks, white)
+        f.task(script {
+            waitUntil(ticks) { f.guardTriggered || !reacting }
+            if (f.guardTriggered || !reacting) return@script
+            reacting = false
+            lowerCounter(a)
+            countering = false
+            a.play(AriusPose.STAGGER)
+            f.openArius(16)
+        })
     }
 
     // --- Konter-Bestrafung (seit 1.10.0, nach dem letzten Boss aus Black Myth: Wukong) ------------------------------------
@@ -1567,7 +1620,7 @@ class AriusMoves(private val f: EirholmFight) {
      * zeigt beide von der Seite ([dev.henny.hha_arius.net.CineCamS2C]), und Arius prügelt sieben Treffer durch: Knauf
      * ins Gesicht, Knie und Fronttritt, Rückhandhieb, Drehtritt, Aufwärtsschnitt (hoch in die Luft), Abwärtstritt (zurück
      * in den Boden) und zum Schluss die Klinge daneben in den Boden – die Druckwelle schleudert das Opfer weg. Jeder
-     * Treffer mit Trefferpause, Impact-Frame, Klang und Ruck. Zusammen ≈ 15 Grundschaden; aus vollem Leben nie tödlich.
+     * Treffer mit Trefferpause, Impact-Frame, Klang und Ruck. Zusammen 20 Grundschaden (seit 1.11.0, vorher 15); aus vollem Leben nie tödlich.
      * Nur das Opfer ist gesperrt; Mitspieler können ihn mit genug Schaden herausschlagen ([onAllyHit]).
      */
     private fun punish(player: ServerPlayerEntity, white: Boolean): Script = script {
@@ -1602,18 +1655,18 @@ class AriusMoves(private val f: EirholmFight) {
                 yield(Unit)
             }
             // 1) Knauf ins Gesicht.
-            if (!beat(player, AriusPose.POMMEL, 7, 1.5f, Damage.Kind.IMPACT, dir.multiply(0.5), 0.0, "hold.impact", 1.3f, 0.5f, healthy)) return@script
+            if (!beat(player, AriusPose.POMMEL, 7, 2f, Damage.Kind.IMPACT, dir.multiply(0.5), 0.0, "hold.impact", 1.3f, 0.5f, healthy)) return@script
             // 2) Knie, dann Fronttritt.
-            if (!beat(player, AriusPose.GATE_KICK, 9, 2f, Damage.Kind.IMPACT, dir.multiply(1.3), 0.0, "arius.kick", 0.9f, 0.8f, healthy)) return@script
+            if (!beat(player, AriusPose.GATE_KICK, 9, 2.5f, Damage.Kind.IMPACT, dir.multiply(1.3), 0.0, "arius.kick", 0.9f, 0.8f, healthy)) return@script
             // 3) Rückhandhieb nach einem halben Schritt.
             follow(player, dir, 1.6)
-            if (!beat(player, AriusPose.COMBO_2, 6, 2f, Damage.Kind.SOLVANE, dir.multiply(0.4), 0.0, "arius.slash", 1.15f, 0.6f, healthy)) return@script
+            if (!beat(player, AriusPose.COMBO_2, 6, 2.5f, Damage.Kind.SOLVANE, dir.multiply(0.4), 0.0, "arius.slash", 1.15f, 0.6f, healthy)) return@script
             // 4) Drehtritt.
-            if (!beat(player, AriusPose.PARRY_KICK, 8, 2f, Damage.Kind.IMPACT, dir.multiply(1.0).add(Vec3d(-dir.z, 0.0, dir.x).multiply(0.4)), 0.0, "arius.kick", 1.05f, 0.9f, healthy)) return@script
+            if (!beat(player, AriusPose.PARRY_KICK, 8, 2.5f, Damage.Kind.IMPACT, dir.multiply(1.0).add(Vec3d(-dir.z, 0.0, dir.x).multiply(0.4)), 0.0, "arius.kick", 1.05f, 0.9f, healthy)) return@script
             dir = flatDir(a.entityPos, player.entityPos)
             // 5) Aufwärtsschnitt: hoch in die Luft.
             follow(player, dir, 1.5)
-            if (!beat(player, AriusPose.LAUNCH, 7, 2f, Damage.Kind.SOLVANE, Vec3d.ZERO, 3.0, "arius.slash", 1.35f, 0.8f, healthy)) return@script
+            if (!beat(player, AriusPose.LAUNCH, 7, 2.5f, Damage.Kind.SOLVANE, Vec3d.ZERO, 3.0, "arius.slash", 1.35f, 0.8f, healthy)) return@script
             // 6) Er springt nach und tritt von oben: zurück in den Boden.
             val air = player.entityPos.subtract(dir.multiply(1.2)).add(0.0, 0.6, 0.0)
             val from = a.entityPos
@@ -1627,7 +1680,7 @@ class AriusMoves(private val f: EirholmFight) {
                 f.face(a, player.entityPos)
                 yield(Unit)
             }
-            if (!impact(player, 2.5f, Damage.Kind.IMPACT, "arius.kick", 0.75f, 1.2f, healthy, heavy = true)) return@script
+            if (!impact(player, 3.5f, Damage.Kind.IMPACT, "arius.kick", 0.75f, 1.2f, healthy, heavy = true)) return@script
             val down = Vec3d(player.x, ground.y, player.z)
             drive(player, down, 3)
             f.calls.roomShake(down, 3f, 20f)
@@ -1640,7 +1693,7 @@ class AriusMoves(private val f: EirholmFight) {
                 yield(Unit)
             }
             // 7) Abschluss: Klinge neben ihm in den Boden, die Druckwelle schleudert ihn weg.
-            if (!beat(player, AriusPose.STAB_GROUND, 10, 3f, Damage.Kind.IMPACT, Vec3d.ZERO, 0.0, "arius.stab_ground", 0.85f, 1.3f, healthy, heavy = true)) return@script
+            if (!beat(player, AriusPose.STAB_GROUND, 10, 4.5f, Damage.Kind.IMPACT, Vec3d.ZERO, 0.0, "arius.stab_ground", 0.85f, 1.3f, healthy, heavy = true)) return@script
             f.calls.roomShake(a.entityPos, 4f, 24f)
             Vfx.shockwave(f.world, style, a.entityPos, 4.5f, 12, 1.6f)
             f.fx(FxKind.CLEAR_WAVE, a.entityPos, a = 5f, life = 14)
@@ -1724,7 +1777,7 @@ class AriusMoves(private val f: EirholmFight) {
             if (p.squaredDistanceTo(contact) > 64.0 * 64.0) continue
             val mine = p === v
             dev.henny.hha_arius.net.AriusNet.send(p, dev.henny.hha_arius.net.BeatS2C(a.id, contact.x, contact.y, contact.z, stop,
-                if (mine) kick * 1.6f else 0f, if (mine) (if (heavy) 0.55f else 0.35f) else 0f))
+                if (mine) kick * 0.7f else 0f, if (mine) (if (heavy) 0.55f else 0.35f) else 0f))
         }
         return true
     }

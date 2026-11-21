@@ -6,7 +6,10 @@ import net.minecraft.enchantment.Enchantments
 import net.minecraft.entity.Entity
 import net.minecraft.entity.EquipmentSlot
 import net.minecraft.entity.attribute.EntityAttributes
+import net.minecraft.entity.damage.DamageSource
 import net.minecraft.entity.damage.DamageType
+import net.minecraft.entity.damage.DamageTypes
+import net.minecraft.item.Items
 import net.minecraft.registry.RegistryKey
 import net.minecraft.registry.RegistryKeys
 import net.minecraft.server.network.ServerPlayerEntity
@@ -48,5 +51,56 @@ object Damage {
         player.timeUntilRegen = 0
         // Abgefangen (z. B. Yang-Schild)? Dann zählt der Treffer nicht (kein Frostaufbau).
         return if (player.damage(world, source, amount)) amount else 0f
+    }
+}
+
+/**
+ * Seit 1.11.0: Woher ein Treffer eines Spielers stammt. Fähigkeiten laufen über denselben Schadenstyp wie normale Schläge,
+ * deshalb markieren die Aufrufer sie hier für die Dauer des Treffers.
+ */
+object PlayerHit {
+    enum class Kind { NONE, ABILITY, GAUNTLET }
+
+    @JvmField
+    var current = Kind.NONE
+
+    inline fun <T> marked(kind: Kind, block: () -> T): T {
+        val previous = current
+        current = kind
+        try {
+            return block()
+        } finally {
+            current = previous
+        }
+    }
+}
+
+/**
+ * Seit 1.11.0: Rechnet Spielertreffer auf die Bosse um. Zauber, Rüstungsfähigkeiten und Handschuhe zählen mehr (nur gegen
+ * diese Bosse, PvP und andere Gegner bleiben unberührt). Der Streitkolben wird gedeckelt: Sein Sturzschaden wächst mit der
+ * Fallhöhe unbegrenzt, ein einzelner Treffer darf aber nicht mehr als ein starker Schwerthieb machen, und je Spieler zählt
+ * in [WINDOW] Ticks nur eine begrenzte Summe. Normale Treffer ohne Sturz liegen unter der Grenze.
+ */
+class BossBurst {
+    private val maceHits = HashMap<java.util.UUID, ArrayDeque<Pair<Long, Float>>>()
+
+    fun scale(player: ServerPlayerEntity, source: DamageSource, amount: Float, now: Long): Float = when {
+        PlayerHit.current == PlayerHit.Kind.ABILITY || source.isOf(DamageTypes.INDIRECT_MAGIC) -> amount * BossConfig.abilityDamage()
+        PlayerHit.current == PlayerHit.Kind.GAUNTLET -> amount * BossConfig.gauntletDamage()
+        source.source === player && player.mainHandStack.isOf(Items.MACE) -> capMace(player, amount, now)
+        else -> amount
+    }
+
+    private fun capMace(player: ServerPlayerEntity, amount: Float, now: Long): Float {
+        val log = maceHits.getOrPut(player.uuid) { ArrayDeque() }
+        while (log.isNotEmpty() && log.first().first <= now - WINDOW) log.removeFirst()
+        val room = (BossConfig.maceBurstCap() - log.sumOf { it.second.toDouble() }.toFloat()).coerceAtLeast(0f)
+        val dealt = minOf(amount, BossConfig.maceHitCap(), room)
+        if (dealt > 0f) log.addLast(now to dealt)
+        return dealt
+    }
+
+    companion object {
+        const val WINDOW = 60L
     }
 }
