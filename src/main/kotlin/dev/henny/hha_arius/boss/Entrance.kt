@@ -444,6 +444,7 @@ internal object Entrance {
         d.eyeGlow = 100
         sound(f, "nivaris.roar", near(f, -11.0, 184.5, 131.0), 4f, 0.8f)
         scene.once { Cine.title(it, "entity.hha_arius.nivaris", "hha_arius.cine.nivaris", 70) }
+        MusicCue.sting(f, "reveal")
         wait(60 - AriusTimings.NIVARIS_WINDUP[NivarisPose.ROAR])
 
         // 7) Sie löst sich vom Fels und gleitet über die Schlucht (220 Ticks, drei Einstellungen). Klare Sicht dafür.
@@ -604,8 +605,22 @@ class CineScene(private val f: EirholmFight, private val onAbort: () -> Unit) {
         // Seit 1.5.1: Kamera nie im Berg (Crix: beim Auftritt war die Kamera im Massiv). Die ganze Fahrt wird angehoben.
         var lift = 0.0
         for (i in 0..8) lift = maxOf(lift, below(from.lerp(to, i / 8.0)))
-        val a0 = from.add(0.0, lift, 0.0)
-        val a1 = to.add(0.0, lift, 0.0)
+        val b0 = from.add(0.0, lift, 0.0)
+        val b1 = to.add(0.0, lift, 0.0)
+        // Seit 1.10.0: freie Sicht auf den Blickpunkt über die ganze Fahrt ([CineSafety]); sonst näher heran bzw. höher.
+        val target = lookAt?.takeIf { !it.isRemoved }?.entityPos?.add(0.0, lookOffset, 0.0)
+        fun focus(k: Double): Vec3d = target ?: lookFrom.lerp(lookTo, k)
+        fun moved(fix: CineSafety.Fix, b: Vec3d, k: Double): Vec3d {
+            val c = focus(k)
+            return c.add(b.add(0.0, fix.lift, 0.0).subtract(c).multiply(fix.scale))
+        }
+        val fix = CineSafety.pick(f.world, f.origin) { fx ->
+            val c0 = moved(fx, b0, 0.0)
+            val c1 = moved(fx, b1, 1.0)
+            (0..8).map { i -> val k = ease(i / 8.0); c0.lerp(c1, k) to focus(k) }
+        }
+        val a0 = moved(fix, b0, 0.0)
+        val a1 = moved(fix, b1, 1.0)
         shot { Cine.camera(it, a0, a1, lookFrom, lookTo, ticks, fovFrom, fovTo, lookAt, lookOffset) }
         camStart = f.server.ticks
         camAt = { age ->
@@ -627,8 +642,20 @@ class CineScene(private val f: EirholmFight, private val onAbort: () -> Unit) {
             val r = radius + (radiusTo - radius) * k
             lift = maxOf(lift, below(center.add(cos(ang) * r, height + (heightTo - height) * k, sin(ang) * r)))
         }
-        val h0 = height + lift
-        val h1 = heightTo + lift
+        // Seit 1.10.0: freie Sicht auf den Blickpunkt entlang des ganzen Kreises ([CineSafety]).
+        val focus = lookAt?.takeIf { !it.isRemoved }?.entityPos?.add(0.0, lookOffset, 0.0) ?: center.add(0.0, lookOffset, 0.0)
+        val fix = CineSafety.pick(f.world, f.origin) { fx ->
+            (0..12).map { i ->
+                val k = ease(i / 12.0)
+                val ang = Math.toRadians(angleFrom + (angleTo - angleFrom) * k)
+                val r = (radius + (radiusTo - radius) * k) * fx.scale
+                center.add(cos(ang) * r, height + lift + fx.lift + (heightTo - height) * k, sin(ang) * r) to focus
+            }
+        }
+        val radius = radius * fix.scale
+        val radiusTo = radiusTo * fix.scale
+        val h0 = height + lift + fix.lift
+        val h1 = heightTo + lift + fix.lift
         shot { Cine.orbit(it, center, radius, h0, angleFrom, angleTo, ticks, fovFrom, fovTo, lookAt, lookOffset, radiusTo, h1) }
         camStart = f.server.ticks
         camAt = { age ->

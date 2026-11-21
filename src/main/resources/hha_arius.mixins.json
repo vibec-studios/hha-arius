@@ -25,7 +25,9 @@
     "client.QteHudMixin",
     "client.BridgeScrollMixin",
     "client.OverlayMessageMixin",
-    "client.PunishCameraMixin"
+    "client.PunishCameraMixin",
+    "client.RidePlayerRendererMixin",
+    "client.CineCameraMixin"
   ],
   "injectors": {
     "defaultRequire": 1

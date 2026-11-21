@@ -187,10 +187,13 @@ object RideRoute {
  * Der Ritt auf Solvanes Rücken zwischen Abschnitt II und III (seit 1.8.1 neu, Crix: „viel zu kurz, man soll nicht
  * sitzen, sondern sich an einem Eisdorn auf ihrem Rücken festhalten“):
  * * Mindestens [MIN_TICKS] (65 s) entlang [RideRoute], Tempo je Abschnitt (Sturm langsamer, Sturzflug schneller).
- * * Jeder Reiter hält sich mit **beiden Händen** an einem Eisdorn fest (Haltung im Client). Etwa alle sieben Sekunden
- *   ein Quick-Time-Event (Hämmern, Ducken, Springen, Klick). Erster Fehlschlag: Schaden, **nur noch eine Hand**,
- *   alle folgenden Prompts kürzer und mit mehr Anschlägen. Zweiter Fehlschlag: er stürzt, der Lichtstrom fängt ihn
- *   nach kurzem Fall auf und setzt ihn am Feld ab.
+ * * Jeder Reiter hält sich mit **beiden Händen** an der Kristallplatte seines Rückenglieds fest und liegt im Fahrtwind
+ *   (Haltung im Client). Etwa alle sieben Sekunden ein Quick-Time-Event (Hämmern, Ducken, Springen, Klick).
+ * * Seit 1.10.0 (Crix: „bei einem Fehler soll man Schaden nehmen, statt dass nichts passiert“): Jeder Fehlschlag kostet
+ *   Leben nach Anteil der maximalen Gesundheit (erst 22 %, danach 30 %), der erste nie tödlich. Nach dem ersten Fehler
+ *   hält nur noch eine Hand, alle folgenden Prompts sind kürzer und haben mehr Anschläge. Niemand fällt mehr ab.
+ * * Musik: Ritt, Sturm und Sturzflug je eigener Zustand; während eines Prompts duckt sich der Ritt unter die
+ *   Spannungsschicht ([MusicCue] `qte`), Erfolg und Fehler bekommen einen Stinger.
  * * Reitet niemand mehr, kürzt sie den Rest ab.
  */
 class DragonRide(private val f: EirholmFight) {
@@ -237,6 +240,8 @@ class DragonRide(private val f: EirholmFight) {
         )
         var nextEvent = 0
         val rounds = ArrayList<Pair<Qte.Round, Int>>()
+        var mood = "ride"
+        MusicCue.play(f, mood, 20)
         f.atmos(dev.henny.hha_arius.net.AtmosMode.SNOW, 40)
         d.flying = true
         d.play(NivarisPose.GLIDE)
@@ -264,11 +269,15 @@ class DragonRide(private val f: EirholmFight) {
             if (tick % 300 == 120) cue("nivaris.roar", pos, 5f, 0.85f)
             if (!stormOn && u >= RideRoute.stormFrom) {
                 stormOn = true
+                mood = "storm"
+                MusicCue.play(f.audience().filter { p -> rounds.none { p.uuid in it.first.players } }, mood, 40)
                 f.atmos(dev.henny.hha_arius.net.AtmosMode.BLIZZARD, 30)
                 cue("nivaris.roar", pos, 5f, 0.7f)
             }
             if (!diveOn && u >= RideRoute.diveFrom) {
                 diveOn = true
+                mood = "dive"
+                MusicCue.play(f.audience().filter { p -> rounds.none { p.uuid in it.first.players } }, mood, 30)
                 f.atmos(dev.henny.hha_arius.net.AtmosMode.VAULT, 60)
                 d.play(NivarisPose.DIVE, 20)
             }
@@ -283,6 +292,7 @@ class DragonRide(private val f: EirholmFight) {
                     val ticks = if (hard) (ev.ticks * 0.7).toInt() else ev.ticks
                     val count = if (hard && ev.kind == Qte.Kind.MASH) ev.count + 3 else ev.count
                     rounds += Qte.start(group, ev.kind, ticks, count, ev.text) to tick + ticks
+                    MusicCue.play(group, "qte", 6)
                 }
                 if (riders.isNotEmpty()) {
                     f.calls.roomShake(pos, 4f, 40f)
@@ -296,21 +306,19 @@ class DragonRide(private val f: EirholmFight) {
                 Qte.close(r)
                 it.remove()
                 for (p in f.players()) {
-                    if (p.uuid !in r.players || r.success(p) || p.uuid in fallen) continue
-                    val g = (grips[p.uuid] ?: 2) - 1
-                    grips[p.uuid] = g
-                    f.calls.hitShake(p.entityPos, 3f, 6f)
-                    if (g <= 0) {
-                        fallen[p.uuid] = tick
-                        p.stopRiding()
-                        send(0, p)
-                        p.addStatusEffect(StatusEffectInstance(StatusEffects.SLOW_FALLING, 200, 0, false, false, true))
-                        p.sendMessage(Text.translatable("hha_arius.msg.ride_fall").formatted(Formatting.RED), true)
-                    } else {
-                        send(g, p)
-                        Damage.hit(p, d, Damage.Kind.IMPACT, 4f, 1f)
-                        p.sendMessage(Text.translatable("hha_arius.msg.ride_slip").formatted(Formatting.GOLD), true)
+                    if (p.uuid !in r.players || p.uuid in fallen) continue
+                    MusicCue.play(p, mood, 14)
+                    if (r.success(p)) {
+                        MusicCue.sting(listOf(p), "qte_ok")
+                        continue
                     }
+                    val first = (grips[p.uuid] ?: 2) >= 2
+                    grips[p.uuid] = 1
+                    send(1, p)
+                    f.calls.hitShake(p.entityPos, 3f, 6f)
+                    MusicCue.sting(listOf(p), "qte_fail")
+                    slipDamage(p, d, first)
+                    p.sendMessage(Text.translatable(if (first) "hha_arius.msg.ride_slip" else "hha_arius.msg.ride_slip_again").formatted(Formatting.GOLD), true)
                 }
             }
             // Abgestürzte: nach kurzem Fall fängt sie der Lichtstrom auf und setzt sie am Feld ab.
@@ -332,9 +340,47 @@ class DragonRide(private val f: EirholmFight) {
         for (p in f.players()) send(0, p)
     }
 
+    /**
+     * Schaden bei einem verpassten Prompt: Anteil der maximalen Gesundheit (die eigene Schadensart umgeht Rüstung,
+     * Resistenz wirkt). Der erste Fehler lässt immer mindestens ein Herz übrig.
+     */
+    private fun slipDamage(p: ServerPlayerEntity, d: NivarisEntity, first: Boolean) {
+        var amount = p.maxHealth * (if (first) 0.22f else 0.3f)
+        if (first) amount = minOf(amount, p.health - 1f)
+        if (amount <= 0.05f) return
+        p.timeUntilRegen = 0
+        p.damage(f.world, f.world.damageSources.create(Damage.Kind.IMPACT.key, d), amount)
+    }
+
     companion object {
         /** Mindestdauer des Ritts in Ticks (65 s). */
         const val MIN_TICKS = 1300.0
     }
 }
 
+
+/**
+ * Wo die Reiter auf Solvanes Rücken hängen (seit 1.10.0, Crix: „man soll sich am Eisdorn auf ihrem Rücken festhalten,
+ * die Beine flattern im Wind“). Reiter `i` greift die Kristallplatte (Modellteil `crest`) von Glied [glied] und liegt
+ * waagerecht im Fahrtwind dahinter. Der Client kennt den gezeichneten Körper und setzt die Reiter dorthin
+ * ([riderPos]); der Server nimmt einen gestreckten Körper an ([serverOffset]).
+ */
+object RideHooks {
+    /** Client-Haken: Position des Reiters (Füße der Entity) am echten Dorn, null = Server-Näherung. */
+    @JvmField
+    var riderPos: ((NivarisEntity, net.minecraft.entity.Entity) -> Vec3d?)? = null
+
+    /** Rückenglied mit Kristallplatte für Reiter [i] (0..7): 4, 6, 8 … 18. */
+    fun glied(i: Int): Int = 4 + 2 * i.coerceIn(0, 7)
+
+    /** Augenhöhe eines stehenden Spielers (die Entity bleibt „stehend“, nur die Darstellung liegt). */
+    const val EYE = 1.62
+
+    /** Lokaler Versatz (x seitlich, y hoch, z vorn) der Reiter-Füße vom Entity-Punkt bei gestrecktem Körper. */
+    fun serverOffset(i: Int): Vec3d {
+        val g = glied(i)
+        val back = (g - 3) * NivarisShape.SEGMENT + 2.2 + 0.4
+        val up = NivarisShape.SPINE_UP + 2.3 * NivarisShape.taper(g) - 0.25 - EYE
+        return Vec3d(0.0, up, -back)
+    }
+}

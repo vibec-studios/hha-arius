@@ -89,7 +89,12 @@ abstract class EirholmPuppet(type: EntityType<out EirholmPuppet>, world: World) 
 
     override fun tick() {
         super.tick()
-        if (!entityWorld.isClient) return
+        if (!entityWorld.isClient) {
+            MotionSync.track(this)
+            return
+        }
+        // Seit 1.10.0: gepufferte Server-Lage übernehmen (flüssig bei jeder FPS, siehe [MotionSync]).
+        MotionSync.clientHook?.invoke(this)
         val moved = if (seen) hypot(x - seenX, z - seenZ) else 0.0
         seenX = x
         seenZ = z
@@ -216,11 +221,15 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
 
     override fun getPassengerAttachmentPos(passenger: net.minecraft.entity.Entity, dimensions: net.minecraft.entity.EntityDimensions, scaleFactor: Float): net.minecraft.util.math.Vec3d {
         val i = passengerList.indexOf(passenger).coerceAtLeast(0)
-        // Seit 1.8.1 sitzt niemand mehr: Die Reiter knien auf dem Rücken (Füße auf den Schuppen, 0,6 = Sattelpunkt des
-        // Spielers) und halten sich an einem Eisdorn vor sich fest (Darstellung: client/fx/RideClient).
-        val side = if (i % 2 == 0) -0.5 else 0.5
-        val local = net.minecraft.util.math.Vec3d(side, NivarisShape.SPINE_UP + 1.75, -1.6 - (i / 2) * 1.9)
-        return local.rotateY(-yaw * net.minecraft.util.math.MathHelper.RADIANS_PER_DEGREE)
+        // Seit 1.10.0: Jeder Reiter hängt an der Kristallplatte eines Rückenglieds (Glied 4, 6, 8 …), waagerecht im
+        // Fahrtwind dahinter. Der Server rechnet mit gestrecktem Körper; der Client setzt ihn an den echten Dorn des
+        // gezeichneten Körpers ([RideHooks.riderPos], client/fx/RideClient).
+        return RideHooks.serverOffset(i).rotateY(-bodyYaw * net.minecraft.util.math.MathHelper.RADIANS_PER_DEGREE)
+    }
+
+    override fun updatePassengerPosition(passenger: net.minecraft.entity.Entity, positionUpdater: net.minecraft.entity.Entity.PositionUpdater) {
+        val at = if (entityWorld.isClient) RideHooks.riderPos?.invoke(this, passenger) else null
+        if (at != null) positionUpdater.accept(passenger, at.x, at.y, at.z) else super.updatePassengerPosition(passenger, positionUpdater)
     }
 
     override fun poseData(): TrackedData<Int> = POSE
@@ -281,6 +290,23 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
     private var lastVeil = Float.NaN
     private var seenVeil = Float.NaN
 
+    /**
+     * Fortschritt des Lösens zwischen den Ticks (Client). Seit 1.10.0 aus den Tick-Werten [lastUncoil] → [seenUncoil]
+     * (vorher bis zum *live* empfangenen Wert: kam ein Paket zwischen zwei Ticks an, sprang der Körper vor und im
+     * nächsten Tick wieder zurück – das sichtbare Ruckeln beim Flug über die Schlucht).
+     */
+    fun uncoilAt(tickDelta: Float): Float = lastUncoil + (seenUncoil - lastUncoil) * tickDelta
+
+    /** Client: Lösen-Fortschritt aus dem Bewegungspuffer ([MotionSync]) für diesen Tick. */
+    fun smoothUncoil(value: Float) {
+        lastUncoil = seenUncoil
+        seenUncoil = value
+        if (kotlin.math.abs(seenUncoil - lastUncoil) > 0.05f) lastUncoil = seenUncoil
+        smoothedUncoil = true
+    }
+
+    private var smoothedUncoil = false
+
     /** Schleier zwischen den Ticks (Client). Vor dem ersten Tick (frisch geladen) der Wert des Servers. */
     fun veilAt(tickDelta: Float): Float {
         if (seenVeil.isNaN()) return veil
@@ -290,8 +316,12 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
     override fun tick() {
         super.tick()
         if (entityWorld.isClient) {
-            lastUncoil = seenUncoil
-            seenUncoil = uncoil
+            // Der Bewegungspuffer setzt den Wert selbst (nach super.tick); sonst wie bisher aus dem TrackedData.
+            if (!smoothedUncoil) {
+                lastUncoil = seenUncoil
+                seenUncoil = uncoil
+            }
+            smoothedUncoil = false
             // Sprung (Nachzügler, Überspringen): nicht über den ganzen Weg gleiten.
             if (kotlin.math.abs(seenUncoil - lastUncoil) > 0.05f) lastUncoil = seenUncoil
             lastVeil = if (seenVeil.isNaN()) veil else seenVeil
