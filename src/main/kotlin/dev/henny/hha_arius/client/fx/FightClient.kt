@@ -543,7 +543,7 @@ object ParryHud {
     private fun span(c: Cue): Int = (c.lead - 1).coerceAtLeast(1)
 
     /** Fenster offen: Ein Klick von (Frist − [span]) bis zur Frist fängt den Schlag genau ab. */
-    private fun open(c: Cue, t: Float): Boolean = t >= c.deadline - span(c) && t < c.deadline + 1f
+    private fun open(c: Cue, t: Float): Boolean = t >= c.deadline - span(c) && t < c.deadline
 
     /** Für die Sichtprüfung: aktueller Client-Tick relativ zu Öffnen und Schließen des nächsten Fensters. */
     fun debugEdges(): Pair<Float, Float>? {

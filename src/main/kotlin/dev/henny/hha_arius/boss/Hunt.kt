@@ -1115,7 +1115,7 @@ class Hunt(private val f: EirholmFight) {
                     fun near(s: Double, k: Double) = Vec3d(fallFrom.x, fallFrom.y + (catchAt.y + 3.0 - fallFrom.y) * k + 1.4 * (1 - k), fallFrom.z).add(side.multiply(s * (6.0 + 2.0 * k)))
                     if (!airAt(near(1.0, 0.0)) || !airAt(near(1.0, 1.0))) sgn = -1.0
                     cam(near(sgn, 0.0), near(sgn, 1.0), fallFrom.add(0.0, 1.0, 0.0), catchAt, catchTicks + 4, 62.0, 72.0, lookAt = a, lookOffset = 1.1)
-                    val inbound = d?.let { DragonRail.path(it.entityPos, f.facing(it), listOf(catchAt.subtract(dir.multiply(10.0)), catchAt)) }
+                    val inbound = d?.let { DragonRail.path(it.entityPos, DragonRail.heading(f, it), listOf(catchAt.subtract(dir.multiply(10.0)), catchAt)) }
                     d?.let {
                         it.flying = true
                         it.play(NivarisPose.DIVE)

@@ -361,7 +361,7 @@ class DragonRide(private val f: EirholmFight) {
         RideSeats.perch(f, a, d)
         // Sie fliegt von dort, wo die Szene sie gelassen hat, über eine Bahn auf die Route (vorher sprang sie an den Start).
         val join = 30.0
-        val lead = DragonRail.path(d.entityPos, f.facing(d).add(0.0, 0.2, 0.0), listOf(f.abs(RideRoute.at(join))), DragonRail.MIN_RADIUS)
+        val lead = DragonRail.path(d.entityPos, DragonRail.heading(f, d).add(0.0, 0.2, 0.0), listOf(f.abs(RideRoute.at(join))), DragonRail.MIN_RADIUS)
         val leadLen = DragonRail.length(lead)
         var q = 0.0
         while (q < leadLen) {

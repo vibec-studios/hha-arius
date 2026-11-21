@@ -510,11 +510,15 @@ class VerifyBoss : FabricClientGameTest {
                         prevDir?.let { pd ->
                             val ang = acos(pd.dotProduct(dir).coerceIn(-1.0, 1.0))
                             if (ang > 1e-3) minRadius = minOf(minRadius, len / ang)
+                            if (ang > 1e-3 && len / ang < 12.0) log("duo kink t=$t radius=%.1f deg=%.0f len=%.2f y=%.1f".format(len / ang, Math.toDegrees(ang), len, dp.y))
                         }
                         prevDir = dir
                     } else {
                         prevDir = null
                     }
+                } else if (!flying) {
+                    // Am Boden zählt keine Flugrichtung, sonst misst der Start den Winkel zur letzten Landung.
+                    prevDir = null
                 }
                 prev = dp
                 if (dp.squaredDistanceTo(ap) < 16.0 && ap.y > (server { fight()?.floorY } ?: 0.0) + 2.0) ridingTicks++

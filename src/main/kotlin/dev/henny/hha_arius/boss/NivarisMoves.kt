@@ -99,7 +99,8 @@ class NivarisMoves(private val f: EirholmFight) {
     private fun steer(d: NivarisEntity, toward: Vec3d, speed: Double, maxTurn: Double, faceTarget: Vec3d? = null,
                       ceil: Double = Double.MAX_VALUE, floorLimit: Double = f.floorY + 1.0) {
         val pos = d.entityPos
-        var v = vel?.takeIf { it.lengthSquared() > 1e-6 } ?: f.facing(d).multiply(maxOf(0.25, speed * 0.5))
+        // Seit 1.11.0 aus der echten Flugrichtung: `vel` kann nach einer Bahn aus einem anderen Ablauf veraltet sein.
+        var v = DragonRail.heading(f, d).normalize().multiply(vel?.length()?.takeIf { it > 1e-3 } ?: maxOf(0.25, speed * 0.5))
         val sp = (v.length() + (speed - v.length()).coerceIn(-0.09, 0.07)).coerceAtLeast(0.05)
         val delta = toward.subtract(pos)
         val want = if (delta.lengthSquared() < 1e-6) v.normalize() else delta.normalize()
@@ -126,7 +127,7 @@ class NivarisMoves(private val f: EirholmFight) {
     private suspend fun SequenceScope<Unit>.flyTo(to: Vec3d, speed: Double, maxTicks: Int, faceTarget: Vec3d? = null, arrive: Vec3d? = null) {
         val d = f.nivaris ?: return
         d.flying = true
-        val heading = vel?.takeIf { it.lengthSquared() > 1e-6 } ?: f.facing(d)
+        val heading = DragonRail.heading(f, d)
         val points = if (arrive != null && arrive.lengthSquared() > 1e-6) {
             val before = f.clampToArena(to.subtract(arrive.normalize().multiply(24.0)), 3.0)
             listOf(Vec3d(before.x, to.y + 2.0, before.z), to)
@@ -149,7 +150,6 @@ class NivarisMoves(private val f: EirholmFight) {
             vel = pos.subtract(before)
             yield(Unit)
         }
-        f.place(d, to)
         if (faceTarget != null) f.face(d, faceTarget)
     }
 
@@ -164,6 +164,8 @@ class NivarisMoves(private val f: EirholmFight) {
             yield(Unit)
         }
         vel = null
+        // Nach dem senkrechten Absinken zählt ihre Blickrichtung, sonst startet der nächste Flug steil nach unten.
+        d.travelDir = null
     }
 
     /**
@@ -558,7 +560,7 @@ class NivarisMoves(private val f: EirholmFight) {
         d.play(NivarisPose.DIVE, 10)
         val from = d.entityPos
         val fall = ring.remaining.coerceAtLeast(6)
-        val plunge = DragonRail.path(from, (vel ?: f.facing(d)).add(0.0, -0.4, 0.0), listOf(spot.add(0.0, 1.0, 0.0)), 14.0)
+        val plunge = DragonRail.path(from, DragonRail.heading(f, d).add(0.0, -0.4, 0.0), listOf(spot.add(0.0, 1.0, 0.0)), 14.0)
         val plungeLen = DragonRail.length(plunge)
         for (i in 1..fall) {
             val k = i / fall.toDouble()
@@ -914,7 +916,7 @@ class NivarisMoves(private val f: EirholmFight) {
         val left = max(10, ring.ticks)
         val start = d.entityPos
         val dir = flatDir(start, spot)
-        val glide = DragonRail.path(start, (vel ?: dir).let { Vec3d(it.x, 0.0, it.z) }, listOf(spot))
+        val glide = DragonRail.path(start, DragonRail.heading(f, d), listOf(spot))
         val glideLen = DragonRail.length(glide)
         for (i in 1..left) {
             val k = i / left.toDouble()

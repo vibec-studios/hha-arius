@@ -222,6 +222,10 @@ object AriusBlade {
 /** Nivaris, die Alte vom Eirgletscher. Siehe [NivarisPose]. */
 class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : EirholmPuppet(type, world) {
 
+    /** Seit 1.11.0: tatsächliche Flugrichtung (aus [EirholmFight.place]), damit die nächste Bahn ohne Knick anschließt. */
+    var travelDir: net.minecraft.util.math.Vec3d? = null
+    var travelTick = -100L
+
     // --- Ritt (seit 1.8.0): bis zu acht Spieler sitzen hintereinander auf ihrem Rücken ---------------------------------
 
     override fun canAddPassenger(passenger: net.minecraft.entity.Entity): Boolean = passengerList.size < 8

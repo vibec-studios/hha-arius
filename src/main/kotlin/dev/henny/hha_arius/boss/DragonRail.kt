@@ -70,10 +70,15 @@ object DragonRail {
             }
         }
         // Die letzten Blöcke genau auf das Ziel.
+        // Liegt das Ziel seitlich oder hinter ihr, endet die Bahn hier (höchstens CAPTURE daneben), statt zurückzuhaken.
         waypoints.lastOrNull()?.let { end ->
-            val n = (p.distanceTo(end) / STEP).toInt()
-            for (i in 1..n) out.add(p.lerp(end, i.toDouble() / n))
-            if (out.last().squaredDistanceTo(end) > 1e-6) out.add(end)
+            val gap = end.subtract(p)
+            val dist = gap.length()
+            if (dist > 1e-3 && h.dotProduct(gap.multiply(1.0 / dist)) > 0.94) {
+                val n = (dist / STEP).toInt()
+                for (i in 1..n) out.add(p.lerp(end, i.toDouble() / n))
+                if (out.last().squaredDistanceTo(end) > 1e-6) out.add(end)
+            }
         }
         return out
     }
@@ -99,9 +104,13 @@ object DragonRail {
         return turn(h, w, angleBetween(h, w), step / radius)
     }
 
+    /** Richtung, in der sie gerade wirklich fliegt; steht sie, die Blickrichtung. Damit beginnt jede Bahn ohne Knick. */
+    fun heading(f: EirholmFight, d: NivarisEntity): Vec3d =
+        d.travelDir?.takeIf { f.now - d.travelTick <= 2L } ?: f.facing(d)
+
     /** Fliegt [d] mit [speed] Blöcken je Tick über die Bahn durch [waypoints]; die Blickrichtung folgt der Bahn. */
     fun fly(f: EirholmFight, d: NivarisEntity, waypoints: List<Vec3d>, speed: Double = 1.2, radius: Double = MIN_RADIUS): Script = script {
-        val pts = path(d.entityPos, f.facing(d), waypoints, radius)
+        val pts = path(d.entityPos, heading(f, d), waypoints, radius)
         val last = pts.lastIndex
         var s = 0.0
         while (s < last) {

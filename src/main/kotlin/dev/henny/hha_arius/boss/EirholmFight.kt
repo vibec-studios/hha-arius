@@ -832,6 +832,13 @@ class EirholmFight(
 
     /** Setzt die Position (Darsteller ohne Physik). */
     fun place(e: Entity, pos: Vec3d) {
+        if (e is NivarisEntity) {
+            val move = pos.subtract(e.entityPos)
+            if (move.lengthSquared() in 0.01..36.0) {
+                e.travelDir = move.normalize()
+                e.travelTick = now
+            }
+        }
         e.setPosition(pos.x, pos.y, pos.z)
     }
 

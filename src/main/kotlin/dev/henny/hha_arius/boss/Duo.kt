@@ -21,7 +21,7 @@ class RailRun(
     private val f: EirholmFight, private val d: NivarisEntity, waypoints: List<Vec3d>,
     private val speed: Double = 1.4, radius: Double = DragonRail.MIN_RADIUS,
 ) {
-    private val pts = DragonRail.path(d.entityPos, f.facing(d), waypoints, radius)
+    private val pts = DragonRail.path(d.entityPos, DragonRail.heading(f, d), waypoints, radius)
     private val last = pts.lastIndex
     private var s = 0.0
 
