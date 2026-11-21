@@ -85,5 +85,13 @@ loom {
                 System.getProperty(key)?.let { vmArg("-D$key=$it") }
             }
         }
+        // Sichtprüfung im echten Client (src/gametest/.../Verify*.kt): nur mit -Darius.verify=<name>.
+        System.getProperty("arius.verify")?.let { name ->
+            vmArg("-Darius.verify=$name")
+            vmArg("-Xmx6G")
+            System.getProperties().stringPropertyNames().filter { it.startsWith("arius.verify.") }.forEach { key ->
+                vmArg("-D$key=${System.getProperty(key)}")
+            }
+        }
     }
 }
