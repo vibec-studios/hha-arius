@@ -1593,6 +1593,7 @@ class Scenes(private val f: EirholmFight) {
         f.ariusVulnerable = false
         f.dragonVulnerable = false
         f.music("music.finale", 60)
+        MusicCue.sting(f, "phase")
         f.nivaris?.let { d ->
             d.flying = false
             d.resonance = false
