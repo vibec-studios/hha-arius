@@ -125,6 +125,9 @@ object AriusForm {
 
     /** Weiße Form: weißes Gewand, stahlblaue Schärpe, keine Rüstungsplatten. */
     const val WHITE = 2
+
+    /** Seit 1.10.0: Klingenabsicht – durchscheinendes Nachbild aus Eislicht (Gipfel-Finale). */
+    const val ECHO = 3
 }
 
 /** Animationszustände von Nivaris. Nur hinten anfügen. Gleicher Ablaufvertrag wie [AriusPose]. */

@@ -151,7 +151,7 @@ object GearConfig {
         "white_hole_range" to 16.0,
         "white_hole_radius" to 6.0,
         "white_hole_damage" to 16.0,
-        "white_hole_pull" to 0.12,
+        "white_hole_push" to 0.16,
         "white_hole_cooldown" to 2400.0,
         // Solvane (10.2)
         "solvane_frost_damage" to 2.0,

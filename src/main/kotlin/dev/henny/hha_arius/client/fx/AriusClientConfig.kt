@@ -15,6 +15,9 @@ object AriusClientConfig {
     var flash = true
     var shake = true
 
+    /** Seit 1.10.0: Paradeanzeige beim Halten der Solvane (`/ariusc parry`). */
+    var parryCue = true
+
     /** Schneesturm-Darstellung: "auto" (Welt, bei Shaderpack zusätzlich Bildschirm), "world", "screen", "both". */
     var snow = "auto"
 
@@ -29,6 +32,7 @@ object AriusClientConfig {
             fx = o.get("fx")?.asFloat?.coerceIn(0f, 1f) ?: fx
             flash = o.get("flash")?.asBoolean ?: flash
             shake = o.get("shake")?.asBoolean ?: shake
+            parryCue = o.get("parry")?.asBoolean ?: parryCue
             snow = o.get("snow")?.asString?.takeIf { it in SNOW_MODES } ?: snow
         }
     }
@@ -39,6 +43,7 @@ object AriusClientConfig {
             o.addProperty("fx", fx)
             o.addProperty("flash", flash)
             o.addProperty("shake", shake)
+            o.addProperty("parry", parryCue)
             o.addProperty("snow", snow)
             Files.writeString(file, Gson().toJson(o))
         }

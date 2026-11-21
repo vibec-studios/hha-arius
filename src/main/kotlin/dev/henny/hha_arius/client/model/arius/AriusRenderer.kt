@@ -52,7 +52,7 @@ class AriusRenderer(context: EntityRendererFactory.Context) :
                 if (state.invisibleToPlayer) return
                 val batch = queue.getBatchingQueue(1)
                 // Nähte und Klingenkante: dezent, atmen langsam mit.
-                val seam = 0.72f + 0.1f * sin(state.age * 0.07f)
+                val seam = (0.72f + 0.1f * sin(state.age * 0.07f)) * (if (state.form == AriusForm.ECHO) 0.5f else 1f)
                 val layer = if (state.form == AriusForm.WHITE) whiteGlow else darkGlow
                 batch.submitModel(contextModel, state, matrices, layer, FULL_BRIGHT, OverlayTexture.DEFAULT_UV, tint(seam), null, 0, null)
                 // Augen: stark; das goldene führt (Textur), lead macht beide heller.
@@ -114,7 +114,19 @@ class AriusRenderer(context: EntityRendererFactory.Context) :
 
     override fun createRenderState() = AriusRenderState()
 
-    override fun getTexture(state: AriusRenderState): Identifier = if (state.form == AriusForm.WHITE) white else dark
+    override fun getTexture(state: AriusRenderState): Identifier = if (state.form == AriusForm.WHITE || state.form == AriusForm.ECHO) white else dark
+
+    /** Seit 1.10.0: Klingenabsicht (Nachbild) – durchscheinend und leuchtend statt fest. */
+    private val echoBody = RenderLayers.entityTranslucentEmissive(white)
+
+    override fun getRenderLayer(state: AriusRenderState, showBody: Boolean, translucent: Boolean, showOutline: Boolean): net.minecraft.client.render.RenderLayer? =
+        if (state.form == AriusForm.ECHO) echoBody else super.getRenderLayer(state, showBody, translucent, showOutline)
+
+    override fun getMixColor(state: AriusRenderState): Int {
+        if (state.form != AriusForm.ECHO) return super.getMixColor(state)
+        val a = 0.42f + 0.1f * sin(state.age * 0.3f)
+        return ((MathHelper.clamp(a, 0f, 1f) * 255f).toInt() shl 24) or 0xBFE6FF
+    }
 
     override fun updateRenderState(entity: AriusEntity, state: AriusRenderState, tickDelta: Float) {
         super.updateRenderState(entity, state, tickDelta)

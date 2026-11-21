@@ -16,11 +16,11 @@ object AriusTimings {
         it[AriusPose.COMBO_2] = 12
         it[AriusPose.COMBO_3] = 16
         it[AriusPose.COMBO_4] = 12
-        it[AriusPose.LUNGE] = 18
-        it[AriusPose.WALL_CAST] = 20
-        it[AriusPose.STRIP_SLASH] = 24
+        it[AriusPose.LUNGE] = 16
+        it[AriusPose.WALL_CAST] = 16
+        it[AriusPose.STRIP_SLASH] = 20
         it[AriusPose.PARRY_KICK] = 10
-        it[AriusPose.GRIP_CAST] = 22
+        it[AriusPose.GRIP_CAST] = 18
         it[AriusPose.POMMEL] = 10
         it[AriusPose.STAB_GROUND] = 20
         it[AriusPose.SIDESTEP] = 6
@@ -100,19 +100,19 @@ object AriusTimings {
 
     // --- Kampf: Abschnitt I --------------------------------------------------------------------------------------
 
-    const val COMBO_OPEN = 26
-    const val LUNGE_OPEN = 30
+    const val COMBO_OPEN = 22
+    const val LUNGE_OPEN = 24
     const val LUNGE_PILLAR_STAGGER = 40
     const val LUNGE_SPEED = 1.4
-    const val GUARD_TICKS = 30
+    const val GUARD_TICKS = 28
     const val GUARD_TICKS_SERIOUS = 24
     const val GUARD_TICKS_WHITE = 22
-    const val GUARD_UNTOUCHED_OPEN = 24
-    const val GRIP_OPEN = 20
-    const val STAB_OPEN = 30
-    const val STRIP_DELAY = 10
-    const val STRIP_WINDUP = 24
-    const val STRIP_OPEN = 20
+    const val GUARD_UNTOUCHED_OPEN = 22
+    const val GRIP_OPEN = 18
+    const val STAB_OPEN = 24
+    const val STRIP_DELAY = 6
+    const val STRIP_WINDUP = 18
+    const val STRIP_OPEN = 18
 
     // --- Sequenzen ------------------------------------------------------------------------------------------------
 
@@ -140,8 +140,8 @@ object AriusTimings {
 
     // --- Abschnitt III -----------------------------------------------------------------------------------------------
 
-    const val RESONANCE_WARN = 20
-    const val RESONANCE_EVERY = 320 // seit 1.8.0 öfter Duo-Angriffe (vorher 400)
+    const val RESONANCE_WARN = 14
+    const val RESONANCE_EVERY = 220 // seit 1.10.0 noch öfter Duo-Angriffe (1.8.0: 320, davor 400)
     const val TAKT_BREAK_OPEN = 50
     /** Weißes Loch (seit 1.9.0 kurz und sich steigernd): Sammeln mit wachsendem Sog, dann die angesagte Entladung. */
     const val CORE_BUILD = 110

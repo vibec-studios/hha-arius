@@ -196,6 +196,12 @@ object SolvaneCounter {
         ServerPlayConnectionEvents.DISCONNECT.register { handler, _ -> windows.remove(handler.player.uuid) }
     }
 
+    /** Seit 1.10.0: Ist gerade eine Konterhaltung offen (Stille-Duell auf dem Gipfel)? */
+    fun active(player: ServerPlayerEntity): Boolean {
+        val w = windows[player.uuid] ?: return false
+        return GearTasks.now <= w.until && player.isUsingItem && player.activeItem.isOf(GearItems.SOLVANE)
+    }
+
     fun start(player: ServerPlayerEntity, hand: Hand) {
         windows[player.uuid] = Window(GearTasks.now + GearConfig.ticks("solvane_counter_ticks"))
         GearSounds.play(player.entityWorld, player.entityPos, "arius.guard", SoundEvents.ITEM_ARMOR_EQUIP_NETHERITE.value(), 0.5f, 1.5f)

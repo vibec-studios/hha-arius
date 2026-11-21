@@ -1012,7 +1012,7 @@ class Scenes(private val f: EirholmFight) {
             if (!f.dragonDowned && f.dragonHp <= 0f) downDragon()
             if (!whiteHoleDone && f.ariusHp <= f.ariusMax * 0.5f) {
                 whiteHoleDone = true
-                yieldAll(whiteHole())
+                yieldAll(WhiteHoleBlast(f).run()) // seit 1.10.0: stößt ab (Arius-Agent)
                 continue
             }
             if (!f.dragonDowned && f.now >= nextResonance) {
@@ -1154,13 +1154,11 @@ class Scenes(private val f: EirholmFight) {
      */
     fun resonance(kind: Int): Script = script {
         announceResonance()
+        // Seit 1.10.0: vier von sechs Resonanzangriffen sind echte Duo-Angriffe (Rotation in Duo.next).
         when (kind % 6) {
-            0 -> yieldAll(duo.dragonRide())
             1 -> yieldAll(corridor())
-            2 -> yieldAll(duo.crossCut())
-            3 -> yieldAll(splitField())
-            4 -> yieldAll(duo.dragonRide())
-            else -> yieldAll(crystalStorm())
+            4 -> yieldAll(if (kind % 12 == 4) splitField() else crystalStorm())
+            else -> yieldAll(duo.next())
         }
         markLead()
     }

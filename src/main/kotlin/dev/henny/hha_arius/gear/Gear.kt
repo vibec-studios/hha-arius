@@ -51,6 +51,7 @@ object Gear {
         dev.henny.hha_arius.gear.art.Blueprints.init()
         SolvaneEdge.init()
         SolvaneCounter.init()
+        ParryCues.init()
         EirholmAbilities.init()
         Wingscale.init()
         SealRitual.init()

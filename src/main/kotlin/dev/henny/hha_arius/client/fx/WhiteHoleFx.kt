@@ -119,14 +119,25 @@ class WhiteHoleFx(val center: Vec3d, private val radius: Double, private var pul
         tickPieces(world)
         if (age > pullTicks) return
         val r = random()
-        // Schnee und Licht werden eingesogen.
+        // Seit 1.10.0: Ein WEISSES Loch stößt ab. Schnee und Licht schießen aus dem Kern nach außen, mit wachsendem Druck
+        // schneller; am Boden fegen Druckböen weg vom Kern (Bosskampf und Setfähigkeit gleich).
+        val k = pull(0f)
         repeat((10 * particlesAllowed()).toInt()) {
             val a = r.nextDouble() * 2 * PI
             val e = (r.nextDouble() - 0.5) * 1.2
-            val d = radius * (0.8 + 0.6 * r.nextDouble())
-            val p = center.add(cos(a) * cos(e) * d, sin(e) * d * 0.6, sin(a) * cos(e) * d)
-            val v = center.subtract(p).multiply(0.07)
+            val dir = Vec3d(cos(a) * cos(e), sin(e) * 0.6, sin(a) * cos(e))
+            val p = center.add(dir.multiply(0.8 + r.nextDouble() * 1.2))
+            val v = dir.multiply(0.25 + 0.45 * k + r.nextDouble() * 0.15)
             world.addParticleClient(if (r.nextFloat() < 0.7f) ParticleTypes.SNOWFLAKE else ParticleTypes.END_ROD, p.x, p.y, p.z, v.x, v.y, v.z)
+        }
+        val g = ground
+        if (g != null && age % 2 == 0) repeat((4 * particlesAllowed() * (0.4 + k)).toInt().coerceAtLeast(1)) {
+            val a = r.nextDouble() * 2 * PI
+            val d = 1.5 + r.nextDouble() * radius
+            val dir = Vec3d(cos(a), 0.0, sin(a))
+            val p = g.add(dir.multiply(d)).add(0.0, 0.15 + r.nextDouble() * 0.5, 0.0)
+            val v = dir.multiply(0.35 + 0.5 * k)
+            world.addParticleClient(ParticleTypes.CLOUD, p.x, p.y, p.z, v.x, 0.01, v.z)
         }
     }
 

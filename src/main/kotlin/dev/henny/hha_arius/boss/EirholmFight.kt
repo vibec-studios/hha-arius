@@ -92,6 +92,14 @@ class EirholmFight(
     var startCount = 1
         private set
 
+    /** Seit 1.10.0: Spielerzahl hat sich dauerhaft geändert (siehe [PlayerScaling]). */
+    fun rescaleCount(n: Int) {
+        startCount = n.coerceIn(1, 6)
+    }
+
+    /** Seit 1.10.0: Leben und Schaden folgen der Zahl der Kämpfenden. */
+    val scaling = PlayerScaling(this)
+
     fun fighter(player: ServerPlayerEntity): Fighter? = fighters[player.uuid]
 
     fun isParticipant(player: ServerPlayerEntity): Boolean = player.uuid in fighters
@@ -497,6 +505,7 @@ class EirholmFight(
             noPlayers = 0
         }
         updateDuelTarget(active)
+        if (phase >= Phase.TEMPLE && phase < Phase.END) scaling.tick(active.size)
         director?.step()
         if (ended) return
         // Aus einer Momentaufnahme ausführen: Tasks dürfen neue Tasks anlegen oder den Kampf beenden.
@@ -630,6 +639,8 @@ class EirholmFight(
             return 0f
         }
         if (!ariusVulnerable) return 0f
+        // Seit 1.10.0: Stille-Duell auf dem Gipfel (Klingenkreuzen statt Schaden) und Befreien aus der Konter-Bestrafung.
+        if (moves.summit.onAriusHit(player, projectile)) return 0f
         val f = fighters[player.uuid]
         val front = isInFront(a, source.position ?: player.entityPos)
         // Konterhaltung: Nahkampf wird pariert und mit einer Kombo bestraft (seit 1.9.0, Wukong).
@@ -644,12 +655,14 @@ class EirholmFight(
             return 0f
         }
         val open = now < ariusOpenUntil
-        // Während der Konter-Kombo gilt seine Deckung: Treffer zählen nur halb.
-        var dmg = amount * (if (open) 1.5f else if (moves.countering) 0.35f else 0.7f)
+        // Während der Konter-Kombo ist er mit dem Opfer beschäftigt: Mitspieler treffen ihn voll (seit 1.10.0, Befreien).
+        var dmg = amount * (if (open) 1.5f else if (moves.countering) 0.9f else 0.7f)
         if (open) ariusOpenDamage += dmg
+        dmg = moves.summit.limit(dmg)
         dmg = min(dmg, ariusHp + 1f)
         ariusHp -= dmg
         record(player, dmg)
+        moves.onAllyHit(player, dmg)
         if (f != null) {
             if (projectile) push(f.arrowHits, 400)
             if (!projectile && !front) push(f.backHits, 300)
@@ -742,7 +755,7 @@ class EirholmFight(
         // Seit 1.6.5: Bodenangriffe treffen niemanden, der hoch über der Arena ist (Crix: „hitten dich auch 100 Blöcke über ihm“).
         if (!chasing && player.y - floorY > 12.0) return 0f
         if (phase == Phase.CUT && kind == Damage.Kind.NULL_CUT) cutSurvivors.remove(player.uuid)
-        val dealt = Damage.hit(player, attacker, kind, base, BossConfig.damageScale())
+        val dealt = Damage.hit(player, attacker, kind, base, BossConfig.damageFor(scaling.count))
         // Frostaufbau wie in Elden Ring (Erfrierung): Atem baut am stärksten auf, Schläge und Aufpralle weniger.
         if (dealt > 0f) {
             val factor = when (kind) {
@@ -760,7 +773,7 @@ class EirholmFight(
     /** Treffer, der zu einer Sequenz gehört (darf den gehaltenen Spieler treffen). */
     fun hurtHeld(player: ServerPlayerEntity, base: Float, kind: Damage.Kind = Damage.Kind.IMPACT): Float {
         if (!canSequence(player)) return 0f
-        return Hold.hitting { Damage.hit(player, arius, kind, base, BossConfig.damageScale()) }
+        return Hold.hitting { Damage.hit(player, arius, kind, base, BossConfig.damageFor(scaling.count)) }
     }
 
     /** Darf eine laufende Sequenz diesen Spieler weiter führen (nicht k. o., noch in dieser Arena, Kampf läuft)? */

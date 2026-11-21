@@ -27,6 +27,9 @@ object Hold {
     )
 
     private val held = HashMap<UUID, State>()
+
+    /** Seit 1.10.0: Obergrenze, die die nächste neue Sequenz eines Spielers bekommt (länger als [AriusTimings.HOLD_MAX]). */
+    private val nextLimit = HashMap<UUID, Int>()
     private val graceUntil = HashMap<UUID, Long>()
     private val lockoutUntil = HashMap<UUID, Long>()
 
@@ -75,11 +78,37 @@ object Hold {
         val world = player.entityWorld as? ServerWorld ?: return
         val now = world.time
         // Läuft schon eine Sequenz, gilt deren Obergrenze weiter; sonst beginnt eine neue mit HOLD_MAX.
-        val deadline = held[player.uuid]?.deadline ?: (now + AriusTimings.HOLD_MAX)
+        val deadline = held[player.uuid]?.deadline ?: (now + (nextLimit.remove(player.uuid) ?: AriusTimings.HOLD_MAX))
         val end = minOf(now + ticks.coerceAtLeast(1), deadline)
         held[player.uuid] = State(world, mode, now, end, anchor, landing, fallback, deadline)
-        AriusNet.send(player, HoldS2C(true, (end - now).toInt() + 5))
+        AriusNet.send(player, HoldS2C(true, ((end - now).toInt() + 5).coerceAtMost(80)))
         player.stopUsingItem()
+    }
+
+    /**
+     * Seit 1.10.0 (Konter-Bestrafung): Die nächste Sequenz gegen [player] darf insgesamt bis zu [ticks] dauern statt
+     * [AriusTimings.HOLD_MAX]. Gilt nur, wenn gerade keine läuft.
+     */
+    fun allowLong(player: ServerPlayerEntity, ticks: Int) {
+        if (player.uuid !in held) nextLimit[player.uuid] = ticks.coerceIn(1, 200)
+    }
+
+    /** Verschiebt den Halteanker eines eingefrorenen Spielers (inszenierte Bewegung: hochgeschleudert, zurückgestoßen). */
+    fun moveAnchor(player: ServerPlayerEntity, to: Vec3d) {
+        val state = held[player.uuid] ?: return
+        if (state.mode != Mode.FREEZE) return
+        state.anchor = to
+        player.teleport(state.world, to.x, to.y, to.z, emptySet(), player.yaw, player.pitch, false)
+    }
+
+    /** Verlängert die laufende Haltung (innerhalb ihrer Obergrenze) und schickt die neue Dauer an den Client. */
+    fun extend(player: ServerPlayerEntity, ticks: Int) {
+        val state = held[player.uuid] ?: return
+        val now = state.world.time
+        val end = minOf(now + ticks.coerceAtLeast(1), state.deadline)
+        if (end <= state.end) return
+        held[player.uuid] = State(state.world, state.mode, state.start, end, state.anchor, state.landing, state.fallback, state.deadline)
+        AriusNet.send(player, HoldS2C(true, ((end - now).toInt() + 5).coerceAtMost(80)))
     }
 
     /** Wechselt eine laufende Haltung in Flug (z. B. Einfrieren → Tritt). */
@@ -103,6 +132,7 @@ object Hold {
 
     fun forget(id: UUID) {
         held.remove(id)
+        nextLimit.remove(id)
         graceUntil.remove(id)
         lockoutUntil.remove(id)
     }

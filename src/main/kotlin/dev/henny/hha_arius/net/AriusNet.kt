@@ -23,6 +23,7 @@ object AriusNet {
         PayloadTypeRegistry.playS2C().register(LineS2C.ID, LineS2C.CODEC)
         PayloadTypeRegistry.playS2C().register(MusicS2C.ID, MusicS2C.CODEC)
         PayloadTypeRegistry.playS2C().register(AtmosS2C.ID, AtmosS2C.CODEC)
+        FightNet.init()
     }
 
     private const val RANGE = 192.0

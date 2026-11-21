@@ -76,6 +76,12 @@ object GauntletCombat {
         }
     }
 
+    /** Seit 1.10.0: Läuft gerade das Fenster der Handflächen-Parade (Stille-Duell auf dem Gipfel)? */
+    fun parrying(player: ServerPlayerEntity): Boolean {
+        val s = states[player.uuid] ?: return false
+        return s.move == Move.PARRY && GearTasks.now - s.start < s.windup
+    }
+
     fun holdsMelee(player: ServerPlayerEntity): Boolean {
         val stack = player.mainHandStack
         return GauntletsItem.isGauntlets(stack) && GauntletsItem.mode(stack) == GauntletMode.MELEE

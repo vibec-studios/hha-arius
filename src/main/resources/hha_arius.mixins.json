@@ -5,6 +5,8 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "gear.LivingEntityFreezeMixin",
+    "gear.MobGoalsAccessor",
+    "gear.MeleeAttackGoalAccessor",
     "gear.PowderSnowBlockMixin",
     "boss.PlayerRideMixin"
   ],
@@ -22,7 +24,8 @@
     "client.AriusRendererHitStopMixin",
     "client.QteHudMixin",
     "client.BridgeScrollMixin",
-    "client.OverlayMessageMixin"
+    "client.OverlayMessageMixin",
+    "client.PunishCameraMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -31,6 +31,7 @@ object AriusFxClient {
         AriusLayers.init()
         Impacts.init()
         CutLens.init()
+        FightClient.init()
         QteClient.init()
         net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback.EVENT.register { ctx, _ ->
             if (!MinecraftClient.getInstance().options.hudHidden) Atmos.renderHud(ctx)
@@ -106,6 +107,12 @@ object AriusFxClient {
                         ctx.source.sendFeedback(Text.translatable(if (AriusClientConfig.shake) "hha_arius.client.shake_on" else "hha_arius.client.shake_off"))
                         1
                     }))
+                    .then(ClientCommandManager.literal("parry").then(ClientCommandManager.argument("on", BoolArgumentType.bool()).executes { ctx ->
+                        AriusClientConfig.parryCue = BoolArgumentType.getBool(ctx, "on")
+                        AriusClientConfig.save()
+                        ctx.source.sendFeedback(Text.translatable(if (AriusClientConfig.parryCue) "hha_arius.client.parry_on" else "hha_arius.client.parry_off"))
+                        1
+                    }))
                     .then(ClientCommandManager.literal("snow").let { node ->
                         var n = node
                         for (mode in AriusClientConfig.SNOW_MODES) n = n.then(ClientCommandManager.literal(mode).executes { ctx ->
@@ -135,6 +142,7 @@ object AriusFxClient {
         AriusMusic.clear()
         HoldClient.reset()
         Impacts.clear()
+        FightClient.reset()
         dev.henny.hha_arius.gear.client.art.SwordTrails.clear()
     }
 }
