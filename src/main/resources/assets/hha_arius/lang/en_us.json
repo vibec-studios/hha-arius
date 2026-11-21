@@ -1,7 +1,7 @@
 {
   "advancements.hha_arius.no_storm.description": "Defeat Arius without anyone in the group being knocked out",
   "advancements.hha_arius.no_storm.title": "No More Storm",
-  "advancements.hha_arius.rime_gate.description": "Light a frame of Rime Gate Stone with the Seal of Eirholm.",
+  "advancements.hha_arius.rime_gate.description": "Light a frame of Rime Gate Stone with the Seal of the White Blade.",
   "advancements.hha_arius.rime_gate.title": "Gate into the White",
   "advancements.hha_arius.seal.description": "Break a Seal of the White Blade in the cold",
   "advancements.hha_arius.seal.title": "The Seal",
@@ -249,7 +249,7 @@
   "hha_arius.msg.watching": "He only watches. A white boundary lies between you.",
   "hha_arius.portal.explore": "You are still in Eirholm. The return gates on the summit and by the field take you home.",
   "hha_arius.portal.inside": "In Eirholm the seal opens no gate.",
-  "hha_arius.portal.need_seal": "The gate demands the Seal of Eirholm as your stake.",
+  "hha_arius.portal.need_seal": "The gate demands the Seal of the White Blade as your stake.",
   "hha_arius.portal.no_frame": "No complete frame of Rime Gate Stone (inside 2–21 wide, 3–21 tall).",
   "hha_arius.portal.stay": "Eirholm falls silent. Look around as long as you like – the return gates on the summit and by the field take you back to where you set out. Your spoils wait there.",
   "hha_arius.qte.duck": "A rock ridge – duck!",

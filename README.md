@@ -15,9 +15,13 @@ Craft the **Seal of the White Blade** (nether star, 4 blue ice, 2 echo shards, 2
 starts to fall upward, and everyone within 12 blocks is taken into the Sanctum of the White Blade, a separate dimension that is
 rebuilt from vanilla blocks for every attempt. Nothing in your survival world is ever damaged.
 
+You can also build a **Gate to Eirholm**: a Nether-style frame of **Rime Gate Stone** (4 per craft from 4 polished deepslate,
+4 blue ice and 1 diamond; inside 2–21 wide, 3–21 tall). Light it with the Seal, which is not used up, then stand in it for
+2 seconds while carrying a Seal to start the encounter.
+
 1. **The Temple of the White Blade**: Arius alone, in three stances (flowing, overhead, sheathed iai). Long combo chains
-   with delayed strikes and feints, and a perfect counter: hit him in his counter stance and he parries and punishes
-   with a full combo. He also breaks off your healing. Below 40 % he takes you seriously and adapts to repeated
+   with delayed strikes and feints, and a perfect counter: hit him in his counter stance and he parries, locks you in
+   and beats you down with seven kicks, punches and cuts. Allies can break him off you. He also breaks off your healing. Below 40 % he takes you seriously and adapts to repeated
    tactics, within limits.
 2. **The Cut**: the wind turns, the hall goes silent, a single line crosses the temple. He strikes, nothing happens for
    a moment, then the temple splits along the line and slides apart. He knocks you out through the breaking gate.
@@ -25,16 +29,22 @@ rebuilt from vanilla blocks for every attempt. Nothing in your survival world is
    dives along lit lanes and slams the ground, rains ice spears, coils around you and, once per air phase, draws in
    *Winter's Wrath* – find the gold zone or choke her breath with hits to the throat. After each big attack she is
    open.
-4. **The ride**: for over a minute you hold on to an ice spike on her back, through the storm around the mountain.
+4. **The ride**: for over a minute you cling to an ice spike on her back with both arms, legs in the wind, through the
+   storm around the mountain. A missed prompt costs health, but you never fall off.
 5. **The Heart of the Glacier**: Arius sheds his dark armour and fights in white on an open field far to the east,
-   **in rhythm** with Solvane: duo attacks such as *Dragon Ride* and *Cross Cut* have clear safe paths. Once per
-   fight: **the white hole** – deal enough damage to break it, or find the golden lanes.
-6. **The Heir's Wrath**: he chases you over three ever higher mountains and their bridges up to the Gate of the Blade.
-7. **The summit**: a last real duel. Below half health he draws fully for *The Last Horizon*.
+   **in rhythm** with Solvane: five duo attacks such as *Dragon Ride*, *Twin Fang* and *Frost Prison* have clear safe
+   paths. Once per fight: **the white hole** drives you outward against a storm wall – reach a golden shelter or the calm
+   eye beside him, or deal enough damage to break it.
+6. **The Heir's Wrath**: he chases you over three ever higher mountains, across swaying rope bridges and through eight
+   different caves that collapse if you are too slow, while Solvane stalks you through the walls, up to the Gate of the Blade.
+7. **The summit**: a last real duel. Blade echoes fight beside him, below half health he draws fully for *The Last
+   Horizon*, and at the very end the storm stops: **Silence**, a black-and-white duel of single draws, and one last clash.
 
 Every attack is announced on the ground through HHA's telegraph system. **Gold always means safe or open.** Vanilla
 movement, shield and bow are enough to win. Dying in the sanctum knocks you out instead: you keep everything and rejoin
-in the next part.
+in the next part. After the victory you stay in Eirholm and leave through a return gate whenever you want.
+
+Boss health scales with the number of players (+60 % per extra player), boss damage much more gently (+15 %).
 
 ## Visuals
 Monumental polar landscape around the sanctuary (a 225-block ice spire, a deep canyon, glacier ranges), weather and light
@@ -76,6 +86,23 @@ arena).
 Armour, gauntlets and Solvane share one resource, **frost resonance**. It recharges passively (faster out of combat and
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
+
+### New in 1.10.0
+
+- **Parry punishment:** when Arius parries you, you are locked into a short cinematic beating of seven hits. Allies can free you.
+- **Faster fights:** far less waiting before and between Arius' and Solvane's attacks.
+- **Player scaling:** boss health +60 % and boss damage +15 % per extra player, updated live.
+- **Duo attacks:** three new ones (*Twin Fang*, *Gale Cleaver*, *Frost Prison*), used much more often.
+- **White hole:** it now pushes you away instead of pulling you in, for bosses and for your own ability.
+- **New summit finale:** Blade Intent echoes, *Silence* and the *Last Clash*.
+- **Solvane:** smooth flight at any frame rate, a body that no longer folds through itself, and a coherent pick-up scene.
+- **Ride:** you cling to her ice spike with both arms; a missed prompt costs health instead of dropping you.
+- **Cutscenes:** new shots for the mountain split and the temple kick, and cameras that stay out of rock.
+- **The hunt:** eight varied caves with rockfalls, rope bridges, Solvane jumpscares, film effects, no more knock-offs, safer rescues.
+- **Gate to Eirholm:** a buildable portal, with return gates; victory no longer sends you home.
+- **Adaptive music** for every phase, cutscene and quick-time event; a new **Frozen Star** moon; heavy fog only at the mountains.
+- **Solvane parry cue:** a ring shows when to right-click against HHA, HHA Blood and regular melee enemies (`/ariusc parry`).
+- **Gauntlets** no longer break blocks and chain more fluidly. Damage of bosses, abilities, armour and weapons rebalanced.
 
 ### New in 1.9.0
 - **Arius, in the style of a final duel:**
@@ -264,15 +291,17 @@ model and item icons, stronger armour ability effects and precise ability descri
 | Dependency | Note |
 |---|---|
 | Fabric Loader ≥ 0.19.3, Fabric API, Fabric Language Kotlin | |
-| **H&H Armors 0.8.0 with the boss overhaul** | uses HHA's addon API plus `Telegraph`/`Vfx`. The matching build is in `libs/` of this repository. Older 0.8.0 jars without `Telegraph` stop the game at start-up with a clear message. |
+| **H&H Armors 0.8.0 with the boss overhaul, or 0.9.0** | uses HHA's addon API plus `Telegraph`/`Vfx`. The matching build is in `libs/` of this repository. Older 0.8.0 jars without `Telegraph` stop the game at start-up with a clear message. |
 
 ## Commands
 
 | Command | |
 |---|---|
 | `/hhaarius start` / `stage <1-4>` / `stop` / `skip` / `info` | admin tools (OP 2) |
+| `/ariusc parry <true/false>` | client: Solvane parry timing ring on or off |
 | `/ariusc fx <0-100>` / `flash <true/false>` | client: own particles and screen flashes. Camera shake and 3D effects follow HHA's settings (`K` menu) |
-| `/hha set hha_arius.boss_damage_scale <x>` | all values via HHA's config |
+| `/ariusroute` | checks the hunt route for gaps (admin) |
+| `/hha set hha_arius.boss_damage_scale <x>` | all values via HHA's config, also `boss_health_per_player` and `boss_damage_per_player` |
 
 ## Building
 
