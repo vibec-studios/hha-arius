@@ -913,105 +913,35 @@ class Scenes(private val f: EirholmFight) {
      * 3. Szene: Landung, Absprung, Verwandlung.
      */
     fun collapse(): Script = script {
-        f.arius ?: return@script
-        f.nivaris ?: return@script
-        val intro = CineScene(f) {}
-        yieldAll(intro.play(script { yieldAll(rideIntro(intro)) }))
-        yieldAll(ride())
+        val a = f.arius ?: return@script
+        val d = f.nivaris ?: return@script
+        val flight = DragonRide(f)
+        val intro = CineScene(f) { flight.settleIntro() }
+        yieldAll(intro.play(flight.intro(intro)))
+        yieldAll(flight.play())
+        RideSeats.unperch(f, a)
+        // Falls jemand mitten im Ritt neu verbunden hat: alle stehen auf dem Feld, niemand hängt mehr an ihr.
+        for ((j, p) in f.players().withIndex()) {
+            if (p.vehicle === d) p.stopRiding()
+            if (p.squaredDistanceTo(f.abs(Vec3d.of(ArenaLayout.VAULT))) > (ArenaLayout.VAULT_R + 24.0) * (ArenaLayout.VAULT_R + 24.0)) {
+                val s = f.abs(ArenaLayout.VAULT_LANDING[j % ArenaLayout.VAULT_LANDING.size])
+                p.teleport(f.world, s.x, s.y + 0.2, s.z, emptySet(), 180f, 0f, false)
+            }
+            p.onLanding()
+        }
+        f.place(a, f.abs(Vec3d.of(ArenaLayout.VAULT)).add(0.5, 7.0, 0.5))
+        f.place(d, f.abs(ArenaLayout.VAULT_REST))
+        d.flying = false
+        d.wingTuck = 0f
+        d.bodyRoll = 0f
+        d.play(NivarisPose.EXHAUSTED)
         val scene = CineScene(f) {}
         yieldAll(scene.play(script { yieldAll(transformBody(scene)) }))
         yieldAll(vaultFight())
     }
 
-    private fun rideIntro(scene: CineScene): Script = script {
-        val a = f.arius ?: return@script
-        val d = f.nivaris ?: return@script
-        f.setPhase(P.COLLAPSE)
-        f.calls.reset()
-        f.music("music.transform", 10)
-        MusicCue.play(f, "ride_intro", 10)
-        // 1) Er pfeift auf dem Pfeiler; sie hebt den Kopf.
-        a.sheathed = false
-        a.play(AriusPose.WHISTLE)
-        val face = a.entityPos.add(0.0, 1.8, 0.0)
-        val toward = flatDir(a.entityPos, d.entityPos)
-        val side = Vec3d(-toward.z, 0.0, toward.x)
-        scene.line(face.add(toward.multiply(2.4)).add(side.multiply(1.0)).add(0.0, -0.4, 0.0), face.add(toward.multiply(1.8)).add(side.multiply(0.8)).add(0.0, -0.3, 0.0),
-            face, d.entityPos.add(0.0, 4.0, 0.0), 36, 52.0, 60.0)
-        shown { f.say("fall.together", 50) }
-        cue("resonance.chime", a.entityPos, 3f)
-        wait(18)
-        f.fx(FxKind.THREAD, a.entityPos, life = 40, e1 = a, e2 = d)
-        d.play(NivarisPose.ROAR, 8)
-        cue("nivaris.roar", d.entityPos, 5f, 0.9f)
-        a.eyeGlow = 100
-        d.eyeGlow = 100
-        wait(18)
-        // 2) Sie steigt auf und streicht tief über die Spieler; Arius springt ab und landet auf ihrem Nacken.
-        d.flying = true
-        d.play(NivarisPose.GLIDE)
-        val mid = f.players().map { it.entityPos }.fold(Vec3d.ZERO) { acc, v -> acc.add(v) }.multiply(1.0 / f.players().size.coerceAtLeast(1))
-        val low = Vec3d(mid.x, f.floorY + 3.5, mid.z)
-        val from = d.entityPos
-        scene.line(low.add(-12.0, 1.5, 10.0), low.add(-8.0, 2.5, 6.0), from.add(0.0, 4.0, 0.0), low, 34, 66.0, 80.0, lookAt = d, lookOffset = 3.0)
-        cue("nivaris.wing", from, 5f, 0.8f)
-        val seat = a.entityPos
-        val swoop = DragonRail.path(from, f.facing(d).add(0.0, 0.35, 0.0), listOf(low), 18.0)
-        val swoopLen = DragonRail.length(swoop)
-        for (i in 1..34) {
-            val k = i / 34.0
-            val at = DragonRail.at(swoop, swoopLen * (k * (2 - k)))
-            f.place(d, at)
-            val next = DragonRail.at(swoop, swoopLen * (k * (2 - k)) + 3.0)
-            if (next.squaredDistanceTo(at) > 0.01) f.face(d, next)
-            if (i >= 18) {
-                val kk = (i - 18) / 16.0
-                f.place(a, seat.lerp(neckOf(d), kk).add(0.0, sin(kk * PI) * 3.0, 0.0))
-            }
-            yield(Unit)
-        }
-        f.calls.roomShake(low, 4f, 40f)
-        shown {
-            Vfx.shockwave(f.world, Vfx.Style.SOUL, Vec3d(low.x, f.floorY, low.z), 12f, 18, 1.6f)
-            for (p in f.players()) f.fx(FxKind.THREAD, p.entityPos, life = 30, e1 = p, e2 = d)
-        }
-        scene.once { Cine.title(it, "hha_arius.cine.hold_on", "hha_arius.cine.hold_on.sub", 50) }
-        wait(10)
-        scene.home(12)
-        wait(12)
-        // Aufsteigen: Jeder bekommt seinen festen Dorn, Spieler 1 den ersten, die anderen die direkt dahinter.
-        RideSeats.assign(f)
-        for (p in f.players()) {
-            p.addStatusEffect(StatusEffectInstance(StatusEffects.SLOW_FALLING, 600, 0, false, false, true))
-            p.startRiding(d, true, true)
-        }
-    }
-
     /** Nackenansatz der Drachin (wo Arius steht), Weltkoordinaten. */
     private fun neckOf(d: NivarisEntity): Vec3d = d.entityPos.add(f.facing(d).multiply(1.2)).add(0.0, NivarisShape.SPINE_UP + 1.0, 0.0)
-
-    /** Der Ritt selbst (Flugbahn, Griffe, Quick-Time-Events) steht seit 1.8.1 in [DragonRide] / [RideRoute]. */
-    private fun ride(): Script = script {
-        val a = f.arius ?: return@script
-        val d = f.nivaris ?: return@script
-        yieldAll(DragonRide(f).play(::neckOf))
-        RideSeats.unperch(f, a)
-        // Landung am Feld: absteigen, sanft fallen, die Gefallenen stehen schon dort.
-        for ((j, p) in f.players().withIndex()) {
-            if (p.vehicle === d) p.stopRiding()
-            if (p.squaredDistanceTo(d) > 40.0 * 40.0) {
-                val s = f.abs(ArenaLayout.VAULT_LANDING[j % ArenaLayout.VAULT_LANDING.size])
-                p.teleport(f.world, s.x, s.y + 1.0, s.z, emptySet(), 180f, 0f, false)
-            }
-            p.onLanding()
-        }
-        val vault = f.abs(Vec3d.of(ArenaLayout.VAULT)).add(0.5, 0.0, 0.5)
-        f.place(a, vault.add(0.0, 7.0, 0.0))
-        f.place(d, f.abs(ArenaLayout.VAULT_REST))
-        d.flying = false
-        d.play(NivarisPose.EXHAUSTED)
-        for (p in f.players()) p.onLanding()
-    }
 
     /** Wartet, bis die Fernlandschaft (mit dem Himmelsbalkon) fertig gebaut ist, und zeigt den Fortschritt. */
     private fun waitForFar(): Script = script {

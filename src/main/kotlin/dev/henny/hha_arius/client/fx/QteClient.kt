@@ -56,11 +56,13 @@ object QteClient {
             Qte.Kind.JUMP -> o.jumpKey
             Qte.Kind.USE -> o.useKey
             Qte.Kind.SNEAK -> o.sneakKey
+            Qte.Kind.LEFT -> o.leftKey
+            Qte.Kind.RIGHT -> o.rightKey
         }
     }
 
     /** Das Eis wächst gerade über die Hände (Prompt `ride_ice`): Frost am Bildrand und Eissplitter an den Händen. */
-    private val frosting: Boolean get() = id >= 0 && result == 0 && text.endsWith("ride_ice")
+    private val frosting: Boolean get() = id >= 0 && result == 0 && text.endsWith("r_ice")
 
     private fun frostTick(client: MinecraftClient) {
         val p = client.player ?: return
@@ -188,6 +190,8 @@ object QteClient {
             Qte.Kind.USE -> Text.translatable("hha_arius.qte.how.use", keyText)
             Qte.Kind.SNEAK -> Text.translatable("hha_arius.qte.how.sneak", keyText)
             Qte.Kind.ATTACK -> Text.translatable("hha_arius.qte.how.attack", keyText)
+            Qte.Kind.LEFT -> Text.translatable("hha_arius.qte.how.left", keyText)
+            Qte.Kind.RIGHT -> Text.translatable("hha_arius.qte.how.right", keyText)
             Qte.Kind.MASH -> Text.translatable("hha_arius.qte.how.mash", keyText, presses.coerceAtMost(need), need)
         }
         ctx.drawText(tr, how, cx - tr.getWidth(how) / 2, cy + 36, withAlpha(0xFFFFD98A.toInt(), fade), true)

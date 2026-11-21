@@ -1,6 +1,7 @@
 package dev.henny.hha_arius.boss
 
 import dev.henny.hha_arius.arena.FarPlan
+import dev.henny.hha_arius.arena.HuntRoute
 import net.minecraft.util.math.BlockPos
 import net.minecraft.util.math.Vec3d
 import kotlin.math.acos
@@ -143,8 +144,13 @@ object DragonRail {
             val rz = floor(q.z).toInt() - origin.z
             var maxTop = Int.MIN_VALUE
             if (rx in (FarPlan.X_MIN + 10)..(FarPlan.X_MAX - 10) && rz in (FarPlan.Z_MIN + 10)..(FarPlan.Z_MAX - 10)) {
+                // Im Höhlengang der Jagd ist der Fels darüber die Decke: nicht darüber heben (sonst fliegt sie durch den Berg).
+                if (tunnel(rx, rz)) {
+                    minYs[i] = max(pts[i].y, floorY + 2.5)
+                    continue
+                }
                 for (dx in intArrayOf(-8, 0, 8)) for (dz in intArrayOf(-8, 0, 8)) {
-                    maxTop = max(maxTop, FarPlan.top(rx + dx, rz + dz))
+                    if (!tunnel(rx + dx, rz + dz)) maxTop = max(maxTop, FarPlan.top(rx + dx, rz + dz))
                 }
             }
             val terrainMin = if (maxTop > Int.MIN_VALUE) origin.y + maxTop + 1.0 + clearance else floorY + 2.5
@@ -176,6 +182,75 @@ object DragonRail {
             }
         }
         return List(pts.size) { i -> Vec3d(pts[i].x, smooth[i], pts[i].z) }
+    }
+
+    /**
+     * Glatte Bahn durch [ctrl] (zentripetaler Catmull-Rom, gleichmäßig alle [STEP] Blöcke): keine Schleifen, keine Spitzen
+     * an den Stützpunkten. Für lange, von Hand gelegte Routen wie den Ritt.
+     */
+    fun spline(ctrl: List<Vec3d>): List<Vec3d> {
+        if (ctrl.size < 2) return ctrl
+        val ext = ArrayList<Vec3d>(ctrl.size + 2)
+        ext += ctrl[0].multiply(2.0).subtract(ctrl[1])
+        ext += ctrl
+        ext += ctrl.last().multiply(2.0).subtract(ctrl[ctrl.size - 2])
+        val fine = ArrayList<Vec3d>()
+        for (i in 1 until ext.size - 2) {
+            val p0 = ext[i - 1]
+            val p1 = ext[i]
+            val p2 = ext[i + 1]
+            val p3 = ext[i + 2]
+            val t1 = sqrt(p0.distanceTo(p1)).coerceAtLeast(1e-3)
+            val t2 = t1 + sqrt(p1.distanceTo(p2)).coerceAtLeast(1e-3)
+            val t3 = t2 + sqrt(p2.distanceTo(p3)).coerceAtLeast(1e-3)
+            val n = (p1.distanceTo(p2) * 4.0).toInt().coerceAtLeast(8)
+            for (k in 0 until n) {
+                val t = t1 + (t2 - t1) * k / n
+                val a1 = p0.lerp(p1, t / t1)
+                val a2 = p1.lerp(p2, (t - t1) / (t2 - t1))
+                val a3 = p2.lerp(p3, (t - t2) / (t3 - t2))
+                val b1 = a1.lerp(a2, t / t2)
+                val b2 = a2.lerp(a3, (t - t1) / (t3 - t1))
+                fine += b1.lerp(b2, (t - t1) / (t2 - t1))
+            }
+        }
+        fine += ctrl.last()
+        val out = ArrayList<Vec3d>()
+        out += fine[0]
+        var acc = 0.0
+        var next = STEP
+        for (i in 1 until fine.size) {
+            val a = fine[i - 1]
+            val b = fine[i]
+            val len = a.distanceTo(b)
+            while (acc + len >= next && len > 1e-9) {
+                out += a.lerp(b, (next - acc) / len)
+                next += STEP
+            }
+            acc += len
+        }
+        return out
+    }
+
+    /** Höchste Geländekante (relativ) im Umkreis [reach] um (x, z); Gänge der Jagd zählen nicht als Fels darüber. */
+    fun groundAt(x: Double, z: Double, reach: Int): Int {
+        val rx = floor(x).toInt()
+        val rz = floor(z).toInt()
+        var best = Int.MIN_VALUE
+        val half = reach / 2
+        for (dx in intArrayOf(-reach, -half, 0, half, reach)) for (dz in intArrayOf(-reach, -half, 0, half, reach)) {
+            val cx = rx + dx
+            val cz = rz + dz
+            if (cx !in FarPlan.X_MIN..FarPlan.X_MAX || cz !in FarPlan.Z_MIN..FarPlan.Z_MAX || tunnel(cx, cz)) continue
+            best = max(best, FarPlan.top(cx, cz))
+        }
+        return best
+    }
+
+    /** Liegt die Spalte (relativ) über einem Höhlengang der Jagd? Dort ist Fels Decke, nicht Hindernis. */
+    private fun tunnel(x: Int, z: Int): Boolean {
+        val h = HuntRoute.hit(x, z)
+        return h >= 0 && HuntRoute.kind(HuntRoute.hitIndex(h)) == HuntRoute.TUNNEL
     }
 
     /** Punkt auf einer Bahn aus [path] bei Bogenlänge [s] (Blöcke, geklemmt). */

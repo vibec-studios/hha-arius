@@ -1,0 +1,15 @@
+{
+  "hha_arius.qte.how.left": "Drück %s (nach links schwingen)",
+  "hha_arius.qte.how.right": "Drück %s (nach rechts schwingen)",
+  "hha_arius.qte.r_arch": "Ein Felsbogen über ihrem Rücken: press dich flach an sie!",
+  "hha_arius.qte.r_arch_ice": "Eiszapfen auf Kopfhöhe: press dich flach an sie!",
+  "hha_arius.qte.r_fangs": "Eiszähne auf Höhe deiner Beine: zieh sie hoch!",
+  "hha_arius.qte.r_needle_right": "Felsnadel rechts: schwing die Beine nach links!",
+  "hha_arius.qte.r_needle_left": "Felsnadel links: schwing die Beine nach rechts!",
+  "hha_arius.qte.r_ice": "Die Gischt friert deine Hände fest: hack das Eis ab!",
+  "hha_arius.qte.r_regrip": "Du hängst an einer Hand: greif wieder zu!",
+  "hha_arius.msg.ride_hit_arch": "Der Fels reißt dich vom Rücken, du hängst nur noch an einer Hand!",
+  "hha_arius.msg.ride_hit_fangs": "Die Eiszähne erwischen deine Beine, eine Hand rutscht ab!",
+  "hha_arius.msg.ride_hit_needle": "Die Felsnadel schlägt dich zur Seite, eine Hand rutscht ab!",
+  "hha_arius.msg.ride_hit_ice": "Das Eis sprengt deinen Griff, du hängst nur noch an einer Hand!"
+}

@@ -17,7 +17,7 @@ import java.util.UUID
  */
 object Qte {
 
-    enum class Kind { ATTACK, JUMP, USE, SNEAK, MASH }
+    enum class Kind { ATTACK, JUMP, USE, SNEAK, MASH, LEFT, RIGHT }
 
     data class QteS2C(val id: Int, val kind: Int, val ticks: Int, val count: Int, val text: String) : CustomPayload {
         override fun getId(): CustomPayload.Id<out CustomPayload> = ID

@@ -139,8 +139,11 @@ object RideClient {
             Qte.Kind.JUMP -> RideAction.VAULT
             Qte.Kind.USE -> RideAction.BRACE
             Qte.Kind.MASH, Qte.Kind.ATTACK -> RideAction.TUG
+            Qte.Kind.LEFT -> RideAction.SWING_L
+            Qte.Kind.RIGHT -> RideAction.SWING_R
         }
-        val dur = if (act == RideAction.TUG) 8f else 28f
+        // Bis die Meldung des Servers kommt (sie hält die Haltung, bis das Hindernis vorbei ist).
+        val dur = if (act == RideAction.TUG) 10f else 40f
         actionAnims[player.id] = ActionAnim(act, clientTick, dur)
     }
 
@@ -159,8 +162,8 @@ object RideClient {
                     val startFrom = prev ?: p.entityPos
                     val target = anchorOf(p)?.let { v.entityPos.add(it.entity) }
                     val distSq = if (target != null) startFrom.squaredDistanceTo(target) else 0.0
-                    // Wenn der Spieler von außerhalb auf Solvane gehoben wird: 14 Ticks weicher Bogen statt Pop-In.
-                    val dur = if (distSq in 3.0..2400.0) 14f else 0f
+                    // Wird der Spieler von außerhalb auf Solvane gehoben: sichtbarer Bogen an seinen Dorn statt Pop-In.
+                    val dur = if (distSq in 3.0..2400.0) MOUNT_TICKS else 0f
                     mountAnims[p.id] = MountAnim(startFrom, clientTick, dur)
                 }
             } else {
@@ -293,6 +296,9 @@ object RideClient {
                 RideAction.VAULT -> target.add(a.back.multiply(1.15 * w)).add(a.head.multiply(0.18 * w))
                 RideAction.TUG -> target.add(a.head.multiply(0.20 * w))
                 RideAction.BRACE -> target.subtract(a.back.multiply(0.35 * w)).add(a.head.multiply(0.15 * w))
+                RideAction.SWING_L -> target.subtract(a.right.multiply(SWING_SHIFT * w))
+                RideAction.SWING_R -> target.add(a.right.multiply(SWING_SHIFT * w))
+                RideAction.HIT -> target.subtract(a.head.multiply(0.55 * w)).add(a.back.multiply(0.25 * w))
                 else -> target
             }
         }
@@ -300,7 +306,7 @@ object RideClient {
         if (m != null && m.duration > 0.1f) {
             val k = mountProgress(passenger.id).toDouble()
             if (k < 0.999) {
-                val arc = sin(k * PI) * 2.2
+                val arc = sin(k * PI) * 3.4
                 return m.from.lerp(target, k).add(0.0, arc, 0.0)
             }
         }
@@ -328,7 +334,13 @@ object RideClient {
         val a = anchorOf(e) ?: return false
         val t = state.age
         val (act, aw) = actionWeight(e.id)
-        val roll = (if (g == 1) 0.12 else 0.03) * sin(t * 0.37)
+        val swing = when (act) {
+            RideAction.SWING_L -> -aw
+            RideAction.SWING_R -> aw
+            else -> 0f
+        }
+        val hitShake = if (act == RideAction.HIT) 0.34 * aw * sin(t * 2.6) else 0.0
+        val roll = (if (g == 1) 0.12 else 0.03) * sin(t * 0.37) + swing * 0.42 + hitShake
         val back = a.back.multiply(cos(roll)).add(a.right.multiply(sin(roll))).normalize()
         val right = a.head.crossProduct(back).let { if (it.lengthSquared() < 1e-6) a.right else it.normalize() }
         // QTE-Ausweichversatz in der Figur (zusätzlich zur Entity-Lage, damit man das Ducken/Hochziehen klar sieht).
@@ -338,7 +350,7 @@ object RideClient {
             RideAction.BRACE -> -0.15 * aw
             else -> 0.0
         }
-        val off = a.feet.subtract(a.entity).add(back.multiply(shiftBack))
+        val off = a.feet.subtract(a.entity).add(back.multiply(shiftBack)).add(right.multiply(swing * 0.4))
         val mp = mountProgress(e.id)
         matrices.translate((off.x * mp).toFloat(), (off.y * mp).toFloat(), (off.z * mp).toFloat())
         // Spalten: lokal x → rechts, y → Kopf, z → Rücken (lokal −z ist die Brust/Front der Figur).
@@ -407,15 +419,23 @@ object RideClient {
         val spread = when (act) {
             RideAction.VAULT -> MathHelper.lerp(aw, LEG_SPREAD, 0.14f)
             RideAction.DUCK -> MathHelper.lerp(aw, LEG_SPREAD, 0.32f)
+            RideAction.SWING_L, RideAction.SWING_R -> MathHelper.lerp(aw, LEG_SPREAD, 0.3f)
+            RideAction.HIT -> MathHelper.lerp(aw, LEG_SPREAD, 1.5f)
             else -> LEG_SPREAD
+        }
+        // Beim Schwingen zeigen beide Beine zur selben Seite, weg von der Felsnadel.
+        val legSwing = when (act) {
+            RideAction.SWING_L -> -0.95f * aw
+            RideAction.SWING_R -> 0.95f * aw
+            else -> 0f
         }
         val legLift = when (act) {
             RideAction.VAULT -> -1.15f * aw
             RideAction.DUCK -> 0.12f * aw
             else -> 0f
         }
-        model.rightLeg.roll = spread + 0.07f * wild * sin(t * 0.9f) * (1f - aw * 0.7f)
-        model.leftLeg.roll = -spread - 0.07f * wild * sin(t * 1.05f) * (1f - aw * 0.7f)
+        model.rightLeg.roll = spread + legSwing + 0.07f * wild * sin(t * 0.9f) * (1f - aw * 0.7f)
+        model.leftLeg.roll = -spread + legSwing - 0.07f * wild * sin(t * 1.05f) * (1f - aw * 0.7f)
         model.rightLeg.pitch = legLift + wild * (0.14f * sin(t * 1.15f) + 0.05f * sin(t * 2.4f + 1f)) * (1f - aw * 0.6f)
         model.leftLeg.pitch = legLift + wild * (0.14f * sin(t * 1.15f + 2.3f) + 0.05f * sin(t * 2.9f)) * (1f - aw * 0.6f)
         model.rightLeg.yaw = 0.05f * sin(t * 0.7f)
@@ -464,7 +484,12 @@ object RideClient {
             RideAction.BRACE -> -0.25 * aw
             else -> 0.0
         }
-        return cam.add(a.back.multiply(EYE_LIFT + delta))
+        val aside = when (act) {
+            RideAction.SWING_L -> -0.85 * aw
+            RideAction.SWING_R -> 0.85 * aw
+            else -> 0.0
+        }
+        return cam.add(a.back.multiply(EYE_LIFT + delta)).add(a.right.multiply(aside))
     }
 
     /**
@@ -499,6 +524,12 @@ object RideClient {
         val col = if (g >= 2) 0xFFBFE6FF.toInt() else 0xFFFF8A7A.toInt()
         ctx.drawText(tr, text, ctx.scaledWindowWidth / 2 - tr.getWidth(text) / 2, 22, col, true)
     }
+
+    /** So lange dauert der sichtbare Bogen, mit dem der Lichtstrom einen Spieler an seinen Dorn zieht. */
+    private const val MOUNT_TICKS = 26f
+
+    /** So weit schwingt der Körper an einer Felsnadel vorbei zur Seite (Blöcke). */
+    private const val SWING_SHIFT = 1.05
 
     /** Plätze (Eisdorne), für die Griffpunkte gerechnet werden. */
     private const val SEATS = 8
