@@ -16,6 +16,7 @@ object FightNet {
         PayloadTypeRegistry.playS2C().register(BeatS2C.ID, BeatS2C.CODEC)
         PayloadTypeRegistry.playS2C().register(SilenceS2C.ID, SilenceS2C.CODEC)
         PayloadTypeRegistry.playS2C().register(ParryCueS2C.ID, ParryCueS2C.CODEC)
+        PayloadTypeRegistry.playS2C().register(ClashCueS2C.ID, ClashCueS2C.CODEC)
     }
 }
 
@@ -63,6 +64,22 @@ data class SilenceS2C(val strength: Float, val fade: Int) : CustomPayload {
         val CODEC: PacketCodec<RegistryByteBuf, SilenceS2C> = PacketCodec.of(
             { v, buf -> buf.writeFloat(v.strength); buf.writeVarInt(v.fade) },
             { buf -> SilenceS2C(buf.readFloat(), buf.readVarInt()) },
+        )
+    }
+}
+
+/**
+ * Seit 1.11.0: Anzeige des Kreuz-Moments (Duell, Letzter Zusammenprall). [ticks] bis zum Schlag; das Fenster reicht von
+ * [before] Ticks davor bis [after] Ticks danach. [on] = false beendet die Anzeige.
+ */
+data class ClashCueS2C(val on: Boolean, val ticks: Int, val before: Int, val after: Int) : CustomPayload {
+    override fun getId(): CustomPayload.Id<out CustomPayload> = ID
+
+    companion object {
+        val ID = CustomPayload.Id<ClashCueS2C>(HhaArius.id("clash_cue"))
+        val CODEC: PacketCodec<RegistryByteBuf, ClashCueS2C> = PacketCodec.of(
+            { v, buf -> buf.writeBoolean(v.on); buf.writeVarInt(v.ticks); buf.writeVarInt(v.before); buf.writeVarInt(v.after) },
+            { buf -> ClashCueS2C(buf.readBoolean(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt()) },
         )
     }
 }

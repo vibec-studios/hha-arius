@@ -258,7 +258,7 @@ object GauntletCombat {
         var any = false
         for (target in targets) {
             target.timeUntilRegen = 0
-            if (!target.damage(world, world.damageSources.playerAttack(player), damage)) continue
+            if (!dev.henny.hha_arius.boss.PlayerHit.marked(dev.henny.hha_arius.boss.PlayerHit.Kind.GAUNTLET) { target.damage(world, world.damageSources.playerAttack(player), damage) }) continue
             any = true
             if (move.knock > 0 && !GearCombat.isHeavy(target)) {
                 val last = knockGuard[target.id] ?: Long.MIN_VALUE

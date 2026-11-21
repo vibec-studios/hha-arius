@@ -7,15 +7,92 @@ import dev.henny.hha.logic.boss.Telegraph
 import dev.henny.hha_arius.net.FxKind
 import net.minecraft.util.math.Vec3d
 import kotlin.math.PI
+import kotlin.math.ceil
 import kotlin.math.cos
+import kotlin.math.floor
 import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * Echte Duo-Angriffe von Arius und Solvane (seit 1.9.0, Crix: „es gibt keine richtigen Duo-Angriffe“). Beide handeln
- * gemeinsam und gleichzeitig; jeder Angriff hat eine Titelkarte, eine lange Ansage und **goldene sichere Bahnen bzw.
- * Felder**. Solvanes eigene Angriffe stehen in [NivarisMoves]; hier liegt nur die Abstimmung und Arius' Teil (die
- * Drachin wird dafür direkt geführt und am Ende mit [NivarisMoves.land] an ihr normales Verhalten übergeben).
+ * Eine vorberechnete Flugbahn von Solvane über [DragonRail], Tick für Tick abfahrbar. Anders als [DragonRail.fly] kennt
+ * sie ihre Ankunftszeiten im Voraus, damit Ansagen und Arius' Schläge genau auf ihren Durchflug fallen.
+ */
+class RailRun(
+    private val f: EirholmFight, private val d: NivarisEntity, waypoints: List<Vec3d>,
+    private val speed: Double = 1.4, radius: Double = DragonRail.MIN_RADIUS,
+) {
+    private val pts = DragonRail.path(d.entityPos, f.facing(d), waypoints, radius)
+    private val last = pts.lastIndex
+    private var s = 0.0
+
+    /** Gesamtdauer in Ticks. */
+    val ticks: Int = ceil(last * DragonRail.STEP / speed).toInt().coerceAtLeast(1)
+
+    val done: Boolean get() = s >= last
+
+    /** Ticks vom Start bis zum Bahnpunkt, der [p] am nächsten liegt. */
+    fun ticksTo(p: Vec3d): Int {
+        var best = 0
+        var bestD = Double.MAX_VALUE
+        for (i in pts.indices) {
+            val q = pts[i].squaredDistanceTo(p)
+            if (q < bestD) {
+                bestD = q
+                best = i
+            }
+        }
+        return ceil(best * DragonRail.STEP / speed).toInt()
+    }
+
+    /** Ein Tick Flug; die Blickrichtung folgt der Bahn. */
+    fun step() {
+        if (done || d.isRemoved || last < 1) return
+        s = (s + speed / DragonRail.STEP).coerceAtMost(last.toDouble())
+        val i = floor(s).toInt().coerceAtMost(last - 1)
+        val pos = pts[i].lerp(pts[i + 1], s - i)
+        f.place(d, pos)
+        val ahead = pts[(i + 6).coerceAtMost(last)]
+        if (ahead.squaredDistanceTo(pos) > 0.01) f.face(d, ahead)
+        measure(pos)
+    }
+
+    private fun measure(pos: Vec3d) {
+        val move = lastPos?.let { pos.subtract(it) }
+        lastPos = pos
+        if (move == null || move.length() !in 0.2..5.0) {
+            lastDir = null
+            return
+        }
+        val len = move.length()
+        val dir = move.multiply(1.0 / len)
+        lastDir?.let { old ->
+            val angle = kotlin.math.acos(old.dotProduct(dir).coerceIn(-1.0, 1.0))
+            if (angle > 1e-3) debugTightest = minOf(debugTightest, len / angle)
+        }
+        lastDir = dir
+    }
+
+    companion object {
+        /** Für die Sichtprüfung: engster tatsächlich geflogener Kurvenradius, auch über Bahnwechsel hinweg. */
+        @JvmField
+        var debugTightest = Double.MAX_VALUE
+        private var lastPos: Vec3d? = null
+        private var lastDir: Vec3d? = null
+
+        fun debugReset() {
+            debugTightest = Double.MAX_VALUE
+            lastPos = null
+            lastDir = null
+        }
+    }
+}
+
+/**
+ * Echte Duo-Angriffe von Arius und Solvane (seit 1.9.0). Seit 1.11.0 greift eins ins andere (Spieler: „schlägt dich
+ * Arius mit dem Schwert, dann kommt Solvane hinterher und beißt dich, während sie ihn einsammelt, dann fliegt er kurz
+ * auf ihr und dann hauen sie zusammen drauf“): Jede Kette endet damit, dass sie ihn aufnimmt und beide gemeinsam
+ * zuschlagen ([together]). Jeder Flug läuft über [DragonRail]; Ansagen und goldene Felder bleiben, und jedes Glied lässt
+ * sich seitlich ausweichen.
  */
 class Duo(private val f: EirholmFight) {
 
@@ -27,6 +104,8 @@ class Duo(private val f: EirholmFight) {
     }
 
     private fun floor(p: Vec3d) = Vec3d(p.x, f.floorY, p.z)
+
+    private fun air(p: Vec3d, h: Double) = Vec3d(p.x, f.floorY + h, p.z)
 
     /** Titelkarte und gemeinsamer Klang: beide glühen, der Faden zwischen ihnen leuchtet. */
     private fun announce(key: String, a: AriusEntity, d: NivarisEntity) {
@@ -49,84 +128,244 @@ class Duo(private val f: EirholmFight) {
         a.bodyYaw = d.yaw
     }
 
-    /** Drachin weich von ihrer Lage nach [to] in [ticks] Ticks, Blick nach [look]; Arius reitet mit, wenn [rider]. */
-    private suspend fun SequenceScope<Unit>.glide(d: NivarisEntity, to: Vec3d, ticks: Int, look: Vec3d, rider: AriusEntity?) {
-        val from = d.entityPos
-        for (i in 1..ticks.coerceAtLeast(1)) {
-            val k = i / ticks.toDouble()
-            val e = k * k * (3 - 2 * k)
-            f.place(d, from.lerp(to, e))
-            f.face(d, look)
+    /** Fliegt [run] [n] Ticks weiter; Arius reitet mit, wenn [rider] gesetzt ist. */
+    private suspend fun SequenceScope<Unit>.fly(run: RailRun, n: Int, d: NivarisEntity, rider: AriusEntity? = null) {
+        repeat(n.coerceAtLeast(0)) {
+            run.step()
             rider?.let { ride(it, d) }
             yield(Unit)
         }
     }
 
+    private suspend fun SequenceScope<Unit>.flyToEnd(run: RailRun, d: NivarisEntity, rider: AriusEntity? = null) {
+        var guard = 0
+        while (!run.done && guard++ < 400) {
+            run.step()
+            rider?.let { ride(it, d) }
+            yield(Unit)
+        }
+    }
+
+    /** Arius springt im Bogen auf ihren Nacken ([ticks] Ticks), während sie weiterfliegt. */
+    private suspend fun SequenceScope<Unit>.hopOn(a: AriusEntity, d: NivarisEntity, run: RailRun, ticks: Int = 7) {
+        val from = a.entityPos
+        a.play(AriusPose.LAUNCH, 4)
+        f.ambient("arius.wind_step", from, 2.4f, 1.0f)
+        for (i in 1..ticks) {
+            run.step()
+            val k = i / ticks.toDouble()
+            f.place(a, from.lerp(neck(d), k * k * (3 - 2 * k)).add(0.0, sin(k * PI) * 1.4, 0.0))
+            yield(Unit)
+        }
+        ride(a, d)
+        a.play(AriusPose.CUT_CHARGE)
+    }
+
+    // --- Der gemeinsame Abschluss ---------------------------------------------------------------------------------------
+
+    /**
+     * **Gemeinsamer Schlag**: Er reitet auf ihr, sie dreht auf das Ziel ein und stürzt tief über die Stelle. Kurz vorher
+     * springt er ab, beide treffen im selben Tick: ihre Bahn und sein Ring. Danach stehen beide offen.
+     */
+    private suspend fun SequenceScope<Unit>.together(a: AriusEntity, d: NivarisEntity, base: Float = 12f) {
+        val t = f.target()
+        if (t == null) {
+            f.place(a, floor(f.clampToArena(a.entityPos, 2.0)))
+            bothOpen(a, 30, 24)
+            return
+        }
+        val spot = floor(f.clampToArena(t.entityPos, 3.0))
+        val dir = flatDir(d.entityPos, spot)
+        val run = RailRun(f, d, listOf(air(spot.subtract(dir.multiply(30.0)), 12.0), air(spot, 6.0), air(spot.add(dir.multiply(36.0)), 16.0)), 1.5)
+        val arrive = run.ticksTo(air(spot, 6.0))
+        val lead = arrive.coerceAtLeast(26)
+        val delay = lead - arrive
+        val group = f.calls.boss(style = Vfx.Style.SOUL)
+        val pass = group.line(floor(f.clampToArena(spot.subtract(dir.multiply(14.0)), 1.0)), floor(f.clampToArena(spot.add(dir.multiply(14.0)), 1.0)), 2.6f, lead, Telegraph.Pace.HEAVY)
+        val ring = group.ring(spot, 4.6f, pass.ticks, pace = Telegraph.Pace.HEAVY)
+        val side = Vec3d(-dir.z, 0.0, dir.x)
+        group.safe(f.clampToArena(spot.add(side.multiply(7.5)), 1.5), 2.4f, pass.ticks)
+        group.safe(f.clampToArena(spot.subtract(side.multiply(7.5)), 1.5), 2.4f, pass.ticks)
+        f.ambient("nivaris.roar", d.entityPos, 4.5f, 1.05f)
+        f.ambient("iai.glint", a.entityPos, 3f, 0.7f)
+        d.play(NivarisPose.GLIDE)
+        a.play(AriusPose.CUT_CHARGE)
+        val strikeAt = pass.ticks
+        val jumpAt = (strikeAt - 12).coerceAtLeast(1)
+        var jumpFrom: Vec3d? = null
+        for (i in 1..strikeAt) {
+            if (i > delay) run.step()
+            if (i < jumpAt) {
+                ride(a, d)
+            } else {
+                val from = jumpFrom ?: a.entityPos.also {
+                    jumpFrom = it
+                    a.play(AriusPose.STAB_GROUND, strikeAt - jumpAt + 1)
+                    d.play(NivarisPose.DIVE)
+                    f.ambient("arius.wind_step", it, 2.6f, 0.8f)
+                }
+                val k = (i - jumpAt + 1) / (strikeAt - jumpAt + 1).toDouble()
+                f.place(a, from.lerp(spot, k * k).add(0.0, sin(k * PI) * 1.6, 0.0))
+                f.face(a, spot)
+            }
+            yield(Unit)
+        }
+        f.place(a, spot)
+        f.ambient("arius.stab_ground", spot, 4f, 0.7f)
+        f.ambient("nivaris.crash", spot, 4f, 1.1f)
+        f.ambient("cut.strike", spot, 3.5f, 0.9f)
+        f.calls.roomShake(spot, 5f, 34f)
+        Vfx.shockwave(f.world, Vfx.Style.HEAVEN, spot, 7f, 14, 1.8f)
+        f.fx(FxKind.CLEAR_WAVE, spot, a = 9f, life = 16)
+        for (q in 0 until 12) f.shards.spike(spot.add(cos(q * PI / 6) * 4.2, 0.0, sin(q * PI / 6) * 4.2), 1.6 + rnd.nextDouble(), 40)
+        for (p in (pass.hits(f.players()) + ring.hits(f.players())).distinct()) {
+            if (group.isSafe(p)) continue
+            f.hurt(p, base, Damage.Kind.NULL_CUT)
+            Fx.launchPlayer(p, flatDir(spot, p.entityPos).multiply(0.8).add(0.0, 0.5, 0.0))
+        }
+        flyToEnd(run, d)
+        bothOpen(a, 36, 30)
+    }
+
+    /** Sie fliegt tief an Arius vorbei und nimmt ihn auf; danach folgt [together]. */
+    private suspend fun SequenceScope<Unit>.scoopAndStrike(a: AriusEntity, d: NivarisEntity) {
+        val at = floor(a.entityPos)
+        val dir = flatDir(d.entityPos, at)
+        d.flying = true
+        d.play(NivarisPose.GLIDE)
+        val run = RailRun(f, d, listOf(air(at.subtract(dir.multiply(26.0)), 8.0), air(at, 4.2), air(at.add(dir.multiply(34.0)), 12.0)), 1.7)
+        fly(run, (run.ticksTo(air(at, 4.2)) - 5), d)
+        f.ambient("nivaris.wing", d.entityPos, 4f, 0.8f)
+        hopOn(a, d, run)
+        flyToEnd(run, d, a)
+        together(a, d)
+    }
+
+    // --- Harmonie: die Kette aus dem Wunsch des Spielers -------------------------------------------------------------
+
+    /**
+     * **Harmonie**: Arius schlägt das Ziel mit dem Schwert und wirft es nach vorn. Solvane kommt von hinten genau durch
+     * seine Schlagrichtung, beißt in die Bahn und nimmt ihn im selben Moment auf. Er fliegt kurz auf ihrem Nacken, dann
+     * schlagen beide gemeinsam zu. Wer nach dem Schwertschlag seitlich aus der Bahn geht, entgeht dem Biss.
+     */
+    fun harmony(): Script = script {
+        val a = f.arius ?: return@script
+        val d = f.nivaris ?: return@script
+        val t = f.target() ?: return@script
+        announce("harmony", a, d)
+        a.sheathed = false
+        d.flying = true
+        d.play(NivarisPose.GLIDE)
+        // Er tritt im Windschritt an das Ziel heran.
+        val toT = flatDir(a.entityPos, t.entityPos)
+        val stand = floor(f.clampToArena(t.entityPos.subtract(toT.multiply(3.4)), 1.5))
+        val from = a.entityPos
+        a.play(AriusPose.SIDESTEP)
+        f.ambient("arius.wind_step", from, 2.2f, 1.1f)
+        for (i in 1..5) {
+            f.place(a, from.lerp(stand, i / 5.0))
+            f.face(a, t.entityPos)
+            yield(Unit)
+        }
+        f.fx(FxKind.DASH_STREAK, from, stand, life = 8)
+        val dir = flatDir(stand, t.entityPos)
+        val scoop = air(stand, 4.2)
+        val run = RailRun(f, d, listOf(air(stand.subtract(dir.multiply(34.0)), 7.0), scoop, air(stand.add(dir.multiply(46.0)), 13.0)), 1.6)
+        val arrive = run.ticksTo(scoop)
+        // Mindestens so viel Vorlauf, dass Schwerthieb und Biss einzeln lesbar bleiben.
+        val biteAt = arrive.coerceAtLeast(44)
+        val delay = biteAt - arrive
+        val slashAt = biteAt - 18
+        f.face(a, t.entityPos)
+        val cone = f.calls.cone(stand, dir, 4.8f, 62f, slashAt, Telegraph.Pace.HEAVY)
+        a.play(AriusPose.COMBO_1, cone.ticks)
+        f.ambient("iai.glint", stand, 2.2f, 1.2f)
+        var bite: Telegraph.Line? = null
+        val biteTo = floor(f.clampToArena(stand.add(dir.multiply(15.0)), 1.0))
+        for (i in 1..biteAt) {
+            if (i > delay) run.step()
+            if (i == cone.ticks) {
+                f.ambient("arius.slash", stand, 2.8f, 1.0f)
+                f.fx(FxKind.SLASH_ARC, stand.add(0.0, 1.1, 0.0), dir, a = 4.8f, b = 0.2f, life = 12)
+                for (p in cone.hits(f.players())) {
+                    f.hurt(p, 9f)
+                    Fx.launchPlayer(p, dir.multiply(0.75).add(0.0, 0.32, 0.0))
+                }
+            }
+            // Die Ansage des Bisses beginnt, sobald der Schwerthieb sitzt: Jetzt ist Zeit, zur Seite zu gehen.
+            if (bite == null && i >= cone.ticks) {
+                bite = f.calls.line(stand, biteTo, 3.0f, (biteAt - i).coerceAtLeast(10), Telegraph.Pace.PROJECTILE, style = Vfx.Style.SOUL)
+                f.ambient("nivaris.roar", d.entityPos, 4.5f, 1.2f)
+            }
+            yield(Unit)
+        }
+        // Der Biss: Sie schnappt in die Bahn und nimmt Arius im selben Moment mit.
+        d.play(NivarisPose.DIVE)
+        f.ambient("nivaris.crash", stand, 3.5f, 1.3f)
+        f.ambient("nivaris.claw", stand, 3.5f, 0.9f)
+        f.calls.hitShake(stand, 3f, 24f)
+        bite?.let { line ->
+            for (p in line.hits(f.players())) {
+                f.hurt(p, 11f, Damage.Kind.IMPACT, d)
+                Fx.launchPlayer(p, dir.multiply(0.6).add(0.0, 0.5, 0.0))
+            }
+        }
+        f.fx(FxKind.CLEAR_WAVE, stand.lerp(biteTo, 0.5), a = 5f, life = 14)
+        hopOn(a, d, run, 5)
+        // Kurzer Ritt.
+        flyToEnd(run, d, a)
+        together(a, d, 13f)
+    }
+
     // --- Drachenritt ----------------------------------------------------------------------------------------------------
 
     /**
-     * **Drachenritt**: Solvane holt Arius ab, er steht auf ihrem Nacken. Zwei Sturzflüge quer über das Feld: Sie fegt die
-     * breite Mittelbahn, er schlägt zu beiden Seiten Sicheln ab (Seitenbahnen); dazwischen liegen goldene sichere Bahnen.
-     * Der zweite Flug kreuzt den ersten. Zum Schluss springt er ab und stürzt mit der Klinge auf das Ziel (Ring), sie
-     * landet daneben. Danach stehen beide offen.
+     * **Drachenritt**: Sie holt ihn ab, er steht auf ihrem Nacken. Zwei Überflüge quer über das Feld: Sie fegt die
+     * Mittelbahn, er schlägt zu beiden Seiten Sicheln ab; dazwischen liegen goldene sichere Bahnen. Der zweite Flug kreuzt
+     * den ersten. Zum Schluss der gemeinsame Schlag.
      */
     fun dragonRide(): Script = script {
         val a = f.arius ?: return@script
         val d = f.nivaris ?: return@script
-        var t = f.target() ?: return@script
         announce("dragon_ride", a, d)
-        // 1) Sie holt ihn ab: tief neben ihm, er springt auf.
-        val toT = flatDir(a.entityPos, t.entityPos)
-        val pick = a.entityPos.add(Vec3d(-toT.z, 0.0, toT.x).multiply(4.0)).add(0.0, 1.5, 0.0)
         d.flying = true
-        d.play(NivarisPose.HOVER)
-        yieldAll(script { glide(d, pick, 16, t.entityPos, null) })
-        val jumpFrom = a.entityPos
-        a.play(AriusPose.LAUNCH, 8)
-        f.ambient("arius.wind_step", jumpFrom, 2.5f, 0.9f)
-        for (i in 1..10) {
-            val k = i / 10.0
-            f.place(a, jumpFrom.lerp(neck(d), k).add(0.0, sin(k * PI) * 2.5, 0.0))
-            yield(Unit)
-        }
-        a.play(AriusPose.CUT_CHARGE)
+        d.play(NivarisPose.GLIDE)
+        val at = floor(a.entityPos)
+        val toA = flatDir(d.entityPos, at)
+        val pick = RailRun(f, d, listOf(air(at.subtract(toA.multiply(24.0)), 8.0), air(at, 4.2), air(at.add(toA.multiply(30.0)), 11.0)), 1.6)
+        fly(pick, pick.ticksTo(air(at, 4.2)) - 6, d)
+        hopOn(a, d, pick)
         f.ambient("nivaris.roar", d.entityPos, 4f, 1.1f)
-        // 2) Zwei Sturzflüge.
+        flyToEnd(pick, d, a)
         var lastDir: Vec3d? = null
         for (pass in 0 until 2) {
-            t = f.target() ?: break
+            val t = f.target() ?: break
             val center = floor(f.clampToArena(t.entityPos, 6.0))
             val dir = lastDir?.let { ld -> Vec3d(-ld.z, 0.0, ld.x).multiply(if (rnd.nextBoolean()) 1.0 else -1.0) } ?: flatDir(d.entityPos, center)
             lastDir = dir
             val side = Vec3d(-dir.z, 0.0, dir.x)
-            val reach = (f.arenaRadius - 3.0).coerceIn(14.0, 26.0)
+            val reach = (f.arenaRadius - 3.0).coerceIn(10.0, 26.0)
             val start = floor(f.clampToArena(center.subtract(dir.multiply(reach)), 2.0))
             val end = floor(f.clampToArena(center.add(dir.multiply(reach)), 2.0))
-            val lead = if (pass == 0) 36 else 26
+            val low = air(center, 5.0)
+            val run = RailRun(f, d, listOf(air(center.subtract(dir.multiply(32.0)), 10.0), low, air(center.add(dir.multiply(36.0)), 13.0)), 1.6)
+            val arrive = run.ticksTo(low)
+            val lead = arrive.coerceAtLeast(if (pass == 0) 34 else 26)
+            val delay = lead - arrive
             val group = f.calls.boss(style = Vfx.Style.SOUL)
-            val main = group.line(start, end, 5f, lead, Telegraph.Pace.PROJECTILE)
-            val left = group.line(start.add(side.multiply(8.0)), end.add(side.multiply(8.0)), 2.8f, lead + 4, Telegraph.Pace.FOLLOW_UP)
-            val right = group.line(start.subtract(side.multiply(8.0)), end.subtract(side.multiply(8.0)), 2.8f, lead + 4, Telegraph.Pace.FOLLOW_UP)
-            group.safeLine(start.add(side.multiply(4.6)), end.add(side.multiply(4.6)), 2.4f, lead + 4)
-            group.safeLine(start.subtract(side.multiply(4.6)), end.subtract(side.multiply(4.6)), 2.4f, lead + 4)
-            // Anflug an den Bahnanfang, hoch und hinter der Bahn.
-            val air = start.subtract(dir.multiply(6.0)).add(0.0, 9.0, 0.0)
+            val main = group.line(start, end, 4.2f, lead, Telegraph.Pace.PROJECTILE)
+            val left = group.line(start.add(side.multiply(8.0)), end.add(side.multiply(8.0)), 2.6f, main.ticks + 4, Telegraph.Pace.FOLLOW_UP)
+            val right = group.line(start.subtract(side.multiply(8.0)), end.subtract(side.multiply(8.0)), 2.6f, main.ticks + 4, Telegraph.Pace.FOLLOW_UP)
+            group.safeLine(start.add(side.multiply(4.8)), end.add(side.multiply(4.8)), 2.0f, main.ticks + 4)
+            group.safeLine(start.subtract(side.multiply(4.8)), end.subtract(side.multiply(4.8)), 2.0f, main.ticks + 4)
             d.play(NivarisPose.GLIDE)
-            yieldAll(script { glide(d, air, (main.ticks - 6).coerceAtLeast(6), end, a) })
-            // Sturzflug: tief über die Bahn, er schlägt nach beiden Seiten.
-            d.play(NivarisPose.DIVE)
-            f.ambient("nivaris.roar", d.entityPos, 5f, 0.95f)
-            f.ambient("nivaris.wing", d.entityPos, 5f, 0.6f)
-            val exit = end.add(dir.multiply(6.0)).add(0.0, 2.5, 0.0)
-            val low = air
-            for (i in 1..14) {
-                val k = i / 14.0
-                val pos = low.lerp(exit, k).let { Vec3d(it.x, f.floorY + 2.5 + (low.y - f.floorY - 2.5) * (1 - k) * (1 - k), it.z) }
-                f.place(d, pos)
-                f.face(d, exit.add(dir.multiply(10.0)))
+            a.play(AriusPose.CUT_CHARGE)
+            for (i in 1..main.ticks + 4) {
+                if (i > delay) run.step()
                 ride(a, d)
-                if (i == 6) {
-                    d.play(NivarisPose.GLIDE)
+                if (i == main.ticks) {
+                    d.play(NivarisPose.DIVE)
+                    f.ambient("nivaris.roar", d.entityPos, 5f, 0.95f)
                     f.ambient("nivaris.crash", center, 3f, 1.3f)
                     for (p in main.hits(f.players())) {
                         f.hurt(p, 11f, Damage.Kind.IMPACT, d)
@@ -135,7 +374,7 @@ class Duo(private val f: EirholmFight) {
                     }
                     for (q in 1..3) f.fx(FxKind.CLEAR_WAVE, start.lerp(end, q / 4.0), a = 5f, life = 16)
                 }
-                if (i == 10) {
+                if (i == main.ticks + 4) {
                     a.play(AriusPose.SPIN_CUT, 1)
                     f.ambient("arius.slash", a.entityPos, 3.5f, 0.9f)
                     f.ambient("cut.strike", a.entityPos, 2.5f, 1.4f)
@@ -148,93 +387,61 @@ class Duo(private val f: EirholmFight) {
                 yield(Unit)
             }
             a.play(AriusPose.CUT_CHARGE)
-            // Hochziehen und wenden.
-            yieldAll(script { glide(d, exit.add(dir.multiply(8.0)).add(0.0, 9.0, 0.0), 12, f.arenaCenter, a) })
+            flyToEnd(run, d, a)
         }
-        // 3) Absprung und Sturz auf das Ziel; sie landet daneben.
-        val target = f.target() ?: t
-        val spot = floor(f.clampToArena(target.entityPos, 2.0))
-        val ring = f.calls.ring(spot, 4.6f, 24, pace = Telegraph.Pace.HEAVY)
-        f.ambient("iai.glint", a.entityPos, 3f, 0.7f)
-        a.play(AriusPose.STAB_GROUND, ring.ticks)
-        val launch = a.entityPos
-        val top = launch.lerp(spot, 0.4).add(0.0, 7.0, 0.0)
-        val leave = d.entityPos.add(flatDir(spot, d.entityPos).multiply(10.0)).add(0.0, 6.0, 0.0)
-        val dFrom = d.entityPos
-        for (i in 1..ring.ticks) {
-            val k = i / ring.ticks.toDouble()
-            f.place(a, if (k < 0.5) launch.lerp(top, k * 2) else top.lerp(spot, ((k - 0.5) * 2).let { it * it }))
-            f.face(a, spot)
-            f.place(d, dFrom.lerp(leave, k))
-            yield(Unit)
-        }
-        f.place(a, spot)
-        f.ambient("arius.stab_ground", spot, 4f, 0.7f)
-        f.ambient("cut.strike", spot, 3f, 0.8f)
-        f.calls.roomShake(spot, 5f, 30f)
-        Vfx.shockwave(f.world, Vfx.Style.HEAVEN, spot, 7f, 14, 1.8f)
-        f.fx(FxKind.CLEAR_WAVE, spot, a = 9f, life = 16)
-        for (q in 0 until 12) f.shards.spike(spot.add(cos(q * PI / 6) * 4.2, 0.0, sin(q * PI / 6) * 4.2), 1.6 + rnd.nextDouble(), 40)
-        for (p in ring.hits(f.players())) {
-            f.hurt(p, 13f, Damage.Kind.NULL_CUT)
-            Fx.launchPlayer(p, flatDir(spot, p.entityPos).multiply(0.8).add(0.0, 0.5, 0.0))
-        }
-        bothOpen(a, 34, 30)
+        together(a, d)
     }
 
     // --- Kreuzschnitt ---------------------------------------------------------------------------------------------------
 
     /**
-     * **Kreuzschnitt**: eine Zange von zwei Seiten. Arius stellt sich auf der einen Seite des Ziels auf, Solvane auf der
-     * anderen, quer dazu. Beide stürmen gleichzeitig: Sie fegt tief eine breite Bahn, er schneidet quer – ein X durch das
-     * Ziel; kurz danach bricht die Mitte auf. Sicher sind die vier goldenen Felder zwischen den Armen. Die zweite Runde
-     * ist um 45° gedreht und schneller.
+     * **Kreuzschnitt**: eine Zange von zwei Seiten. Sie überfliegt das Ziel längs, er schneidet im selben Tick quer: ein X
+     * durch das Ziel, kurz danach bricht die Mitte auf. Sicher sind die vier goldenen Felder zwischen den Armen. Die zweite
+     * Runde ist um 45° gedreht, danach nimmt sie ihn auf.
      */
     fun crossCut(): Script = script {
         val a = f.arius ?: return@script
         val d = f.nivaris ?: return@script
         announce("cross_cut", a, d)
         var ang = rnd.nextDouble() * PI
+        d.flying = true
         for (round in 0 until 2) {
             val t = f.target() ?: break
             val center = floor(f.clampToArena(t.entityPos, 9.0))
-            val axisA = Vec3d(sin(ang), 0.0, cos(ang))
+            var axisA = Vec3d(sin(ang), 0.0, cos(ang))
+            // Sie fliegt in die Richtung, in die sie ohnehin zeigt: keine Wende auf der Stelle.
+            if (axisA.dotProduct(flatDir(d.entityPos, center)) < 0) axisA = axisA.multiply(-1.0)
             val axisB = Vec3d(-axisA.z, 0.0, axisA.x)
-            val sign = if (rnd.nextBoolean()) 1.0 else -1.0
-            val dFrom = floor(f.clampToArena(center.subtract(axisA.multiply(18.0 * sign)), 1.5)).add(0.0, 3.5, 0.0)
-            val dTo = floor(f.clampToArena(center.add(axisA.multiply(18.0 * sign)), 1.5)).add(0.0, 3.0, 0.0)
-            val aFrom = floor(f.clampToArena(center.subtract(axisB.multiply(13.0 * sign)), 1.0))
-            val aTo = floor(f.clampToArena(center.add(axisB.multiply(13.0 * sign)), 1.0))
-            val lead = if (round == 0) 34 else 24
-            // Aufstellen: er im Windschritt, sie im Bogen.
+            val aFrom = floor(f.clampToArena(center.subtract(axisB.multiply(13.0)), 1.0))
+            val aTo = floor(f.clampToArena(center.add(axisB.multiply(13.0)), 1.0))
+            val dFrom = floor(f.clampToArena(center.subtract(axisA.multiply(18.0)), 1.5))
+            val dTo = floor(f.clampToArena(center.add(axisA.multiply(18.0)), 1.5))
+            val low = air(center, 5.0)
+            val run = RailRun(f, d, listOf(air(center.subtract(axisA.multiply(32.0)), 9.0), low, air(center.add(axisA.multiply(36.0)), 12.0)), 1.6)
+            val arrive = run.ticksTo(low)
+            val lead = arrive.coerceAtLeast(if (round == 0) 34 else 26)
+            val delay = lead - arrive
             val aStart = a.entityPos
             a.play(AriusPose.LUNGE, lead)
             f.ambient("arius.wind_step", aStart, 2.4f, 1.1f)
             f.fx(FxKind.DASH_STREAK, aStart, aFrom, life = 12)
-            d.flying = true
             d.play(NivarisPose.GLIDE)
-            val dStart = d.entityPos
             val group = f.calls.boss(style = Vfx.Style.SOUL)
-            val charge = group.line(Vec3d(dFrom.x, f.floorY, dFrom.z), Vec3d(dTo.x, f.floorY, dTo.z), 4.2f, lead, Telegraph.Pace.HEAVY)
-            val cut = group.line(aFrom, aTo, 2.6f, lead, Telegraph.Pace.HEAVY)
-            val core = group.ring(center, 3.4f, lead + 14, pace = Telegraph.Pace.AREA)
+            val charge = group.line(dFrom, dTo, 4.2f, lead, Telegraph.Pace.HEAVY)
+            val cut = group.line(aFrom, aTo, 2.6f, charge.ticks, Telegraph.Pace.HEAVY)
+            val core = group.ring(center, 3.4f, charge.ticks + 14, pace = Telegraph.Pace.AREA)
             for (qa in listOf(1.0, -1.0)) for (qb in listOf(1.0, -1.0)) {
-                group.safe(center.add(axisA.multiply(qa * 6.5)).add(axisB.multiply(qb * 6.5)), 2.6f, lead + 14)
+                group.safe(center.add(axisA.multiply(qa * 6.5)).add(axisB.multiply(qb * 6.5)), 2.6f, charge.ticks + 14)
             }
             f.ambient("nivaris.inhale", d.entityPos, 3f, 1.1f)
             f.ambient("cut.charge", a.entityPos, 3f, 1.2f)
-            val setup = (lead - 4).coerceAtLeast(8)
-            for (i in 1..setup) {
-                val k = (i / setup.toDouble()).let { it * it * (3 - 2 * it) }
+            for (i in 1..charge.ticks) {
+                if (i > delay) run.step()
                 if (i <= 6) f.place(a, aStart.lerp(aFrom, i / 6.0))
                 f.face(a, center)
-                f.place(d, dStart.lerp(dFrom, k).add(0.0, sin(k * PI) * 5.0, 0.0))
-                f.face(d, center)
-                if (i == setup / 2) f.fx(FxKind.THREAD, a.entityPos, life = setup, e1 = a, e2 = d)
+                if (i == 7) a.play(AriusPose.CUT_CHARGE)
                 yield(Unit)
             }
-            a.play(AriusPose.CUT_CHARGE)
-            wait((charge.remaining).coerceAtLeast(0))
             // Gleichzeitig: sie fegt, er schneidet.
             f.ambient("nivaris.roar", d.entityPos, 5f, 1.0f)
             f.ambient("cut.strike", a.entityPos, 4f, 1.15f)
@@ -245,15 +452,12 @@ class Duo(private val f: EirholmFight) {
             }
             for (p in cut.hits(f.players())) f.hurt(p, 12f, Damage.Kind.NULL_CUT)
             f.fx(FxKind.SEAM, aFrom.add(0.0, 0.2, 0.0), aTo.add(0.0, 0.2, 0.0), a = 2f, life = 24)
-            f.fx(FxKind.SEAM, Vec3d(dFrom.x, f.floorY + 0.2, dFrom.z), Vec3d(dTo.x, f.floorY + 0.2, dTo.z), a = 3f, life = 24)
+            f.fx(FxKind.SEAM, dFrom.add(0.0, 0.2, 0.0), dTo.add(0.0, 0.2, 0.0), a = 3f, life = 24)
             f.fx(FxKind.DASH_STREAK, aFrom, aTo, life = 12)
             for (i in 1..10) {
-                val k = i / 10.0
-                f.place(d, dFrom.lerp(dTo, k).let { Vec3d(it.x, f.floorY + 2.2, it.z) })
-                f.face(d, dTo.add(axisA.multiply(10.0 * sign)))
+                run.step()
                 if (i <= 5) f.place(a, aFrom.lerp(aTo, i / 5.0))
                 if (i == 5) {
-                    // Die Arme kreuzen sich: Blitz in der Mitte.
                     Vfx.flare(f.world, Vfx.Style.HEAVEN, center.add(0.0, 1.5, 0.0), 3f, 8)
                     f.fx(FxKind.SLASH_ARC, center.add(0.0, 1.2, 0.0), axisB, a = 9f, b = 0f, life = 14)
                     f.fx(FxKind.SLASH_ARC, center.add(0.0, 1.0, 0.0), axisA, a = 9f, b = 0.2f, life = 14)
@@ -262,7 +466,7 @@ class Duo(private val f: EirholmFight) {
                 yield(Unit)
             }
             f.face(a, center)
-            wait((core.remaining).coerceAtLeast(0))
+            fly(run, core.remaining.coerceAtLeast(0), d)
             f.ambient("core.collapse", center, 4f, 1.3f)
             Vfx.nova(f.world, Vfx.Style.HEAVEN, center.add(0.0, 0.3, 0.0), 3.8f, 12)
             f.fx(FxKind.CLEAR_WAVE, center, a = 7f, life = 14)
@@ -271,24 +475,23 @@ class Duo(private val f: EirholmFight) {
                 Fx.launchPlayer(p, flatDir(center, p.entityPos).multiply(0.6).add(0.0, 0.5, 0.0))
             }
             ang += PI / 4
-            wait(6)
+            flyToEnd(run, d)
         }
-        d.play(NivarisPose.HOVER)
-        bothOpen(a, 32, 26)
+        scoopAndStrike(a, d)
     }
 
-    // --- Seit 1.10.0: mehr Duo-Angriffe, einer stellt auf, der andere bestraft ---------------------------------------
+    // --- Auswahl --------------------------------------------------------------------------------------------------------
 
     private var lastPick = -1
     private val order = ArrayList<Int>()
 
-    /**
-     * Nächster Duo-Angriff aus einer gemischten Folge (keine Wiederholung direkt hintereinander): Drachenritt,
-     * Zwillingsfang, Kreuzschnitt, Sturmspalter, Frostkerker.
-     */
+    /** Nächste Kette aus einer gemischten Folge (keine Wiederholung direkt hintereinander). */
     fun next(): Script {
         if (order.isEmpty()) {
-            order.addAll(listOf(0, 1, 2, 3, 4).shuffled(rnd))
+            order.addAll(listOf(0, 1, 2, 3, 4, 5).shuffled(rnd))
+            // Die Kette, die der Spieler sich gewünscht hat, kommt in jeder Runde zuerst.
+            order.remove(5)
+            order.add(0, 5)
             if (order.first() == lastPick) order.add(order.removeAt(0))
         }
         val pick = order.removeAt(0)
@@ -298,7 +501,8 @@ class Duo(private val f: EirholmFight) {
             1 -> twinFang()
             2 -> crossCut()
             3 -> galeCleave()
-            else -> frostPrison()
+            4 -> frostPrison()
+            else -> harmony()
         }
     }
 
@@ -312,10 +516,12 @@ class Duo(private val f: EirholmFight) {
         wait((dragonOpen - (f.now - start).toInt()).coerceIn(8, dragonOpen))
     }
 
+    // --- Zwillingsfang --------------------------------------------------------------------------------------------------
+
     /**
-     * **Zwillingsfang**: drei Runden, immer schneller. Arius zieht im Iai-Zug eine Bahn durch das Ziel; im Moment seines
-     * Schnitts setzt Solvane eine zweite Bahn quer dazu – auf die Stelle, an der das Ziel JETZT steht. Wer Arius
-     * ausweicht, muss sofort ein zweites Mal ausweichen. Zwischen den Runden wechselt er die Seite.
+     * **Zwillingsfang**: Arius zieht im Iai-Zug eine Bahn durch das Ziel; sobald er durch ist, setzt Solvane ihren Überflug
+     * auf die Stelle, an der das Ziel JETZT steht. Wer ihm ausweicht, muss sofort ein zweites Mal ausweichen. Nach zwei
+     * Runden nimmt sie ihn auf.
      */
     fun twinFang(): Script = script {
         val a = f.arius ?: return@script
@@ -323,10 +529,9 @@ class Duo(private val f: EirholmFight) {
         announce("twin_fang", a, d)
         d.flying = true
         d.play(NivarisPose.GLIDE)
-        var side = if (rnd.nextBoolean()) 1.0 else -1.0
-        for (round in 0 until 3) {
+        for (round in 0 until 2) {
             val t = f.target() ?: break
-            val lead = intArrayOf(20, 16, 13)[round]
+            val lead = intArrayOf(20, 15)[round]
             val toT = flatDir(a.entityPos, t.entityPos)
             val from = floor(a.entityPos)
             val to = floor(f.clampToArena(t.entityPos.add(toT.multiply(5.0)), 1.0))
@@ -334,10 +539,7 @@ class Duo(private val f: EirholmFight) {
             a.sheathed = false
             a.play(AriusPose.IAI_STANCE)
             f.ambient("iai.glint", from, 2.4f, 1.0f + round * 0.15f)
-            // Solvane geht seitlich über dem Ziel in Stellung.
-            val stage = t.entityPos.add(Vec3d(-toT.z, 0.0, toT.x).multiply(12.0 * side)).add(0.0, 6.0, 0.0)
-            yieldAll(script { glide(d, f.clampToArena(stage, 2.0).let { Vec3d(it.x, f.floorY + 6.0, it.z) }, (cut.ticks - 2).coerceAtLeast(4), t.entityPos, null) })
-            wait((cut.remaining).coerceAtLeast(0))
+            wait(cut.ticks)
             a.play(AriusPose.IAI_DRAW, 1)
             f.ambient("iai.draw", from, 3f, 1.1f)
             val struck = cut.hits(f.players())
@@ -348,44 +550,42 @@ class Duo(private val f: EirholmFight) {
             f.fx(FxKind.DASH_STREAK, from, to, life = 10)
             f.fx(FxKind.SEAM, from.add(0.0, 1.0, 0.0), to.add(0.0, 1.0, 0.0), a = 1.2f, life = 12)
             for (p in struck) f.hurt(p, 10f, Damage.Kind.NULL_CUT)
-            // Ihre Bahn: von ihrer Seite quer durch die Stelle, an der das Ziel jetzt steht.
+            // Ihr Überflug zielt dorthin, wo das Ziel jetzt steht.
             val now = f.target() ?: t
-            val aim = floor(now.entityPos)
+            val aim = floor(f.clampToArena(now.entityPos, 2.0))
             val dir = flatDir(d.entityPos, aim)
-            val dStart = floor(f.clampToArena(aim.subtract(dir.multiply(11.0)), 1.5))
-            val dEnd = floor(f.clampToArena(aim.add(dir.multiply(11.0)), 1.5))
-            val fang = f.calls.line(dStart, dEnd, 3.4f, 16, Telegraph.Pace.PROJECTILE, style = Vfx.Style.SOUL)
-            d.play(NivarisPose.DIVE)
+            val low = air(aim, 5.0)
+            val run = RailRun(f, d, listOf(air(aim.subtract(dir.multiply(26.0)), 8.0), low, air(aim.add(dir.multiply(34.0)), 12.0)), 1.8)
+            val arrive = run.ticksTo(low)
+            val fangLead = arrive.coerceAtLeast(16)
+            val delay = fangLead - arrive
+            val fang = f.calls.line(floor(f.clampToArena(aim.subtract(dir.multiply(11.0)), 1.5)), floor(f.clampToArena(aim.add(dir.multiply(11.0)), 1.5)), 3.2f, fangLead, Telegraph.Pace.PROJECTILE, style = Vfx.Style.SOUL)
             f.ambient("nivaris.roar", d.entityPos, 4f, 1.15f + round * 0.1f)
-            yieldAll(script { glide(d, dStart.add(0.0, 4.0, 0.0).subtract(dir.multiply(3.0)), (fang.ticks - 7).coerceAtLeast(4), dEnd, null) })
             f.face(a, now.entityPos)
             a.play(AriusPose.IAI_STANCE)
-            wait((fang.remaining - 6).coerceAtLeast(0))
-            val sweepFrom = d.entityPos
-            for (i in 1..8) {
-                val k = i / 8.0
-                f.place(d, sweepFrom.lerp(dEnd.add(dir.multiply(4.0)).add(0.0, 2.0, 0.0), k).let { Vec3d(it.x, f.floorY + 1.8 + 3.0 * (1 - k) * (1 - k), it.z) })
-                f.face(d, dEnd.add(dir.multiply(10.0)))
-                if (i == 6) {
-                    f.ambient("nivaris.crash", aim, 3f, 1.3f)
-                    for (p in fang.hits(f.players())) {
-                        f.hurt(p, 10f, Damage.Kind.IMPACT, d)
-                        Fx.launchPlayer(p, Vec3d(-dir.z, 0.0, dir.x).multiply(0.7).add(0.0, 0.45, 0.0))
-                    }
-                    f.fx(FxKind.CLEAR_WAVE, aim, a = 4f, life = 12)
-                }
+            for (i in 1..fang.ticks) {
+                if (i > delay) run.step()
                 yield(Unit)
             }
-            side = -side
+            d.play(NivarisPose.DIVE)
+            f.ambient("nivaris.crash", aim, 3f, 1.3f)
+            for (p in fang.hits(f.players())) {
+                f.hurt(p, 10f, Damage.Kind.IMPACT, d)
+                Fx.launchPlayer(p, Vec3d(-dir.z, 0.0, dir.x).multiply(0.7).add(0.0, 0.45, 0.0))
+            }
+            f.fx(FxKind.CLEAR_WAVE, aim, a = 4f, life = 12)
+            flyToEnd(run, d)
+            d.play(NivarisPose.GLIDE)
         }
-        d.play(NivarisPose.GLIDE)
-        bothOpen(a, 30, 24)
+        scoopAndStrike(a, d)
     }
 
+    // --- Sturmspalter ---------------------------------------------------------------------------------------------------
+
     /**
-     * **Sturmspalter**: Solvane landet vor dem Ziel und schlägt mit beiden Schwingen einen Sturm nach vorn (Kegel, stößt
-     * weit zurück). Hinter dem Ziel hat sich Arius quer aufgestellt und spaltet genau die Linie, in die der Sturm die
-     * Getroffenen wirft. Wer seitlich aus dem Kegel geht, entgeht beidem; die Enden der Linie sind golden sicher.
+     * **Sturmspalter**: Solvane landet vor dem Ziel und schlägt mit beiden Schwingen einen Sturm nach vorn. Hinter dem Ziel
+     * hat sich Arius quer aufgestellt und spaltet genau die Linie, in die der Sturm die Getroffenen wirft. Wer seitlich aus
+     * dem Kegel geht, entgeht beidem. Danach hebt sie ab und holt ihn zum gemeinsamen Schlag.
      */
     fun galeCleave(): Script = script {
         val a = f.arius ?: return@script
@@ -400,34 +600,43 @@ class Duo(private val f: EirholmFight) {
         val aSpot = floor(f.clampToArena(lineMid.add(across.multiply(9.0)), 1.0))
         val lineFrom = aSpot
         val lineTo = floor(f.clampToArena(lineMid.subtract(across.multiply(9.0)), 1.0))
-        val group = f.calls.boss(style = Vfx.Style.SOUL)
-        val gust = group.cone(dSpot, axis, 13f, 70f, 26, Telegraph.Pace.HEAVY)
-        val cleave = group.line(lineFrom, lineTo, 3.4f, 36, Telegraph.Pace.HEAVY)
-        group.safe(center.add(across.multiply(8.5)), 2.4f, 36)
-        group.safe(center.subtract(across.multiply(8.5)), 2.4f, 36)
-        // Aufstellen: sie landet, er geht im Windschritt quer in Position.
+        // Anflug über die Bahn; das letzte Stück schwebt sie auf den Boden.
         d.flying = true
         d.play(NivarisPose.GLIDE)
+        val hover = air(dSpot, 5.0)
+        val run = RailRun(f, d, listOf(air(dSpot.subtract(axis.multiply(28.0)), 10.0), hover), 1.6)
         val aFrom = a.entityPos
         a.play(AriusPose.LUNGE, 8)
         f.ambient("arius.wind_step", aFrom, 2.2f, 1.1f)
         f.fx(FxKind.DASH_STREAK, aFrom, aSpot, life = 10)
-        val dFrom = d.entityPos
-        for (i in 1..14) {
-            val k = (i / 14.0).let { it * it * (3 - 2 * it) }
-            f.place(d, dFrom.lerp(dSpot, k).add(0.0, sin(k * PI) * 3.0, 0.0))
-            f.face(d, center)
-            if (i <= 6) f.place(a, aFrom.lerp(aSpot, i / 6.0))
+        var n = 0
+        while (!run.done && n < 200) {
+            run.step()
+            n++
+            if (n <= 6) f.place(a, aFrom.lerp(aSpot, n / 6.0))
             f.face(a, lineTo)
+            yield(Unit)
+        }
+        f.place(a, aSpot)
+        val group = f.calls.boss(style = Vfx.Style.SOUL)
+        val gust = group.cone(dSpot, axis, 13f, 70f, 26, Telegraph.Pace.HEAVY)
+        val cleave = group.line(lineFrom, lineTo, 3.4f, gust.ticks + 10, Telegraph.Pace.HEAVY)
+        group.safe(center.add(across.multiply(8.5)), 2.4f, gust.ticks + 10)
+        group.safe(center.subtract(across.multiply(8.5)), 2.4f, gust.ticks + 10)
+        val top = d.entityPos
+        for (i in 1..10) {
+            val k = (i / 10.0).let { it * it * (3 - 2 * it) }
+            f.place(d, top.lerp(dSpot, k))
+            f.face(d, center)
             yield(Unit)
         }
         f.place(d, dSpot)
         d.flying = false
-        d.play(NivarisPose.WING_GUST, (gust.remaining).coerceAtLeast(1))
+        d.play(NivarisPose.WING_GUST, gust.remaining.coerceAtLeast(1))
         a.play(AriusPose.CUT_CHARGE)
         f.ambient("cut.charge", aSpot, 2.6f, 1.2f)
         f.ambient("nivaris.inhale", dSpot, 3f, 1.3f)
-        wait((gust.remaining).coerceAtLeast(0))
+        wait(gust.remaining.coerceAtLeast(0))
         f.ambient("nivaris.wing", dSpot, 5f, 0.7f)
         f.fx(FxKind.GALE, dSpot.add(0.0, 1.0, 0.0), axis.multiply(13.0), a = 1f, life = 14)
         Vfx.shockwave(f.world, Vfx.Style.STORM, dSpot.add(axis.multiply(3.0)), 6f, 12, 1.2f)
@@ -437,7 +646,7 @@ class Duo(private val f: EirholmFight) {
         }
         wait((cleave.remaining - 6).coerceAtLeast(0))
         a.play(AriusPose.CUT_RELEASE, 6)
-        wait((cleave.remaining).coerceAtLeast(0))
+        wait(cleave.remaining.coerceAtLeast(0))
         f.ambient("cut.strike", lineMid, 3.5f, 1.1f)
         f.ambient("arius.stab_ground", lineMid, 2.5f, 0.7f)
         f.calls.roomShake(lineMid, 4f, 30f)
@@ -447,17 +656,21 @@ class Duo(private val f: EirholmFight) {
             f.hurt(p, 13f, Damage.Kind.IMPACT)
             dev.henny.hha_arius.gear.Frostbite.add(p, 15f)
         }
-        a.play(AriusPose.STAGGER)
-        f.openArius(30)
-        d.play(NivarisPose.EXHAUSTED)
-        f.openDragon(24)
-        wait(24)
+        // Sie hebt ab, zieht eine weite Schleife und nimmt ihn auf.
+        d.flying = true
+        d.play(NivarisPose.TAKEOFF, 8)
+        f.ambient("nivaris.wing", dSpot, 4f, 0.8f)
+        val climb = RailRun(f, d, listOf(air(dSpot.add(axis.multiply(30.0)), 12.0)), 1.3)
+        flyToEnd(climb, d)
+        scoopAndStrike(a, d)
     }
 
+    // --- Frostkerker ----------------------------------------------------------------------------------------------------
+
     /**
-     * **Frostkerker**: Solvane umkreist das Ziel und legt mit ihrem Atem einen Frostring darum (angesagtes Band, eine
-     * goldene Lücke). Im Kerker zieht Arius drei Iai-Züge auf die Eingeschlossenen. Das Band glitzert danach weiter:
-     * Wer hindurchläuft, friert an. Raus kommt man schadlos nur durch die Lücke – oder man stellt sich ihm.
+     * **Frostkerker**: Solvane zieht in einem weiten Bogen um das Ziel und legt mit ihrem Atem einen Frostring (angesagtes
+     * Band, eine goldene Lücke). Im Kerker zieht Arius drei Iai-Züge auf die Eingeschlossenen. Raus kommt man schadlos nur
+     * durch die Lücke, oder man stellt sich ihm. Zum Schluss holt sie ihn ab.
      */
     fun frostPrison(): Script = script {
         val a = f.arius ?: return@script
@@ -469,22 +682,26 @@ class Duo(private val f: EirholmFight) {
         val outer = 10.0f
         val gapAng = rnd.nextDouble() * 2 * PI
         val gap = f.ringPoint(center, ((inner + outer) / 2).toDouble(), gapAng)
-        val group = f.calls.boss(style = Vfx.Style.SOUL)
-        val band = group.ring(center, outer, 34, inner = inner, pace = Telegraph.Pace.AREA)
-        group.safe(gap, 2.4f, 36)
         d.flying = true
+        d.play(NivarisPose.GLIDE)
+        // Ein einziger weiter Bogen (Radius über dem Mindestkurvenradius), keine Kreise auf der Stelle.
+        val orbit = (DragonRail.MIN_RADIUS + 5.0)
+        val waypoints = (0..5).map { k -> air(f.ringPoint(center, orbit, gapAng + 0.4 + k * 2 * PI * 0.16), 7.0) }
+        val run = RailRun(f, d, waypoints, 2.4)
+        val group = f.calls.boss(style = Vfx.Style.SOUL)
+        val band = group.ring(center, outer, run.ticks.coerceIn(34, 90), inner = inner, pace = Telegraph.Pace.AREA)
+        group.safe(gap, 2.4f, band.ticks + 2)
         d.play(NivarisPose.BREATH)
         f.ambient("nivaris.inhale", d.entityPos, 3f, 1.0f)
-        // Arius springt in den Kerker.
         val aFrom = a.entityPos
         val inside = f.clampToArena(center.add(flatDir(center, aFrom).multiply(3.0)), 1.0)
         a.play(AriusPose.LAUNCH, 6)
         for (i in 1..band.ticks) {
-            val k = i / band.ticks.toDouble()
-            val ang = gapAng + 0.4 + k * 2 * PI * 0.9
-            f.place(d, f.ringPoint(center, outer + 2.0, ang).add(0.0, 3.5, 0.0))
-            f.face(d, center)
-            if (i % 3 == 0) Vfx.beam(f.world, Vfx.Style.SOUL, d.entityPos.add(0.0, 2.0, 0.0), f.ringPoint(center, ((inner + outer) / 2).toDouble(), ang), 1f, 6)
+            run.step()
+            if (i % 3 == 0) {
+                val toward = flatDir(center, d.entityPos)
+                Vfx.beam(f.world, Vfx.Style.SOUL, d.entityPos.add(0.0, 2.0, 0.0), center.add(toward.multiply(((inner + outer) / 2).toDouble())), 1f, 6)
+            }
             if (i <= 10) f.place(a, aFrom.lerp(inside, i / 10.0).add(0.0, sin(i / 10.0 * PI) * 2.0, 0.0))
             yield(Unit)
         }
@@ -514,8 +731,7 @@ class Duo(private val f: EirholmFight) {
                 }
             }
         })
-        // Im Kerker: drei Iai-Züge auf die Eingeschlossenen (sonst auf das Ziel).
-        d.play(NivarisPose.HOVER)
+        d.play(NivarisPose.GLIDE)
         for (k in 0 until 3) {
             val inPrison = f.players().filter { sqrt(it.squaredDistanceTo(center.x, it.y, center.z)) < outer }
             val v = (if (inPrison.isEmpty()) null else inPrison[rnd.nextInt(inPrison.size)]) ?: f.target() ?: break
@@ -526,21 +742,20 @@ class Duo(private val f: EirholmFight) {
             f.face(a, v.entityPos)
             a.play(AriusPose.IAI_STANCE)
             f.ambient("iai.glint", from, 2f, 1.2f + k * 0.1f)
-            wait(line.ticks)
+            fly(run, line.ticks, d)
             a.play(AriusPose.IAI_DRAW, 1)
             f.ambient("iai.draw", from, 2.6f)
             val struck = line.hits(f.players())
             for (i in 1..4) {
+                run.step()
                 f.place(a, from.lerp(to, i / 4.0))
                 yield(Unit)
             }
             f.fx(FxKind.DASH_STREAK, from, to, life = 10)
             for (p in struck) f.hurt(p, 10f, Damage.Kind.NULL_CUT)
-            wait(3)
+            fly(run, 3, d)
         }
-        bothOpen(a, 30, 22)
+        flyToEnd(run, d)
+        scoopAndStrike(a, d)
     }
-
-    @Suppress("unused")
-    private fun dist(a: Vec3d, b: Vec3d) = sqrt(a.squaredDistanceTo(b))
 }

@@ -69,6 +69,20 @@ class WhiteHoleFx(val center: Vec3d, private val radius: Double, private var pul
         lifeLimit = age + 24
     }
 
+    /** Seit 1.11.0: Die Umkehr. Ab jetzt strömt alles in den Kern, die Scheibe glüht golden-rot um ein dunkles Herz. */
+    var inverted = false
+        private set
+    private var invertedAt = 0
+
+    fun invert() {
+        if (inverted) return
+        inverted = true
+        invertedAt = age
+    }
+
+    /** Überblendung der Umkehr 0..1. */
+    private fun twist(t: Float): Float = if (!inverted) 0f else ((t - invertedAt) / 8f).coerceIn(0f, 1f)
+
     /** Frühzeitiges Ende nach dem Kollaps (Bosskampf). */
     var lifeLimit = Int.MAX_VALUE
         private set
@@ -126,9 +140,16 @@ class WhiteHoleFx(val center: Vec3d, private val radius: Double, private var pul
             val a = r.nextDouble() * 2 * PI
             val e = (r.nextDouble() - 0.5) * 1.2
             val dir = Vec3d(cos(a) * cos(e), sin(e) * 0.6, sin(a) * cos(e))
-            val p = center.add(dir.multiply(0.8 + r.nextDouble() * 1.2))
-            val v = dir.multiply(0.25 + 0.45 * k + r.nextDouble() * 0.15)
-            world.addParticleClient(if (r.nextFloat() < 0.7f) ParticleTypes.SNOWFLAKE else ParticleTypes.END_ROD, p.x, p.y, p.z, v.x, v.y, v.z)
+            if (inverted) {
+                // Umkehr: von weit draußen in den Kern.
+                val p = center.add(dir.multiply(radius * (0.7 + r.nextDouble() * 0.9)))
+                val v = dir.multiply(-(0.7 + r.nextDouble() * 0.5))
+                world.addParticleClient(if (r.nextFloat() < 0.5f) ParticleTypes.END_ROD else ParticleTypes.SNOWFLAKE, p.x, p.y, p.z, v.x, v.y, v.z)
+            } else {
+                val p = center.add(dir.multiply(0.8 + r.nextDouble() * 1.2))
+                val v = dir.multiply(0.25 + 0.45 * k + r.nextDouble() * 0.15)
+                world.addParticleClient(if (r.nextFloat() < 0.7f) ParticleTypes.SNOWFLAKE else ParticleTypes.END_ROD, p.x, p.y, p.z, v.x, v.y, v.z)
+            }
         }
         val g = ground
         if (g != null && age % 2 == 0) repeat((4 * particlesAllowed() * (0.4 + k)).toInt().coerceAtLeast(1)) {
@@ -136,7 +157,7 @@ class WhiteHoleFx(val center: Vec3d, private val radius: Double, private var pul
             val d = 1.5 + r.nextDouble() * radius
             val dir = Vec3d(cos(a), 0.0, sin(a))
             val p = g.add(dir.multiply(d)).add(0.0, 0.15 + r.nextDouble() * 0.5, 0.0)
-            val v = dir.multiply(0.35 + 0.5 * k)
+            val v = dir.multiply((0.35 + 0.5 * k) * (if (inverted) -1.3 else 1.0))
             world.addParticleClient(ParticleTypes.CLOUD, p.x, p.y, p.z, v.x, 0.01, v.z)
         }
     }
@@ -150,7 +171,7 @@ class WhiteHoleFx(val center: Vec3d, private val radius: Double, private var pul
         }
         val g = ground ?: return
         val fx = particlesAllowed()
-        if (age in 4 until pullTicks && age % 2 == 0 && pieces.size < (26 * fx).toInt()) {
+        if (age in 4 until pullTicks && (age % 2 == 0 || inverted) && pieces.size < ((if (inverted) 60 else 26) * fx).toInt()) {
             val a = rng.nextDouble() * 2 * PI
             val dist = 2.0 + kotlin.math.sqrt(rng.nextDouble()) * radius
             val bx = net.minecraft.util.math.BlockPos.ofFloored(g.x + cos(a) * dist, g.y - 1, g.z + sin(a) * dist)
@@ -244,7 +265,10 @@ class WhiteHoleFx(val center: Vec3d, private val radius: Double, private var pul
                 val f = bnd / 7f
                 val r0 = R * 1.3 + (diskR - R) * f
                 val r1 = r0 + (diskR - R) / 8.0 * 1.15
-                val col = dev.henny.hha.client.vfx.lerpColor(0xFFFFFFFF.toInt(), 0xFF9FC4F0.toInt(), f)
+                val col = dev.henny.hha.client.vfx.lerpColor(
+                    dev.henny.hha.client.vfx.lerpColor(0xFFFFFFFF.toInt(), 0xFF9FC4F0.toInt(), f),
+                    dev.henny.hha.client.vfx.lerpColor(0xFFFFE2A0.toInt(), 0xFFE0443A.toInt(), f), twist(time),
+                )
                 val a = (1f - f * 0.8f) * 0.5f * k
                 d.ring(VfxLayers.FLOW_ADD, center, du, dv, r0, r1, withAlpha(col, a), withAlpha(col, a * 0.4f), segments = 96,
                     uTile = 4f + bnd, uOffset = -time * (0.04f + 0.008f * bnd))
@@ -255,7 +279,7 @@ class WhiteHoleFx(val center: Vec3d, private val radius: Double, private var pul
                 for (j in 0 until 28) {
                     val f = j / 27.0
                     val rr = R * 1.2 + f * (diskR - R * 1.2)
-                    val ang = arm * 2.0944 + f * 4.2 - time * 0.06
+                    val ang = arm * 2.0944 + f * 4.2 + time * (if (inverted) 0.16 else -0.06)
                     path.add(center.add(du.multiply(cos(ang) * rr)).add(dv.multiply(sin(ang) * rr)))
                 }
                 d.ribbon(VfxLayers.GLOW_ADD, path, { f -> 0.35 * (1.0 - f * 0.6) }, { f -> withAlpha(0xFFFFF4D6.toInt(), (0.8f - f * 0.75f) * k) }, uScale = 1f, uOffset = 0f)
@@ -304,7 +328,9 @@ class WhiteHoleFx(val center: Vec3d, private val radius: Double, private var pul
                 d.billboard(VfxLayers.FLARE_ADD, pos, 0.25 + 0.35 * tw, withAlpha(0xFFFFFFFF.toInt(), 0.8f * tw * k))
             }
             // Die Scheibe selbst: harte, gleißend weiße Kugel mit Korona
-            d.sphere(VfxLayers.SHARD_ALPHA, center, R, { _ -> withAlpha(0xFFFFFFFF.toInt(), k) }, lat = 14, lon = 24)
+            d.sphere(VfxLayers.SHARD_ALPHA, center, R, { _ -> withAlpha(dev.henny.hha.client.vfx.lerpColor(0xFFFFFFFF.toInt(), 0xFF120A12.toInt(), twist(time)), k) }, lat = 14, lon = 24)
+            // Umkehr: ein glühender Rand um das dunkle Herz.
+            if (inverted) d.ring(VfxLayers.GLOW_ADD, center, d.camRight, d.camUp, R * 1.0, R * 1.5, withAlpha(0xFFFFB040.toInt(), 0.95f * k * twist(time)), withAlpha(0xFFE0443A.toInt(), 0f), segments = 72)
             d.billboard(VfxLayers.GLOW_ADD, center, R * 2.4, withAlpha(0xFFFFFFFF.toInt(), 0.6f * k))
             d.billboard(VfxLayers.GLOW_ADD, center, R * 6.0, withAlpha(0xFFDDEBFF.toInt(), 0.25f * k))
         }

@@ -21,6 +21,11 @@ object BossConfig {
         context.registerNumber("boss_health_per_player", 0.6)
         context.registerNumber("boss_max_instances", 4.0)
         context.registerNumber("boss_build_budget", 12000.0)
+        // Seit 1.11.0: Fähigkeiten zählen gegen die Bosse mehr, Streitkolben-Stürze deutlich weniger (siehe [BossBurst]).
+        context.registerNumber("boss_ability_damage", 1.7)
+        context.registerNumber("boss_gauntlet_damage", 1.3)
+        context.registerNumber("boss_mace_hit_cap", 16.0)
+        context.registerNumber("boss_mace_burst_cap", 34.0)
     }
 
     private fun num(key: String, fallback: Double): Double = context?.let { runCatching { it.number(key) }.getOrNull() } ?: fallback
@@ -45,6 +50,18 @@ object BossConfig {
     fun maxInstances(): Int = num("boss_max_instances", 4.0).toInt().coerceIn(1, 16)
 
     fun buildBudget(): Int = num("boss_build_budget", 12000.0).toInt().coerceIn(1000, 100000)
+
+    /** Faktor für Zauber und Rüstungsfähigkeiten gegen die Bosse (gilt nicht gegen andere Gegner oder Spieler). */
+    fun abilityDamage(): Float = num("boss_ability_damage", 1.7).toFloat().coerceIn(0f, 10f)
+
+    /** Faktor für den Nahkampf der Handschuhe gegen die Bosse. */
+    fun gauntletDamage(): Float = num("boss_gauntlet_damage", 1.3).toFloat().coerceIn(0f, 10f)
+
+    /** Höchstschaden eines einzelnen Streitkolben-Treffers gegen die Bosse. */
+    fun maceHitCap(): Float = num("boss_mace_hit_cap", 16.0).toFloat().coerceIn(1f, 1000f)
+
+    /** Höchstschaden aller Streitkolben-Treffer eines Spielers in [BossBurst.WINDOW] Ticks. */
+    fun maceBurstCap(): Float = num("boss_mace_burst_cap", 34.0).toFloat().coerceIn(1f, 1000f)
 }
 
 /**

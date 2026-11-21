@@ -108,6 +108,12 @@ object AriusTimings {
     const val GUARD_TICKS_SERIOUS = 24
     const val GUARD_TICKS_WHITE = 22
     const val GUARD_UNTOUCHED_OPEN = 22
+
+    /** Seit 1.11.0: So lange nach dem sichtbaren Beginn greift die Konterhaltung noch nicht. */
+    const val COUNTER_GRACE = 5
+
+    /** Seit 1.11.0: Dauer der sichtbaren Reaktions-Haltung gegen blindes Einhämmern (inklusive [COUNTER_GRACE]). */
+    const val REACT_STANCE = 22
     const val GRIP_OPEN = 18
     const val STAB_OPEN = 24
     const val STRIP_DELAY = 6

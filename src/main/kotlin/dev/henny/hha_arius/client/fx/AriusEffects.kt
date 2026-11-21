@@ -93,7 +93,8 @@ abstract class AriusFx(val life: Int) {
                 FxKind.PULL -> e1?.let { PullFx(it, p.a.toDouble(), p.life) }
                 FxKind.GALE -> GaleFx(pos, dir, p.a, p.life)
                 FxKind.WHITE_HOLE -> if (p.b >= 0f) WhiteHoleFx(pos, p.a.toDouble(), p.b.toInt(), p.life) else {
-                    AriusFxClient.collapseWhiteHole(pos)
+                    // b = -2: die Umkehr (seit 1.11.0), sonst der Kollaps.
+                    if (p.b <= -1.5f) AriusFxClient.invertWhiteHole(pos) else AriusFxClient.collapseWhiteHole(pos)
                     null
                 }
                 FxKind.BLADE_STREAM -> BladeStream(pos, dir, p.a.toInt(), p.b >= 0.5f, e1, p.life)

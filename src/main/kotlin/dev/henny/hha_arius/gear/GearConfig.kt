@@ -71,7 +71,7 @@ object GearConfig {
         "spell_gale_charge_max" to 24.0,
         "spell_blade_storm_cost" to 18.0,
         "spell_blade_storm_cooldown" to 120.0,
-        "spell_blade_storm_damage" to 3.5, // 1.10.0: 5 → 3.5 (fünf Klingen auf ein Ziel waren 25)
+        "spell_blade_storm_damage" to 5.0, // 1.11.0 wieder 5 (1.10.0: 3,5)
         "spell_blade_storm_range" to 22.0,
         "spell_ice_prison_cost" to 25.0,
         "spell_ice_prison_cooldown" to 300.0,
@@ -126,7 +126,7 @@ object GearConfig {
         "spell_tornado_cost" to 22.0,
         "spell_tornado_cooldown" to 220.0,
         "spell_tornado_ticks" to 100.0,
-        "spell_tornado_damage" to 2.0, // 1.10.0: 2,5 → 2
+        "spell_tornado_damage" to 2.5, // 1.11.0 wieder 2,5 (1.10.0: 2)
         "spell_tornado_radius" to 4.5,
         "spell_glacier_lance_cost" to 15.0,
         "spell_glacier_lance_cost_full" to 40.0,
@@ -141,7 +141,7 @@ object GearConfig {
         // Solvane – Klarer Schnitt
         "clear_cut_cost" to 50.0,
         "clear_cut_damage" to 10.0,
-        "clear_cut_damage_full" to 18.0, // 1.10.0: 20 → 18
+        "clear_cut_damage_full" to 20.0, // 1.11.0 wieder 20 (1.10.0: 18)
         "clear_cut_cooldown" to 240.0,
         "clear_cut_recover" to 20.0,
         "clear_cut_block_max" to 24.0,
@@ -154,9 +154,9 @@ object GearConfig {
         "white_hole_push" to 0.16,
         "white_hole_cooldown" to 2400.0,
         // Solvane (10.2)
-        "solvane_frost_damage" to 1.5, // 1.10.0: 2 → 1,5
+        "solvane_frost_damage" to 2.0, // 1.11.0 wieder 2 (1.10.0: 1,5)
         "solvane_shatter_every" to 3.0,
-        "solvane_shatter_damage" to 4.0, // 1.10.0: 5 → 4
+        "solvane_shatter_damage" to 5.0, // 1.11.0 wieder 5 (1.10.0: 4)
         "solvane_shatter_slow_ticks" to 20.0,
         "solvane_counter_ticks" to 14.0, // seit 1.7.0 großzügiger
         "solvane_counter_cooldown_success" to 40.0,
@@ -180,12 +180,12 @@ object GearConfig {
         "breath_cost" to 35.0,
         "breath_ticks" to 30.0,
         "breath_range" to 8.0,
-        "breath_damage" to 1.5, // 1.10.0: 1,8 → 1,5 (10 Treffer)
+        "breath_damage" to 1.8, // 1.11.0 wieder 1,8 (1.10.0: 1,5; 10 Treffer)
         "breath_slow_ticks" to 50.0,
         "breath_cooldown" to 300.0,
         "tail_cost" to 25.0,
         "tail_radius" to 5.5,
-        "tail_damage" to 7.0, // 1.10.0: 8 → 7
+        "tail_damage" to 8.0, // 1.11.0 wieder 8 (1.10.0: 7)
         "tail_cooldown" to 160.0,
         "wing_leap_cost" to 20.0,
         "wing_leap_forward" to 1.15,

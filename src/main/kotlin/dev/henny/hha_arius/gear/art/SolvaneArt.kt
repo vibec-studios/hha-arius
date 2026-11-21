@@ -169,7 +169,7 @@ object SolvaneArt {
                 GearCombat.canHit(player, e) -> {
                     val t = e as LivingEntity
                     t.timeUntilRegen = 0
-                    if (t.damage(world, world.damageSources.playerAttack(player), damage)) {
+                    if (dev.henny.hha_arius.boss.PlayerHit.marked(dev.henny.hha_arius.boss.PlayerHit.Kind.ABILITY) { t.damage(world, world.damageSources.playerAttack(player), damage) }) {
                         any = true
                         if (!GearCombat.isHeavy(t)) {
                             val side = if (e.boundingBox.center.subtract(plane.origin).dotProduct(plane.normal) >= 0) 1.0 else -1.0
@@ -208,7 +208,7 @@ object SolvaneArt {
                 GearCombat.canHit(player, e) -> {
                     val t = e as LivingEntity
                     t.timeUntilRegen = 0
-                    if (t.damage(world, world.damageSources.playerAttack(player), damage * 0.6f)) {
+                    if (dev.henny.hha_arius.boss.PlayerHit.marked(dev.henny.hha_arius.boss.PlayerHit.Kind.ABILITY) { t.damage(world, world.damageSources.playerAttack(player), damage * 0.6f) }) {
                         any = true
                         dev.henny.hha_arius.gear.Frostbite.add(t, 25f)
                         if (!GearCombat.isHeavy(t)) {
