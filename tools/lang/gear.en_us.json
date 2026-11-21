@@ -19,7 +19,7 @@
   "itemGroup.hha_arius.eirholm": "Arius",
   "item.hha_arius.eirholm.lore.set": "Arius armour · Full set: White Hole, faster recharge, +25 % resonance",
   "item.hha_arius.eirholm_helmet.lore1": "Passive: no freezing in powder snow and cold",
-  "item.hha_arius.eirholm_helmet.lore2": "Full set, Ability 3 (U) – White Hole: uses all resonance (full), core up to %s blocks ahead, %s damage on collapse",
+  "item.hha_arius.eirholm_helmet.lore2": "Full set, Ability 3 (U) – White Hole: uses all resonance (full), core up to %s blocks ahead, repels, %s damage on eruption",
   "item.hha_arius.eirholm_chestplate.lore1": "Ability 1 (G) – Dragon Breath: %s resonance, 1.5 s frost cone ahead (%s blocks), %s damage every 0.15 s",
   "item.hha_arius.eirholm_chestplate.lore2": "Heavily slows and freezes targets · Cooldown %s s",
   "item.hha_arius.eirholm_leggings.lore1": "Ability 2 (H) – Dragon Tail: %s resonance, Solvane's ghostly tail lashes once all around you · Cooldown %s s",

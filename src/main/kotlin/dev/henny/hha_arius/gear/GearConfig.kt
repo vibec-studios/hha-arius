@@ -50,7 +50,7 @@ object GearConfig {
         "melee_gain_axe" to 10.0,
         // Vorrücken: Schläge schieben den Spieler ein Stück auf das nächste Ziel vorn zu (Blöcke je Tick, 0 = aus).
         "melee_step_in" to 0.32,
-        "melee_link_ticks" to 8.0,
+        "melee_link_ticks" to 10.0, // 1.10.0: 8 → 10 (Ketten verzeihen mehr)
         "melee_knock_guard_ticks" to 30.0,
         // Zauber (Kosten in Resonanz, Zeiten in Ticks)
         "spell_wind_blade_cost" to 8.0,
@@ -66,12 +66,12 @@ object GearConfig {
         "spell_gale_cooldown" to 80.0,
         "spell_gale_range" to 7.0,
         "spell_gale_knock" to 1.6,
-        "spell_gale_damage" to 3.0,
+        "spell_gale_damage" to 4.0, // 1.10.0: 3 → 4
         "spell_gale_charge_min" to 6.0,
         "spell_gale_charge_max" to 24.0,
         "spell_blade_storm_cost" to 18.0,
         "spell_blade_storm_cooldown" to 120.0,
-        "spell_blade_storm_damage" to 5.0,
+        "spell_blade_storm_damage" to 3.5, // 1.10.0: 5 → 3.5 (fünf Klingen auf ein Ziel waren 25)
         "spell_blade_storm_range" to 22.0,
         "spell_ice_prison_cost" to 25.0,
         "spell_ice_prison_cooldown" to 300.0,
@@ -85,7 +85,7 @@ object GearConfig {
         "spell_tank_mode_ticks" to 400.0,
         "spell_frost_shards_cost" to 10.0,
         "spell_frost_shards_cooldown" to 20.0,
-        "spell_frost_shards_damage" to 3.0,
+        "spell_frost_shards_damage" to 3.5, // 1.10.0: 3 → 3,5 (zu schwach für die Kosten)
         "spell_frost_shards_range" to 14.0,
         "spell_frost_shards_slow_ticks" to 30.0,
         "spell_ice_wall_cost" to 20.0,
@@ -126,7 +126,7 @@ object GearConfig {
         "spell_tornado_cost" to 22.0,
         "spell_tornado_cooldown" to 220.0,
         "spell_tornado_ticks" to 100.0,
-        "spell_tornado_damage" to 2.5,
+        "spell_tornado_damage" to 2.0, // 1.10.0: 2,5 → 2
         "spell_tornado_radius" to 4.5,
         "spell_glacier_lance_cost" to 15.0,
         "spell_glacier_lance_cost_full" to 40.0,
@@ -141,7 +141,7 @@ object GearConfig {
         // Solvane – Klarer Schnitt
         "clear_cut_cost" to 50.0,
         "clear_cut_damage" to 10.0,
-        "clear_cut_damage_full" to 20.0,
+        "clear_cut_damage_full" to 18.0, // 1.10.0: 20 → 18
         "clear_cut_cooldown" to 240.0,
         "clear_cut_recover" to 20.0,
         "clear_cut_block_max" to 24.0,
@@ -154,9 +154,9 @@ object GearConfig {
         "white_hole_push" to 0.16,
         "white_hole_cooldown" to 2400.0,
         // Solvane (10.2)
-        "solvane_frost_damage" to 2.0,
+        "solvane_frost_damage" to 1.5, // 1.10.0: 2 → 1,5
         "solvane_shatter_every" to 3.0,
-        "solvane_shatter_damage" to 5.0,
+        "solvane_shatter_damage" to 4.0, // 1.10.0: 5 → 4
         "solvane_shatter_slow_ticks" to 20.0,
         "solvane_counter_ticks" to 14.0, // seit 1.7.0 großzügiger
         "solvane_counter_cooldown_success" to 40.0,
@@ -180,12 +180,12 @@ object GearConfig {
         "breath_cost" to 35.0,
         "breath_ticks" to 30.0,
         "breath_range" to 8.0,
-        "breath_damage" to 1.8,
+        "breath_damage" to 1.5, // 1.10.0: 1,8 → 1,5 (10 Treffer)
         "breath_slow_ticks" to 50.0,
         "breath_cooldown" to 300.0,
         "tail_cost" to 25.0,
         "tail_radius" to 5.5,
-        "tail_damage" to 8.0,
+        "tail_damage" to 7.0, // 1.10.0: 8 → 7
         "tail_cooldown" to 160.0,
         "wing_leap_cost" to 20.0,
         "wing_leap_forward" to 1.15,

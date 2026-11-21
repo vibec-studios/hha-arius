@@ -162,7 +162,7 @@ object ArtClient {
         val main = player.mainHandStack
         if (GauntletsItem.isGauntlets(main)) {
             return if (mode(player) == GauntletMode.MELEE) {
-                if (blockTargeted(client)) return false
+                // Seit 1.10.0 auch auf einen Block: Schlag in die Luft statt Abbauen (Handschuhe bauen nie ab).
                 send(ArtAction.ATTACK)
                 true
             } else if (castingLocally()) {
@@ -170,7 +170,8 @@ object ArtClient {
                 castHeld = false
                 true
             } else {
-                false
+                // Magie-Modus: kein Abbauen mit den Handschuhen.
+                client.crosshairTarget?.type == HitResult.Type.BLOCK
             }
         }
         if (main.isOf(GearItems.SOLVANE) && (artHeld || selfAnim() == Anim.ART_CHARGE)) {
@@ -203,7 +204,8 @@ object ArtClient {
     @JvmStatic
     fun blockBreakingSuppressed(): Boolean {
         val player = MinecraftClient.getInstance().player ?: return false
-        return holdsGauntlets(player) && castingLocally()
+        // Seit 1.10.0: Mit den Handschuhen wird nie abgebaut (Gedrückthalten auf einem Block).
+        return holdsGauntlets(player)
     }
 
     /**

@@ -19,7 +19,7 @@
   "itemGroup.hha_arius.eirholm": "Arius",
   "item.hha_arius.eirholm.lore.set": "Arius-Rüstung · Volles Set: Weißes Loch, schnelleres Aufladen, +25 % Resonanz",
   "item.hha_arius.eirholm_helmet.lore1": "Passiv: kein Gefrieren in Pulverschnee und Kälte",
-  "item.hha_arius.eirholm_helmet.lore2": "Volles Set, Ability 3 (U) – Weißes Loch: verbraucht alle Resonanz (voll), Kern bis %s Blöcke vor dir, %s Schaden beim Kollaps",
+  "item.hha_arius.eirholm_helmet.lore2": "Volles Set, Ability 3 (U) – Weißes Loch: verbraucht alle Resonanz (voll), Kern bis %s Blöcke vor dir, stößt ab, %s Schaden bei der Eruption",
   "item.hha_arius.eirholm_chestplate.lore1": "Ability 1 (G) – Drachenatem: %s Resonanz, 1,5 s Frostkegel nach vorn (%s Blöcke), %s Schaden alle 0,15 s",
   "item.hha_arius.eirholm_chestplate.lore2": "Verlangsamt stark und lässt Ziele vereisen · Abklingzeit %s s",
   "item.hha_arius.eirholm_leggings.lore1": "Ability 2 (H) – Drachenschweif: %s Resonanz, Solvanes Geisterschwanz peitscht einmal um dich herum · Abklingzeit %s s",

@@ -94,7 +94,7 @@ enum class Move(
     val knock: Double, val lift: Double, val gainKey: String, val slow: Double, val anim: Anim,
 ) {
     /** Gerade mit links: schnell, kurz. */
-    JAB(2, 5, 0.5f, 2.9, 32.0, 1, 0.12, 0.0, "melee_gain_jab", 0.75, Anim.JAB),
+    JAB(2, 5, 0.6f, 2.9, 32.0, 1, 0.12, 0.0, "melee_gain_jab", 0.75, Anim.JAB),
 
     /** Gerade mit rechts. */
     CROSS(3, 6, 0.65f, 3.0, 32.0, 1, 0.18, 0.0, "melee_gain_cross", 0.7, Anim.CROSS),
@@ -131,10 +131,10 @@ enum class Move(
     WHIRL_KICK(6, 12, 1.3f, 3.6, 180.0, 5, 0.85, 0.35, "melee_gain_spin", 1.0, Anim.WHIRL_KICK),
 
     /** Seit 1.7.0, Schleichen + Angriff: Schlaghagel – fünf blitzschnelle Schläge hintereinander (je 0,45 ×). */
-    FLURRY(3, 12, 0.45f, 3.0, 40.0, 2, 0.08, 0.0, "melee_gain_jab", 0.5, Anim.JAB),
+    FLURRY(3, 12, 0.36f, 3.0, 40.0, 2, 0.08, 0.0, "melee_gain_jab", 0.5, Anim.JAB),
 
     /** Seit 1.7.0, Sprint + Rechtsklick: Handflächenstoß mit Windexplosion, schleudert alles vor dir weit weg. */
-    PALM_BLAST(7, 14, 1.8f, 3.4, 70.0, 4, 1.7, 0.45, "melee_gain_parry", 0.4, Anim.COUNTER),
+    PALM_BLAST(7, 14, 1.5f, 3.4, 70.0, 4, 1.7, 0.45, "melee_gain_parry", 0.4, Anim.COUNTER),
 
     // Seit 1.8.0 (Crix: „mehr verschiedene Kicks, aktuell gibt es gefühlt nur Schläge“)
     /** Zweiter Tritt der Trittkette: Halbkreistritt mit dem Spann, hoch und weit. */

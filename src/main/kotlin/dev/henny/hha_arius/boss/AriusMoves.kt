@@ -843,7 +843,7 @@ class AriusMoves(private val f: EirholmFight) {
             for (i in 1..4) f.fx(FxKind.CLEAR_WAVE, from.lerp(to, i / 4.0), a = 2.5f, life = 12)
             val hit = (line.hits(f.players()) + near.hits(f.players())).distinct()
             for (p in hit) {
-                f.hurt(p, if (white) 14f else 13f, Damage.Kind.IMPACT)
+                f.hurt(p, if (white) 13f else 12f, Damage.Kind.IMPACT)
                 dev.henny.hha_arius.gear.Frostbite.add(p, 15f)
             }
             for (i in 2..8 step 2) spike(from.lerp(to, i / 9.0).add(Vec3d(-dir.z, 0.0, dir.x).multiply(if (i % 4 == 0) 1.2 else -1.2)), 2, 26)
@@ -1274,7 +1274,7 @@ class AriusMoves(private val f: EirholmFight) {
         wait(c1.ticks - 3)
         f.sound("arius.slash", a.entityPos, 2f, 1.05f)
         repeat(3) { f.stepToward(a, a.entityPos.add(dir), 0.25, faceIt = false); yield(Unit) }
-        for (p in c1.hits(f.players())) f.hurt(p, 10f)
+        for (p in c1.hits(f.players())) f.hurt(p, 9f)
         slash(a.entityPos, dir, 4.5f)
 
         // Hieb 2 (Folgehieb), gelegentlich verzögert
@@ -1286,7 +1286,7 @@ class AriusMoves(private val f: EirholmFight) {
         a.play(AriusPose.COMBO_2, c2.ticks)
         wait(c2.ticks)
         f.sound("arius.slash", a.entityPos, 2f, 0.95f)
-        for (p in c2.hits(f.players())) f.hurt(p, 10f)
+        for (p in c2.hits(f.players())) f.hurt(p, 9f)
         slash(a.entityPos, dir, 4.5f)
 
         // Ernst: statt des Stoßes direkt in den Windschritt.
@@ -1318,7 +1318,7 @@ class AriusMoves(private val f: EirholmFight) {
         wait(line.ticks - 2)
         repeat(2) { f.stepToward(a, a.entityPos.add(dir), 0.5, faceIt = false); yield(Unit) }
         f.sound("arius.thrust", a.entityPos)
-        for (p in line.hits(f.players())) f.hurt(p, 14f)
+        for (p in line.hits(f.players())) f.hurt(p, 12f)
         Vfx.crescent(f.world, style, a.entityPos.add(0.0, 1.2, 0.0), dir, 6f, 1.2f, 7)
 
         if (!white) {
@@ -1393,7 +1393,7 @@ class AriusMoves(private val f: EirholmFight) {
         Vfx.trail(f.world, style, a, 0.6f, 12)
         f.fx(FxKind.DASH_STREAK, from, stop, life = 14)
         for (p in line.hits(f.players())) {
-            f.hurt(p, 16f)
+            f.hurt(p, 13f)
             dev.henny.hha.logic.Fx.launchPlayer(p, dir.multiply(0.8).add(0.0, 0.35, 0.0))
         }
         var n = 0
@@ -1913,7 +1913,7 @@ class AriusMoves(private val f: EirholmFight) {
         wait(line.ticks)
         f.sound("arius.null_cut", a.entityPos, 2.4f)
         // Trennt die Verbindung zur Deckung: trifft auch hinter Säulen und Eiskämmen.
-        for (p in line.hits(f.players())) f.hurt(p, 16f, Damage.Kind.NULL_CUT)
+        for (p in line.hits(f.players())) f.hurt(p, 14f, Damage.Kind.NULL_CUT)
         f.fx(FxKind.SEAM, a.entityPos.add(0.0, 1.1, 0.0), to.add(0.0, 1.1, 0.0), a = 1.6f, life = 16)
         f.fx(FxKind.SLASH_ARC, a.entityPos.add(0.0, 1.1, 0.0), dir, a = 7f, b = 0f, life = 14)
         f.fx(FxKind.DASH_STREAK, a.entityPos, to, life = 10)

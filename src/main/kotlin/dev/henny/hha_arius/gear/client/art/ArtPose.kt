@@ -226,6 +226,9 @@ internal object ArtPose {
         var fromTime = 0f
         var blendDur = 3f
         var blending = false
+
+        /** Seit 1.10.0: Übergang Schlag → Schlag (schnell anfangen, weich ankommen, kein Stocken in der Kette). */
+        var chain = false
         val last = Solved()
         var hasLast = false
         var weight = 0f
@@ -344,6 +347,7 @@ internal object ArtPose {
                 mem.from.set(mem.last)
                 mem.fromTime = now
                 mem.blendDur = blendTicks(anim)
+                mem.chain = anim != null && mem.key >= 0L
                 mem.blending = true
             } else {
                 mem.blending = false
@@ -351,8 +355,9 @@ internal object ArtPose {
             mem.key = key
         }
         val cur = if (mem.blending) {
-            val f = smooth((now - mem.fromTime) / mem.blendDur)
-            if (f >= 1f) mem.blending = false
+            val u = (now - mem.fromTime) / mem.blendDur
+            val f = if (mem.chain) chainEase(u) else smooth(u)
+            if (u >= 1f) mem.blending = false
             keySolved.mix(mem.from, target, f)
         } else target
         mem.last.set(cur)
@@ -363,6 +368,9 @@ internal object ArtPose {
     }
 
     private val keySolved = Solved()
+
+    /** Kette: Schwung aus dem letzten Schlag mitnehmen (sofort los, dann weich auf die neue Haltung). */
+    private fun chainEase(u: Float): Float = u.coerceIn(0f, 1f).let { 1f - (1f - it) * (1f - it) * (1f - 0.35f * it) }
 
     private fun output(mem: Mem, state: PlayerEntityRenderState) {
         if (state.mainArm == Arm.LEFT) mem.out.mirrorFrom(mem.last) else mem.out.set(mem.last)

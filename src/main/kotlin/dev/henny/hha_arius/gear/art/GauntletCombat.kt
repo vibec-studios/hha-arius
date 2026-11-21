@@ -34,8 +34,9 @@ import kotlin.math.acos
  * * Schleichen + Rechtsklick: Handflächen-Parade (kurzes Fenster); gelingt sie gegen einen Nahkampfschlag von vorn,
  *   folgt automatisch ein Konterstoß – nur wenn der Angreifer noch in Reichweite vor einem steht (kein Heranziehen).
  *
- * Gegen Dauerklicken: Eingaben während einer Aktion werden höchstens EINMAL vorgemerkt (in den letzten Ticks der
- * Erholung), alles andere verfällt. Jede Aktion hat feste Ausholzeit und Erholung. Rückstoß der Tritte trifft
+ * Seit 1.10.0 flüssiger: Jeder Klick während eines Schlags wird vorgemerkt (der letzte zählt, höchstens einer) und
+ * kommt sofort im **Abbruchfenster** nach dem Treffer – die restliche Erholung entfällt, wenn man weiterkettet. Wer nicht
+ * weiterklickt, hat die volle Erholung (Leerschläge bleiben bestrafbar). Gegen Dauerklicken: höchstens eine Vormerkung. Jede Aktion hat feste Ausholzeit und Erholung. Rückstoß der Tritte trifft
  * dasselbe Ziel höchstens alle `melee_knock_guard_ticks` (keine Rückstoßketten); schwere Gegner (Bosse, große Wesen)
  * werden nie bewegt. Keine Betäubung.
  */
@@ -67,6 +68,13 @@ object GauntletCombat {
 
     fun init() {
         GearTasks.everyTick { tickAll() }
+        // Seit 1.10.0: Mit den Handschuhen baut man keine Blöcke ab (Überleben und Kreativ, beide Seiten).
+        net.fabricmc.fabric.api.event.player.AttackBlockCallback.EVENT.register { player, _, _, _, _ ->
+            if (GauntletsItem.isGauntlets(player.mainHandStack) && !player.isSpectator) net.minecraft.util.ActionResult.FAIL else net.minecraft.util.ActionResult.PASS
+        }
+        net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents.BEFORE.register { _, player, _, _, _ ->
+            !GauntletsItem.isGauntlets(player.mainHandStack)
+        }
         ServerLivingEntityEvents.ALLOW_DAMAGE.register { entity, source, _ ->
             if (entity is ServerPlayerEntity) !tryParry(entity, source) else true
         }
@@ -92,8 +100,9 @@ object GauntletCombat {
         val s = states.getOrPut(player.uuid) { State() }
         val current = s.move
         if (current != null) {
-            // Höchstens eine Vormerkung, und nur kurz vor Ende der Erholung.
-            if (action != ArtAction.PARRY && s.buffer == null && GearTasks.now >= s.start + current.total - 4) s.buffer = action
+            // Seit 1.10.0: vormerken ab dem 2. Tick des Schlags (der letzte Klick zählt); Parade nur nach dem Treffer.
+            val t = GearTasks.now - s.start
+            if (current != Move.PARRY && t >= 1 && (action != ArtAction.PARRY || t >= s.windup)) s.buffer = action
             return
         }
         if (Focus.drawing(player) || !Focus.isFree(player)) return
@@ -209,8 +218,17 @@ object GauntletCombat {
                 s.hit = true
                 if (move != Move.PARRY) strike(player, move)
             }
-            if (t >= s.windup + move.recover) finish(player, s, move)
+            // Abbruchfenster: mit vorgemerktem Klick geht es nach dem Treffer gleich weiter (keine tote Erholung).
+            if (s.hit && s.buffer != null && move != Move.PARRY && move != Move.FLURRY && t >= s.windup + cancelAfter(move)) finish(player, s, move)
+            else if (t >= s.windup + move.recover) finish(player, s, move)
         }
+    }
+
+    /** Ab so vielen Ticks nach dem Treffer darf ein vorgemerkter Schlag die Erholung abbrechen. */
+    private fun cancelAfter(move: Move): Int = when (move) {
+        Move.JAB, Move.CROSS, Move.KNEE -> 2
+        Move.HOOK, Move.UPPERCUT, Move.COUNTER -> 3
+        else -> (move.recover * 0.4).toInt().coerceIn(3, 6)
     }
 
     private fun finish(player: ServerPlayerEntity, s: State, move: Move) {
@@ -236,7 +254,7 @@ object GauntletCombat {
         val stack = player.mainHandStack
         val base = GearConfig.num("melee_base_damage") + (player.getAttributeValue(EntityAttributes.ATTACK_DAMAGE) - 1.0).coerceAtLeast(0.0)
         val fin = states[player.uuid]?.finisher != null
-        val damage = (base * move.mult * (if (fin) 1.6 else 1.0)).toFloat()
+        val damage = (base * move.mult * (if (fin) 1.45 else 1.0)).toFloat()
         var any = false
         for (target in targets) {
             target.timeUntilRegen = 0

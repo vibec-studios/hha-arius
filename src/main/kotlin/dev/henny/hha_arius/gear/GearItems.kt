@@ -48,7 +48,7 @@ object GearItems {
     /** Wie Netherite (Haltbarkeit 37, Verzauberbarkeit 15), Härte 3,5 statt 3, Rückstoßresistenz 0,15 statt 0,1. */
     val ARMOR_MATERIAL = ArmorMaterial(37, DEFENSE, 15, SoundEvents.ITEM_ARMOR_EQUIP_NETHERITE, 3.5f, 0.15f, REPAIR_TAG, EQUIPMENT_ASSET)
 
-    /** Netherite-Werkzeugstufe; Schadensbonus 4 → Solvane 1 + 4 + 4 = 9 Schaden. */
+    /** Netherite-Werkzeugstufe; Schadensbonus 4 → Solvane 1 + 4 + 3 = 8 Schaden (seit 1.10.0, vorher 9: wie Netherite, die Klare Schneide gibt den Rest). */
     val TOOL_MATERIAL = ToolMaterial(BlockTags.INCORRECT_FOR_NETHERITE_TOOL, 2031, 9.0f, 4.0f, 15, REPAIR_TAG)
 
     /** Gewählter Abschnitt des Echos (1 Tempel, 2 Gletscher, 3 Herz, 4 Finale). */
@@ -107,7 +107,7 @@ object GearItems {
 
         SOLVANE = HhaItemHelpers.register(HhaArius.id("solvane")) {
             SolvaneItem(
-                it.sword(TOOL_MATERIAL, 4.0f, -2.4f).fireproof().rarity(Rarity.EPIC)
+                it.sword(TOOL_MATERIAL, 3.0f, -2.4f).fireproof().rarity(Rarity.EPIC)
                     .component(DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE, false),
             )
         }

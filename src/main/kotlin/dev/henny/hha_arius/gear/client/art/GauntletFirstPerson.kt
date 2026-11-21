@@ -91,6 +91,7 @@ internal object GauntletFirstPerson {
     private var fromTime = 0f
     private var blendDur = 2f
     private var blending = false
+    private var chain = false
 
     /** true = der Aufruf ist erledigt (Vanilla überspringen). */
     @JvmStatic
@@ -140,12 +141,14 @@ internal object GauntletFirstPerson {
         // Weiche Übergänge zwischen Animationen (aus der zuletzt gezeigten Haltung).
         val k = if (anim == null) -1L else (anim.start shl 8) or anim.anim.ordinal.toLong()
         if (k != key) {
-            if (hasLast) { from.set(last); fromTime = now; blendDur = blendTicks(anim); blending = true }
+            if (hasLast) { from.set(last); fromTime = now; blendDur = blendTicks(anim); chain = anim != null && key >= 0L; blending = true }
             key = k
         }
         if (blending) {
-            val f = smooth((now - fromTime) / blendDur)
-            if (f >= 1f) blending = false
+            val u = (now - fromTime) / blendDur
+            // Seit 1.10.0: Schlag → Schlag mit Schwung (sofort los), sonst weich.
+            val f = if (chain) u.coerceIn(0f, 1f).let { 1f - (1f - it) * (1f - it) * (1f - 0.35f * it) } else smooth(u)
+            if (u >= 1f) blending = false
             a1.set(pose); pose.mix(from, a1, f)
         }
         last.set(pose); hasLast = true
