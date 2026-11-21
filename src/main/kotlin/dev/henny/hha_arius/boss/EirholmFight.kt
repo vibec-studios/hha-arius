@@ -986,6 +986,7 @@ class EirholmFight(
         player.sendMessage(Text.translatable("hha_arius.msg.latejoin").formatted(Formatting.AQUA), false)
         if (currentMusic.isNotEmpty()) AriusNet.send(player, MusicS2C(currentMusic, 20))
         AriusNet.send(player, dev.henny.hha_arius.net.AtmosS2C(currentAtmos, 1))
+        MusicCue.rejoin(this, player)
     }
 
     fun onLeave(player: ServerPlayerEntity) {

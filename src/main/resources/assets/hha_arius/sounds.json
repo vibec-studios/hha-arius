@@ -1,4 +1,36 @@
 {
+  "music.hunt": {
+    "sounds": [
+      {
+        "name": "hha_arius:music/hunt",
+        "stream": true
+      }
+    ]
+  },
+  "music.ride": {
+    "sounds": [
+      {
+        "name": "hha_arius:music/ride",
+        "stream": true
+      }
+    ]
+  },
+  "music.summit": {
+    "sounds": [
+      {
+        "name": "hha_arius:music/summit",
+        "stream": true
+      }
+    ]
+  },
+  "music.qte": {
+    "sounds": [
+      {
+        "name": "hha_arius:music/qte",
+        "stream": true
+      }
+    ]
+  },
   "music.temple": {
     "sounds": [
       {

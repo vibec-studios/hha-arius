@@ -84,7 +84,7 @@ abstract class AriusFx(val life: Int) {
                 FxKind.DRAGON_TAIL -> e1?.let { DragonTailFx(it, p.b.toDouble(), p.a.toDouble(), p.life) }
                 FxKind.ICE_ARMOR -> e1?.let { IceArmorFx(it, p.life) }
                 FxKind.GIANT_BLADE -> e1?.let { GiantBladeFx(it, p.a.toDouble(), p.b.toInt(), p.life) }
-                FxKind.FROZEN_STAR -> MoonFx(pos, p.a.toDouble(), p.b.toInt(), p.life)
+                FxKind.FROZEN_STAR -> FrozenMoonFx(pos, p.a.toDouble(), p.b.toInt(), p.life)
                 FxKind.DRAGON_AURA -> e1?.let { DragonAuraFx(it, p.life) }
                 FxKind.SLASH_ARC -> SlashArcFx(pos, dir, p.a.toDouble(), p.b.toDouble(), p.life)
                 FxKind.RAGE_AURA -> e1?.let { RageAuraFx(it, p.life) }

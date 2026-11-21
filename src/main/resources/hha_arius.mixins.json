@@ -22,7 +22,9 @@
     "client.AriusRendererHitStopMixin",
     "client.QteHudMixin",
     "client.BridgeScrollMixin",
-    "client.OverlayMessageMixin"
+    "client.OverlayMessageMixin",
+    "client.RidePlayerRendererMixin",
+    "client.CineCameraMixin"
   ],
   "injectors": {
     "defaultRequire": 1

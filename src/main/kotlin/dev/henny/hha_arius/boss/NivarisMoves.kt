@@ -204,7 +204,7 @@ class NivarisMoves(private val f: EirholmFight) {
         // Steigend nach vorn (kein senkrechter Aufstieg: der Körper stünde sonst als Säule unter dem Kopf).
         vel = f.facing(d).multiply(0.35).add(0.0, 0.25, 0.0)
         val up = airPoint(f.clampToArena(d.entityPos.add(f.facing(d).multiply(16.0)), 4.0), cruise + 4)
-        flyTo(up, 0.7, 30)
+        flyTo(up, 0.9, 22)
     }
 
     /**
@@ -280,7 +280,7 @@ class NivarisMoves(private val f: EirholmFight) {
         } finally {
             acting = false
         }
-        wait(30)
+        wait(18)
     }
 
     /** Ob in dieser Luftphase der Winterzorn schon kam (höchstens einmal je Phase, nicht als erster Angriff). */
@@ -302,7 +302,8 @@ class NivarisMoves(private val f: EirholmFight) {
         val limit = f.now + (if (vault) AriusTimings.AIR_MAX_VAULT else AriusTimings.AIR_MAX) + 200
         var done = 0
         var last = -1
-        circle(30 + rnd.nextInt(20), 26.0, 12.0)
+        // Seit 1.10.0 kürzer gekreist (Crix: „manche Angriffe dauern ewig, bevor sie kommen“).
+        circle(14 + rnd.nextInt(12), 26.0, 12.0)
         while (done < attacks && f.now < limit) {
             val t = f.target() ?: break
             var pick = rnd.nextInt(8)
@@ -325,7 +326,7 @@ class NivarisMoves(private val f: EirholmFight) {
             done++
             val d = f.nivaris ?: return@script
             if (!d.flying) return@script
-            if (done < attacks) circle(20 + rnd.nextInt(24), 22.0 + rnd.nextDouble() * 10.0, 10.0 + rnd.nextDouble() * 6.0)
+            if (done < attacks) circle(10 + rnd.nextInt(12), 22.0 + rnd.nextDouble() * 10.0, 10.0 + rnd.nextDouble() * 6.0)
         }
         yieldAll(land(f.target()))
     }
@@ -346,17 +347,19 @@ class NivarisMoves(private val f: EirholmFight) {
                 dist < 7 -> yieldAll(claw(t, null))
                 rnd.nextFloat() < 0.5f -> yieldAll(gust(t))
                 else -> {
-                    walkTo(t, 6.0, 40)
+                    walkTo(t, 6.0, 26)
                     yieldAll(claw(t, null))
                 }
             }
-            wait(8)
+            wait(6)
         }
         if (exhaust) {
             val d = f.nivaris ?: return@script
             d.play(NivarisPose.EXHAUSTED)
             f.openDragon(AriusTimings.EXHAUSTED_TICKS)
+            openMusic(true)
             wait(AriusTimings.EXHAUSTED_TICKS)
+            openMusic(false)
             d.play(NivarisPose.IDLE)
         }
     }
@@ -366,7 +369,7 @@ class NivarisMoves(private val f: EirholmFight) {
         d.play(NivarisPose.IDLE)
         var n = 0
         while (n++ < maxTicks && t.squaredDistanceTo(d) > range * range) {
-            f.stepToward(d, t.entityPos, 0.2)
+            f.stepToward(d, t.entityPos, 0.3)
             yield(Unit)
         }
         f.face(d, t.entityPos)
@@ -382,7 +385,7 @@ class NivarisMoves(private val f: EirholmFight) {
         val b = forcedTo ?: f.clampToArena(t.entityPos.add(across.multiply(17.0)), 1.5)
         val lineDir = flatDir(a, b)
         val startAir = airPoint(a.subtract(lineDir.multiply(3.0)), 6.0)
-        flyTo(startAir, 0.8, 40, faceTarget = b)
+        flyTo(startAir, 1.1, 30, faceTarget = b)
         d.play(NivarisPose.INHALE, AriusTimings.NIVARIS_WINDUP[NivarisPose.INHALE])
         val group = f.calls.boss(style = style)
         val line = group.line(Vec3d(a.x, f.floorY, a.z), Vec3d(b.x, f.floorY, b.z), 3.5f, AriusTimings.NIVARIS_WINDUP[NivarisPose.INHALE])
@@ -441,7 +444,10 @@ class NivarisMoves(private val f: EirholmFight) {
         Vfx.shockwave(f.world, style, ground, 5f, 14, 1.4f)
         f.onChoke()
         f.openDragon(AriusTimings.CHOKE_STAGGER)
+        MusicCue.sting(f, "punish")
+        openMusic(true)
         wait(AriusTimings.CHOKE_STAGGER)
+        openMusic(false)
         d.play(NivarisPose.IDLE)
     }
 
@@ -456,13 +462,13 @@ class NivarisMoves(private val f: EirholmFight) {
         val d = f.nivaris ?: return@script
         val away = flatDir(t.entityPos, d.entityPos)
         val start = airPoint(f.clampToArena(t.entityPos.add(away.multiply(24.0)), 4.0), cruise + 10)
-        flyTo(start, 1.0, 40, faceTarget = t.entityPos)
+        flyTo(start, 1.2, 30, faceTarget = t.entityPos)
         val tt = f.target() ?: t
         val from = Vec3d(d.x, f.floorY, d.z)
         val dir = flatDir(from, tt.entityPos)
         val to = f.clampToArena(tt.entityPos.add(dir.multiply(9.0)), 4.0).let { Vec3d(it.x, f.floorY, it.z) }
         val group = f.calls.boss(style = style)
-        val line = group.line(from, to, 5f, AriusTimings.NIVARIS_WINDUP[NivarisPose.DIVE] + 8, Telegraph.Pace.PROJECTILE)
+        val line = group.line(from, to, 5f, DragonTimings.DIVE_WINDUP, Telegraph.Pace.PROJECTILE)
         val slam = group.ring(to, 6.5f, line.ticks + 8)
         d.play(NivarisPose.DIVE, line.ticks)
         f.sound("nivaris.roar", d.entityPos, 4f, 0.85f)
@@ -531,16 +537,16 @@ class NivarisMoves(private val f: EirholmFight) {
         val c = f.arenaCenter
         val r = minOf(26.0, f.arenaRadius - 6.0)
         var a = kotlin.math.atan2(d.z - c.z, d.x - c.x)
-        repeat(42) { k ->
-            a += circleSign * 1.2 / r
-            val target = Vec3d(c.x + kotlin.math.cos(a + circleSign * 0.5) * r, f.floorY + 14.0 + k * 0.5, c.z + kotlin.math.sin(a + circleSign * 0.5) * r)
-            steer(d, target, 1.2, 7.0, ceil = f.floorY + 40.0)
+        repeat(26) { k ->
+            a += circleSign * 1.4 / r
+            val target = Vec3d(c.x + kotlin.math.cos(a + circleSign * 0.5) * r, f.floorY + 14.0 + k * 0.8, c.z + kotlin.math.sin(a + circleSign * 0.5) * r)
+            steer(d, target, 1.4, 8.0, ceil = f.floorY + 40.0)
             yield(Unit)
         }
         f.sound("nivaris.roar", d.entityPos, 4f, 0.9f)
         val tt = f.target() ?: t
         val spot = Vec3d(tt.x, f.floorY, tt.z)
-        val ring = f.calls.ring(spot, 7f, 34, style = style)
+        val ring = f.calls.ring(spot, 7f, 30, style = style)
         flyTo(spot.add(flatDir(spot, d.entityPos).multiply(6.0)).add(0.0, 32.0, 0.0), 1.3, (ring.ticks - 12).coerceAtLeast(6), faceTarget = spot)
         d.play(NivarisPose.DIVE, 10)
         val from = d.entityPos
@@ -608,7 +614,7 @@ class NivarisMoves(private val f: EirholmFight) {
         f.sound("nivaris.roar", d.entityPos, 4f, 0.75f)
         d.play(NivarisPose.ROAR, 10)
         f.fx(FxKind.BLIZZARD, Vec3d(c.x, f.floorY, c.z), a = r.toFloat(), life = 150)
-        for (wave in 0 until 4) {
+        for (wave in 0 until 3) {
             val group = f.calls.boss(style = style)
             val spots = ArrayList<Vec3d>()
             for (p in f.players()) spots += f.clampToArena(Vec3d(p.x + rnd.nextGaussian() * 1.2, f.floorY, p.z + rnd.nextGaussian() * 1.2), 2.0)
@@ -617,7 +623,7 @@ class NivarisMoves(private val f: EirholmFight) {
                 val rr = 4.0 + rnd.nextDouble() * (r - 6.0)
                 spots += Vec3d(c.x + kotlin.math.cos(ang) * rr, f.floorY, c.z + kotlin.math.sin(ang) * rr)
             }
-            val rings = spots.map { group.ring(it, 3.2f, 26) to it }
+            val rings = spots.map { group.ring(it, 3.2f, 22) to it }
             val ticks = rings.maxOf { it.first.ticks }
             for (s in spots) f.fx(FxKind.ICE_CHUNK, s.add(0.0, 44.0, 0.0), s, a = 2.2f, life = ticks)
             if (wave > 0) d.play(NivarisPose.HOVER)
@@ -635,7 +641,7 @@ class NivarisMoves(private val f: EirholmFight) {
             }
             spikes(spots.filter { rnd.nextBoolean() }, 40)
             group.end()
-            wait(4)
+            wait(2)
         }
     }
 
@@ -645,8 +651,8 @@ class NivarisMoves(private val f: EirholmFight) {
         val dir = flatDir(d.entityPos, t.entityPos).let { if (it.lengthSquared() < 1e-6) Vec3d(0.0, 0.0, 1.0) else it }
         val start = airPoint(f.clampToArena(t.entityPos.subtract(dir.multiply(26.0)), 2.0), 2.5)
         val end = airPoint(f.clampToArena(t.entityPos.add(dir.multiply(26.0)), 2.0), 2.5)
-        flyTo(start, 1.1, 34, faceTarget = end)
-        val line = f.calls.line(Vec3d(start.x, f.floorY, start.z), Vec3d(end.x, f.floorY, end.z), 6f, 26, Telegraph.Pace.PROJECTILE, style = style)
+        flyTo(start, 1.4, 26, faceTarget = end)
+        val line = f.calls.line(Vec3d(start.x, f.floorY, start.z), Vec3d(end.x, f.floorY, end.z), 6f, 22, Telegraph.Pace.PROJECTILE, style = style)
         d.play(NivarisPose.GLIDE)
         f.sound("nivaris.roar", d.entityPos, 3f, 1.1f)
         wait((line.ticks - 8).coerceAtLeast(1))
@@ -672,7 +678,7 @@ class NivarisMoves(private val f: EirholmFight) {
         val ang = kotlin.math.atan2(mid.z - c.z, mid.x - c.x) + Math.PI + (rnd.nextDouble() - 0.5) * 1.2
         val rr = minOf(18.0, f.arenaRadius - 8.0)
         val eye = f.clampToArena(Vec3d(c.x + kotlin.math.cos(ang) * rr, f.floorY, c.z + kotlin.math.sin(ang) * rr), 7.0).let { Vec3d(it.x, f.floorY, it.z) }
-        flyTo(eye.add(flatDir(c, eye).multiply(3.0)).add(0.0, 13.0, 0.0), 1.1, 40, faceTarget = c)
+        flyTo(eye.add(flatDir(c, eye).multiply(3.0)).add(0.0, 13.0, 0.0), 1.3, 30, faceTarget = c)
         val ticks = DragonTimings.WINTER_ROAR_CHARGE
         val group = f.calls.boss(style = style)
         val field = group.ring(c, (f.arenaRadius + 4.0).toFloat(), ticks)
@@ -733,7 +739,7 @@ class NivarisMoves(private val f: EirholmFight) {
     fun frostRoar(): Script = script {
         val d = f.nivaris ?: return@script
         val c = Vec3d(d.x, f.floorY, d.z)
-        val ring = f.calls.ring(c, 11f, 30, inner = 2.5f, style = style)
+        val ring = f.calls.ring(c, 11f, 26, inner = 2.5f, style = style)
         d.play(NivarisPose.ROAR, ring.ticks)
         f.sound("nivaris.inhale", d.entityPos, 3f, 0.7f)
         wait(ring.ticks)
@@ -747,7 +753,7 @@ class NivarisMoves(private val f: EirholmFight) {
             Fx.launchPlayer(p, flatDir(c, p.entityPos).multiply(1.0).add(0.0, 0.4, 0.0))
         }
         yieldAll(thornRings(c, doubleArrayOf(7.0)))
-        wait(14)
+        wait(8)
     }
 
     /** Gletscherwalze (Boden): Sie duckt sich und schießt in gerader Bahn über den Boden auf das Ziel zu. */
@@ -757,7 +763,7 @@ class NivarisMoves(private val f: EirholmFight) {
         val from = Vec3d(d.x, f.floorY, d.z)
         val dir = flatDir(from, t.entityPos)
         val to = f.clampToArena(from.add(dir.multiply(24.0)), 3.0).let { Vec3d(it.x, f.floorY, it.z) }
-        val line = f.calls.line(from, to, 5f, 28, Telegraph.Pace.HEAVY, style = style)
+        val line = f.calls.line(from, to, 5f, 24, Telegraph.Pace.HEAVY, style = style)
         d.play(NivarisPose.CLAW, line.ticks)
         f.sound("nivaris.roar", d.entityPos, 3f, 1.15f)
         wait(line.ticks)
@@ -824,14 +830,14 @@ class NivarisMoves(private val f: EirholmFight) {
         val c = Vec3d(t.x, f.floorY, t.z)
         // Kreisbahn mindestens 18 Blöcke Radius: enger überschnitte sich der 96-Block-Körper selbst.
         val orbit = 18.0
-        flyTo(airPoint(c.add(orbit, 0.0, 0.0), 16.0), 1.2, 24, faceTarget = c)
+        flyTo(airPoint(c.add(orbit, 0.0, 0.0), 16.0), 1.4, 20, faceTarget = c)
         f.sound("nivaris.inhale", d.entityPos, 3f, 1.2f)
         val group = f.calls.boss(style = style)
-        group.safe(c, 2.2f, 44)
+        group.safe(c, 2.2f, 40)
         val rings = (0 until 9).map { k ->
             val a = k / 9.0 * Math.PI * 2
             val at = c.add(kotlin.math.cos(a) * 5.0, 0.0, kotlin.math.sin(a) * 5.0)
-            group.ring(at, 2.4f, 26 + k * 2) to at
+            group.ring(at, 2.4f, 22 + k * 2) to at
         }
         var ang = kotlin.math.atan2(d.z - c.z, d.x - c.x)
         var elapsed = 0
@@ -858,7 +864,7 @@ class NivarisMoves(private val f: EirholmFight) {
         val c = Vec3d(f.arenaCenter.x, f.floorY, f.arenaCenter.z)
         val inner = 12f
         val outer = (f.arenaRadius - 1.0).toFloat()
-        val ring = f.calls.ring(c, outer, 60, inner = inner, style = style)
+        val ring = f.calls.ring(c, outer, 50, inner = inner, style = style)
         f.sound("nivaris.roar", d.entityPos, 4f, 0.95f)
         f.fx(FxKind.BLIZZARD, c, a = outer, life = 70)
         var ang = kotlin.math.atan2(d.z - c.z, d.x - c.x)
@@ -878,6 +884,12 @@ class NivarisMoves(private val f: EirholmFight) {
         Vfx.shockwave(f.world, style, c, outer, 20, 1.6f)
     }
 
+    /** Strafefenster im Horst: die Musik duckt sich unter eine Spannungsschicht (nur Abschnitt II, siehe [MusicCue]). */
+    private fun openMusic(on: Boolean) {
+        if (f.phase != EirholmFight.Phase.GLACIER) return
+        MusicCue.play(f, if (on) "glacier_open" else "glacier", if (on) 10 else 30)
+    }
+
     // --- D3: Landung -----------------------------------------------------------------------------------------------------
 
     fun land(t: ServerPlayerEntity?): Script = script {
@@ -888,7 +900,7 @@ class NivarisMoves(private val f: EirholmFight) {
         // langes, flaches Einschweben (vorher konnte das letzte Stück in einem Tick springen).
         val from = flatDir(spot, d.entityPos)
         val approach = Vec3d(spot.x, f.floorY + 4.0, spot.z).add(from.multiply(12.0))
-        flyTo(approach, 1.0, 50, faceTarget = spot)
+        flyTo(approach, 1.2, 34, faceTarget = spot)
         val ring = f.calls.ring(spot, 6f, AriusTimings.NIVARIS_WINDUP[NivarisPose.LAND], style = style)
         d.play(NivarisPose.LAND, ring.ticks)
         val left = max(10, ring.ticks)
@@ -979,8 +991,8 @@ class NivarisMoves(private val f: EirholmFight) {
         val src = f.grabSource(d.entityPos) ?: return@script
         val srcPos = Vec3d(src.x + 0.5, f.floorY, src.z + 0.5)
         var n = 0
-        while (n++ < 30 && d.squaredDistanceTo(srcPos) > 16.0) {
-            f.stepToward(d, srcPos, 0.25)
+        while (n++ < 20 && d.squaredDistanceTo(srcPos) > 16.0) {
+            f.stepToward(d, srcPos, 0.35)
             yield(Unit)
         }
         f.face(d, srcPos)
@@ -1078,11 +1090,14 @@ object DragonTimings {
     /** Kopf im Eis nach dem Himmelssturz. */
     const val PLUNGE_OPEN = 60
 
-    /** Winterzorn: Luftholen (Ansage über das ganze Feld) und Erschöpfung danach. */
-    const val WINTER_ROAR_CHARGE = 70
+    /** Gletschersturz: Ansage der Bahn bis zum Aufprall (seit 1.10.0 kürzer, vorher 34). */
+    const val DIVE_WINDUP = 26
+
+    /** Winterzorn: Luftholen (Ansage über das ganze Feld) und Erschöpfung danach (Laden seit 1.10.0 60 statt 70). */
+    const val WINTER_ROAR_CHARGE = 60
     const val WINTER_ROAR_OPEN = 80
 
     /** Würgende Windung: Umkreisen bis zum Zusammenziehen, danach offen. */
-    const val COIL_CRUSH_WINDUP = 46
+    const val COIL_CRUSH_WINDUP = 40
     const val COIL_CRUSH_OPEN = 30
 }

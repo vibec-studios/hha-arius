@@ -565,7 +565,9 @@ class NivarisBody {
         val p = s.p
         val mode = e.mode
         val world = e.entityWorld
-        val base = smoothed(Vec(s.x, s.y, s.z), dt)
+        // Seit 1.10.0 direkt die Render-Position: sie ist flüssig (Bewegungspuffer, MotionClient). Die frühere
+        // Vorhersage hier schoss bei ungleichmäßigen Paketen über das Ziel hinaus und zog dann zurück (Ruckeln).
+        val base = Vec(s.x, s.y, s.z)
         val slot = Math.floorDiv(Math.round(s.x).toInt() + ArenaLayout.SLOT_SPACING / 2, ArenaLayout.SLOT_SPACING)
         val origin = ArenaLayout.origin(slot)
         val o = Vec(origin.x.toDouble(), origin.y.toDouble(), origin.z.toDouble())
@@ -599,7 +601,7 @@ class NivarisBody {
                 val poly = Poly()
                 var u = 0.0
                 if (mode == NivarisModeC.UNCOIL) {
-                    u = MathHelper.lerp(tickDelta, e.lastUncoil, e.uncoil).toDouble() * EntrancePathC.LENGTH
+                    u = e.uncoilAt(tickDelta).toDouble() * EntrancePathC.LENGTH
                     var d = u
                     while (d > 0.0) {
                         poly.add(o.add(EntrancePathC.at(d)), UP_V)
@@ -636,6 +638,9 @@ class NivarisBody {
             ups[i] = up.subtract(headFwd.multiply(back)).normalizeOr(UP_V)
         }
 
+        // Zeitliche Glättung (seit 1.10.0): Glieder hinter dem Hals folgen ihrer neuen Lage weich (mit der Bewegung der
+        // Entity mitgeführt, also ohne Nachziehen im Flug). Fängt Sprünge aus Trennung und Krümmungsgrenze ab.
+        if (mode == NivarisModeC.NORMAL) settle(pts, base, dt)
         // Überblendung nach Wechsel/Sprung.
         fadeFrom?.let { from ->
             val k = (now - fadeAt) / 10f
@@ -674,6 +679,35 @@ class NivarisBody {
         val hl = headFwd.negate().crossProduct(hu)
         put(s.headFrame, 0, hl, hu.negate(), headFwd.negate())
         s.bodyReady = true
+        // Reiter: Griffpunkte an den Kristallplatten der Rückenglieder (client/fx/RideClient).
+        if (e.hasPassengers()) dev.henny.hha_arius.client.fx.RideClient.anchor(e, s, pts)
+    }
+
+    private var settled: Array<Vec>? = null
+    private var settledBase: Vec? = null
+
+    /** Siehe Aufruf: weiches Folgen der Rumpfglieder, mitgeführt um die Bewegung der Entity. */
+    private fun settle(pts: Array<Vec>, base: Vec, dt: Float) {
+        val prev = settled
+        val pb = settledBase
+        settledBase = base
+        if (prev == null || pb == null || prev.size != pts.size || pb.squaredDistanceTo(base) > 14.0 * 14.0 || fadeFrom != null) {
+            settled = pts.copyOf()
+            return
+        }
+        val move = base.subtract(pb)
+        val k = 1.0 - kotlin.math.exp(-dt * 0.9)
+        for (i in NECK + 1 until POINTS) {
+            val carried = prev[i].add(move)
+            if (carried.squaredDistanceTo(pts[i]) > 9.0) continue // großer Unterschied: neu, nicht verschleppen
+            pts[i] = carried.lerp(pts[i], k)
+        }
+        // Gliedabstände wiederherstellen (von vorn).
+        for (i in NECK + 1 until POINTS) {
+            val d = pts[i].subtract(pts[i - 1])
+            if (d.lengthSquared() > 1e-8) pts[i] = pts[i - 1].add(d.normalize().multiply(NivarisShape.SEGMENT))
+        }
+        settled = pts.copyOf()
     }
 
     /** Kampf, Flug und Szenen: Wegspur, Hals, Schlängeln, Boden, Durchdringung. Liefert die Blickrichtung des Kopfes. */
@@ -699,9 +733,13 @@ class NivarisBody {
         // Sprung der Entity (Teleport, Neu-Spawn an anderer Stelle): Körper mitnehmen und überblenden.
         lastE?.let { prev ->
             if (prev.squaredDistanceTo(spine) > 12.0 * 12.0) {
+                // Seit 1.10.0: die alte Form mitversetzen und von dort überblenden (vorher glitt der ganze Körper
+                // sichtbar quer über die Sprungweite).
                 val delta = spine.subtract(prev)
                 for (n in trail) n.p = n.p.add(delta)
                 lastSpine = spine
+                last = last?.map { it.add(delta) }?.toTypedArray()
+                settled = null
                 startFade(now)
             }
         }
@@ -819,11 +857,68 @@ class NivarisBody {
 
         // Kein Glied durchdringt ein anderes: das vordere legt sich über das hintere.
         separate(pts, air, floors)
+        // Seit 1.10.0: Krümmungsgrenze (keine Haken, keine engen Schlaufen) und harte Mindestabstände als Netz.
+        limitBend(pts, f)
+        relax(pts, air)
         for (i in NECK until POINTS) {
             val floor = floors[i] + radius(i) * 0.9
             if (pts[i].y < floor) pts[i] = Vec(pts[i].x, floor, pts[i].z)
         }
         return headFwd
+    }
+
+    /**
+     * Höchstens [MAX_BEND] Knick je Gelenk hinter der Rumpfmitte: Wo die Spur enger ist (Wende auf der Stelle, Sprung,
+     * scharfe Kurve), schwingt der Rest des Körpers weiter außen herum statt sich zu falten. Am Boden etwas mehr Spiel
+     * (Windungen beim Liegen).
+     */
+    private fun limitBend(pts: Array<Vec>, f: Vec) {
+        val maxA = if (ground > 0.5f) MAX_BEND_GROUND else MAX_BEND
+        val cosMax = kotlin.math.cos(maxA)
+        var prevDir = pts[NECK].subtract(pts[NECK - 1]).normalizeOr(f.negate())
+        for (i in NECK + 1 until POINTS) {
+            var d = pts[i].subtract(pts[i - 1]).normalizeOr(prevDir)
+            val c = d.dotProduct(prevDir)
+            if (c < cosMax) {
+                val axis = d.subtract(prevDir.multiply(c)).let { if (it.lengthSquared() < 1e-8) Vec(-prevDir.z, 0.0, prevDir.x) else it }.normalizeOr(Vec(1.0, 0.0, 0.0))
+                d = prevDir.multiply(kotlin.math.cos(maxA)).add(axis.multiply(kotlin.math.sin(maxA))).normalizeOr(prevDir)
+            }
+            pts[i] = pts[i - 1].add(d.multiply(NivarisShape.SEGMENT))
+            prevDir = d
+        }
+    }
+
+    /**
+     * Harte Mindestabstände zwischen nicht benachbarten Gliedern (ab der Rumpfmitte): drei Runden Auseinanderschieben
+     * (vorwiegend das hintere Glied; in der Luft nach außen, am Boden nach oben), danach jeweils die Gliedabstände von
+     * vorn wiederherstellen. Kopf und Hals bleiben, wo der Server sie hat.
+     */
+    private fun relax(pts: Array<Vec>, air: FloatArray) {
+        repeat(3) {
+            var moved = false
+            for (i in NECK until POINTS) {
+                for (j in i + 4 until POINTS) {
+                    val min = (radius(i) + radius(j)) * 1.05 + 0.15
+                    val d = pts[j].subtract(pts[i])
+                    val l2 = d.lengthSquared()
+                    if (l2 >= min * min) continue
+                    val l = kotlin.math.sqrt(l2)
+                    val flying = max(air[i], air[j]) > 0.5f
+                    val n = if (l > 1e-4) {
+                        if (flying) d.multiply(1.0 / l) else Vec(d.x / l * 0.4, 0.9, d.z / l * 0.4).normalize()
+                    } else Vec(0.0, 1.0, 0.0)
+                    val push = (min - l)
+                    pts[j] = pts[j].add(n.multiply(push * 0.75))
+                    if (i > NECK) pts[i] = pts[i].subtract(n.multiply(push * 0.25))
+                    moved = true
+                }
+            }
+            if (!moved) return
+            for (k in NECK + 1 until POINTS) {
+                val d = pts[k].subtract(pts[k - 1])
+                if (d.lengthSquared() > 1e-8) pts[k] = pts[k - 1].add(d.normalize().multiply(NivarisShape.SEGMENT))
+            }
+        }
     }
 
     /** Lauffläche unter (x, z): Höhenkarte der Welt, Säulen und Wände (deutlich über dem Boden) zählen nicht. */
@@ -895,34 +990,6 @@ class NivarisBody {
     private fun blur(a: DoubleArray) {
         val c = a.copyOf()
         for (k in 1 until a.size - 1) a[k] = c[k] * 0.5 + (c[k - 1] + c[k + 1]) * 0.25
-    }
-
-    private var smPos: Vec? = null
-    private var smVel = Vec.ZERO
-    private var lastTarget: Vec? = null
-
-    /**
-     * Seit 1.8.0 (Crix: „der Drache fliegt immer noch in 16 fps“): Der Server setzt die Drachin jeden Tick per Position;
-     * läuft er unter 20 TPS oder kommen Pakete gebündelt, steht sie im Client einen Tick still und springt dann doppelt.
-     * Hier folgt eine geglättete Position mit geschätzter Geschwindigkeit dem echten Punkt (kritisch gedämpft), so
-     * fließt der Körper auch bei ungleichmäßigen Updates. Große Sprünge (Teleport) werden direkt übernommen.
-     */
-    private fun smoothed(target: Vec, dt: Float): Vec {
-        val prev = smPos
-        val lt = lastTarget
-        lastTarget = target
-        if (prev == null || lt == null || prev.squaredDistanceTo(target) > 14.0 * 14.0) {
-            smPos = target
-            smVel = Vec.ZERO
-            return target
-        }
-        if (dt <= 1e-4f) return prev
-        val obs = target.subtract(lt).multiply(1.0 / dt)
-        smVel = smVel.lerp(obs, 1.0 - kotlin.math.exp(-dt * 0.3))
-        val predicted = prev.add(smVel.multiply(dt.toDouble()))
-        val next = predicted.lerp(target, 1.0 - kotlin.math.exp(-dt * 0.45))
-        smPos = next
-        return next
     }
 
     private fun startFade(now: Float) {
@@ -1075,6 +1142,10 @@ class NivarisBody {
         const val WAVE_LAT = 2.0 * Math.PI / 34.0
         const val WAVE_VER = 2.0 * Math.PI / 52.0
         val UP_V = Vec(0.0, 1.0, 0.0)
+
+        /** Größter Knick je Gelenk (Bogenmaß): in der Luft 22°, am Boden 30°. */
+        const val MAX_BEND = 0.384
+        const val MAX_BEND_GROUND = 0.524
     }
 }
 
