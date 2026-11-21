@@ -50,6 +50,7 @@ class VerifyBoss : FabricClientGameTest {
                 "waves" -> waves()
                 "clash", "laststand" -> lastStand()
                 "shield" -> shield()
+                "tele" -> teleGallery()
                 else -> log("unknown case $c")
             }
             cmd("hhaarius stop")
@@ -661,6 +662,47 @@ class VerifyBoss : FabricClientGameTest {
                     net.minecraft.network.DisconnectionInfo(net.minecraft.text.Text.literal("verify end")))
             }
             bots.clear()
+        }
+    }
+
+    /** Alle Markerformen im echten Sturm auf dem Gipfel, aus Spielerhöhe: früh, mitten im Laden, kurz vor dem Treffer, Treffer. */
+    private fun VerifyKit.teleGallery() {
+        finaleFight()
+        server { srv ->
+            val f = checkNotNull(fight())
+            f.startDirector(dev.henny.hha_arius.boss.script { while (true) yield(Unit) })
+            f.calls.reset()
+            f.atmos(dev.henny.hha_arius.net.AtmosMode.BLIZZARD, 1)
+            val c = f.arenaCenter
+            f.arius?.let { a -> f.place(a, Vec3d(c.x + 3.0, f.floorY, c.z + 26.0)) }
+            player(srv).teleport(f.world, c.x, f.floorY, c.z - 8.0, emptySet(), 0f, 24f, false)
+        }
+        tick(70)
+        for (round in 0 until 2) {
+            val ticks = 60
+            server { srv ->
+                val f = checkNotNull(fight())
+                val c = Vec3d(f.arenaCenter.x, f.floorY + 0.05, f.arenaCenter.z - 8.0)
+                val pace = dev.henny.hha.logic.boss.Telegraph.Pace.HEAVY
+                f.calls.ring(c.add(0.0, 0.0, 11.0), 4.5f, ticks, pace = pace)
+                f.calls.ring(c.add(-9.0, 0.0, 7.0), 3f, ticks, pace = pace, style = dev.henny.hha.logic.Vfx.Style.GOLD)
+                f.calls.line(c.add(5.0, 0.0, 3.0), c.add(10.0, 0.0, 18.0), 1.4f, ticks, pace)
+                f.calls.cone(c.add(-3.0, 0.0, 2.0), Vec3d(-0.3, 0.0, 1.0).normalize(), 7f, 40f, ticks, pace)
+            }
+            for (t in 0 until ticks) {
+                if (t == 10 || t == 34 || t == 56) shot("tele${round}_%02d".format(t))
+                tick(1)
+            }
+            server { srv ->
+                val f = checkNotNull(fight())
+                val c = Vec3d(f.arenaCenter.x, f.floorY + 0.05, f.arenaCenter.z - 8.0)
+                dev.henny.hha.logic.Vfx.shockwave(f.world, dev.henny.hha.logic.Vfx.Style.HEAVEN, c.add(0.0, 0.0, 11.0), 4.5f, 12, 1.2f)
+                dev.henny.hha.logic.Vfx.crescent(f.world, dev.henny.hha.logic.Vfx.Style.HEAVEN, c.add(-3.0, 1.1, 2.0), Vec3d(-0.3, 0.0, 1.0).normalize(), 7f, 1f, 10)
+                f.fx(dev.henny.hha_arius.net.FxKind.SLASH_ARC, c.add(5.0, 1.1, 3.0), Vec3d(0.3, 0.0, 1.0).normalize(), a = 6f, b = 0.2f, life = 12)
+            }
+            tick(3)
+            shot("tele${round}_hit")
+            tick(30)
         }
     }
 
