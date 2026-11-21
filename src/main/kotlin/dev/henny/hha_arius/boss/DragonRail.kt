@@ -9,7 +9,7 @@ import kotlin.math.sin
 /**
  * Feste Flugbahnen für Solvane (seit 1.11.0). Jede Bahn wird vorab aus Wegpunkten berechnet und hält einen
  * Mindest-Kurvenradius ein: Liegt der nächste Punkt innerhalb ihres Wendekreises, fliegt sie erst geradeaus weiter und
- * dreht dann in **einem** Bogen ein. Sie kreist also nie um einen Punkt und dreht sich nicht auf der Stelle.
+ * dreht dann in **einem** Bogen ein (nur beim Endpunkt; Zwischenpunkte im Wendekreis lässt sie aus). Sie kreist also nie um einen Punkt und dreht sich nicht auf der Stelle.
  */
 object DragonRail {
 
@@ -30,7 +30,13 @@ object DragonRail {
             ?: Vec3d(1.0, 0.0, 0.0)
         out.add(p)
         val maxTurn = STEP / radius
-        for (wp in waypoints) {
+        for ((k, wp) in waypoints.withIndex()) {
+            // Ein Zwischenpunkt im Wendekreis wird ausgelassen: Dafür müsste sie eine Extraschleife fliegen.
+            if (k < waypoints.lastIndex) {
+                val to = wp.subtract(p)
+                val d = to.length()
+                if (d <= CAPTURE || d < 1.96 * radius * sin(angleBetween(h, to.multiply(1.0 / d)).coerceAtMost(Math.PI / 2))) continue
+            }
             var guard = 0
             while (guard++ < 8000) {
                 val to = wp.subtract(p)
