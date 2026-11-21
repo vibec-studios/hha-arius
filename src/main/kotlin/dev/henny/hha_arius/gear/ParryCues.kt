@@ -23,6 +23,8 @@ import java.util.UUID
  * * **Bosse mit Aktionszustand** (z. B. HHA_Blood: Minotaurus, Zerberus – `getAction()`/`getActionAge()`, weich über
  *   Reflexion, ohne harte Abhängigkeit): Der Server lernt je Bossart und Aktion, in welchem Aktions-Tick der Treffer kam,
  *   und sagt ihn ab dem zweiten Mal genau an.
+ * * Andere Nahkämpfer mit eigener KI (z. B. HHA-Mobs mit eigenen Angriffszielen): Takt aus ihren letzten Treffern am
+ *   Spieler (gemessener Abstand), nur aus nächster Nähe.
  * * HHA-Bossansagen (HHA-Bosse, Arius, Solvane) kennt der Client schon selbst (Telegraph-Effekte, siehe ParryHud).
  *
  * Billig: nur für Halter des Schwerts, nur alle 2 Ticks, nur Angreifer im Umkreis von [RANGE] Blöcken.
@@ -39,6 +41,11 @@ object ParryCues {
 
     private class ActionAccess(val action: Method, val age: Method)
 
+    /** Gemessener Schlagtakt je Angreifer (Entity-ID): letzter Treffer und Abstand der letzten beiden. */
+    private class Rhythm(var last: Long, var interval: Int)
+
+    private val rhythm = HashMap<Int, Rhythm>()
+
     private val access = HashMap<Class<*>, ActionAccess?>()
 
     fun init() {
@@ -49,6 +56,16 @@ object ParryCues {
             if (entity !is ServerPlayerEntity) return@register
             val attacker = source.attacker as? LivingEntity ?: return@register
             if (source.source !== attacker) return@register
+            if (attacker !is ServerPlayerEntity) {
+                val r = rhythm[attacker.id]
+                if (r == null) rhythm[attacker.id] = Rhythm(GearTasks.now, 0)
+                else {
+                    val gap = (GearTasks.now - r.last).toInt()
+                    if (gap in 6..100) r.interval = if (r.interval == 0) gap else (r.interval + gap) / 2
+                    r.last = GearTasks.now
+                }
+                if (rhythm.size > 256) rhythm.entries.removeIf { GearTasks.now - it.value.last > 600 }
+            }
             val acc = actionAccess(attacker.javaClass) ?: return@register
             val action = runCatching { acc.action.invoke(attacker) as Int }.getOrNull() ?: return@register
             val age = runCatching { acc.age.invoke(attacker) as Int }.getOrNull() ?: return@register
@@ -101,8 +118,7 @@ object ParryCues {
 
     /** Ticks bis zum nächsten Schlag von [mob] auf [p], oder null (kein absehbarer Schlag). */
     private fun predict(mob: LivingEntity, p: ServerPlayerEntity): Int? {
-        if (mob is MobEntity) {
-            if (mob.target !== p) return null
+        if (mob is MobEntity && mob.target === p) {
             val goals = (mob as MobGoalsAccessor).`hhaArius$goals`()
             for (g in goals.goals) {
                 if (!g.isRunning) continue
@@ -112,7 +128,7 @@ object ParryCues {
                 return (goal as MeleeAttackGoalAccessor).`hhaArius$cooldown`().coerceAtLeast(1)
             }
         }
-        val acc = actionAccess(mob.javaClass) ?: return null
+        val acc = actionAccess(mob.javaClass) ?: return byRhythm(mob, p)
         if (mob is MobEntity && mob.target != null && mob.target !== p) return null
         if (mob.squaredDistanceTo(p) > 10.0 * 10.0) return null
         val action = runCatching { acc.action.invoke(mob) as Int }.getOrNull() ?: return null
@@ -120,6 +136,15 @@ object ParryCues {
         val hit = learned[mob.javaClass to action] ?: return null
         val left = hit - age
         return if (left in 1..80) left else null
+    }
+
+    /** Rückfall ohne lesbaren Angriffszustand: gemessener Takt, nur ganz nah und nur, wenn er dich ins Ziel nimmt. */
+    private fun byRhythm(mob: LivingEntity, p: ServerPlayerEntity): Int? {
+        if (mob !is MobEntity || mob.target !== p) return null
+        val r = rhythm[mob.id] ?: return null
+        if (r.interval !in 8..80 || mob.squaredDistanceTo(p) > 4.5 * 4.5) return null
+        val left = (r.last + r.interval - GearTasks.now).toInt()
+        return if (left in 1..r.interval) left else null
     }
 
     /** Farbe der Markierung nach Angreifer: Bosse kräftig, sonst aus der Art abgeleitet (gleiche Art = gleiche Farbe). */

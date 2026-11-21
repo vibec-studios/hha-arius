@@ -907,7 +907,7 @@ class AriusMoves(private val f: EirholmFight) {
         f.target()?.let { f.face(a, it.entityPos) }
         a.sheathed = canSheath()
         a.play(AriusPose.IAI_STANCE)
-        val ticks = if (white) AriusTimings.GUARD_TICKS_WHITE + 8 else AriusTimings.GUARD_TICKS + 8
+        val ticks = if (white) AriusTimings.GUARD_TICKS_WHITE + 4 else AriusTimings.GUARD_TICKS + 4
         f.guardUntil = f.now + ticks
         f.guardWhite = white
         f.guardTriggered = false
@@ -1559,7 +1559,7 @@ class AriusMoves(private val f: EirholmFight) {
         val v = punishVictim ?: return
         if (player.uuid == v || punishFreed != null || dmg <= 0f) return
         allyDamage += dmg
-        if (allyDamage >= 14f * (1f + 0.25f * (f.startCount - 2).coerceAtLeast(0))) punishFreed = player.uuid
+        if (allyDamage >= 20f * (1f + 0.25f * (f.startCount - 2).coerceAtLeast(0))) punishFreed = player.uuid
     }
 
     /**

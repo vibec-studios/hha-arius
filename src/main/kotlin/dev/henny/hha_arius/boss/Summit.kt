@@ -86,7 +86,7 @@ class Summit(private val f: EirholmFight) {
             if (sneak && !was) sneakSince[p.uuid] = f.now
             if (!windowOpen()) continue
             val pressed = (sneakSince[p.uuid] ?: Long.MIN_VALUE) >= clashFrom
-            val raised = p.isUsingItem && p.itemUseTime <= 12
+            val raised = p.isUsingItem && p.itemUseTime <= 12 && p.activeItem.contains(net.minecraft.component.DataComponentTypes.BLOCKS_ATTACKS)
             val parry = dev.henny.hha_arius.gear.SolvaneCounter.active(p) || dev.henny.hha_arius.gear.art.GauntletCombat.parrying(p)
             if (pressed || raised || parry) clashed.add(p.uuid)
         }
@@ -128,7 +128,7 @@ class Summit(private val f: EirholmFight) {
             e.bladeState = AriusBlade.HELD
             e.eyeGlow = 100
             val echo = Echo(e)
-            e.damageHandler = BossDamageHandler { _, source, _ -> onEchoHit(echo, source); 0f }
+            e.damageHandler = BossDamageHandler { _, source, _ -> onEchoHit(echo, source); if (echo.e.isRemoved) 0f else 1f }
             f.world.spawnEntity(e)
             echoes.add(echo)
             f.fx(FxKind.DASH_STREAK, a.entityPos, at, life = 10)
