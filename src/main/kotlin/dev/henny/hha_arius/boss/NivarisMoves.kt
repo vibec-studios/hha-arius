@@ -103,7 +103,9 @@ class NivarisMoves(private val f: EirholmFight) {
         val sp = (v.length() + (speed - v.length()).coerceIn(-0.09, 0.07)).coerceAtLeast(0.05)
         val delta = toward.subtract(pos)
         val want = if (delta.lengthSquared() < 1e-6) v.normalize() else delta.normalize()
-        v = turnToward(v.normalize(), want, Math.toRadians(maxTurn)).multiply(sp)
+        // Seit 1.11.0 nie enger als der Mindestradius der Flugbahnen ([DragonRail]), egal was der Aufrufer erlaubt.
+        val limit = minOf(Math.toRadians(maxTurn), sp / DragonRail.MIN_RADIUS)
+        v = turnToward(v.normalize(), want, limit).multiply(sp)
         var next = pos.add(v)
         if (next.y > ceil || next.y < floorLimit) {
             next = Vec3d(next.x, next.y.coerceIn(floorLimit, ceil), next.z)
@@ -116,42 +118,52 @@ class NivarisMoves(private val f: EirholmFight) {
     }
 
     /**
-     * Fliegt **gelenkt** zu [to] (wie die Drachen in Black Myth: Wukong): Drehrate 5° je Tick, nah am Ziel bzw. knapp an
-     * Zeit bis 16° (vorher bis 40°: daher die scharfen Haken). Höchstens [maxTicks]; nicht angekommen gleitet sie das
-     * letzte Stück in wenigen Ticks weich ein (kein Sprung), damit Ansagen und Treffer am geplanten Ort bleiben.
+     * Fliegt über eine feste Bahn ([DragonRail], Radius mindestens 22) zu [to]. Das Tempo reicht, um in [maxTicks]
+     * anzukommen, höchstens aber 3,2 Blöcke je Tick; eine sehr lange Wende dauert dann eben etwas länger, statt dass sie
+     * auf der Stelle herumreißt. [arrive] = gewünschte Flugrichtung am Ziel (sie setzt vorher dazu an). Auf den letzten
+     * Ticks dreht sich der Blick zu [faceTarget].
      */
-    private suspend fun SequenceScope<Unit>.flyTo(to: Vec3d, speed: Double, maxTicks: Int, faceTarget: Vec3d? = null) {
+    private suspend fun SequenceScope<Unit>.flyTo(to: Vec3d, speed: Double, maxTicks: Int, faceTarget: Vec3d? = null, arrive: Vec3d? = null) {
         val d = f.nivaris ?: return
         d.flying = true
-        // Höhe im Band zwischen Start und Ziel (+3), damit gelenkte Kurven nicht hoch hinaus schießen.
-        val ceil = maxOf(d.y, to.y) + 3.0
-        val floorLimit = minOf(d.y, to.y, f.floorY + 1.0)
-        var n = 0
-        var arrived = false
-        while (n++ < maxTicks) {
-            val len = to.distanceTo(d.entityPos)
-            val sp = vel?.length() ?: speed
-            if (len <= maxOf(sp, 0.3) * 1.1) {
-                f.place(d, to)
-                arrived = true
-                break
-            }
-            val left = (maxTicks - n + 1).coerceAtLeast(1)
-            val urgency = (maxOf(0.0, 1.0 - len / (maxOf(sp, 0.3) * 16.0)) + maxOf(0.0, 1.0 - left / 10.0)).coerceAtMost(1.0)
-            steer(d, to, maxOf(speed, len / left), 5.0 + 11.0 * urgency, faceTarget, ceil, floorLimit)
-            yield(Unit)
-        }
-        var k = 0
-        while (!arrived && k++ < 8 && d.entityPos.squaredDistanceTo(to) > 0.04) {
-            val pos = d.entityPos
-            val next = pos.lerp(to, 0.3 + 0.0875 * k)
-            vel = next.subtract(pos)
-            f.place(d, next)
-            f.face(d, faceTarget ?: next.add(vel!!.multiply(4.0)))
+        val heading = vel?.takeIf { it.lengthSquared() > 1e-6 } ?: f.facing(d)
+        val points = if (arrive != null && arrive.lengthSquared() > 1e-6) {
+            val before = f.clampToArena(to.subtract(arrive.normalize().multiply(24.0)), 3.0)
+            listOf(Vec3d(before.x, to.y + 2.0, before.z), to)
+        } else listOf(to)
+        val open = f.arenaRadius > 40.0
+        val rail = DragonRail.path(d.entityPos, heading, points, DragonRail.MIN_RADIUS, if (open) f.arenaCenter else null, f.arenaRadius - 2.0)
+        val len = DragonRail.length(rail)
+        val cruise = maxOf(speed, len / maxTicks.coerceAtLeast(1)).coerceAtMost(3.2)
+        var cur = (vel?.length() ?: (cruise * 0.6)).coerceIn(0.2, 3.2)
+        var s = 0.0
+        while (s < len) {
+            cur += (cruise - cur).coerceIn(-0.14, 0.14)
+            s = minOf(len, s + cur)
+            val before = d.entityPos
+            val pos = DragonRail.at(rail, s)
+            f.place(d, pos)
+            val ahead = DragonRail.at(rail, s + 3.0)
+            val last = (len - s) / cur.coerceAtLeast(0.2) < 8.0
+            f.face(d, if (last && faceTarget != null) faceTarget else if (ahead.squaredDistanceTo(pos) > 0.01) ahead else pos.add(f.facing(d)))
+            vel = pos.subtract(before)
             yield(Unit)
         }
         f.place(d, to)
-        f.face(d, faceTarget ?: to.add((vel ?: f.facing(d)).multiply(4.0)))
+        if (faceTarget != null) f.face(d, faceTarget)
+    }
+
+    /** Senkt sich fast senkrecht auf [to] (Erschöpfung, Absturz): kein Flug, daher keine Bahn. */
+    private suspend fun SequenceScope<Unit>.sinkTo(to: Vec3d, ticks: Int, faceTarget: Vec3d? = null) {
+        val d = f.nivaris ?: return
+        val from = d.entityPos
+        for (i in 1..ticks.coerceAtLeast(1)) {
+            val k = i / ticks.coerceAtLeast(1).toDouble()
+            f.place(d, from.lerp(to, k * k * (3 - 2 * k)))
+            if (faceTarget != null) f.face(d, faceTarget)
+            yield(Unit)
+        }
+        vel = null
     }
 
     /**
@@ -163,7 +175,7 @@ class NivarisMoves(private val f: EirholmFight) {
         val d = f.nivaris ?: return
         d.flying = true
         val c = f.arenaCenter
-        val r = radius.coerceIn(17.0, (f.arenaRadius - 4.0).coerceAtLeast(17.0))
+        val r = radius.coerceIn(DragonRail.MIN_RADIUS + 4.0, (f.arenaRadius - 4.0).coerceAtLeast(DragonRail.MIN_RADIUS + 4.0))
         var a = kotlin.math.atan2(d.z - c.z, d.x - c.x)
         repeat(ticks) {
             a += sign * speed / r
@@ -385,7 +397,7 @@ class NivarisMoves(private val f: EirholmFight) {
         val b = forcedTo ?: f.clampToArena(t.entityPos.add(across.multiply(17.0)), 1.5)
         val lineDir = flatDir(a, b)
         val startAir = airPoint(a.subtract(lineDir.multiply(3.0)), 6.0)
-        flyTo(startAir, 1.1, 30, faceTarget = b)
+        flyTo(startAir, 1.1, 30, faceTarget = b, arrive = lineDir)
         d.play(NivarisPose.INHALE, AriusTimings.NIVARIS_WINDUP[NivarisPose.INHALE])
         val group = f.calls.boss(style = style)
         val line = group.line(Vec3d(a.x, f.floorY, a.z), Vec3d(b.x, f.floorY, b.z), 3.5f, AriusTimings.NIVARIS_WINDUP[NivarisPose.INHALE])
@@ -437,8 +449,7 @@ class NivarisMoves(private val f: EirholmFight) {
         f.sound("nivaris.choke", d.entityPos, 3f)
         d.play(NivarisPose.DOWNED)
         val ground = Vec3d(d.x, f.floorY, d.z)
-        flyTo(f.clampToArena(ground, 3.0), 0.9, 14)
-        vel = null
+        sinkTo(f.clampToArena(ground, 3.0), 14)
         d.flying = false
         f.sound("nivaris.crash", d.entityPos, 3f)
         Vfx.shockwave(f.world, style, ground, 5f, 14, 1.4f)
@@ -479,30 +490,26 @@ class NivarisMoves(private val f: EirholmFight) {
             f.face(d, to)
             yield(Unit)
         }
-        // Sturz: in 12 Ticks schräg herab bis dicht über die Bahn (Mitte), dann flach bis zum Aufprall.
+        // Sturz über eine Bahn: in 12 Ticks schräg herab bis dicht über die Mitte, dann flach bis zum Aufprall.
         val top = d.entityPos
         val low = from.lerp(to, 0.45).add(0.0, 2.4, 0.0)
         val end = to.add(0.0, 1.0, 0.0)
-        for (i in 1..12) {
-            val k = i / 12.0
-            val pos = top.lerp(low, k * k)
-            vel = pos.subtract(d.entityPos)
-            f.place(d, pos)
-            f.face(d, to.add(dir))
-            if (i % 4 == 0) Vfx.shockwave(f.world, style, Vec3d(pos.x, f.floorY, pos.z), 2.5f, 8, 0.6f)
-            yield(Unit)
-        }
-        for (p in line.hits(f.players())) {
-            f.hurt(p, 10f, Damage.Kind.IMPACT, d)
-            Fx.launchPlayer(p, Vec3d(-dir.z, 0.0, dir.x).multiply(if (rnd.nextBoolean()) 0.8 else -0.8).add(0.0, 0.5, 0.0))
-        }
+        val rail = DragonRail.path(top, low.subtract(top), listOf(low, end), 18.0)
+        val railLen = DragonRail.length(rail)
         val left = (slam.ticks - line.ticks).coerceIn(4, 12)
-        val mid = d.entityPos
-        for (i in 1..left) {
-            val pos = mid.lerp(end, i / left.toDouble())
-            vel = pos.subtract(d.entityPos)
+        val total = 12 + left
+        for (i in 1..total) {
+            val k = i / total.toDouble()
+            val before = d.entityPos
+            val pos = DragonRail.at(rail, railLen * (k * k * 0.45 + k * 0.55))
+            vel = pos.subtract(before)
             f.place(d, pos)
-            f.face(d, to.add(dir.multiply(4.0)))
+            f.face(d, DragonRail.at(rail, railLen * (k * k * 0.45 + k * 0.55) + 3.0).let { if (it.squaredDistanceTo(pos) > 0.01) it else to.add(dir) })
+            if (i <= 12 && i % 4 == 0) Vfx.shockwave(f.world, style, Vec3d(pos.x, f.floorY, pos.z), 2.5f, 8, 0.6f)
+            if (i == 12) for (p in line.hits(f.players())) {
+                f.hurt(p, 10f, Damage.Kind.IMPACT, d)
+                Fx.launchPlayer(p, Vec3d(-dir.z, 0.0, dir.x).multiply(if (rnd.nextBoolean()) 0.8 else -0.8).add(0.0, 0.5, 0.0))
+            }
             yield(Unit)
         }
         vel = null
@@ -551,9 +558,11 @@ class NivarisMoves(private val f: EirholmFight) {
         d.play(NivarisPose.DIVE, 10)
         val from = d.entityPos
         val fall = ring.remaining.coerceAtLeast(6)
+        val plunge = DragonRail.path(from, (vel ?: f.facing(d)).add(0.0, -0.4, 0.0), listOf(spot.add(0.0, 1.0, 0.0)), 14.0)
+        val plungeLen = DragonRail.length(plunge)
         for (i in 1..fall) {
             val k = i / fall.toDouble()
-            f.place(d, from.lerp(spot.add(0.0, 1.0, 0.0), k * k))
+            f.place(d, DragonRail.at(plunge, plungeLen * k * k))
             f.face(d, spot.add(flatDir(from, spot)))
             yield(Unit)
         }
@@ -651,7 +660,7 @@ class NivarisMoves(private val f: EirholmFight) {
         val dir = flatDir(d.entityPos, t.entityPos).let { if (it.lengthSquared() < 1e-6) Vec3d(0.0, 0.0, 1.0) else it }
         val start = airPoint(f.clampToArena(t.entityPos.subtract(dir.multiply(26.0)), 2.0), 2.5)
         val end = airPoint(f.clampToArena(t.entityPos.add(dir.multiply(26.0)), 2.0), 2.5)
-        flyTo(start, 1.4, 26, faceTarget = end)
+        flyTo(start, 1.4, 26, faceTarget = end, arrive = dir)
         val line = f.calls.line(Vec3d(start.x, f.floorY, start.z), Vec3d(end.x, f.floorY, end.z), 6f, 22, Telegraph.Pace.PROJECTILE, style = style)
         d.play(NivarisPose.GLIDE)
         f.sound("nivaris.roar", d.entityPos, 3f, 1.1f)
@@ -722,8 +731,7 @@ class NivarisMoves(private val f: EirholmFight) {
         // Erschöpft: sie sinkt neben das Auge herab und liegt offen.
         d.play(NivarisPose.LAND, 18)
         val down = f.clampToArena(eye.add(flatDir(eye, c).multiply(4.0)), 4.0).let { Vec3d(it.x, f.floorY, it.z) }
-        flyTo(down, 0.8, 18, faceTarget = c)
-        vel = null
+        sinkTo(down, 18, faceTarget = c)
         d.flying = false
         f.sound("nivaris.land", down, 3.5f, 0.8f)
         Vfx.shockwave(f.world, style, down, 5f, 12, 1f)
@@ -801,8 +809,9 @@ class NivarisMoves(private val f: EirholmFight) {
         val total = ring.ticks
         for (i in 0 until total) {
             val k = i / total.toDouble()
-            val rr = 9.0 + 4.0 * (1.0 - k)
-            a += sign * Math.PI * 2.2 / total
+            // Seit 1.11.0 eine Spirale von außen nach innen: Die Windungen liegen nebeneinander, nie durcheinander.
+            val rr = 11.0 + 9.0 * (1.0 - k)
+            a += sign * Math.PI * 2.4 / total
             val target = Vec3d(c.x + kotlin.math.cos(a) * rr, f.floorY, c.z + kotlin.math.sin(a) * rr)
             val pos = if (i < 8) start.lerp(target, (i + 1) / 8.0) else target
             f.place(d, pos)
@@ -828,8 +837,8 @@ class NivarisMoves(private val f: EirholmFight) {
     fun iceCage(t: ServerPlayerEntity): Script = script {
         val d = f.nivaris ?: return@script
         val c = Vec3d(t.x, f.floorY, t.z)
-        // Kreisbahn mindestens 18 Blöcke Radius: enger überschnitte sich der 96-Block-Körper selbst.
-        val orbit = 18.0
+        // Weite Bahn: Enger überschnitte sich der 96-Block-Körper selbst.
+        val orbit = DragonRail.MIN_RADIUS + 4.0
         flyTo(airPoint(c.add(orbit, 0.0, 0.0), 16.0), 1.4, 20, faceTarget = c)
         f.sound("nivaris.inhale", d.entityPos, 3f, 1.2f)
         val group = f.calls.boss(style = style)
@@ -896,21 +905,22 @@ class NivarisMoves(private val f: EirholmFight) {
         val d = f.nivaris ?: return@script
         if (!d.flying) return@script
         val spot = landingSpotNear(t)
-        // Seit 1.8.1: erst im Bogen zum Anflugpunkt schräg hinter und über dem Landeplatz, dann die Ansage und ein
-        // langes, flaches Einschweben (vorher konnte das letzte Stück in einem Tick springen).
+        // Seit 1.11.0 über eine Bahn: Sie setzt weit hinter dem Landeplatz an und gleitet flach und gerade ein.
         val from = flatDir(spot, d.entityPos)
-        val approach = Vec3d(spot.x, f.floorY + 4.0, spot.z).add(from.multiply(12.0))
-        flyTo(approach, 1.2, 34, faceTarget = spot)
+        val approach = f.clampToArena(Vec3d(spot.x, f.floorY + 7.0, spot.z).add(from.multiply(28.0)), 4.0).let { Vec3d(it.x, f.floorY + 7.0, it.z) }
+        flyTo(approach, 1.2, 34, arrive = flatDir(approach, spot))
         val ring = f.calls.ring(spot, 6f, AriusTimings.NIVARIS_WINDUP[NivarisPose.LAND], style = style)
         d.play(NivarisPose.LAND, ring.ticks)
         val left = max(10, ring.ticks)
         val start = d.entityPos
         val dir = flatDir(start, spot)
+        val glide = DragonRail.path(start, (vel ?: dir).let { Vec3d(it.x, 0.0, it.z) }, listOf(spot))
+        val glideLen = DragonRail.length(glide)
         for (i in 1..left) {
             val k = i / left.toDouble()
-            val e = k * k * (3 - 2 * k)
-            f.place(d, start.lerp(spot, e).add(0.0, sin(k * Math.PI) * 0.8, 0.0))
-            f.face(d, spot.add(dir.multiply(4.0)))
+            val pos = DragonRail.at(glide, glideLen * (k * (2 - k)))
+            f.place(d, pos)
+            f.face(d, DragonRail.at(glide, glideLen * (k * (2 - k)) + 3.0).let { if (it.squaredDistanceTo(pos) > 0.01) it else spot.add(dir.multiply(4.0)) })
             yield(Unit)
         }
         vel = null

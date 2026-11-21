@@ -42,6 +42,11 @@ object CineClient {
         MotionClient.init()
         AriusMusic.init()
         FrozenMoon.init()
+        FarTerrain.init()
+        net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents.END_MAIN.register { context ->
+            val mc = MinecraftClient.getInstance()
+            FarTerrain.render(dev.henny.hha.client.vfx.VfxDraw(context.consumers(), mc.gameRenderer.camera, mc.renderTickCounter.getTickProgress(true)))
+        }
         ClientPlayNetworking.registerGlobalReceiver(ChaseCamS2C.ID) { p, _ ->
             chaseTarget = p.target
             chaseLeft = p.ticks
@@ -50,8 +55,25 @@ object CineClient {
             chaseSide = p.side.toDouble()
             chasePos = null
         }
-        ClientTickEvents.END_CLIENT_TICK.register { _ -> if (chaseLeft > 0) chaseLeft-- }
+        ClientTickEvents.END_CLIENT_TICK.register { _ ->
+            if (chaseLeft > 0) chaseLeft--
+            val want = if (CinePlayer.active) 1f else 0f
+            sceneView += (want - sceneView).coerceIn(-0.04f, 0.04f)
+        }
         ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> chaseLeft = 0 }
+    }
+
+    /** 0 = Spielersicht, 1 = Szene: weicher Übergang der Sichtweite. */
+    private var sceneView = 0f
+
+    /**
+     * Nebelwert [value] in einer Szene zum weiten Wert [wide] schieben, damit der Berg zu sehen ist. Stimmungen mit
+     * dichtem Sturm ([moodEnd] unter 40 Blöcken) bleiben, wie sie sind.
+     */
+    fun widenFog(value: Float, moodEnd: Float, wide: Float): Float {
+        if (sceneView <= 0f) return value
+        val k = sceneView * ((moodEnd - 40f) / 90f).coerceIn(0f, 1f)
+        return value + (maxOf(value, wide) - value) * k
     }
 
     @JvmStatic
@@ -61,7 +83,8 @@ object CineClient {
         val dtTicks = if (lastNanos == 0L) 1.0 else ((now - lastNanos) / 5.0e7).coerceIn(0.0, 4.0)
         lastNanos = now
         if (chaseLeft > 0 && CinePlayer.active) chase(world, pos, tickDelta, dtTicks)?.let { return it }
-        if (!CinePlayer.active || world.registryKey != ArenaDimension.WORLD) return null
+        if (!CinePlayer.active) return RideClient.overTheSpike(pos)?.let { Pose(it, yaw, pitch) }
+        if (world.registryKey != ArenaDimension.WORLD) return null
         return unstuck(world, pos, yaw, pitch)
     }
 

@@ -10,23 +10,32 @@ import net.minecraft.sound.SoundCategory
 import net.minecraft.sound.SoundEvent
 import net.minecraft.util.Identifier
 import net.minecraft.util.math.random.Random
+import kotlin.math.PI
+import kotlin.math.sin
 
 /**
  * Adaptive Musikregie (seit 1.10.0, Crix: „die Musik soll sich je Phase, Cutscene und QTE ändern“).
  *
- * Jeder **Zustand** ([STATES]) besteht aus einem Grundstück und optional einer zweiten Schicht, je mit Lautstärke und
- * Tonhöhe. Beim Wechsel laufen Stücke, die beide Zustände teilen, ohne Neustart weiter – nur Lautstärke und Tonhöhe
- * gleiten (z. B. Ritt → QTE: der Ritt duckt sich, die Spannungsschicht kommt dazu). Alles andere wird in der verlangten
- * Zeit überblendet. **Stinger** ([STINGS]) sind kurze Akzente (Klänge der Kampfmusik-Palette, eigene Tonhöhe) und
- * ducken die Musik kurz; **Ducking** senkt die Musik für dramatische Stille.
+ * Jeder **Zustand** ([STATES]) besteht aus einem Grundstück und optional einer zweiten Schicht, je mit eigener
+ * Lautstärke. Beim Wechsel laufen Stücke, die beide Zustände teilen, ohne Neustart weiter; alles andere wird in der
+ * verlangten Zeit überblendet. **Stinger** ([STINGS]) sind kurze Akzente und ducken die Musik kurz; **Ducking** senkt
+ * die Musik für dramatische Stille.
+ *
+ * Seit 1.11.0 (Crix: „die Musik ist manchmal komisch und verändert sich weird“) sind die Ursachen behoben:
+ * * **Keine Tonhöhen mehr auf Musik.** Zustände desselben Stücks hatten eigene Tonhöhen, beim Wechsel glitt das Stück
+ *   hörbar auf und ab, und Schichten liefen gegeneinander verstimmt. Unterschiede entstehen jetzt nur über Lautstärke.
+ * * **Kein Doppelstart.** Kam ein Stück zurück, während es noch ausblendete, startete es ein zweites Mal von vorn und lief
+ *   versetzt über sich selbst. Jetzt blendet das laufende wieder ein.
+ * * **Kein Flattern.** Verwandte Zustände (Jagd / Jagd nah …) wechseln höchstens alle [DWELL] Ticks; der letzte Wunsch gilt.
+ * * **Gleichmäßige Überblendung** (gleiche Leistung statt linear) und nie kürzer als [MIN_FADE] Ticks (kein Knacken).
+ * * Die alte Schnittstelle ([handle]) stört keinen genaueren Zustand mehr, der dasselbe Stück nutzt.
  *
  * Befehle kommen als [MusicCueS2C] (dev.henny.hha_arius.boss.MusicCue) oder wie bisher als Stück-ID
- * (EirholmFight.music → [handle]); die Stück-ID wird dem passenden Zustand zugeordnet. Vanilla-Musik pausiert, solange
- * etwas läuft.
+ * (EirholmFight.music → [handle]). Vanilla-Musik pausiert, solange etwas läuft.
  */
 object AriusMusic {
 
-    private class Spec(val track: String?, val volume: Float = 1f, val pitch: Float = 1f, val layer: String? = null, val layerVolume: Float = 0f, val layerPitch: Float = 1f)
+    private class Spec(val track: String?, val volume: Float = 1f, val layer: String? = null, val layerVolume: Float = 0f)
 
     private fun m(name: String) = "hha_arius:music.$name"
 
@@ -34,35 +43,50 @@ object AriusMusic {
         "silence" to Spec(null),
         "temple" to Spec(m("temple")),
         // Ernst (Arius unter 40 %): das Tempelthema bleibt, darunter der Herzschlag der Jagd.
-        "temple_serious" to Spec(m("temple"), 1f, 1f, m("hunt"), 0.45f, 0.94f),
-        // Der Weiße Horizont lädt: nur Liegeton und Herzschlag, tief.
-        "cut" to Spec(null, layer = m("hunt"), layerVolume = 0.75f, layerPitch = 0.8f),
-        // Nach dem Schlag: die Verwandlungsmusik, gedehnt und dunkel.
-        "horizon" to Spec(m("transform"), 0.95f, 0.82f),
-        "kick" to Spec(null, layer = m("qte"), layerVolume = 0.35f, layerPitch = 0.75f),
+        "temple_serious" to Spec(m("temple"), 1f, m("hunt"), 0.32f),
+        // Der Weiße Horizont lädt: nur Liegeton und Herzschlag.
+        "cut" to Spec(null, layer = m("hunt"), layerVolume = 0.6f),
+        // Nach dem Schlag: die Verwandlungsmusik.
+        "horizon" to Spec(m("transform"), 0.9f),
+        "kick" to Spec(null, layer = m("qte"), layerVolume = 0.3f),
         "entrance" to Spec(m("entrance")),
-        "reveal" to Spec(m("entrance"), 1f, 1f),
-        "carry" to Spec(m("ride"), 0.8f, 0.92f),
+        "reveal" to Spec(m("entrance")),
+        "carry" to Spec(m("ride"), 0.8f),
         "glacier" to Spec(m("glacier")),
-        "glacier_open" to Spec(m("glacier"), 0.7f, 1f, m("qte"), 0.25f, 0.58f),
-        "ride_intro" to Spec(m("transform"), 0.9f, 1f),
+        "glacier_open" to Spec(m("glacier"), 0.72f, m("qte"), 0.2f),
+        "ride_intro" to Spec(m("transform"), 0.9f),
         "ride" to Spec(m("ride")),
-        "qte" to Spec(m("ride"), 0.55f, 1f, m("qte"), 0.9f, 1f),
-        "storm" to Spec(m("ride"), 0.85f, 0.97f, m("hunt"), 0.4f, 1.1f),
-        "dive" to Spec(m("ride"), 1f, 1.06f),
+        "qte" to Spec(m("ride"), 0.6f, m("qte"), 0.75f),
+        "storm" to Spec(m("ride"), 0.88f, m("hunt"), 0.3f),
+        "dive" to Spec(m("ride")),
         "transform" to Spec(m("transform")),
         "heart" to Spec(m("heart")),
-        "white_hole" to Spec(m("heart"), 0.8f, 0.9f, m("hunt"), 0.45f, 0.85f),
+        "white_hole" to Spec(m("heart"), 0.8f, m("hunt"), 0.35f),
         "finale" to Spec(m("finale")),
-        "ending" to Spec(m("finale"), 0.85f, 0.96f),
-        "victory" to Spec(m("transform"), 0.9f, 1.06f),
-        "defeat" to Spec(m("finale"), 0.6f, 0.84f),
+        "ending" to Spec(m("finale"), 0.85f),
+        "victory" to Spec(m("transform"), 0.9f),
+        "defeat" to Spec(m("finale"), 0.6f),
         "hunt" to Spec(m("hunt")),
-        // Jagd, Arius ganz nah: der Herzschlag schneller, die Spannungsschicht dazu.
-        "hunt_close" to Spec(m("hunt"), 1f, 1.08f, m("qte"), 0.3f, 0.66f),
+        // Jagd, Arius ganz nah: die Spannungsschicht kommt dazu.
+        "hunt_close" to Spec(m("hunt"), 1f, m("qte"), 0.24f),
         "summit" to Spec(m("summit")),
-        "summit_final" to Spec(m("summit"), 1f, 1.05f, m("hunt"), 0.25f, 1.2f),
+        "summit_final" to Spec(m("summit"), 1f, m("hunt"), 0.2f),
     )
+
+    /** Verwandte Zustände: Sie dürfen nicht im Sekundentakt hin und her springen. */
+    private val FAMILY: Map<String, Int> = mapOf(
+        "hunt" to 1, "hunt_close" to 1,
+        "glacier" to 2, "glacier_open" to 2,
+        "heart" to 3, "white_hole" to 3,
+        "temple" to 4, "temple_serious" to 4,
+        "summit" to 5, "summit_final" to 5,
+    )
+
+    /** Mindestabstand zwischen zwei Wechseln innerhalb einer Familie (Ticks). */
+    private const val DWELL = 80
+
+    /** Kürzeste Überblendung (Ticks): Ein Sprung der Lautstärke von einem Tick knackt hörbar. */
+    private const val MIN_FADE = 4
 
     /** Stinger: Klänge (ID, Tonhöhe, Lautstärke), Ducking-Tiefe. */
     private class Sting(val sounds: List<Triple<String, Float, Float>>, val duck: Float)
@@ -79,12 +103,14 @@ object AriusMusic {
         "fall" to Sting(listOf(Triple("hha_arius:transform.shatter", 0.6f, 0.6f)), 0.3f),
     )
 
-    private class Loop(val id: String, event: SoundEvent, vol: Float, pitch0: Float) :
+    private class Loop(val id: String, event: SoundEvent, vol: Float) :
         MovingSoundInstance(event, SoundCategory.MUSIC, Random.create()) {
         var targetVolume = vol
-        var targetPitch = pitch0
         var fadeTicks = 20
         var gone = false
+
+        /** Überblend-Fortschritt 0..1; hörbar als Viertelsinus (gleiche Leistung beim Kreuzen zweier Stücke). */
+        private var level = 0f
 
         init {
             repeat = true
@@ -92,26 +118,42 @@ object AriusMusic {
             relative = true
             attenuationType = SoundInstance.AttenuationType.NONE
             volume = 0.001f
-            pitch = pitch0
+            pitch = 1f
         }
 
         override fun tick() {
-            val want = (targetVolume * duckNow).coerceIn(0f, 1f)
             val step = 1f / fadeTicks.coerceAtLeast(1)
-            volume = if (volume < want) (volume + step).coerceAtMost(want) else (volume - step).coerceAtLeast(want)
-            pitch += (targetPitch - pitch).coerceIn(-0.01f, 0.01f)
-            if (gone && volume <= 0.002f) setDone()
+            val want = if (gone) 0f else 1f
+            level = if (level < want) (level + step).coerceAtMost(want) else (level - step).coerceAtLeast(want)
+            val shape = sin(level * PI.toFloat() / 2f)
+            // Zielwechsel innerhalb eines laufenden Stücks gleiten ebenfalls über die Überblendzeit.
+            shownTarget += (targetVolume - shownTarget).coerceIn(-step, step)
+            volume = (shownTarget * shape * duckNow).coerceIn(0f, 1f).coerceAtLeast(0.0005f)
+            if (gone && level <= 0f) setDone()
         }
+
+        private var shownTarget = vol
 
         fun fadeOut(ticks: Int) {
             gone = true
-            targetVolume = 0f
-            fadeTicks = ticks.coerceAtLeast(1)
+            fadeTicks = ticks.coerceAtLeast(MIN_FADE)
+        }
+
+        /** Holt ein ausblendendes Stück zurück, ohne es neu zu starten. */
+        fun revive(vol: Float, ticks: Int) {
+            gone = false
+            targetVolume = vol
+            fadeTicks = ticks.coerceAtLeast(MIN_FADE)
         }
     }
 
     private val loops = ArrayList<Loop>()
     private var state = ""
+
+    private var clock = 0L
+    private var changedAt = -1000L
+    private var pendingName: String? = null
+    private var pendingFade = 0
 
     private var duckNow = 1f
     private var duckLevel = 1f
@@ -120,7 +162,7 @@ object AriusMusic {
     fun init() {
         ClientPlayNetworking.registerGlobalReceiver(MusicCueS2C.ID) { p, _ ->
             when (p.kind) {
-                0 -> setState(p.name, p.ticks)
+                0 -> request(p.name, p.ticks)
                 1 -> sting(p.name)
                 2 -> duck(p.level, p.ticks)
             }
@@ -130,45 +172,56 @@ object AriusMusic {
     /** Alte Schnittstelle: Stück-ID aus EirholmFight.music ("" = Musik aus). */
     fun handle(event: String, fade: Int) {
         if (event.isEmpty()) {
-            setState("silence", fade)
-            state = ""
+            request("silence", fade)
             return
         }
         val name = event.substringAfter(':').removePrefix("music.")
         val mapped = when (name) {
-            "temple" -> "temple"
-            "glacier" -> "glacier"
-            "heart" -> "heart"
-            "finale" -> "finale"
-            "entrance" -> "entrance"
-            "transform" -> "transform"
-            "hunt", "ride", "summit" -> name
+            "temple", "glacier", "heart", "finale", "entrance", "transform", "hunt", "ride", "summit" -> name
             else -> null
         }
         // Der Server schickt das Grundstück oft zusammen mit einem genaueren Zustand: teilen beide das Stück, bleibt es.
-        val cur = STATES[state]
-        if (mapped != null && cur != null && cur.track == STATES[mapped]?.track && state != "silence") return
-        if (mapped != null) setState(mapped, fade) else playRaw(event, fade)
+        val wanted = pendingName ?: state
+        val cur = STATES[wanted]
+        if (mapped != null && cur != null && wanted != "silence" && cur.track == STATES[mapped]?.track) return
+        if (mapped != null) request(mapped, fade.coerceAtLeast(12)) else playRaw(event, fade)
+    }
+
+    /** Wunsch nach einem Zustand: innerhalb einer Familie erst nach der Mindestzeit, sonst sofort. */
+    private fun request(name: String, fade: Int) {
+        if (name !in STATES) return
+        if (name == state) {
+            pendingName = null
+            return
+        }
+        val a = FAMILY[state]
+        if (a != null && a == FAMILY[name] && clock - changedAt < DWELL) {
+            pendingName = name
+            pendingFade = fade
+            return
+        }
+        pendingName = null
+        setState(name, fade)
     }
 
     private fun setState(name: String, fade: Int) {
         val spec = STATES[name] ?: return
         state = name
-        val f = fade.coerceAtLeast(1)
+        changedAt = clock
+        val f = fade.coerceAtLeast(MIN_FADE)
         val want = listOfNotNull(
-            spec.track?.let { Triple(it, spec.volume, spec.pitch) },
-            spec.layer?.let { Triple(it, spec.layerVolume, spec.layerPitch) },
+            spec.track?.let { it to spec.volume },
+            spec.layer?.let { it to spec.layerVolume },
         )
         val keep = HashSet<Loop>()
-        for ((id, vol, pitch) in want) {
-            val running = loops.firstOrNull { it.id == id && !it.gone && it !in keep }
+        for ((id, vol) in want) {
+            // Auch ein gerade ausblendendes Stück zählt: Es läuft weiter, statt ein zweites Mal zu starten.
+            val running = loops.filter { it.id == id && it !in keep && !it.isDone }.let { same -> same.firstOrNull { !it.gone } ?: same.firstOrNull() }
             if (running != null) {
-                running.targetVolume = vol
-                running.targetPitch = pitch
-                running.fadeTicks = f
+                running.revive(vol, f)
                 keep += running
             } else {
-                val loop = Loop(id, SoundEvent.of(Identifier.of(id)), vol, pitch)
+                val loop = Loop(id, SoundEvent.of(Identifier.of(id)), vol)
                 loop.fadeTicks = f
                 loops += loop
                 keep += loop
@@ -181,9 +234,17 @@ object AriusMusic {
 
     private fun playRaw(event: String, fade: Int) {
         state = ""
-        for (l in loops) l.fadeOut(fade)
-        val loop = Loop(event, SoundEvent.of(Identifier.of(event)), 1f, 1f)
-        loop.fadeTicks = fade.coerceAtLeast(1)
+        pendingName = null
+        changedAt = clock
+        val f = fade.coerceAtLeast(MIN_FADE)
+        val same = loops.firstOrNull { it.id == event && !it.isDone }
+        for (l in loops) if (l !== same) l.fadeOut(f)
+        if (same != null) {
+            same.revive(1f, f)
+            return
+        }
+        val loop = Loop(event, SoundEvent.of(Identifier.of(event)), 1f)
+        loop.fadeTicks = f
         loops += loop
         MinecraftClient.getInstance().soundManager.play(loop)
     }
@@ -203,6 +264,13 @@ object AriusMusic {
     }
 
     fun tick() {
+        clock++
+        pendingName?.let { name ->
+            if (clock - changedAt >= DWELL) {
+                pendingName = null
+                if (name != state) setState(name, pendingFade)
+            }
+        }
         if (duckLeft > 0) {
             duckLeft--
             duckNow += (duckLevel - duckNow) * 0.35f
@@ -214,9 +282,11 @@ object AriusMusic {
     }
 
     fun clear() {
-        for (l in loops) l.fadeOut(1)
+        for (l in loops) l.fadeOut(MIN_FADE)
         loops.clear()
         state = ""
+        pendingName = null
+        changedAt = -1000L
         duckLeft = 0
         duckNow = 1f
     }

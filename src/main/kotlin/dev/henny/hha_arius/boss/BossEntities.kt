@@ -220,11 +220,10 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
     override fun canAddPassenger(passenger: net.minecraft.entity.Entity): Boolean = passengerList.size < 8
 
     override fun getPassengerAttachmentPos(passenger: net.minecraft.entity.Entity, dimensions: net.minecraft.entity.EntityDimensions, scaleFactor: Float): net.minecraft.util.math.Vec3d {
-        val i = passengerList.indexOf(passenger).coerceAtLeast(0)
         // Seit 1.10.0: Jeder Reiter hängt an der Kristallplatte eines Rückenglieds (Glied 4, 6, 8 …), waagerecht im
         // Fahrtwind dahinter. Der Server rechnet mit gestrecktem Körper; der Client setzt ihn an den echten Dorn des
         // gezeichneten Körpers ([RideHooks.riderPos], client/fx/RideClient).
-        return RideHooks.serverOffset(i).rotateY(-bodyYaw * net.minecraft.util.math.MathHelper.RADIANS_PER_DEGREE)
+        return RideHooks.offsetFor(this, passenger).rotateY(-bodyYaw * net.minecraft.util.math.MathHelper.RADIANS_PER_DEGREE)
     }
 
     override fun updatePassengerPosition(passenger: net.minecraft.entity.Entity, positionUpdater: net.minecraft.entity.Entity.PositionUpdater) {

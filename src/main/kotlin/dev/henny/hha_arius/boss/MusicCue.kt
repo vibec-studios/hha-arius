@@ -28,8 +28,8 @@ data class MusicCueS2C(val kind: Int, val name: String, val ticks: Int, val leve
 
 /**
  * Server-Seite der adaptiven Musik (seit 1.10.0, Crix: „die Musik soll sich je Phase, Szene und QTE ändern“). Der Client
- * (dev.henny.hha_arius.client.fx.AriusMusic) kennt je Zustand Stück, Lautstärke, Tonhöhe und eine optionale zweite
- * Schicht; gleiche Stücke laufen beim Wechsel weiter (nur Lautstärke/Tonhöhe gleiten), andere werden überblendet.
+ * (dev.henny.hha_arius.client.fx.AriusMusic) kennt je Zustand Stück, Lautstärke und eine optionale zweite Schicht;
+ * gleiche Stücke laufen beim Wechsel weiter (nur die Lautstärke gleitet), andere werden überblendet.
  *
  * **Zustände** ([STATES]): `silence`, `temple`, `temple_serious`, `cut`, `horizon`, `kick`, `entrance`, `reveal`,
  * `carry`, `glacier`, `glacier_open`, `ride_intro`, `ride`, `qte`, `storm`, `dive`, `transform`, `heart`, `white_hole`,

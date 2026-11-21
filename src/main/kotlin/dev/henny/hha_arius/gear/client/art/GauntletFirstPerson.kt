@@ -194,7 +194,7 @@ internal object GauntletFirstPerson {
         // Rechte Hand oben, linke darunter, beide Handflächen zum Dorn.
         val rH = Vector3f(upper).add(0.05f, 0f, 0.04f)
         val lH = if (grip >= 2) Vector3f(lower).add(-0.05f, 0f, 0.04f)
-        else Vector3f(-0.78f, -0.12f + 0.14f * sin(t * 0.45f), -0.62f + 0.1f * cos(t * 0.37f))
+        else Vector3f(-0.74f, -0.46f + 0.12f * sin(t * 0.45f), -0.74f + 0.08f * cos(t * 0.37f))
         val rN = Vector3f(-1f, 0f, 0.15f).normalize()
         val lN = if (grip >= 2) Vector3f(1f, 0f, 0.15f).normalize() else Vector3f(0.6f, -0.6f, 0.4f).normalize()
         matrices.push()
@@ -205,8 +205,12 @@ internal object GauntletFirstPerson {
             val n = Vector3f(if (canonRight) rN else lN)
             if (leftHanded) { h.x = -h.x; sh.x = -sh.x; n.x = -n.x }
             // Liegt der Griff hinter der Kamera (Blick nach hinten/oben), ist der Arm ohnehin nicht zu sehen.
-            if (h.z > -0.2f) continue
-            arm(player, matrices, queue, light, right, h, sh, n, slim, gloves, false, 0f, null, td, t, canonRight)
+            if (h.z > 0.15f) continue
+            // Steigt sie steil, liegt der Dorn fast über der Kamera: Die Hand bleibt dann vor der Nahebene sichtbar.
+            if (h.z > -0.38f) h.z = -0.38f
+            // Seit 1.11.0 greift man weiter vor sich: Der Arm wird bis zur Schulter gestreckt.
+            val stretch = (h.distance(sh) / 0.72f).coerceIn(1f, 2.4f)
+            arm(player, matrices, queue, light, right, h, sh, n, slim, gloves, false, 0f, null, td, t, canonRight, stretch)
         }
         matrices.pop()
     }
@@ -215,16 +219,17 @@ internal object GauntletFirstPerson {
     private fun arm(
         player: AbstractClientPlayerEntity, matrices: MatrixStack, queue: OrderedRenderCommandQueue, light: Int,
         right: Boolean, h: Vector3f, s: Vector3f, n: Vector3f, slim: Boolean, gloves: Boolean, open: Boolean, glow: Float,
-        anim: ArtAnims.State? = null, td: Float = 0f, now: Float = 0f, canonRight: Boolean = right,
+        anim: ArtAnims.State? = null, td: Float = 0f, now: Float = 0f, canonRight: Boolean = right, stretch: Float = 1f,
     ) {
         dir.set(h).sub(s)
         ArtPoseMath.armFrame(dir, n, right, q)
         val cx = if (right) (if (slim) -0.5f else -1f) else (if (slim) 0.5f else 1f)
-        q.transform(tmp.set(cx / 16f, 10f / 16f, 0f))
+        q.transform(tmp.set(cx / 16f, 10f / 16f * stretch, 0f))
         pivot.set(h).sub(tmp)
         matrices.push()
         matrices.translate(pivot.x, pivot.y, pivot.z)
         matrices.multiply(q)
+        if (stretch != 1f) matrices.scale(1f, stretch, 1f)
         if (!player.isInvisible) {
             // renderArm setzt den Arm auf seine Grundlage (Drehpunkt ∓5,2,0, Rollen ±0,1) – hier vorab ausgleichen.
             matrices.push()

@@ -6,9 +6,13 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
+import net.minecraft.block.Blocks
 import net.minecraft.client.option.KeyBinding
+import net.minecraft.particle.BlockStateParticleEffect
+import net.minecraft.particle.ParticleTypes
 import net.minecraft.sound.SoundEvents
 import net.minecraft.text.Text
+import net.minecraft.util.math.Vec3d
 
 /**
  * Anzeige und Eingabe der Quick-Time-Events ([Qte]): große Taste in der Bildmitte unten, Aufforderung darüber, ein
@@ -55,7 +59,24 @@ object QteClient {
         }
     }
 
+    /** Das Eis wächst gerade über die Hände (Prompt `ride_ice`): Frost am Bildrand und Eissplitter an den Händen. */
+    private val frosting: Boolean get() = id >= 0 && result == 0 && text.endsWith("ride_ice")
+
+    private fun frostTick(client: MinecraftClient) {
+        val p = client.player ?: return
+        val world = client.world ?: return
+        val look = p.rotationVector
+        val side = Vec3d(-look.z, 0.0, look.x).let { if (it.lengthSquared() < 1e-6) Vec3d(1.0, 0.0, 0.0) else it.normalize() }
+        val hands = p.eyePos.add(look.multiply(0.9)).add(0.0, -0.25, 0.0)
+        val r = world.random
+        repeat(3) {
+            val q = hands.add(side.multiply((r.nextDouble() - 0.5) * 0.9)).add(0.0, (r.nextDouble() - 0.5) * 0.3, 0.0)
+            world.addParticleClient(BlockStateParticleEffect(ParticleTypes.BLOCK, Blocks.PACKED_ICE.defaultState), q.x, q.y, q.z, 0.0, 0.02, 0.0)
+        }
+    }
+
     private fun tick(client: MinecraftClient) {
+        if (frosting) frostTick(client)
         if (result != 0) {
             if (++resultAge > 24) { result = 0; id = -1 }
             return
@@ -122,12 +143,21 @@ object QteClient {
                 ctx.fill(o, o2, o2, h0 - o2, c); ctx.fill(w0 - o2, o2, w0 - o, h0 - o2, c)
             }
         }
+        if (frosting) {
+            // Das Eis kriecht von unten ins Bild, je weniger Schläge, desto höher.
+            val w1 = ctx.scaledWindowWidth
+            val h1 = ctx.scaledWindowHeight
+            val grow = 1f - (presses / need.toFloat()).coerceIn(0f, 1f)
+            val top = (h1 * (0.62f + 0.1f * (1f - grow))).toInt()
+            ctx.fillGradient(0, top, w1, h1, withAlpha(0xFF9FD8FF.toInt(), 0f), withAlpha(0xFFBFE8FF.toInt(), 0.55f * grow + 0.1f))
+        }
         val client = MinecraftClient.getInstance()
         val tr = client.textRenderer
         val w = ctx.scaledWindowWidth
         val h = ctx.scaledWindowHeight
         val cx = w / 2
-        val cy = (h * 0.68f).toInt()
+        // Seit 1.11.0 im oberen Bilddrittel: Unten lag die Taste hinter der Fähigkeitenleiste und war nicht lesbar.
+        val cy = (h * 0.3f).toInt().coerceAtLeast(70)
         val fade = if (result != 0) (1f - resultAge / 24f).coerceIn(0f, 1f) else 1f
         // Taste
         val keyText = key()?.boundKeyLocalizedText?.copy() ?: Text.literal("?")

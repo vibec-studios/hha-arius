@@ -56,7 +56,8 @@ object CloudSea {
         // Himmelslicht: warmes Leuchten aus der Sonnenrichtung (feste Tageszeit, Sonne im Osten, 32° hoch)
         val sunDir = Vec3d(1.0, 0.62, 0.15).normalize()
         val sun = cam.add(sunDir.multiply(220.0))
-        d.billboard(VfxLayers.RAYS_ADD, sun, 200.0, withAlpha(0xFFFFE8B8.toInt(), 0.16f * fx), time * 0.02)
+        // Seit 1.11.0 ohne die Strahlenkarte: Ihre Kanten standen als helles Viereck im Himmel.
+        d.billboard(VfxLayers.GLOW_ADD, sun, 240.0, withAlpha(0xFFFFE8B8.toInt(), 0.10f * fx))
         d.billboard(VfxLayers.GLOW_ADD, sun, 120.0, withAlpha(0xFFFFF0D0.toInt(), 0.28f * fx))
     }
 }

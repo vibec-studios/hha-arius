@@ -503,27 +503,17 @@ class NivarisModel(root: ModelPart) : EntityModel<NivarisRenderState>(root) {
 /**
  * Der Körper eines Nivaris-Exemplars auf dem Client: rechnet je Frame die 41 Punkte des Rückgrats und die Gliedrahmen.
  *
- * Seit 1.8.1 eine robuste Folgekette (Crix: „der Körper hängt im Flug als starrer, gerader Strang hinterher“, „Teile
- * sinken langsam ab, obwohl vorn längst alles steht“, „er geht durch sich selbst durch“, „sehr scharfe, komische
- * Kurven“):
- * * **Wegspur:** Die Rumpfmitte (Entity-Punkt + [NivarisShape.SPINE_UP]) schreibt alle 0,5 Blöcke Weg einen Punkt mit
- *   seinem Wegstand (Odometer). Der Körper liegt **fest auf dieser Spur**: Glied 3 an der Rumpfmitte, jedes weitere
- *   genau [NivarisShape.SEGMENT] Bogenlänge dahinter. Steht sie, steht der ganze Körper; nichts wandert nach.
- * * **Hals:** Glieder 0–2 spannen den Bogen vom Kopfgelenk (je Pose, [NivarisModel.FWD]/[NivarisModel.UP]) zur
- *   Rumpfmitte. Bewegt sich nur der Kopf (Hieb, Brüllen), bleibt der Körper liegen statt mitzurutschen.
- * * **Schlängeln:** Jeder Spurpunkt bekommt eine Welle quer (und im Flug auch auf und ab), deren Phase an seinem
- *   Wegstand hängt. Die Welle steht also im Raum, und der Körper gleitet durch sie hindurch wie eine echte Schlange;
- *   kurz hinter dem Kopf blendet sie ein, damit Hals und Trefferbox ruhig bleiben.
- * * **Rückwärts:** Läuft sie zurück über die eigene Spur, wird die Spur verzehrt statt gefaltet.
- * * **Gier:** Die Blickrichtung folgt dem Server mit begrenzter Drehrate (höchstens 12° je Tick): schlagartige Wenden
- *   werden zu Bögen.
- * * **Boden:** Gelandet setzt sich die ganze Spur gemeinsam und zügig auf die Lauffläche unter jedem Punkt (Höhenkarte
- *   der Welt, Säulen und Wände zählen nicht), statt Stück für Stück langsam abzusinken.
- * * **Keine Durchdringung:** Kommen sich zwei nicht benachbarte Glieder zu nah, legt sich das vordere über das hintere
- *   (am Boden eine Windung, in der Luft weichen beide auseinander); die Hebung läuft weich über die Nachbarglieder aus.
- *   Kopf und Hals bleiben, wo der Server sie hat.
- * * **An der Nadel ([NivarisModeC.COIL]) und beim Lösen ([NivarisModeC.UNCOIL]):** unverändert Helix bzw. Weg des
- *   Auftritts ([EntrancePathC]).
+ * Seit 1.11.0 (Crix: „sein Körper macht teilweise komische Sachen“, Haken, enge Schlaufen, flache Ringe, Selbstkreuzung):
+ * * **Flug:** Der Körper liegt auf der Wegspur der Rumpfmitte. Alle Flüge laufen über [dev.henny.hha_arius.boss.DragonRail]
+ *   (Radius mindestens 22 Blöcke); hier begrenzt zusätzlich ein Knickwinkel je Gelenk die Krümmung.
+ * * **Boden und Szenen:** vorgegebene Formen (Schlangenlinie, enge Schlangenlinie, Spirale beim Liegen), nach dem
+ *   Gelände gewählt. Der Körper gleitet von seinem aktuellen Verlauf hinein, simuliert wird nichts.
+ * * **Überblendung in Winkeln:** Die Form ist eine Richtung je Glied, aufsummiert ab der Rumpfmitte. Gliedabstände bleiben
+ *   exakt, und zwei Formen gehen ohne Falten ineinander über.
+ * * **Hals:** Glieder 0–2 spannen den Bogen vom Kopfgelenk (je Pose) zur Rumpfmitte. Bewegt sich nur der Kopf, bleibt der
+ *   Körper liegen.
+ * * **An der Nadel ([NivarisModeC.COIL]) und beim Lösen ([NivarisModeC.UNCOIL]):** Helix bzw. Weg des Auftritts
+ *   ([EntrancePathC]).
  * * **Keine Sprünge:** Wechselt die Darstellung oder springt die Entity (Teleport), blendet der Körper in 10 Ticks vom
  *   alten zum neuen Verlauf über; beim Übergang in den Kampf wird die Spur aus dem letzten Körper gesät.
  */
@@ -638,9 +628,6 @@ class NivarisBody {
             ups[i] = up.subtract(headFwd.multiply(back)).normalizeOr(UP_V)
         }
 
-        // Zeitliche Glättung (seit 1.10.0): Glieder hinter dem Hals folgen ihrer neuen Lage weich (mit der Bewegung der
-        // Entity mitgeführt, also ohne Nachziehen im Flug). Fängt Sprünge aus Trennung und Krümmungsgrenze ab.
-        if (mode == NivarisModeC.NORMAL) settle(pts, base, dt)
         // Überblendung nach Wechsel/Sprung.
         fadeFrom?.let { from ->
             val k = (now - fadeAt) / 10f
@@ -680,37 +667,17 @@ class NivarisBody {
         put(s.headFrame, 0, hl, hu.negate(), headFwd.negate())
         s.bodyReady = true
         // Reiter: Griffpunkte an den Kristallplatten der Rückenglieder (client/fx/RideClient).
-        if (e.hasPassengers()) dev.henny.hha_arius.client.fx.RideClient.anchor(e, s, pts)
+        if (e.hasPassengers()) dev.henny.hha_arius.client.fx.RideClient.anchor(e, s, pts, hu, headFwd)
     }
 
-    private var settled: Array<Vec>? = null
-    private var settledBase: Vec? = null
-
-    /** Siehe Aufruf: weiches Folgen der Rumpfglieder, mitgeführt um die Bewegung der Entity. */
-    private fun settle(pts: Array<Vec>, base: Vec, dt: Float) {
-        val prev = settled
-        val pb = settledBase
-        settledBase = base
-        if (prev == null || pb == null || prev.size != pts.size || pb.squaredDistanceTo(base) > 14.0 * 14.0 || fadeFrom != null) {
-            settled = pts.copyOf()
-            return
-        }
-        val move = base.subtract(pb)
-        val k = 1.0 - kotlin.math.exp(-dt * 0.9)
-        for (i in NECK + 1 until POINTS) {
-            val carried = prev[i].add(move)
-            if (carried.squaredDistanceTo(pts[i]) > 9.0) continue // großer Unterschied: neu, nicht verschleppen
-            pts[i] = carried.lerp(pts[i], k)
-        }
-        // Gliedabstände wiederherstellen (von vorn).
-        for (i in NECK + 1 until POINTS) {
-            val d = pts[i].subtract(pts[i - 1])
-            if (d.lengthSquared() > 1e-8) pts[i] = pts[i - 1].add(d.normalize().multiply(NivarisShape.SEGMENT))
-        }
-        settled = pts.copyOf()
-    }
-
-    /** Kampf, Flug und Szenen: Wegspur, Hals, Schlängeln, Boden, Durchdringung. Liefert die Blickrichtung des Kopfes. */
+    /**
+     * Kampf, Flug und Szenen (seit 1.11.0 neu aufgebaut): Die Form entsteht als **Richtung je Glied** (Gier, Neigung) und
+     * wird von der Rumpfmitte aus aufsummiert. Dadurch bleiben alle Gliedabstände exakt, und jede Überblendung läuft über
+     * Winkel statt über Punkte: nichts faltet, knickt oder fällt durch sich selbst.
+     * * **Flug:** Richtungen aus der Wegspur, je Gelenk höchstens [MAX_BEND] (Radius 16).
+     * * **Boden:** vorgegebene Form ([restTarget]), in die der Körper vom aktuellen Verlauf hineingleitet.
+     * Liefert die Blickrichtung des Kopfes.
+     */
     private fun normal(
         e: dev.henny.hha_arius.boss.NivarisEntity, s: NivarisRenderState, p: FloatArray, base: Vec, dt: Float, now: Float,
         pts: Array<Vec>, ups: Array<Vec>, air: FloatArray,
@@ -733,20 +700,23 @@ class NivarisBody {
         // Sprung der Entity (Teleport, Neu-Spawn an anderer Stelle): Körper mitnehmen und überblenden.
         lastE?.let { prev ->
             if (prev.squaredDistanceTo(spine) > 12.0 * 12.0) {
-                // Seit 1.10.0: die alte Form mitversetzen und von dort überblenden (vorher glitt der ganze Körper
-                // sichtbar quer über die Sprungweite).
                 val delta = spine.subtract(prev)
                 for (n in trail) n.p = n.p.add(delta)
                 lastSpine = spine
                 last = last?.map { it.add(delta) }?.toTypedArray()
-                settled = null
+                restAnchor = null
                 startFade(now)
             }
         }
         lastE = spine
-        if (!e.flying) groundY = s.y
-        if (groundY.isNaN()) groundY = s.y - 8.0
-        ground = if (ground < 0f) (if (e.flying) 0f else 1f) else approach(ground, if (e.flying) 0f else 1f, dt / 14f)
+        // Seit 1.11.0 auch im Flug die echte Bodenhöhe unter ihr. Vorher galt nach dem Auftritt „Entity minus 8“ (die Entity
+        // war noch nie gelandet): Beim Einschweben vor dem Tempel lag diese Scheinhöhe weit über dem Boden, der Kopf sank
+        // mit der Entity herab, und der Körper blieb an der Scheinhöhe in der Luft hängen.
+        if (!e.flying) groundY = s.y else {
+            val top = world.getTopY(net.minecraft.world.Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, MathHelper.floor(s.x), MathHelper.floor(s.z)).toDouble()
+            if (top > world.bottomY + 1) groundY = minOf(top, s.y) else if (groundY.isNaN()) groundY = s.y - 40.0
+        }
+        ground = if (ground < 0f) (if (e.flying) 0f else 1f) else approach(ground, if (e.flying) 0f else 1f, dt / 16f)
 
         // Wegstand und Tempo.
         val step = lastSpine?.distanceTo(spine) ?: 0.0
@@ -754,10 +724,9 @@ class NivarisBody {
         odo += step
         if (dt > 1e-3f) speed += (step / dt - speed) * (1.0 - kotlin.math.exp(-dt * 0.2))
 
-        // Spur: neu gespawnt eine sanfte S-Kurve nach hinten.
+        // Spur: neu gespawnt gerade nach hinten.
         if (trail.isEmpty()) {
-            val side = Vec(f.z, 0.0, -f.x)
-            for (k in 0..60) trail.addLast(Node(spine.subtract(f.multiply(k * 2.0)).add(side.multiply(kotlin.math.sin(k * 0.15) * 2.0)), odo - k * 2.0))
+            for (k in 0..60) trail.addLast(Node(spine.subtract(f.multiply(k * 2.0)), odo - k * 2.0))
         }
         // Rückwärts über die eigene Spur: verzehren statt falten.
         while (trail.size >= 3) {
@@ -769,23 +738,9 @@ class NivarisBody {
         else if (spine.squaredDistanceTo(trail.first().p) > 1e-6) trail.addFirst(Node(spine, odo))
         trimTrail()
 
-        // Boden: die ganze Spur setzt sich gemeinsam und zügig auf die Lauffläche (vorn steigt sie zur Rumpfmitte an).
-        if (ground > 0.01f) {
-            val k = 1.0 - kotlin.math.exp(-dt * 0.25 * ground)
-            var arc = 0.0
-            var prev: Vec? = null
-            for (n in trail) {
-                prev?.let { arc += it.distanceTo(n.p) }
-                prev = n.p
-                if (arc < 0.5) continue
-                val rest = MathHelper.lerp(smooth(MathHelper.clamp((arc / 8.0).toFloat(), 0f, 1f)).toDouble(), spine.y, floorAt(world, n.p.x, n.p.z) + REST_UP)
-                n.p = Vec(n.p.x, n.p.y + (rest - n.p.y) * k, n.p.z)
-            }
-        }
-
-        // Schlängeln: Welle je Spurpunkt nach seinem Wegstand (steht im Raum), hinter dem Hals eingeblendet.
-        val flyK = 1.0 - ground
-        val disp = ArrayList<Vec>(trail.size)
+        // Schlängeln im Flug: Welle je Spurpunkt nach seinem Wegstand (steht im Raum), hinter dem Hals eingeblendet.
+        val poly = Poly()
+        poly.add(spine, UP_V)
         run {
             var arc = 0.0
             val n = trail.size
@@ -796,70 +751,84 @@ class NivarisBody {
                 val side = Vec(tan.z, 0.0, -tan.x).normalizeOr(Vec(1.0, 0.0, 0.0))
                 val ramp = smooth(MathHelper.clamp(((arc - 5.0) / 16.0).toFloat(), 0f, 1f)).toDouble()
                 val ph = trail[k].odo
-                val lat = ramp * (LAT_AIR * flyK + LAT_GROUND * (1.0 - flyK)) * kotlin.math.sin(ph * WAVE_LAT)
-                val ver = ramp * VER_AIR * flyK * kotlin.math.sin(ph * WAVE_VER + 1.1)
-                disp.add(q.add(side.multiply(lat)).add(0.0, ver, 0.0))
+                val lat = ramp * LAT_AIR * kotlin.math.sin(ph * WAVE_LAT)
+                val ver = ramp * VER_AIR * kotlin.math.sin(ph * WAVE_VER + 1.1)
+                poly.add(q.add(side.multiply(lat)).add(0.0, ver, 0.0), UP_V)
             }
+        }
+        val tmpP = Array(BODY + 1) { Vec.ZERO }
+        val tmpU = Array(BODY + 1) { UP_V }
+        sample(poly, tmpP, tmpU, 0, NivarisShape.SEGMENT)
+        repeat(2) { for (k in 1 until BODY) tmpP[k] = tmpP[k].multiply(0.5).add(tmpP[k - 1].add(tmpP[k + 1]).multiply(0.25)) }
+
+        // Flugform: Richtung je Glied, Knick je Gelenk begrenzt (Gier fortlaufend, ohne Sprung bei ±180°).
+        val fYaw = DoubleArray(BODY)
+        val fPitch = DoubleArray(BODY)
+        for (k in 0 until BODY) {
+            val d = tmpP[k + 1].subtract(tmpP[k])
+            val flat = kotlin.math.sqrt(d.x * d.x + d.z * d.z)
+            val yaw = if (flat > 1e-5) kotlin.math.atan2(d.z, d.x) else if (k > 0) fYaw[k - 1] else kotlin.math.atan2(-f.z, -f.x)
+            fPitch[k] = kotlin.math.atan2(d.y, flat.coerceAtLeast(1e-5)).coerceIn(-MAX_PITCH, MAX_PITCH)
+            fYaw[k] = if (k == 0) yaw else fYaw[k - 1] + wrapRad(yaw - fYaw[k - 1]).coerceIn(-MAX_BEND, MAX_BEND)
+            if (k > 0) fPitch[k] = fPitch[k - 1] + (fPitch[k] - fPitch[k - 1]).coerceIn(-MAX_BEND, MAX_BEND)
+        }
+
+        // Bodenform: gleitet vom aktuellen Verlauf in die vorgegebene Form.
+        updateRest(world, e, spine, f, fYaw, dt)
+        val w = smooth(ground).toDouble()
+
+        // Endgültige Richtungen und Aufsummieren ab der Rumpfmitte.
+        val idle = MathHelper.clamp((1.0 - speed / 0.25).toFloat(), 0f, 1f).toDouble()
+        val sw = p[NivarisModel.SWEEP].toDouble()
+        var q = spine
+        pts[NECK] = spine
+        var carry = 0.0
+        for (k in 0 until BODY) {
+            val i = NECK + 1 + k
+            // Durchgehend abgewickelt, damit benachbarte Glieder nie in verschiedene Richtungen überblenden.
+            var diff = wrapRad(restYaw[k] - fYaw[k])
+            if (k > 0) diff = carry + wrapRad(diff - carry)
+            carry = diff
+            var yaw = fYaw[k] + diff * w
+            var pitch = fPitch[k] * (1.0 - w)
+            val u = i / POINTS.toDouble()
+            yaw += (1.0 - w) * idle * (0.012 + 0.03 * u) * kotlin.math.sin(now * 0.12 - i * 0.38)
+            pitch += (1.0 - w) * idle * (0.01 + 0.02 * u) * kotlin.math.sin(now * 0.09 - i * 0.3 + 1.3)
+            yaw += w * 0.014 * kotlin.math.sin(now * 0.05 - i * 0.35)
+            if (sw > 0.0) yaw += kotlin.math.sin(sw * 2.0 * Math.PI) * 0.5 * smooth(MathHelper.clamp((i - 10) / 18f, 0f, 1f))
+            val cp = kotlin.math.cos(pitch)
+            q = q.add(Vec(kotlin.math.cos(yaw) * cp, kotlin.math.sin(pitch), kotlin.math.sin(yaw) * cp).multiply(NivarisShape.SEGMENT))
+            pts[i] = q
+            ups[i] = UP_V
         }
 
         // Hals: Glieder 0..NECK-1 gleichmäßig auf dem Bogen vom Kopfgelenk zur Rumpfmitte.
         val neck = Poly()
         run {
             val d = h.distanceTo(spine).coerceAtLeast(1.0)
-            val motion = trail.firstOrNull { it.p.squaredDistanceTo(spine) > 0.04 }?.let { spine.subtract(it.p).normalizeOr(f) } ?: f
+            val motion = spine.subtract(pts[NECK + 1]).normalizeOr(f)
             bezier(neck, h, h.subtract(headFwd.multiply(0.35 * d)), spine.add(motion.multiply(0.35 * d)), spine, UP_V, 16)
         }
-        val neckLen = polyLength(neck)
-        sample(neck, pts, ups, 0, neckLen / NECK, NECK + 1)
+        sample(neck, pts, ups, 0, polyLength(neck) / NECK, NECK + 1)
         pts[NECK] = spine
-        // Körper: ab der Rumpfmitte fest im Gliedabstand auf der geschlängelten Spur.
-        val body = Poly()
-        body.add(spine, UP_V)
-        for (q in disp) body.add(q, UP_V)
-        val tmpP = Array(POINTS - NECK) { Vec.ZERO }
-        val tmpU = Array(POINTS - NECK) { UP_V }
-        sample(body, tmpP, tmpU, 0, NivarisShape.SEGMENT)
-        for (k in tmpP.indices) {
-            pts[NECK + k] = tmpP[k]
-            ups[NECK + k] = UP_V
-        }
-        // Leicht glätten (Knicke der Spur), dann wieder genau im Gliedabstand von vorn aufreihen.
-        repeat(2) {
-            for (i in NECK + 1 until POINTS - 1) pts[i] = pts[i].multiply(0.5).add(pts[i - 1].add(pts[i + 1]).multiply(0.25))
-        }
-        for (i in NECK + 1 until POINTS) {
-            val dir = pts[i].subtract(pts[i - 1]).normalizeOr(pts[i - 1].subtract(pts[(i - 2).coerceAtLeast(0)]).normalizeOr(f.negate()))
-            pts[i] = pts[i - 1].add(dir.multiply(NivarisShape.SEGMENT))
-        }
+        ups[NECK] = UP_V
 
-        // Wie hoch über dem Boden: Flug-Anteil je Glied.
+        // Höhe: am Boden liegt jedes Glied auf der (geglätteten) Lauffläche, vorn steigt der Körper zur Rumpfmitte an.
         val floors = DoubleArray(POINTS) { floorAt(world, pts[it].x, pts[it].z) }
+        repeat(3) {
+            val c = floors.copyOf()
+            for (k in 1 until POINTS - 1) floors[k] = c[k] * 0.5 + (c[k - 1] + c[k + 1]) * 0.25
+        }
+        for (k in 0 until BODY) {
+            val i = NECK + 1 + k
+            val arc = (k + 1) * NivarisShape.SEGMENT
+            val rest = MathHelper.lerp(smooth(MathHelper.clamp((arc / 8.0).toFloat(), 0f, 1f)).toDouble(), spine.y, floors[i] + REST_UP)
+            pts[i] = Vec(pts[i].x, MathHelper.lerp(w, pts[i].y, rest), pts[i].z)
+        }
         for (i in 0 until POINTS) {
             val h0 = pts[i].y - (floors[i] + radius(i))
             air[i] = MathHelper.clamp((h0 / 2.5).toFloat(), 0f, 1f) * (1f - ground * 0.6f) + (1f - ground) * 0.4f
         }
-
-        // Lebendigkeit: schwebt sie fast auf der Stelle, läuft eine leichte Welle nach hinten; Schwanzfeger am Boden.
-        val frames0 = frames(pts, ups, now, air)
-        val idle = MathHelper.clamp((1.0 - speed / 0.25).toFloat(), 0f, 1f)
-        val sw = p[NivarisModel.SWEEP].toDouble()
-        for (i in NECK + 1 until POINTS) {
-            val k = i / POINTS.toDouble()
-            var lat = air[i] * idle * (0.15 + 0.5 * k) * kotlin.math.sin(now * 0.12 - i * 0.38)
-            var ver = air[i] * idle * (0.1 + 0.3 * k) * kotlin.math.sin(now * 0.09 - i * 0.3 + 1.3)
-            if (sw > 0.0) lat += kotlin.math.sin(sw * 2.0 * Math.PI) * 7.0 * smooth(MathHelper.clamp((i - 10) / 18f, 0f, 1f))
-            if (air[i] < 0.01f) ver += 0.06 * kotlin.math.sin(now * 0.05 - i * 0.35)
-            val j = (i - 1) * 9
-            val l = Vec(frames0[j].toDouble(), frames0[j + 1].toDouble(), frames0[j + 2].toDouble())
-            val u = Vec(-frames0[j + 3].toDouble(), -frames0[j + 4].toDouble(), -frames0[j + 5].toDouble())
-            pts[i] = pts[i].add(l.multiply(lat)).add(u.multiply(ver))
-        }
-
-        // Kein Glied durchdringt ein anderes: das vordere legt sich über das hintere.
-        separate(pts, air, floors)
-        // Seit 1.10.0: Krümmungsgrenze (keine Haken, keine engen Schlaufen) und harte Mindestabstände als Netz.
-        limitBend(pts, f)
-        relax(pts, air)
         for (i in NECK until POINTS) {
             val floor = floors[i] + radius(i) * 0.9
             if (pts[i].y < floor) pts[i] = Vec(pts[i].x, floor, pts[i].z)
@@ -867,58 +836,111 @@ class NivarisBody {
         return headFwd
     }
 
+    // --- Vorgegebene Bodenformen (seit 1.11.0) ------------------------------------------------------------------------
+
+    /** Aktuelle Bodenform: Gier je Glied, gleitet zu [restTarget]. */
+    private val restYaw = DoubleArray(BODY)
+    private val restTarget = DoubleArray(BODY)
+    private var restLive = false
+    private var restAnchor: Vec? = null
+    private var restBase = 0.0
+    private var restKind = SERPENT
+    private var restSign = 1.0
+    private var restCoiled = false
+
     /**
-     * Höchstens [MAX_BEND] Knick je Gelenk hinter der Rumpfmitte: Wo die Spur enger ist (Wende auf der Stelle, Sprung,
-     * scharfe Kurve), schwingt der Rest des Körpers weiter außen herum statt sich zu falten. Am Boden etwas mehr Spiel
-     * (Windungen beim Liegen).
+     * Am Boden: Solange sie sich schnell bewegt (Gletscherwalze, Würgegriff), liegt der Körper auf ihrer Spur; sonst
+     * gleitet er in die gewählte Form. Dreht sich ihr Blick weit weg, schwenkt die Form langsam mit.
      */
-    private fun limitBend(pts: Array<Vec>, f: Vec) {
-        val maxA = if (ground > 0.5f) MAX_BEND_GROUND else MAX_BEND
-        val cosMax = kotlin.math.cos(maxA)
-        var prevDir = pts[NECK].subtract(pts[NECK - 1]).normalizeOr(f.negate())
-        for (i in NECK + 1 until POINTS) {
-            var d = pts[i].subtract(pts[i - 1]).normalizeOr(prevDir)
-            val c = d.dotProduct(prevDir)
-            if (c < cosMax) {
-                val axis = d.subtract(prevDir.multiply(c)).let { if (it.lengthSquared() < 1e-8) Vec(-prevDir.z, 0.0, prevDir.x) else it }.normalizeOr(Vec(1.0, 0.0, 0.0))
-                d = prevDir.multiply(kotlin.math.cos(maxA)).add(axis.multiply(kotlin.math.sin(maxA))).normalizeOr(prevDir)
+    private fun updateRest(world: net.minecraft.world.World, e: dev.henny.hha_arius.boss.NivarisEntity, spine: Vec, f: Vec, fYaw: DoubleArray, dt: Float) {
+        if (e.flying) {
+            // In der Luft folgt die Bodenform dem Flug, damit die Landung von der echten Lage aus beginnt.
+            if (ground <= 0.01f) {
+                System.arraycopy(fYaw, 0, restYaw, 0, BODY)
+                restLive = false
+                restAnchor = null
             }
-            pts[i] = pts[i - 1].add(d.multiply(NivarisShape.SEGMENT))
-            prevDir = d
+            return
+        }
+        if (!restLive) {
+            System.arraycopy(fYaw, 0, restYaw, 0, BODY)
+            restBase = fYaw[0]
+            restLive = true
+            restAnchor = null
+        }
+        val moving = speed > 0.55
+        if (moving) {
+            System.arraycopy(fYaw, 0, restTarget, 0, BODY)
+            restAnchor = null
+        } else {
+            val coiled = e.pose == dev.henny.hha_arius.boss.NivarisPose.LIE_DOWN
+            val anchor = restAnchor
+            if (anchor == null || anchor.squaredDistanceTo(spine) > 12.0 * 12.0 || coiled != restCoiled) {
+                restCoiled = coiled
+                restAnchor = spine
+                restBase = restYaw[0]
+                pickRest(world, spine, coiled)
+            }
+            // Schaut sie weit über die Schulter, schwenkt der ganze Körper langsam nach.
+            val back = kotlin.math.atan2(-f.z, -f.x)
+            val off = wrapRad(back - restBase)
+            if (kotlin.math.abs(off) > 1.5) restBase += off.coerceIn(-0.018 * dt, 0.018 * dt)
+            for (k in 0 until BODY) restTarget[k] = restBase + restHeading(restKind, (k + 0.5) * NivarisShape.SEGMENT) * restSign
+        }
+        val rate = 1.0 - kotlin.math.exp(-dt * (if (moving) 0.4 else 0.11))
+        for (k in 0 until BODY) restYaw[k] += wrapRad(restTarget[k] - restYaw[k]) * rate
+        for (k in 1 until BODY) restYaw[k] = restYaw[k - 1] + wrapRad(restYaw[k] - restYaw[k - 1]).coerceIn(-MAX_BEND_GROUND, MAX_BEND_GROUND)
+    }
+
+    /** Gierabweichung der Form nach [s] Blöcken ab der Rumpfmitte (0 = gerade nach hinten). */
+    private fun restHeading(kind: Int, s: Double): Double = when (kind) {
+        // Ruhige Schlangenlinie, nimmt etwa 65 Blöcke ein.
+        SERPENT -> 1.05 * kotlin.math.sin(2.0 * Math.PI * s / 52.0)
+        // Enge Schlangenlinie für wenig Platz (etwa 40 Blöcke).
+        COMPACT -> 1.6 * kotlin.math.sin(2.0 * Math.PI * s / 56.0)
+        // Spirale von Radius 15 nach innen bis 6,5: die Windungen liegen sicher nebeneinander.
+        else -> {
+            val len = BODY * NivarisShape.SEGMENT
+            (len / (COIL_R1 - COIL_R0)) * kotlin.math.ln((COIL_R0 + (COIL_R1 - COIL_R0) * s / len) / COIL_R0)
         }
     }
 
-    /**
-     * Harte Mindestabstände zwischen nicht benachbarten Gliedern (ab der Rumpfmitte): drei Runden Auseinanderschieben
-     * (vorwiegend das hintere Glied; in der Luft nach außen, am Boden nach oben), danach jeweils die Gliedabstände von
-     * vorn wiederherstellen. Kopf und Hals bleiben, wo der Server sie hat.
-     */
-    private fun relax(pts: Array<Vec>, air: FloatArray) {
-        repeat(3) {
-            var moved = false
-            for (i in NECK until POINTS) {
-                for (j in i + 4 until POINTS) {
-                    val min = (radius(i) + radius(j)) * 1.05 + 0.15
-                    val d = pts[j].subtract(pts[i])
-                    val l2 = d.lengthSquared()
-                    if (l2 >= min * min) continue
-                    val l = kotlin.math.sqrt(l2)
-                    val flying = max(air[i], air[j]) > 0.5f
-                    val n = if (l > 1e-4) {
-                        if (flying) d.multiply(1.0 / l) else Vec(d.x / l * 0.4, 0.9, d.z / l * 0.4).normalize()
-                    } else Vec(0.0, 1.0, 0.0)
-                    val push = (min - l)
-                    pts[j] = pts[j].add(n.multiply(push * 0.75))
-                    if (i > NECK) pts[i] = pts[i].subtract(n.multiply(push * 0.25))
-                    moved = true
-                }
+    /** Wählt Form, Drehsinn und Ausrichtung so, dass möglichst kein Glied in Fels oder über einem Abgrund liegt. */
+    private fun pickRest(world: net.minecraft.world.World, spine: Vec, coiled: Boolean) {
+        val kinds = if (coiled) intArrayOf(COILED, COMPACT) else intArrayOf(SERPENT, COMPACT, COILED)
+        var best = Double.MAX_VALUE
+        var bestKind = restKind
+        var bestSign = restSign
+        var bestBase = restBase
+        for ((ki, kind) in kinds.withIndex()) for (off in REST_OFFSETS) for (sign in doubleArrayOf(1.0, -1.0)) {
+            var x = spine.x
+            var z = spine.z
+            var bad = 0
+            for (k in 0 until BODY) {
+                val yaw = restBase + off + restHeading(kind, (k + 0.5) * NivarisShape.SEGMENT) * sign
+                x += kotlin.math.cos(yaw) * NivarisShape.SEGMENT
+                z += kotlin.math.sin(yaw) * NivarisShape.SEGMENT
+                val top = world.getTopY(net.minecraft.world.Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, MathHelper.floor(x), MathHelper.floor(z)).toDouble()
+                if (top > groundY + 3.5 || top < groundY - 6.0) bad++
             }
-            if (!moved) return
-            for (k in NECK + 1 until POINTS) {
-                val d = pts[k].subtract(pts[k - 1])
-                if (d.lengthSquared() > 1e-8) pts[k] = pts[k - 1].add(d.normalize().multiply(NivarisShape.SEGMENT))
+            val score = bad * 10.0 + kotlin.math.abs(off) * 2.0 + ki * 3.0 + (if (sign == restSign) 0.0 else 0.5)
+            if (score < best) {
+                best = score
+                bestKind = kind
+                bestSign = sign
+                bestBase = restBase + off
             }
         }
+        restKind = bestKind
+        restSign = bestSign
+        restBase = bestBase
+    }
+
+    private fun wrapRad(a: Double): Double {
+        var v = a % (2.0 * Math.PI)
+        if (v > Math.PI) v -= 2.0 * Math.PI
+        if (v < -Math.PI) v += 2.0 * Math.PI
+        return v
     }
 
     /** Lauffläche unter (x, z): Höhenkarte der Welt, Säulen und Wände (deutlich über dem Boden) zählen nicht. */
@@ -927,69 +949,6 @@ class NivarisBody {
         if (gy.isNaN()) return -1.0e9
         val top = world.getTopY(net.minecraft.world.Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, MathHelper.floor(x), MathHelper.floor(z)).toDouble()
         return if (top > gy + 3.5 || top < gy - 6.0) gy else top
-    }
-
-    /**
-     * Weiche Trennung: Für jedes Paar nicht benachbarter Glieder, die sich näher kommen als ihr Querschnitt erlaubt,
-     * wird das vordere angehoben (am Boden: Windung übereinander) bzw. in der Luft beide auseinandergeschoben. Alle
-     * Beträge hängen stetig von der Lage ab und laufen über die Nachbarglieder aus, daher springt nichts.
-     */
-    private fun separate(pts: Array<Vec>, air: FloatArray, floors: DoubleArray) {
-        val up = DoubleArray(POINTS)
-        val down = DoubleArray(POINTS)
-        val sx = DoubleArray(POINTS)
-        val sz = DoubleArray(POINTS)
-        for (i in 0 until POINTS) {
-            for (j in i + 5 until POINTS) {
-                val d = pts[j].subtract(pts[i])
-                val min = (radius(i) + radius(j)) * 1.3 + 0.35
-                val l2 = d.lengthSquared()
-                if (l2 >= min * min) continue
-                val l = kotlin.math.sqrt(l2)
-                val hd2 = d.x * d.x + d.z * d.z
-                val fade = smooth(MathHelper.clamp(((min - l) / (0.35 * min)).toFloat(), 0f, 1f)).toDouble()
-                val need = (kotlin.math.sqrt(max(0.0, min * min - hd2)) - (pts[i].y - pts[j].y)).coerceAtLeast(0.0) * fade
-                if (need <= 0.0) continue
-                val flying = max(air[i], air[j]) > 0.5f
-                if (i < NECK) {
-                    // Kopf und Hals bleiben (Trefferbox): das hintere Glied weicht aus.
-                    val room = pts[j].y - (floors[j] + radius(j))
-                    if (flying && room > need) {
-                        down[j] = max(down[j], need)
-                    } else {
-                        val hd = kotlin.math.sqrt(hd2)
-                        val push = (min - hd).coerceAtLeast(0.0) * fade
-                        val nx = if (hd > 1e-4) d.x / hd else 1.0
-                        val nz = if (hd > 1e-4) d.z / hd else 0.0
-                        sx[j] += nx * push
-                        sz[j] += nz * push
-                    }
-                } else if (flying) {
-                    up[i] = max(up[i], need * 0.6)
-                    down[j] = max(down[j], need * 0.4)
-                } else {
-                    up[i] = max(up[i], need)
-                }
-            }
-        }
-        dilate(up, 0.6)
-        dilate(down, 0.6)
-        repeat(2) { blur(sx); blur(sz) }
-        for (k in NECK until POINTS) {
-            if (up[k] == 0.0 && down[k] == 0.0 && sx[k] == 0.0 && sz[k] == 0.0) continue
-            pts[k] = pts[k].add(sx[k] * 1.5, up[k] - down[k], sz[k] * 1.5)
-        }
-    }
-
-    /** Größtwerte weich auslaufen lassen: höchstens [slope] Abfall je Glied. */
-    private fun dilate(a: DoubleArray, slope: Double) {
-        for (k in 1 until a.size) a[k] = max(a[k], a[k - 1] - slope)
-        for (k in a.size - 2 downTo 0) a[k] = max(a[k], a[k + 1] - slope)
-    }
-
-    private fun blur(a: DoubleArray) {
-        val c = a.copyOf()
-        for (k in 1 until a.size - 1) a[k] = c[k] * 0.5 + (c[k - 1] + c[k + 1]) * 0.25
     }
 
     private fun startFade(now: Float) {
@@ -1015,14 +974,14 @@ class NivarisBody {
     private fun coilPoly(poly: Poly, o: Vec, raise: Double, now: Float) {
         val axis = o.add(ArenaLayout.SPIRE.x + 0.5, 0.0, ArenaLayout.SPIRE.z + 0.5)
         val h = o.add(EntrancePathC.HEAD_REST.lerp(EntrancePathC.HEAD_RAISED, raise)).add(0.0, kotlin.math.sin(now * 0.05) * 0.25, 0.0)
-        val c1 = o.add(ArenaLayout.coil(1.0))
-        val t1 = c1.subtract(o.add(ArenaLayout.coil(0.995))).normalize()
+        val c1 = o.add(EntrancePathC.coil(1.0))
+        val t1 = c1.subtract(o.add(EntrancePathC.coil(0.995))).normalize()
         val d = h.distanceTo(c1).coerceAtLeast(2.0)
         val neckUp = Vec(0.0, 1.0, 0.6).normalize()
         bezier(poly, h, h.add(0.0, -0.45 * d, 0.12 * d), c1.add(t1.multiply(0.4 * d)), c1, neckUp, 14)
         var sCoil = 1.0
         while (sCoil >= 0.0) {
-            val q = o.add(ArenaLayout.coil(sCoil))
+            val q = o.add(EntrancePathC.coil(sCoil))
             val radial = Vec(q.x - axis.x, 0.0, q.z - axis.z).normalizeOr(UP_V)
             val pos = q.add(radial.multiply(0.15 * kotlin.math.sin(now * 0.05 + sCoil * 9.0)))
             poly.add(pos, radial.multiply(0.9).add(0.0, 0.45, 0.0).normalize())
@@ -1135,17 +1094,28 @@ class NivarisBody {
         /** Rumpfmitte über der Lauffläche, wenn der Körper liegt. */
         const val REST_UP = 1.0
 
-        /** Schlängeln: Ausschlag quer im Flug / am Boden, auf und ab im Flug (Blöcke), Wellenlängen 34 bzw. 52 Blöcke. */
-        const val LAT_AIR = 2.6
-        const val LAT_GROUND = 1.1
-        const val VER_AIR = 1.4
+        /** Glieder von der Rumpfmitte bis zur Schwanzspitze. */
+        const val BODY = POINTS - NECK - 1
+
+        /** Schlängeln im Flug: Ausschlag quer, auf und ab (Blöcke), Wellenlängen 34 bzw. 52 Blöcke. */
+        const val LAT_AIR = 1.5
+        const val VER_AIR = 0.9
         const val WAVE_LAT = 2.0 * Math.PI / 34.0
         const val WAVE_VER = 2.0 * Math.PI / 52.0
         val UP_V = Vec(0.0, 1.0, 0.0)
 
-        /** Größter Knick je Gelenk (Bogenmaß): in der Luft 22°, am Boden 30°. */
-        const val MAX_BEND = 0.384
-        const val MAX_BEND_GROUND = 0.524
+        /** Größter Knick je Gelenk (Bogenmaß): in der Luft Radius 16 Blöcke, am Boden Radius 5,5 (Windungen). */
+        const val MAX_BEND = NivarisShape.SEGMENT / 16.0
+        const val MAX_BEND_GROUND = NivarisShape.SEGMENT / 5.5
+        const val MAX_PITCH = 1.25
+
+        /** Vorgegebene Bodenformen. */
+        const val SERPENT = 0
+        const val COMPACT = 1
+        const val COILED = 2
+        const val COIL_R0 = 15.0
+        const val COIL_R1 = 6.5
+        val REST_OFFSETS = doubleArrayOf(0.0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6, Math.PI)
     }
 }
 

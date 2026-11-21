@@ -28,6 +28,7 @@
     "client.PunishCameraMixin",
     "client.RidePlayerRendererMixin",
     "client.CineCameraMixin",
+    "client.CineHidePlayerMixin",
     "client.HuntCameraMixin",
     "client.PortalLayerMixin"
   ],

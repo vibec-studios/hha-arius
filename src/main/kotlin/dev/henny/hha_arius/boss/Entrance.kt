@@ -80,8 +80,56 @@ object EntrancePath {
 
     private val WAYPOINTS = listOf(
         HEAD_RAISED, near(0.5, 194.0, 134.0), near(10.0, 182.0, 114.0), near(36.0, 150.0, 92.0), near(56.0, 110.0, 66.0),
-        near(48.0, 70.0, 38.0), Vec3d(22.0, 40.0, 20.0), Vec3d(4.0, 26.0, 12.0), Vec3d(0.5, 22.0, 4.0), Vec3d(0.5, 21.0, -6.0),
+        // Seit 1.11.0 sinkt die Bahn schon im Anflug fast bis auf den Boden: Die Landung ist ein kurzes Ausgleiten statt
+        // eines Falls aus 20 Blöcken Höhe.
+        near(48.0, 70.0, 38.0), Vec3d(24.0, 36.0, 26.0), Vec3d(7.0, 19.0, 15.0), Vec3d(0.5, 10.0, 5.0), Vec3d(0.5, 6.5, -6.0),
     )
+
+    /**
+     * Radius, den die Windung je Höhe mindestens braucht (seit 1.11.0): Die gebaute Eisnadel ist dicker als die Formel der
+     * Windung, ihr Körper lag dadurch unsichtbar **im** Fels, und die Kamera filmte nur die leere Nadel. Einmal aus der
+     * Höhenformel der Landschaft abgetastet und über die Höhe geglättet.
+     */
+    private val clearRadius: DoubleArray by lazy {
+        val ax = ArenaLayout.SPIRE.x + 0.5
+        val az = ArenaLayout.SPIRE.z + 0.5
+        val raw = DoubleArray(COIL_Y_SPAN) { k ->
+            val y = COIL_Y0 + k
+            var best = 0.0
+            for (a in 0 until 16) {
+                val ang = a / 16.0 * 2.0 * PI
+                var r = 64.0
+                while (r > 2.0) {
+                    val top = runCatching { dev.henny.hha_arius.arena.FarPlan.top(kotlin.math.floor(ax + sin(ang) * r).toInt(), kotlin.math.floor(az + cos(ang) * r).toInt()) }.getOrDefault(-1)
+                    if (top >= y - 2) break
+                    r -= 1.0
+                }
+                if (r > 2.0) best = max(best, r)
+            }
+            if (best > 0.0) best + 3.2 else 0.0
+        }
+        DoubleArray(COIL_Y_SPAN) { k ->
+            var m = 0.0
+            for (j in maxOf(0, k - 3)..minOf(COIL_Y_SPAN - 1, k + 3)) m = max(m, raw[j])
+            m
+        }
+    }
+
+    private const val COIL_Y0 = 170
+    private const val COIL_Y_SPAN = 50
+
+    /** Punkt der Windung bei [s] (relativ), wie [ArenaLayout.coil], aber immer außen am gebauten Fels. */
+    fun coil(s: Double): Vec3d {
+        val b = ArenaLayout.coil(s)
+        val ax = ArenaLayout.SPIRE.x + 0.5
+        val az = ArenaLayout.SPIRE.z + 0.5
+        val r0 = sqrt((b.x - ax) * (b.x - ax) + (b.z - az) * (b.z - az)).coerceAtLeast(1e-3)
+        val yk = (b.y - COIL_Y0).coerceIn(0.0, COIL_Y_SPAN - 1.001)
+        val i = yk.toInt()
+        val need = clearRadius[i] + (clearRadius[i + 1] - clearRadius[i]) * (yk - i)
+        val r = max(r0, need)
+        return Vec3d(ax + (b.x - ax) / r0 * r, b.y, az + (b.z - az) / r0 * r)
+    }
 
     /** Dauer des Lösens in Ticks. */
     const val TICKS = 220
@@ -305,15 +353,7 @@ internal object Entrance {
     }
 
     /** Punkt auf der Helix (absolut), siehe [ArenaLayout.coil]. */
-    private fun coilAt(f: EirholmFight, s: Double): Vec3d = f.abs(ArenaLayout.coil(s))
-
-    /**
-     * Kamerawinkel (Grad, Konvention von Cine.orbit: x = cos, z = sin) für den Helixwinkel bei [s]. Muss zu
-     * [ArenaLayout.coil] passen (1½ Umläufe: Winkel = s · 1,5 · 2π, x = sin, z = cos).
-     */
-    private fun orbitDeg(s: Double): Double = Math.toDegrees(PI / 2 - s * COIL_TURNS * 2 * PI)
-
-    private const val COIL_TURNS = 1.5
+    private fun coilAt(f: EirholmFight, s: Double): Vec3d = f.abs(EntrancePath.coil(s))
 
     /** Bring die Entity an die Nadel (Stellvertreterpunkt), gewunden, Kopf ruhend. */
     private fun coil(f: EirholmFight): NivarisEntity? {
@@ -382,38 +422,36 @@ internal object Entrance {
         d.fadeIn(FORM_TICKS)
         wait(70 - 2 - (RELEASE_ARRIVAL - RELEASE_TICKS))
 
-        // 3) Nah im Sturm an der Nadel: eine Windung gleitet vorbei (60 Ticks). Kamera kreist gegen die Laufrichtung.
-        val axis = f.abs(Vec3d.of(ArenaLayout.SPIRE)).add(0.5, 0.0, 0.5)
-        run {
-            val s0 = 0.80
-            val s1 = 0.71
-            val c = coilAt(f, s0)
-            val r = sqrt((c.x - axis.x) * (c.x - axis.x) + (c.z - axis.z) * (c.z - axis.z)) + 6.5
-            val center = Vec3d(axis.x, c.y, axis.z)
-            val drop = coilAt(f, s1).y - c.y
-            scene.orbit(
-                center, r, 1.5, orbitDeg(s0) + 14.0, orbitDeg(s1) + 6.0, 60, 52.0, 46.0, null, 0.6, r - 1.0, 1.5 + drop,
-            )
-            sound(f, "seal.blizzard", c, 3f, 0.55f)
-            fxAll(f, FxKind.BLIZZARD, c, 9f, 60)
+        // 3) Im Sturm vor der Nadel: Die Kamera steht seit 1.11.0 deutlich außerhalb der Windung und schaut auf sie (vorher
+        //    kreiste sie zwischen Windung und Fels, das Bild war nur Felswand). Eine Windung gleitet vorbei (60 Ticks).
+        // Der Client zeichnet eine Entity nur, wenn ihr eigener Abschnitt in Sichtweite der **Kamera** liegt. Der
+        // Stellvertreter auf dem Plateau war von hier zu weit weg, die ganze Windung fehlte im Bild. Darum gehen Zuschauer
+        // und Stellvertreter auf die Gipfelschulter (das lädt zugleich den echten Fels um die Kamera).
+        var proxy = f.abs(EntrancePath.PROXY)
+        if (!Cine.muted) {
+            val top = spire(f, -24.0, 0.0, -16.0)
+            vantage.move(top)
+            proxy = Vantage.ground(f, top).add(0.0, 4.0, 0.0)
+            f.place(d, proxy)
         }
+        val axis = f.abs(Vec3d.of(ArenaLayout.SPIRE)).add(0.5, 0.0, 0.5)
+        fun outside(s: Double, out: Double, up: Double): Vec3d {
+            val c = coilAt(f, s)
+            val radial = Vec3d(c.x - axis.x, 0.0, c.z - axis.z).normalize()
+            return c.add(radial.multiply(out)).add(0.0, up, 0.0)
+        }
+        // Der Sturm reißt so weit auf, dass man die Windung erkennt (im vollen Blizzard endet die Sicht nach 30 Blöcken).
+        f.atmos(AtmosMode.SNOW, 22)
+        scene.line(outside(0.80, 21.0, 3.0), outside(0.74, 18.0, 5.0), coilAt(f, 0.80), coilAt(f, 0.72), 60, 56.0, 50.0)
+        sound(f, "seal.blizzard", coilAt(f, 0.8), 3f, 0.55f)
+        fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.8), 9f, 60)
         d.eyeGlow = 14
         wait(60)
 
-        // 4) Der Kristallkamm von oben: eine tiefere Windung zieht unter der Kamera durch (60 Ticks). Weit weg vom
-        //    ruhenden Kopf, damit man nie das Ganze sieht.
-        run {
-            val s0 = 0.66
-            val s1 = 0.58
-            val c = coilAt(f, s0)
-            val r = sqrt((c.x - axis.x) * (c.x - axis.x) + (c.z - axis.z) * (c.z - axis.z)) + 3.0
-            val drop = coilAt(f, s1).y - c.y
-            scene.orbit(
-                Vec3d(axis.x, c.y, axis.z), r, 6.0, orbitDeg(s0) - 10.0, orbitDeg(s1) - 18.0, 60, 48.0, 44.0, null, -3.0, r + 1.0, 6.0 + drop,
-            )
-            sound(f, "nivaris.wing", c, 2f, 0.45f)
-            fxAll(f, FxKind.BLIZZARD, c, 8f, 60)
-        }
+        // 4) Der Kristallkamm von schräg oben: eine tiefere Windung zieht unter der Kamera durch (60 Ticks).
+        scene.line(outside(0.62, 13.0, 15.0), outside(0.56, 11.0, 13.0), coilAt(f, 0.63), coilAt(f, 0.54), 60, 54.0, 48.0)
+        sound(f, "nivaris.wing", coilAt(f, 0.62), 2f, 0.45f)
+        fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.62), 8f, 60)
         wait(60)
 
         // 5) Die Wolken reißen auf: weite Einstellung vom Rand der Schlucht (110 Ticks), 70 Blöcke vor der Nadel auf
@@ -464,6 +502,7 @@ internal object Entrance {
                 165 -> {
                     // Die Kamera ist zurück am Plateau: die Körper auch.
                     vantage.restore()
+                    proxy = f.abs(EntrancePath.PROXY)
                     scene.line(rel(f, -7.0, 5.0, -25.0), rel(f, -4.0, 4.0, -21.0), look(165, 20.0), spot.add(0.0, 4.0, -2.0), 105, 74.0, 66.0)
                 }
             }
@@ -476,7 +515,7 @@ internal object Entrance {
             }
             val u = EntrancePath.distance(t.toDouble())
             d.uncoil = (u / EntrancePath.LENGTH).toFloat()
-            follow(f, d, u)
+            follow(f, d, u, proxy)
             if (t < EntrancePath.TICKS) yield(Unit)
         }
 
@@ -540,10 +579,9 @@ internal object Entrance {
     }
 
     /** Entity während des Lösens: folgt dem Weg, sobald er in Reichweite ist, sonst am Stellvertreterpunkt. */
-    private fun follow(f: EirholmFight, d: NivarisEntity, u: Double) {
+    private fun follow(f: EirholmFight, d: NivarisEntity, u: Double, proxy: Vec3d) {
         val e = EntrancePath.entityAt(u)
-        val pos = if (u > EntrancePath.GLIDE.fwd && EntrancePath.followable(e)) e else EntrancePath.PROXY
-        f.place(d, f.abs(pos))
+        f.place(d, if (u > EntrancePath.GLIDE.fwd && EntrancePath.followable(e)) f.abs(e) else proxy)
         val t = EntrancePath.tangent(u)
         val yaw = (Math.toDegrees(atan2(t.z, t.x)) - 90.0).toFloat()
         d.yaw = yaw

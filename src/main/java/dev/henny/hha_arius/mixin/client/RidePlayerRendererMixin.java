@@ -4,6 +4,7 @@ import dev.henny.hha_arius.client.fx.RideClient;
 import net.minecraft.client.render.entity.PlayerEntityRenderer;
 import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.entity.PlayerLikeEntity;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -23,5 +24,14 @@ public abstract class RidePlayerRendererMixin {
     )
     private void hhaArius$rideTransform(PlayerEntityRenderState state, MatrixStack matrices, float bodyYaw, float baseHeight, CallbackInfo ci) {
         if (RideClient.transform(state, matrices)) ci.cancel();
+    }
+
+    /** Seit 1.11.0: Reiter halten nichts in der Hand; die eigene Figur verschwindet, wenn die Szenenkamera in ihr landet. */
+    @Inject(
+        method = "updateRenderState(Lnet/minecraft/entity/PlayerLikeEntity;Lnet/minecraft/client/render/entity/state/PlayerEntityRenderState;F)V",
+        at = @At("TAIL")
+    )
+    private void hhaArius$rideState(PlayerLikeEntity entity, PlayerEntityRenderState state, float tickProgress, CallbackInfo ci) {
+        RideClient.updateState(entity, state);
     }
 }

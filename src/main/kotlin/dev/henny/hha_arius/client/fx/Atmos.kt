@@ -172,8 +172,13 @@ object Atmos {
     }
 
     // Sturmböe: Nebel zieht kurz zu (Whiteout).
-    private fun fogStart(m: Mood) = m.fogStart * (1f - 0.8f * SnowStorm.whiteout)
-    private fun fogEnd(m: Mood) = m.fogEnd * (1f - 0.65f * SnowStorm.whiteout)
+    // Seit 1.11.0: In Szenen reicht die Sicht weiter, damit man den Berg sieht ([CineClient.widenFog]); dichter Sturm bleibt.
+    private fun fogStart(m: Mood) = CineClient.widenFog(m.fogStart * (1f - 0.8f * SnowStorm.whiteout), m.fogEnd * (1f - 0.65f * SnowStorm.whiteout), 150f)
+    private fun fogEnd(m: Mood) = CineClient.widenFog(m.fogEnd * (1f - 0.65f * SnowStorm.whiteout), m.fogEnd * (1f - 0.65f * SnowStorm.whiteout), 760f)
+
+    /** Aktueller Nebel (Anfang, Ende) und seine Farbe, für die Fernlandschaft in Szenen ([FarTerrain]). */
+    fun fogRange(): Pair<Float, Float> = current().let { fogStart(it) to fogEnd(it) }
+    fun fogColorNow(): Int = current().fog
 
     /** Für den Mixin auf den Umgebungswerten: ersetzt Nebel, Himmel und Licht in Eirholm. */
     @JvmStatic

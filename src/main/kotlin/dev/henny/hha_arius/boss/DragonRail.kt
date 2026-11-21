@@ -5,6 +5,7 @@ import kotlin.math.acos
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
  * Feste Flugbahnen für Solvane (seit 1.11.0). Jede Bahn wird vorab aus Wegpunkten berechnet und hält einen
@@ -22,7 +23,14 @@ object DragonRail {
     private const val CAPTURE = 2.0
 
     /** Dichte Bahn (Punktabstand [STEP]) von [start] mit Flugrichtung [startDir] durch alle [waypoints]. */
-    fun path(start: Vec3d, startDir: Vec3d, waypoints: List<Vec3d>, radius: Double = MIN_RADIUS): List<Vec3d> {
+    fun path(start: Vec3d, startDir: Vec3d, waypoints: List<Vec3d>, radius: Double = MIN_RADIUS): List<Vec3d> =
+        path(start, startDir, waypoints, radius, null, 0.0)
+
+    /**
+     * Wie oben, bleibt aber im Kreis [keepRadius] um [center]: Fliegt sie auf den Rand zu, dreht sie rechtzeitig nach
+     * innen ab (Arenen mit Felswand). Ohne [center] keine Grenze.
+     */
+    fun path(start: Vec3d, startDir: Vec3d, waypoints: List<Vec3d>, radius: Double, center: Vec3d?, keepRadius: Double): List<Vec3d> {
         val out = ArrayList<Vec3d>()
         var p = start
         var h = startDir.takeIf { it.lengthSquared() > 1e-6 }?.normalize()
@@ -38,14 +46,25 @@ object DragonRail {
                 if (d <= CAPTURE || d < 1.96 * radius * sin(angleBetween(h, to.multiply(1.0 / d)).coerceAtMost(Math.PI / 2))) continue
             }
             var guard = 0
-            while (guard++ < 8000) {
+            while (guard++ < 1800) {
                 val to = wp.subtract(p)
                 val d = to.length()
                 if (d <= CAPTURE) break
-                val want = to.multiply(1.0 / d)
+                var want = to.multiply(1.0 / d)
+                var forced = false
+                if (center != null) {
+                    val ox = p.x - center.x
+                    val oz = p.z - center.z
+                    val r = sqrt(ox * ox + oz * oz)
+                    // Am Rand und auf dem Weg nach außen: nach innen abdrehen, die Höhe bleibt beim Ziel.
+                    if (r > keepRadius - radius * 0.7 && r > 1e-3 && h.x * ox + h.z * oz > 0.0) {
+                        want = Vec3d(-ox / r, want.y.coerceIn(-0.3, 0.3), -oz / r).normalize()
+                        forced = true
+                    }
+                }
                 val angle = angleBetween(h, want)
                 // Innerhalb des Wendekreises: geradeaus, bis der Punkt mit einem Bogen erreichbar ist.
-                if (d >= 1.96 * radius * sin(angle.coerceAtMost(Math.PI / 2))) h = turn(h, want, angle, maxTurn)
+                if (forced || d >= 1.96 * radius * sin(angle.coerceAtMost(Math.PI / 2))) h = turn(h, want, angle, maxTurn)
                 p = p.add(h.multiply(STEP))
                 out.add(p)
             }
@@ -54,8 +73,30 @@ object DragonRail {
         waypoints.lastOrNull()?.let { end ->
             val n = (p.distanceTo(end) / STEP).toInt()
             for (i in 1..n) out.add(p.lerp(end, i.toDouble() / n))
+            if (out.last().squaredDistanceTo(end) > 1e-6) out.add(end)
         }
         return out
+    }
+
+    /** Punkt auf einer Bahn aus [path] bei Bogenlänge [s] (Blöcke, geklemmt). */
+    fun at(pts: List<Vec3d>, s: Double): Vec3d {
+        if (pts.size < 2) return pts.first()
+        val x = (s / STEP).coerceIn(0.0, pts.size - 1.0001)
+        val i = x.toInt()
+        return pts[i].lerp(pts[i + 1], x - i)
+    }
+
+    /** Länge einer Bahn aus [path] in Blöcken. */
+    fun length(pts: List<Vec3d>): Double = (pts.size - 1) * STEP
+
+    /**
+     * Ein gelenkter Schritt über [step] Blöcke: dreht die Flugrichtung [heading] höchstens so weit zu [want], wie der
+     * Radius [radius] erlaubt (für Flüge, die ihr Ziel jeden Tick neu bestimmen).
+     */
+    fun steer(heading: Vec3d, want: Vec3d, step: Double, radius: Double = MIN_RADIUS): Vec3d {
+        val h = heading.normalize()
+        val w = want.normalize()
+        return turn(h, w, angleBetween(h, w), step / radius)
     }
 
     /** Fliegt [d] mit [speed] Blöcken je Tick über die Bahn durch [waypoints]; die Blickrichtung folgt der Bahn. */
