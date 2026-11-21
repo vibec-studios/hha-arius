@@ -82,6 +82,7 @@ object MotionSync {
 
     private fun send(e: Entity, tick: Int) {
         val world = e.entityWorld as? ServerWorld ?: return
+        if (e.vehicle is NivarisEntity) return
         val extra = if (e is NivarisEntity) e.uncoil else Float.NaN
         val yaw = if (e is EirholmPuppet) e.bodyYaw else e.yaw
         val payload = MotionS2C(e.id, tick, e.x, e.y, e.z, yaw, extra)

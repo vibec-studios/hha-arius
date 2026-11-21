@@ -249,36 +249,42 @@ class Scenes(private val f: EirholmFight) {
             f.hurt(p, 30f, Damage.Kind.NULL_CUT)
         }
         val vantage = Vantage(f)
-        val foot = ArenaLayout.SPIRE.z - FarPlan.MASSIF_R
-        val collapse = GlacierCollapse(f, ArenaLayout.CUT_X, foot + 4.0, minOf(ArenaLayout.SPIRE.z - FarPlan.SHOULDER_R - 12.0, foot + 75.0))
         val post = CineScene(f) {
-            collapse.clear()
             vantage.restore()
         }
-        yieldAll(post.play(script { yieldAll(cutAftermath(post, vantage, collapse, a, stand)) }))
-        collapse.clear()
+        yieldAll(post.play(script { yieldAll(cutAftermath(post, vantage, a, stand)) }))
         vantage.restore()
         f.atmos(dev.henny.hha_arius.net.AtmosMode.CLEAR, 30)
         yieldAll(arrival())
     }
 
     /**
-     * Der Weiße Horizont nach dem Schlag (seit 1.9.0, Crix: „viel zu unspektakulär, es soll wie ein Gletscher sein, der
-     * einbricht und versinkt“; seit 1.10.0 neu gerahmt, Crix: „die Kamera ist halb im Riss, man sieht ihn nicht“):
-     * 1. **Zeitlupe** nah an ihm, die Klinge am Ende des Schwungs; die Naht glimmt langsam über den Boden davon.
-     * 2. Die Zeit schnappt zurück: **hoch über dem Tempel** blickt die Kamera nach Süden die Naht entlang, die übers
-     *    Plateau auf den Berg zurast (der Riss liegt mitten im Bild, nie vor oder in der Kamera).
-     * 3. **Totale von Norden**: das ganze Massiv, der Riss läuft vom Fuß die Flanke hinauf, Schollen lösen sich beidseits
-     *    der Kluft und gleiten ab. Die Kamera steht weit draußen über dem Plateau und schaut die Kluft entlang – so sieht
-     *    man in sie hinein statt auf ihre Wand.
-     * 4. **Halbtotale von Nordosten**, höher: die abrutschenden Schollen und Staubwolken an der Flanke.
-     * 5. **Ganz weit und hoch**: der gespaltene Berg unter dem Himmel; dann rollt der Whiteout heran ([kick]).
-     * Jede Einstellung prüft freie Sicht ([CineSafety]); die Körper der Zuschauer stehen am Aussichtspunkt ([Vantage]).
+     * Der Weiße Horizont nach dem Schlag:
+     * 1. **Zeitlupe** nah an ihm, die Klinge am Ende des Schwungs; die Naht glimmt über den Boden davon.
+     * 2. **Hoch über dem Tempel**: Blick nach Süden die Naht entlang, die aufs Massiv zurast.
+     * 3. **Wolkenverhüllung (Totale von hoch außen)**: dichte, wirbelnde Schneewolken hüllen die gesamte Schnittlinie am
+     *    Berg ein (ohne schwebende Block-Trümmer!), während dahinter das Massiv sauber gespalten wird.
+     * 4. **Enthüllung durch die teilenden Wolken**: hohe, kollisionsfreie Fahrt von Nordosten — eine Druckwelle reißt
+     *    die Schneewolken auseinander und gibt den Blick auf die tiefe Kluft frei.
+     * 5. **Weite Panorama-Totale**: der gespaltene Berg unter offenem Himmel; dann rollt der Whiteout heran ([kick]).
      */
-    private fun cutAftermath(post: CineScene, vantage: Vantage, collapse: GlacierCollapse, a: AriusEntity, stand: Vec3d): Script = script {
+    private fun cutAftermath(post: CineScene, vantage: Vantage, a: AriusEntity, stand: Vec3d): Script = script {
         val foot = ArenaLayout.SPIRE.z - FarPlan.MASSIF_R
-        val lookout = f.abs(Vec3d(ArenaLayout.CUT_X - 34.0, 0.0, foot - 26.0))
+        val lookout = f.abs(Vec3d(ArenaLayout.CUT_X - 38.0, 0.0, foot - 34.0))
         val x = ArenaLayout.CUT_X
+        val flankEnd = minOf(ArenaLayout.SPIRE.z - FarPlan.SHOULDER_R - 10.0, foot + 92.0)
+        fun shroudClouds(life: Int) {
+            shown {
+                val steps = 11
+                for (k in 0..steps) {
+                    val z = foot - 4.0 + (flankEnd - (foot - 4.0)) * (k / steps.toDouble())
+                    val top = runCatching { FarPlan.top(x.toInt(), z.toInt()) }.getOrDefault(0).coerceAtLeast(0)
+                    val radius = (30f + (k % 3) * 7f).coerceAtMost(54f)
+                    val at = f.abs(Vec3d(x + ((k % 3) - 1) * 4.0, top + 6.0, z))
+                    f.fxAll(FxKind.DEBRIS_CLOUD, at, a = radius, b = 1f, life = life)
+                }
+            }
+        }
         MusicCue.play(f, "horizon", 10)
         // 1) Zeitlupe auf ihm. Die Körper gehen jetzt schon an den Aussichtspunkt, das Bild zeigt noch die Altarstufe.
         vantage.move(lookout)
@@ -304,60 +310,63 @@ class Scenes(private val f: EirholmFight) {
         shown { f.fxAll(FxKind.FLASH, stand, a = 0.3f, life = 6) }
         f.farSound("cut.split", seamTo, 5f, 1.2f)
         MusicCue.sting(f, "phase")
-        post.line(f.abs(Vec3d(x - 16.0, 38.0, -84.0)), f.abs(Vec3d(x - 12.0, 44.0, -62.0)),
-            f.abs(Vec3d(x, 0.0, -10.0)), f.abs(Vec3d(x, 30.0, foot + 30.0)), 30, 70.0, 64.0)
+        post.line(f.abs(Vec3d(x - 18.0, 42.0, -86.0)), f.abs(Vec3d(x - 14.0, 50.0, -60.0)),
+            f.abs(Vec3d(x, 4.0, -10.0)), f.abs(Vec3d(x, 34.0, foot + 34.0)), 30, 70.0, 64.0)
         shown {
             for (k in 0 until 6) f.fxAll(FxKind.CLEAR_WAVE, seamFrom.lerp(seamTo, 0.3 + k * 0.12), a = 5f, life = 14)
         }
-        wait(30)
-        // 3) Totale von Norden: der Riss läuft die Flanke hinauf, die Schollen lösen sich.
-        split()
-        collapse.build()
-        f.task(collapse.run(170) { id, at, v, p -> f.farSound(id, at, v, p) })
-        val mid = f.abs(Vec3d(x, 30.0, foot + 30.0))
+        wait(22)
+        // Noch bevor der Schnitt den Berg teilt, quellen dichte Schneewolken entlang der gesamten Bergflanke auf.
+        shroudClouds(life = 112)
+        f.farSound("seal.blizzard", f.abs(Vec3d(x, 36.0, foot + 24.0)), 6f, 0.55f)
+        wait(8)
+        // 3) Verhüllung in Schneewolken (Totale hoch von Nordwesten, weit außerhalb des Massivs): hinter der Wolkenwand spaltet der Berg.
+        val mid = f.abs(Vec3d(x, 36.0, foot + 36.0))
         f.farSound("glacier.collapse", mid, 8f, 0.5f)
         f.farSound("cut.split", mid, 8f, 0.7f)
         f.farVanilla(net.minecraft.sound.SoundEvents.ENTITY_GENERIC_EXPLODE.value(), mid, 6f, 0.4f)
         f.farVanilla(net.minecraft.sound.SoundEvents.ENTITY_WARDEN_SONIC_BOOM, mid, 5f, 0.5f)
-        post.line(f.abs(Vec3d(x - 26.0, 64.0, foot - 110.0)), f.abs(Vec3d(x - 20.0, 72.0, foot - 92.0)),
-            f.abs(Vec3d(x, 30.0, foot + 40.0)), f.abs(Vec3d(x, 70.0, foot + 80.0)), 62, 58.0, 52.0)
-        for (i in 0 until 62) {
-            if (i % 14 == 0) f.calls.roomShake(lookout, 6f - i / 20f, 200f)
-            if (i % 10 == 5) shown {
-                val z = foot + 6.0 + i * 1.1
-                val top = runCatching { FarPlan.top(x.toInt(), z.toInt()) }.getOrDefault(0).coerceAtLeast(0)
-                f.fxAll(FxKind.DEBRIS_CLOUD, f.abs(Vec3d(x, top + 2.0, z)), a = 9f, life = 60)
+        post.line(f.abs(Vec3d(x - 42.0, 86.0, foot - 134.0)), f.abs(Vec3d(x - 34.0, 96.0, foot - 118.0)),
+            f.abs(Vec3d(x, 34.0, foot + 34.0)), f.abs(Vec3d(x, 68.0, foot + 72.0)), 64, 58.0, 54.0)
+        wait(16)
+        // Jetzt, vollständig von der dichten Wolkenwand verdeckt, wird die Kluft sauber ausgehoben (keine schwebenden Blöcke!).
+        split()
+        for (i in 16 until 64) {
+            if (i % 14 == 0) f.calls.roomShake(lookout, 5.5f - i / 22f, 200f)
+            if (i == 26) {
+                shroudClouds(life = 78)
+                f.farVanilla(net.minecraft.sound.SoundEvents.BLOCK_GLASS_BREAK, mid, 5f, 0.5f)
             }
-            if (i == 24) f.farVanilla(net.minecraft.sound.SoundEvents.BLOCK_GLASS_BREAK, mid, 6f, 0.5f)
-            if (i == 40) f.farSound("glacier.collapse", mid, 8f, 0.4f)
+            if (i == 42) f.farSound("glacier.collapse", mid, 7f, 0.45f)
             yield(Unit)
         }
-        // 4) Halbtotale von Nordosten, hoch: die abgleitenden Schollen an der Flanke.
-        post.line(f.abs(Vec3d(x + 60.0, 70.0, foot - 46.0)), f.abs(Vec3d(x + 48.0, 80.0, foot - 36.0)),
-            f.abs(Vec3d(x, 40.0, foot + 40.0)), f.abs(Vec3d(x, 62.0, foot + 66.0)), 48, 62.0, 58.0)
+        // 4) Enthüllung: hohe, weite Kamerafahrt von Nordosten – die Schneewolken teilen sich und zeigen den sauberen Spalt.
+        post.line(f.abs(Vec3d(x + 76.0, 108.0, foot - 108.0)), f.abs(Vec3d(x + 58.0, 118.0, foot - 92.0)),
+            f.abs(Vec3d(x, 42.0, foot + 36.0)), f.abs(Vec3d(x, 66.0, foot + 68.0)), 58, 60.0, 56.0)
         shown {
-            for (k in 0 until 4) {
-                val z = foot + 10.0 + k * 14.0
+            for (k in 0 until 6) {
+                val z = foot + 6.0 + k * 14.0
                 val top = runCatching { FarPlan.top(x.toInt(), z.toInt()) }.getOrDefault(0).coerceAtLeast(0)
-                f.fxAll(FxKind.DEBRIS_CLOUD, f.abs(Vec3d(x, top + 3.0, z)), a = 12f, life = 50)
+                val at = f.abs(Vec3d(x, top + 2.0, z))
+                f.fxAll(FxKind.CLEAR_WAVE, at, a = 22f, life = 28)
             }
         }
-        wait(48)
-        // 5) Ganz weit und hoch: der gespaltene Berg unter dem Himmel.
-        post.line(f.abs(Vec3d(x - 70.0, 120.0, foot - 150.0)), f.abs(Vec3d(x - 80.0, 134.0, foot - 166.0)),
-            f.abs(Vec3d(x, 50.0, foot + 50.0)), f.abs(Vec3d(x, 70.0, foot + 60.0)), 56, 66.0, 70.0)
+        f.farSound("cut.reverse_wind", mid, 5f, 0.65f)
+        wait(58)
+        // 5) Ganz weit und hoch: der gespaltene Berg klar unter dem Himmel.
+        post.line(f.abs(Vec3d(x - 78.0, 134.0, foot - 158.0)), f.abs(Vec3d(x - 90.0, 148.0, foot - 174.0)),
+            f.abs(Vec3d(x, 52.0, foot + 48.0)), f.abs(Vec3d(x, 72.0, foot + 64.0)), 54, 66.0, 70.0)
         shown {
-            for (k in 0 until 8) {
-                val z = foot + 4.0 + k * 10.0
+            for (k in 0 until 5) {
+                val z = foot + 8.0 + k * 16.0
                 val top = runCatching { FarPlan.top(x.toInt(), z.toInt()) }.getOrDefault(0).coerceAtLeast(0)
                 val at = f.abs(Vec3d(x, top.toDouble(), z))
-                f.fxAll(FxKind.CLEAR_WAVE, at, a = 20f, life = 30)
-                Vfx.shockwave(f.world, Vfx.Style.HEAVEN, at, 16f, 24, 2.4f)
+                Vfx.shockwave(f.world, Vfx.Style.HEAVEN, at, 16f, 22, 2.2f)
             }
             f.sceneText("cut_after")
         }
         for (id in f.cutSurvivors) f.server.playerManager.getPlayer(id)?.let { Advancements.grant(it, "under_the_line") }
-        wait(40)
+        wait(38)
         // 6) Whiteout: die Schneewolke rollt heran.
         f.farSound("seal.blizzard", lookout, 4f, 0.6f)
         f.atmos(dev.henny.hha_arius.net.AtmosMode.BLIZZARD, 16)
@@ -365,7 +374,6 @@ class Scenes(private val f: EirholmFight) {
         wait(20)
         // Im Weiß: zurück in den Tempel.
         vantage.restore()
-        collapse.clear()
         wait(4)
         yieldAll(kick(post))
     }
@@ -396,11 +404,9 @@ class Scenes(private val f: EirholmFight) {
         })
     }
 
-    /** Kluft für die Scheibe z0..z1 (relativ): V-förmig, unten 3, oben bis 9 Blöcke breit. */
-    private fun carve(z0: Int, z1: Int, animate: Boolean) {
+    /** Kluft für die Scheibe z0..z1 (relativ): V-förmig, unten 3, oben bis 9 Blöcke breit (ohne schwebende Block-Trümmer). */
+    private fun carve(z0: Int, z1: Int, @Suppress("UNUSED_PARAMETER") animate: Boolean) {
         val pos = BlockPos.Mutable()
-        val debris = ArrayList<BlockPos>()
-        val debrisStates = ArrayList<Int>()
         for (z in z0..z1) {
             for (dx in -6..6) {
                 val x = kotlin.math.floor(ArenaLayout.CUT_X).toInt() + dx
@@ -416,17 +422,9 @@ class Scenes(private val f: EirholmFight) {
                     if (kotlin.math.abs(x + 0.5 - ArenaLayout.CUT_X) > hw) continue
                     pos.set(f.origin.x + x, f.origin.y + y, f.origin.z + z)
                     if (f.world.getBlockState(pos).isAir) continue
-                    if (animate && debris.size < 40 && rnd.nextInt(30) == 0) {
-                        debris.add(pos.toImmutable())
-                        debrisStates.add(net.minecraft.block.Block.getRawIdFromState(f.world.getBlockState(pos)))
-                    }
                     f.edits.clear(pos)
                 }
             }
-        }
-        if (animate && debris.isNotEmpty() && !Cine.muted) {
-            val payload = dev.henny.hha_arius.gear.art.ArtCutS2C(LongArray(debris.size) { debris[it].asLong() }, debrisStates.toIntArray(), 3)
-            for (p in f.audience()) dev.henny.hha_arius.net.AriusNet.send(p, payload)
         }
     }
 
@@ -498,13 +496,16 @@ class Scenes(private val f: EirholmFight) {
         f.face(a, ground)
         a.play(AriusPose.SPIN_CUT, 4)
         wait(4)
-        // 3) Aufprallbild: Treffer-Stopp, alle hängen in der Luft; die Musik reißt ab.
-        // Seit 1.11.0 länger gehalten als das Aufprallbild. Vorher endete der Halt im selben Tick, in dem der Flug beginnen
-        // sollte: Der Tritt fand niemanden mehr, und die Figur blieb einfach stehen (Crix).
+        // 3) Aufprallbild: Treffer-Stopp, alle hängen in der Luft; die Musik reißt ab; benutzerdefinierte Schleuderanimation startet.
+        val hitstop = 12
+        val recover = 24
         for ((p, lp) in plan) if (f.canSequence(p)) {
             Hold.drop(p)
             Hold.allowLong(p, 90)
-            Hold.freeze(p, 30, lp.first.add(0.0, 0.7, 0.0))
+            val start = lp.first.add(0.0, 0.7, 0.0)
+            Hold.freeze(p, 30, start)
+            val fl = Ballistic.ticks(lp.second.y - start.y, 0.9)
+            Entrance.storyFx(f, FxKind.KICK_FLING, start, a = hitstop.toFloat(), b = fl.toFloat(), life = hitstop + fl + recover, e1 = p)
         }
         MusicCue.duck(f, 0f, 14)
         MusicCue.sting(f, "impact")
@@ -522,8 +523,8 @@ class Scenes(private val f: EirholmFight) {
         cue("arius.kick", front, 3f, 0.6f)
         f.calls.hitShake(front, 5f, 30f)
         val above = front.add(north.multiply(3.4)).add(-1.2, 4.2, 0.0)
-        scene.line(above, above.add(north.multiply(0.4)).add(0.0, 0.3, 0.0), ground.add(0.0, 1.0, 0.0), ground.add(south.multiply(1.0)).add(0.0, 1.2, 0.0), 12, 58.0, 54.0)
-        wait(12)
+        scene.line(above, above.add(north.multiply(0.4)).add(0.0, 0.3, 0.0), ground.add(0.0, 1.0, 0.0), ground.add(south.multiply(1.0)).add(0.0, 1.2, 0.0), hitstop, 58.0, 54.0)
+        wait(hitstop)
         // 4) Flug durch die Toröffnung, jeder mit Verfolgerkamera hinter sich.
         var flight = 24
         val launched = ArrayList<ServerPlayerEntity>()
@@ -565,8 +566,7 @@ class Scenes(private val f: EirholmFight) {
                         f.world.spawnParticles(net.minecraft.particle.BlockStateParticleEffect(ParticleTypes.BLOCK, net.minecraft.block.Blocks.SNOW_BLOCK.defaultState), p.x, p.y + 0.2, p.z, 24, 0.6, 0.2, 0.6, 0.15)
                     }
                     cue("hold.impact", p.entityPos, 1.6f, 0.8f)
-                    // Blick zum Berg (die Kamera landet gleich in ihren Augen).
-                    p.teleport(f.world, p.x, p.y, p.z, emptySet(), 0f, -6f, false)
+                    p.teleport(f.world, p.x, p.y, p.z, emptySet(), 0f, -4f, false)
                 }
             }
         }
@@ -574,16 +574,16 @@ class Scenes(private val f: EirholmFight) {
             landings(i)
             yield(Unit)
         }
-        // 5) Landung und Aufstehen: vor dem Tor, dann hebt sich die Kamera über das Plateau zum gespaltenen Berg.
+        // 5) Landung und Aufrichten im Schnee (kein überflüssiger Schwenk mehr zurück auf den Berg).
         MusicCue.play(f, "silence", 10)
-        val mountain = f.abs(Vec3d(ArenaLayout.CUT_X, 60.0, ArenaLayout.SPIRE.z - FarPlan.MASSIF_R + 40.0))
-        scene.line(landing0.add(6.0, 1.6, 4.0), landing0.add(3.0, 7.0, -4.0), landing0.add(0.0, 1.0, -2.0), mountain, 44, 66.0, 62.0)
-        for (i in 0 until 44) {
+        val landFocus = lead?.entityPos?.add(0.0, 1.0, 0.0) ?: landing0.add(0.0, 1.0, 0.0)
+        scene.line(landing0.add(4.8, 1.8, -3.5), landing0.add(3.5, 1.65, -2.4), landFocus, landFocus.add(0.0, 0.15, 0.0), recover, 60.0, 54.0, lookAt = lead, lookOffset = 1.0)
+        for (i in 0 until recover) {
             landings(flight + 2 + i)
             yield(Unit)
         }
-        scene.home(14)
-        wait(14)
+        scene.home(12)
+        wait(12)
     }
 
     /**
@@ -1647,9 +1647,20 @@ class Scenes(private val f: EirholmFight) {
             d.flying = false
             d.resonance = false
             d.lead = false
-            f.place(d, if (f.onSummit) f.summit.add(14.0, 0.0, -4.0) else f.abs(ArenaLayout.VAULT_REST))
-            f.face(d, f.arenaCenter)
-            d.play(NivarisPose.LIE_DOWN)
+            if (f.onSummit) {
+                // Wie beim Drachen-Reveal hoch oben um die Eisspitze gewunden; Entity bleibt nahe am Gipfel für volle Sichtbarkeit.
+                f.place(d, f.arenaCenter.add(0.0, 2.0, 6.0))
+                d.mode = NivarisMode.COIL
+                d.uncoil = 0f
+                d.showNow()
+                d.play(NivarisPose.IDLE)
+                d.eyeGlow = 90
+            } else {
+                d.mode = NivarisMode.NORMAL
+                f.place(d, f.abs(ArenaLayout.VAULT_REST))
+                f.face(d, f.arenaCenter)
+                d.play(NivarisPose.LIE_DOWN)
+            }
         }
         a.lead = false
         a.form = AriusForm.WHITE
@@ -1762,10 +1773,9 @@ class Scenes(private val f: EirholmFight) {
     }
 
     /**
-     * Auftakt des Finales (V5): Solvane kehrt zurück. Er ruft sie („Komm zurück.“), der Drache löst sich in Licht auf und
-     * zieht als Strom über ihn hinweg in die Scheide auf seinem Rücken, die Eisklinge in seiner Hand zerfällt. Kurze,
-     * überspringbare Kamera (≈ 5 s, zwei Einstellungen), kein Schaden, keine Ansage. Endzustand: kein Drache,
-     * [AriusBlade.HELD], Solvane in der Scheide ([settleReturn]). Im Training ohne Kamera.
+     * Auftakt des Finales (V5): Solvane kehrt zurück. Auf dem Gipfel windet sie sich hoch oben um die Eisspitze (wie
+     * beim Drachen-Reveal), löst sich dort oben in Licht auf und stürzt als leuchtender Strom herab in Arius' Scheide;
+     * die temporäre Eisklinge zerfällt. Endzustand: kein Drache, [AriusBlade.HELD], Solvane in der Scheide ([settleReturn]).
      */
     private fun bladeReturn(a: AriusEntity): Script = script {
         val d = f.nivaris
@@ -1775,57 +1785,126 @@ class Scenes(private val f: EirholmFight) {
         }
         val scene = CineScene(f) { settleReturn(a) }
         yieldAll(scene.play(script {
-            val head = f.dragon.anchorPos(NivarisMoves.Zone.HEAD)
-            val body = d.entityPos.add(0.0, 1.2, 0.0)
-            f.face(a, head)
-            a.sheathed = false
-            a.play(AriusPose.IDLE)
-            val toDragon = flatDir(a.entityPos, head)
-            val side = Vec3d(-toDragon.z, 0.0, toDragon.x)
-            val eye = a.entityPos.add(0.0, 1.7, 0.0)
-            // A) Über seine Schulter zum Drachen; er ruft sie, der Faden zwischen Träger und Klinge leuchtet (34 Ticks).
-            scene.line(f.clampToArena(eye.add(toDragon.multiply(-2.6)).add(side.multiply(1.1)).add(0.0, 0.3, 0.0), 2.0),
-                f.clampToArena(eye.add(toDragon.multiply(-2.0)).add(side.multiply(0.9)).add(0.0, 0.4, 0.0), 2.0),
-                head.lerp(eye, 0.3), head, 34 + RETURN_PEAK, 56.0, 50.0)
-            wait(8)
-            shown { f.say("dragon.return", 50) }
-            // Von der Schwanzspitze zum Kopf löst sie sich auf; der Kopf ist auf dem Höhepunkt fort (vor dismissNivaris).
-            d.fadeOut(26 + RETURN_PEAK - 1)
-            d.resonance = true
-            d.eyeGlow = 100
-            a.eyeGlow = 100
-            Entrance.storyFx(f, FxKind.THREAD, a.entityPos, life = 26 + RETURN_PEAK, e1 = a, e2 = d)
-            cue("resonance.chime", a.entityPos, 3f, 0.8f)
-            wait(26)
-            // Sie löst sich in Licht auf; auf dem Höhepunkt ist sie fort.
-            Entrance.storyFx(f, FxKind.DRAGON_DISSOLVE, head, body, a = 5f, life = RETURN_PEAK + 30)
-            cue("transform.pulse", head, 4f, 0.7f)
-            cue("seal.blizzard", head, 2f, 1.4f)
-            wait(RETURN_PEAK)
-            f.dismissNivaris()
-            // B) Seitlich auf Brusthöhe: der Strom kommt in hohem Bogen über ihn in die Scheide, die Eisklinge zerfällt.
-            val chest = a.entityPos.add(0.0, 1.4, 0.0)
-            scene.line(f.clampToArena(chest.add(side.multiply(3.4)).add(toDragon.multiply(0.8)).add(0.0, 0.2, 0.0), 2.0),
-                f.clampToArena(chest.add(side.multiply(2.8)).add(toDragon.multiply(0.1)).add(0.0, 0.4, 0.0), 2.0),
-                chest.add(toDragon.multiply(1.6)).add(0.0, 0.8, 0.0), chest.add(toDragon.multiply(-0.2)), 56, 58.0, 50.0)
-            val sheath = a.entityPos.add(0.0, 1.55, 0.0).subtract(toDragon.multiply(0.25))
-            Entrance.storyFx(f, FxKind.BLADE_STREAM, head.add(0.0, 1.5, 0.0), sheath, a = RETURN_TRAVEL.toFloat(), b = 1f, life = RETURN_TRAVEL + 14, e1 = a)
-            cue("nivaris.wing", head, 2f, 1.6f)
-            wait(4)
-            Entrance.storyFx(f, FxKind.BLADE_SHATTER, a.entityPos.add(0.0, 1.0, 0.0), life = 24, e1 = a)
-            a.bladeState = AriusBlade.NONE
-            cue("transform.shatter", a.entityPos, 2f, 1.5f)
-            wait(RETURN_TRAVEL - 4)
-            // Die Scheide ist wieder gefüllt; die Hand geht an den Griff.
-            a.bladeState = AriusBlade.HELD
-            a.sheathed = true
-            cue("iai.glint", a.entityPos, 2.5f, 0.9f)
-            cue("resonance.chime", a.entityPos, 2f, 1.3f)
-            wait(6)
-            a.play(AriusPose.IAI_STANCE)
-            wait(56 - RETURN_TRAVEL - 6 - 18)
-            scene.home(18)
-            wait(18)
+            if (f.onSummit) {
+                f.atmos(dev.henny.hha_arius.net.AtmosMode.REVEAL, 20)
+                f.place(d, f.arenaCenter.add(0.0, 2.0, 6.0))
+                d.mode = NivarisMode.COIL
+                d.uncoil = 0f
+                d.flying = false
+                d.showNow()
+                d.resonance = true
+                d.eyeGlow = 100
+                d.play(NivarisPose.IDLE)
+                val spireHead = f.abs(EntrancePath.HEAD_RAISED)
+                val spireMid = f.abs(EntrancePath.coil(0.62))
+                f.face(a, spireHead)
+                a.sheathed = false
+                a.play(AriusPose.IDLE)
+                a.eyeGlow = 100
+                val toSpire = flatDir(a.entityPos, spireHead)
+                val side = Vec3d(-toSpire.z, 0.0, toSpire.x)
+                val eye = a.entityPos.add(0.0, 1.7, 0.0)
+                // A) Tief hinter Arius' Schulter steil hinauf zur Eisspitze, um die Solvane gewunden thront (42 Ticks).
+                scene.line(
+                    eye.add(toSpire.multiply(-6.2)).add(side.multiply(2.4)).add(0.0, -0.2, 0.0),
+                    eye.add(toSpire.multiply(-8.6)).add(side.multiply(3.2)).add(0.0, 1.2, 0.0),
+                    a.entityPos.lerp(spireMid, 0.55), spireHead.add(0.0, -5.0, 0.0), 42, 66.0, 58.0,
+                )
+                wait(8)
+                shown { f.say("dragon.return", 50) }
+                d.play(NivarisPose.ROAR, 10)
+                Entrance.storyFx(f, FxKind.THREAD, a.entityPos, life = 34 + RETURN_PEAK, e1 = a, e2 = d)
+                cue("resonance.chime", a.entityPos, 3.5f, 0.8f)
+                wait(12)
+                // Von der untersten Windung an der Eisspitze bis hinauf zum Kopf löst sie sich in Licht auf.
+                d.fadeOut(22 + RETURN_PEAK - 1)
+                cue("nivaris.inhale", spireHead, 4f, 0.65f)
+                wait(22)
+                // B) Totale auf die Eisspitze: Solvane zerfällt oben im Licht und verschwindet am Höhepunkt.
+                val spireCam0 = f.abs(Vec3d(ArenaLayout.SPIRE.x - 16.0, FarPlan.SHOULDER_Y + 12.0, ArenaLayout.SPIRE.z - 42.0))
+                val spireCam1 = f.abs(Vec3d(ArenaLayout.SPIRE.x - 11.0, FarPlan.SHOULDER_Y + 18.0, ArenaLayout.SPIRE.z - 36.0))
+                scene.line(spireCam0, spireCam1, spireMid.lerp(spireHead, 0.45), spireHead.add(0.0, -3.0, 0.0), RETURN_PEAK + 12, 62.0, 56.0)
+                Entrance.storyFx(f, FxKind.DRAGON_DISSOLVE, spireHead, spireMid, a = 8f, life = RETURN_PEAK + 34)
+                Entrance.storyFx(f, FxKind.BLIZZARD, spireMid, a = 14f, life = 36)
+                cue("transform.pulse", spireHead, 5f, 0.7f)
+                cue("seal.blizzard", spireHead, 3f, 1.3f)
+                wait(RETURN_PEAK)
+                f.dismissNivaris()
+                wait(10)
+                // C) Der Strom stürzt von der Eisspitze herab in Arius' Scheide, die Eisklinge zerspringt.
+                val chest = a.entityPos.add(0.0, 1.4, 0.0)
+                val travel = RETURN_TRAVEL + 10
+                scene.line(
+                    chest.add(side.multiply(5.4)).add(toSpire.multiply(-3.6)).add(0.0, 1.8, 0.0),
+                    chest.add(side.multiply(3.2)).add(toSpire.multiply(-1.6)).add(0.0, 0.6, 0.0),
+                    spireHead.lerp(chest, 0.48), chest.add(toSpire.multiply(-0.2)), travel + 26, 66.0, 50.0,
+                )
+                val sheath = a.entityPos.add(0.0, 1.55, 0.0).subtract(toSpire.multiply(0.25))
+                Entrance.storyFx(f, FxKind.BLADE_STREAM, spireHead, sheath, a = travel.toFloat(), b = 1f, life = travel + 16, e1 = a)
+                cue("nivaris.wing", spireHead, 4f, 1.4f)
+                wait(8)
+                Entrance.storyFx(f, FxKind.BLADE_SHATTER, a.entityPos.add(0.0, 1.0, 0.0), life = 24, e1 = a)
+                a.bladeState = AriusBlade.NONE
+                cue("transform.shatter", a.entityPos, 2.5f, 1.5f)
+                wait(travel - 8)
+                a.bladeState = AriusBlade.HELD
+                a.sheathed = true
+                shown { f.fx(FxKind.CLEAR_WAVE, a.entityPos, a = 8f, life = 16) }
+                cue("iai.glint", a.entityPos, 3f, 0.9f)
+                cue("resonance.chime", a.entityPos, 2.5f, 1.3f)
+                wait(6)
+                a.play(AriusPose.IAI_STANCE)
+                wait(10)
+                scene.home(18)
+                wait(18)
+            } else {
+                val head = f.dragon.anchorPos(NivarisMoves.Zone.HEAD)
+                val body = d.entityPos.add(0.0, 1.2, 0.0)
+                f.face(a, head)
+                a.sheathed = false
+                a.play(AriusPose.IDLE)
+                val toDragon = flatDir(a.entityPos, head)
+                val side = Vec3d(-toDragon.z, 0.0, toDragon.x)
+                val eye = a.entityPos.add(0.0, 1.7, 0.0)
+                scene.line(f.clampToArena(eye.add(toDragon.multiply(-2.6)).add(side.multiply(1.1)).add(0.0, 0.3, 0.0), 2.0),
+                    f.clampToArena(eye.add(toDragon.multiply(-2.0)).add(side.multiply(0.9)).add(0.0, 0.4, 0.0), 2.0),
+                    head.lerp(eye, 0.3), head, 34 + RETURN_PEAK, 56.0, 50.0)
+                wait(8)
+                shown { f.say("dragon.return", 50) }
+                d.fadeOut(26 + RETURN_PEAK - 1)
+                d.resonance = true
+                d.eyeGlow = 100
+                a.eyeGlow = 100
+                Entrance.storyFx(f, FxKind.THREAD, a.entityPos, life = 26 + RETURN_PEAK, e1 = a, e2 = d)
+                cue("resonance.chime", a.entityPos, 3f, 0.8f)
+                wait(26)
+                Entrance.storyFx(f, FxKind.DRAGON_DISSOLVE, head, body, a = 5f, life = RETURN_PEAK + 30)
+                cue("transform.pulse", head, 4f, 0.7f)
+                cue("seal.blizzard", head, 2f, 1.4f)
+                wait(RETURN_PEAK)
+                f.dismissNivaris()
+                val chest = a.entityPos.add(0.0, 1.4, 0.0)
+                scene.line(f.clampToArena(chest.add(side.multiply(3.4)).add(toDragon.multiply(0.8)).add(0.0, 0.2, 0.0), 2.0),
+                    f.clampToArena(chest.add(side.multiply(2.8)).add(toDragon.multiply(0.1)).add(0.0, 0.4, 0.0), 2.0),
+                    chest.add(toDragon.multiply(1.6)).add(0.0, 0.8, 0.0), chest.add(toDragon.multiply(-0.2)), 56, 58.0, 50.0)
+                val sheath = a.entityPos.add(0.0, 1.55, 0.0).subtract(toDragon.multiply(0.25))
+                Entrance.storyFx(f, FxKind.BLADE_STREAM, head.add(0.0, 1.5, 0.0), sheath, a = RETURN_TRAVEL.toFloat(), b = 1f, life = RETURN_TRAVEL + 14, e1 = a)
+                cue("nivaris.wing", head, 2f, 1.6f)
+                wait(4)
+                Entrance.storyFx(f, FxKind.BLADE_SHATTER, a.entityPos.add(0.0, 1.0, 0.0), life = 24, e1 = a)
+                a.bladeState = AriusBlade.NONE
+                cue("transform.shatter", a.entityPos, 2f, 1.5f)
+                wait(RETURN_TRAVEL - 4)
+                a.bladeState = AriusBlade.HELD
+                a.sheathed = true
+                cue("iai.glint", a.entityPos, 2.5f, 0.9f)
+                cue("resonance.chime", a.entityPos, 2f, 1.3f)
+                wait(6)
+                a.play(AriusPose.IAI_STANCE)
+                wait(56 - RETURN_TRAVEL - 6 - 18)
+                scene.home(18)
+                wait(18)
+            }
         }))
         settleReturn(a)
     }

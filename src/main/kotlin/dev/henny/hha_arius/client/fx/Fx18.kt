@@ -117,13 +117,33 @@ class SlashArcFx(private val at: Vec3d, private val dir: Vec3d, private val rang
         val a0 = -span / 2
         val a1 = a0 + span * sweep
         val inner = range * 0.35
-        d.arc(VfxLayers.FLOW_ADD, at, fwd, axisB, inner, range * 1.05, a0, a1, withAlpha(0xFFFFFFFF.toInt(), 0f), withAlpha(0xFFE8F6FF.toInt(), 0.55f * fade), segments = 28, uTile = 2f, uOffset = -t * 0.3f)
-        d.arc(VfxLayers.GLOW_ADD, at, fwd, axisB, range * 0.88, range * 1.0, a0, a1, withAlpha(0xFF8FC8FF.toInt(), 0.2f * fade), withAlpha(0xFFFFFFFF.toInt(), 0.95f * fade), segments = 28)
-        d.arc(VfxLayers.GLOW_ADD, at, fwd, axisB, range * 1.0, range * 1.14, a0, a1, withAlpha(0xFF6FB0FF.toInt(), 0.5f * fade), withAlpha(0xFF6FB0FF.toInt(), 0f), segments = 28)
+        // High-contrast dark-cobalt + glacier-cyan blade body first so slashes stay razor-sharp on fullbright snow & in storms.
+        d.arc(AriusLayers.INK, at, fwd, axisB, range * 0.72, range * 1.02, a0, a1,
+            withAlpha(0xFF0E385A.toInt(), 0.58f * fade), withAlpha(0xFF7AD8FF.toInt(), 0.95f * fade), segments = 28)
+        d.arc(AriusLayers.INK, at, fwd, axisB, range * 0.93, range * 1.01, a0, a1,
+            withAlpha(0xFF14496C.toInt(), 0.88f * fade), withAlpha(0xFFE6FAFF.toInt(), fade), segments = 28)
+        d.arc(AriusLayers.VFX_FLOW, at, fwd, axisB, inner, range * 1.06, a0, a1, withAlpha(0xFFFFFFFF.toInt(), 0f), withAlpha(0xFFE8F6FF.toInt(), 0.72f * fade), segments = 28, uTile = 2f, uOffset = -t * 0.3f)
+        d.arc(AriusLayers.VFX_GLOW, at, fwd, axisB, range * 0.86, range * 1.02, a0, a1, withAlpha(0xFF8FC8FF.toInt(), 0.35f * fade), withAlpha(0xFFFFFFFF.toInt(), fade), segments = 28)
+        d.arc(AriusLayers.VFX_GLOW, at, fwd, axisB, range * 1.0, range * 1.18, a0, a1, withAlpha(0xFF6FB0FF.toInt(), 0.65f * fade), withAlpha(0xFF6FB0FF.toInt(), 0f), segments = 28)
+        val count = (14 * particlesAllowed()).toInt()
+        val normal = fwd.crossProduct(axisB).normalize()
+        for (i in 0 until count) {
+            val phase = (i + 0.5) / count
+            val dt = t - 4.0 * phase
+            if (dt !in 0.0..7.0) continue
+            val angle = a0 + phase * span
+            val radial = fwd.multiply(cos(angle)).add(axisB.multiply(sin(angle)))
+            val along = axisB.multiply(cos(angle)).subtract(fwd.multiply(sin(angle)))
+            val p = at.add(radial.multiply(range * (0.89 + 0.08 * sin(i * 3.1)) + dt * 0.07))
+                .add(along.multiply(dt * 0.12)).add(normal.multiply(sin(i * 2.3) * dt * 0.055))
+            val alpha = ((1 - dt / 7.0) * fade).toFloat()
+            d.box(AriusLayers.INK, p, radial.multiply(0.042), along.multiply(0.19), normal.multiply(0.03),
+                withAlpha(if (i % 2 == 0) 0xFF88D8F8.toInt() else 0xFF1D587A.toInt(), alpha))
+        }
         // Schneidenspitze
         val tipA = a1
         val tip = at.add(fwd.multiply(cos(tipA) * range)).add(axisB.multiply(sin(tipA) * range))
-        if (sweep < 1.0) d.billboard(VfxLayers.FLARE_ADD, tip, 1.4, withAlpha(0xFFFFFFFF.toInt(), 0.9f))
+        if (sweep < 1.0) d.billboard(AriusLayers.VFX_FLARE, tip, 1.65, withAlpha(0xFFFFFFFF.toInt(), 0.95f))
     }
 }
 
@@ -185,17 +205,20 @@ class DashStreakFx(private val from: Vec3d, private val to: Vec3d, life: Int) : 
         val side = Vec3d(-dir.z, 0.0, dir.x)
         for (i in 0 until 7) {
             val o = side.multiply((i - 3) * 0.22).add(0.0, 0.3 + (i % 3) * 0.6, 0.0)
-            d.band(VfxLayers.FLOW_ADD, from.add(o), to.add(o), UPV, 0.05, withAlpha(0xFFFFFFFF.toInt(), 0f), withAlpha(0xFFE8F6FF.toInt(), 0.6f * k), uScale = 0.4f, uOffset = -t * 0.4f)
+            d.band(AriusLayers.INK, from.add(o), to.add(o), UPV, 0.045, withAlpha(0xFF14466B.toInt(), 0f), withAlpha(0xFF4FB3E8.toInt(), 0.55f * k))
+            d.band(AriusLayers.VFX_FLOW, from.add(o), to.add(o), UPV, 0.06, withAlpha(0xFFFFFFFF.toInt(), 0f), withAlpha(0xFFE8F6FF.toInt(), 0.78f * k), uScale = 0.4f, uOffset = -t * 0.4f)
         }
         for (i in 0 until 5) {
             val f = i / 4.0
             val p = from.lerp(to, f)
             val kk = (k * (0.3f + 0.7f * f.toFloat()) - (1f - f.toFloat()) * t / life).coerceIn(0f, 1f)
             if (kk <= 0.02f) continue
-            val col = withAlpha(0xFFDDF2FF.toInt(), 0.35f * kk)
-            d.box(VfxLayers.GLOW_ADD, p.add(0.0, 1.2, 0.0), side.multiply(0.3), UPV.multiply(0.45), dir.multiply(0.14), col)
-            d.box(VfxLayers.GLOW_ADD, p.add(0.0, 1.9, 0.0), side.multiply(0.16), UPV.multiply(0.17), dir.multiply(0.16), col)
-            d.box(VfxLayers.GLOW_ADD, p.add(0.0, 0.45, 0.0), side.multiply(0.24), UPV.multiply(0.42), dir.multiply(0.12), withAlpha(0xFFDDF2FF.toInt(), 0.2f * kk))
+            val sil = withAlpha(0xFF1D4F76.toInt(), 0.48f * kk)
+            val col = withAlpha(0xFFDDF2FF.toInt(), 0.52f * kk)
+            d.box(AriusLayers.INK, p.add(0.0, 1.2, 0.0), side.multiply(0.32), UPV.multiply(0.47), dir.multiply(0.15), sil)
+            d.box(AriusLayers.VFX_GLOW, p.add(0.0, 1.2, 0.0), side.multiply(0.3), UPV.multiply(0.45), dir.multiply(0.14), col)
+            d.box(AriusLayers.VFX_GLOW, p.add(0.0, 1.9, 0.0), side.multiply(0.16), UPV.multiply(0.17), dir.multiply(0.16), col)
+            d.box(AriusLayers.VFX_GLOW, p.add(0.0, 0.45, 0.0), side.multiply(0.24), UPV.multiply(0.42), dir.multiply(0.12), withAlpha(0xFFDDF2FF.toInt(), 0.3f * kk))
         }
     }
 }

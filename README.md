@@ -17,7 +17,7 @@ rebuilt from vanilla blocks for every attempt. Nothing in your survival world is
 
 You can also build a **Gate to Eirholm**: a Nether-style frame of **Rime Gate Stone** (4 per craft from 4 polished deepslate,
 4 blue ice and 1 diamond; inside 2–21 wide, 3–21 tall). Light it with the Seal, which is not used up, then stand in it for
-2 seconds while carrying a Seal to start the encounter.
+2 seconds to start the encounter. Anyone can use a lit gate.
 
 1. **The Temple of the White Blade**: Arius alone, in three stances (flowing, overhead, sheathed iai). Long combo chains
    with delayed strikes and feints, and a perfect counter: his red stance says *don't strike*. Hit him anyway and he parries, locks you in

@@ -232,7 +232,8 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
     /** Dreht den Modellraum auf den Rahmen (Spalten: Modell-x, Modell-y, Modell-z in Weltrichtung). */
     private fun orient(matrices: MatrixStack, f: FloatArray, at: Int) {
         m3.set(f[at], f[at + 1], f[at + 2], f[at + 3], f[at + 4], f[at + 5], f[at + 6], f[at + 7], f[at + 8])
-        matrices.multiply(rot.setFromNormalized(m3))
+        rot.setFromNormalized(m3)
+        if (rot.isFinite) matrices.multiply(rot)
     }
 
     override fun getShadowRadius(state: NivarisRenderState): Float =

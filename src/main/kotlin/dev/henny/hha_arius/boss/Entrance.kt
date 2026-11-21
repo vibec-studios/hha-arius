@@ -79,10 +79,9 @@ object EntrancePath {
     val HEAD_REST = near(3.5, 171.0, 144.0)
 
     private val WAYPOINTS = listOf(
-        HEAD_RAISED, near(0.5, 194.0, 134.0), near(10.0, 182.0, 114.0), near(36.0, 150.0, 92.0), near(56.0, 110.0, 66.0),
-        // Seit 1.11.0 sinkt die Bahn schon im Anflug fast bis auf den Boden: Die Landung ist ein kurzes Ausgleiten statt
-        // eines Falls aus 20 Blöcken Höhe.
-        near(48.0, 70.0, 38.0), Vec3d(24.0, 36.0, 26.0), Vec3d(7.0, 19.0, 15.0), Vec3d(0.5, 10.0, 5.0), Vec3d(0.5, 6.5, -6.0),
+        HEAD_RAISED, near(0.5, 194.0, 134.0), near(10.0, 182.0, 114.0), near(36.0, 150.0, 92.0), near(56.0, 108.0, 68.0),
+        // Seit 1.11.0 flacherer Endanflug über dem Plateau, damit der lange Leib waagerecht ausschwebt statt senkrecht nach oben zu ragen.
+        near(46.0, 56.0, 42.0), Vec3d(22.0, 24.0, 28.0), Vec3d(7.0, 12.5, 16.0), Vec3d(0.5, 7.5, 5.0), Vec3d(0.5, 6.0, -4.0),
     )
 
     /**
@@ -441,38 +440,35 @@ internal object Entrance {
             return c.add(radial.multiply(out)).add(0.0, up, 0.0)
         }
         // Der Sturm reißt so weit auf, dass man die Windung erkennt (im vollen Blizzard endet die Sicht nach 30 Blöcken).
+        // 3) Von unten nach oben entlang der Windung: die Kamera steigt mit dem Leib die Nadel hinauf (56 Ticks).
         f.atmos(AtmosMode.SNOW, 22)
-        scene.line(outside(0.80, 21.0, 3.0), outside(0.74, 18.0, 5.0), coilAt(f, 0.80), coilAt(f, 0.72), 60, 56.0, 50.0)
-        sound(f, "seal.blizzard", coilAt(f, 0.8), 3f, 0.55f)
-        fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.8), 9f, 60)
+        scene.line(outside(0.60, 22.0, 2.0), outside(0.68, 20.0, 4.0), coilAt(f, 0.62), coilAt(f, 0.72), 56, 56.0, 52.0)
+        sound(f, "seal.blizzard", coilAt(f, 0.66), 3f, 0.55f)
+        fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.66), 9f, 56)
         d.eyeGlow = 14
-        wait(60)
+        wait(56)
 
-        // 4) Der Kristallkamm von schräg oben: eine tiefere Windung zieht unter der Kamera durch (60 Ticks).
-        scene.line(outside(0.62, 13.0, 15.0), outside(0.56, 11.0, 13.0), coilAt(f, 0.63), coilAt(f, 0.54), 60, 54.0, 48.0)
-        sound(f, "nivaris.wing", coilAt(f, 0.62), 2f, 0.45f)
-        fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.62), 8f, 60)
-        wait(60)
+        // 4) Weiter oben am Kristallkamm: kontinuierlicher Aufstieg bis unter den Gipfel (52 Ticks).
+        scene.line(outside(0.76, 18.0, 6.0), outside(0.84, 16.0, 9.0), coilAt(f, 0.78), coilAt(f, 0.88), 52, 54.0, 48.0)
+        sound(f, "nivaris.wing", coilAt(f, 0.82), 2f, 0.45f)
+        fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.82), 8f, 52)
+        wait(52)
 
-        // 5) Die Wolken reißen auf: weite Einstellung vom Rand der Schlucht (110 Ticks), 70 Blöcke vor der Nadel auf
-        //    halber Höhe ihres oberen Drittels. Die Kamera weicht zurück und steigt; das obere Drittel (y 110..185) füllt
-        //    das Bild (Start: y 110 bei −0,6, Kopf über dem Gipfel bei +0,95 der Bildhöhe), der Kopf hebt sich hinein.
-        // Seit 1.9.0 weiter weg und höher (Crix: „man sieht den Berg kaum“): die ganze obere Hälfte des Massivs, die Nadel
-        // und die Windungen im Bild, und die klare Luft blendet schneller ein.
-        f.atmos(AtmosMode.REVEAL, 36)
-        val revealFrom = spire(f, -70.0, 120.0, -150.0)
-        val revealTo = spire(f, -84.0, 136.0, -162.0)
+        // 5) Die Wolken reißen auf: weite Einstellung von Nordwesten (104 Ticks) auf Nadel, Windungen und Kopf.
+        f.atmos(AtmosMode.REVEAL, 32)
+        val revealFrom = spire(f, -68.0, 122.0, -148.0)
+        val revealTo = spire(f, -80.0, 138.0, -158.0)
         scene.line(
-            revealFrom, revealTo, spire(f, 0.0, 128.0, 0.0), spire(f, 0.0, 150.0, 0.0), 110, 58.0, 54.0,
+            revealFrom, revealTo, spire(f, 0.0, 130.0, 0.0), spire(f, 0.0, 152.0, 0.0), 104, 58.0, 54.0,
         )
         sound(f, "glacier.crack", near(f, -10.0, 40.0, 80.0), 3f, 0.5f)
-        wait(30)
+        wait(28)
         d.play(NivarisPose.IDLE)
         d.eyeGlow = 40
         sound(f, "nivaris.inhale", revealTo, 2f, 0.55f)
-        wait(80)
+        wait(76)
 
-        // 6) Nah am Kopf über dem Gipfel: Brüllen, Augen glühen, Name (60 Ticks).
+        // 6) Nah am Kopf über dem Gipfel (gleiche Nordwest-Achse wie Einstellung 5): Brüllen, Augen glühen, Name (60 Ticks).
         val head = f.abs(EntrancePath.HEAD_RAISED)
         scene.line(
             near(f, -15.0, 181.0, 127.0), near(f, -11.0, 184.5, 131.0), head.add(0.0, -1.5, -2.0), head.add(0.0, 0.5, -1.5), 60, 62.0, 54.0,
@@ -485,25 +481,30 @@ internal object Entrance {
         MusicCue.sting(f, "reveal")
         wait(60 - AriusTimings.NIVARIS_WINDUP[NivarisPose.ROAR])
 
-        // 7) Sie löst sich vom Fels und gleitet über die Schlucht (220 Ticks, drei Einstellungen). Klare Sicht dafür.
+        // 7) Sie löst sich vom Fels und gleitet über die Schlucht (220 Ticks, drei kontinuierliche Einstellungen).
         f.atmos(AtmosMode.REVEAL, 20)
         d.mode = NivarisMode.UNCOIL
         d.flying = true
         d.play(NivarisPose.GLIDE)
         d.eyeGlow = 70
+        val end = f.abs(EntrancePath.entityAt(EntrancePath.LENGTH))
+        val landCamMid = rel(f, -18.0, 7.2, -16.0)
+        val landFocusMid = end.add(0.0, 2.8, -1.0)
         fun look(t: Int, back: Double): Vec3d {
             val u = EntrancePath.distance(t.toDouble())
             return f.abs(EntrancePath.at(u).multiply(0.7).add(EntrancePath.at(u - back).multiply(0.3)))
         }
+        var plateauView = false
         for (t in 0..EntrancePath.TICKS) {
             when (t) {
                 0 -> scene.line(near(f, -62.0, 172.0, 116.0), near(f, -66.0, 158.0, 98.0), look(0, 25.0), look(85, 25.0), 85, 66.0, 74.0)
                 85 -> scene.line(near(f, -14.0, 128.0, 98.0), near(f, -22.0, 76.0, 48.0), look(85, 30.0), look(165, 30.0), 80, 76.0, 80.0)
                 165 -> {
-                    // Die Kamera ist zurück am Plateau: die Körper auch.
+                    // Die Kamera ist zurück am Plateau: die Körper auch. Exakt 55 Ticks bis zum Übergang in die Landeeinstellung.
                     vantage.restore()
+                    plateauView = true
                     proxy = f.abs(EntrancePath.PROXY)
-                    scene.line(rel(f, -7.0, 5.0, -25.0), rel(f, -4.0, 4.0, -21.0), look(165, 20.0), spot.add(0.0, 4.0, -2.0), 105, 74.0, 66.0)
+                    scene.line(rel(f, -21.0, 10.0, -21.0), landCamMid, look(165, 22.0), landFocusMid, EntrancePath.TICKS - 165, 70.0, 62.0)
                 }
             }
             when (t) {
@@ -511,21 +512,24 @@ internal object Entrance {
                 40 -> sound(f, "nivaris.wing", near(f, -62.0, 168.0, 110.0), 3f, 0.6f)
                 100 -> sound(f, "nivaris.wing", near(f, -16.0, 110.0, 84.0), 3f, 0.65f)
                 150 -> sound(f, "seal.blizzard", near(f, -22.0, 80.0, 52.0), 2f, 1.2f)
-                180 -> sound(f, "nivaris.wing", rel(f, -5.0, 6.0, -23.0), 3f, 0.7f)
+                180 -> sound(f, "nivaris.wing", rel(f, -16.0, 8.0, -18.0), 3f, 0.7f)
             }
             val u = EntrancePath.distance(t.toDouble())
             d.uncoil = (u / EntrancePath.LENGTH).toFloat()
-            follow(f, d, u, proxy)
+            // Solange die Zuschauer am Gipfel stehen, bleibt die Entity am Gipfel-Proxy (nie außerhalb der Tracking-Reichweite!).
+            follow(f, d, u, proxy, allowEntityMove = plateauView)
             if (t < EntrancePath.TICKS) yield(Unit)
         }
 
-        // 8) Übergabe an den normalen Flug: Entity steht genau am Ende des Wegs; Gleitflug und schwere Landung.
-        val end = f.abs(EntrancePath.entityAt(EntrancePath.LENGTH))
+        // 8) Nahtlose Landeeinstellung im 3/4-Profil: schließt direkt an landCamMid/landFocusMid an und zeigt das Ablegen der Windungen.
         f.place(d, end)
         f.face(d, end.add(0.0, 0.0, -10.0))
         d.mode = NivarisMode.NORMAL
         d.uncoil = 0f
+        scene.line(landCamMid, rel(f, -15.5, 4.8, -11.5), landFocusMid, spot.add(0.0, 3.6, -1.5), 42, 62.0, 56.0)
         yieldAll(glideAndLand(f, d, end, spot, 30))
+        // Aufprallbild kurz stehen lassen, während die Windungen in den Schnee sinken.
+        wait(12)
         // Endzustand (auch nach Überspringen, das das Drehbuch in einem Tick vorspult): ganz da.
         d.showNow()
         f.atmos(AtmosMode.SNOW, 80)
@@ -549,9 +553,10 @@ internal object Entrance {
         d.hideNow()
         d.fadeIn(FORM_TICKS_SHORT)
         d.play(NivarisPose.GLIDE)
-        scene.line(rel(f, -8.0, 5.0, -26.0), rel(f, -5.0, 4.0, -22.0), start.add(0.0, 2.0, 0.0), spot.add(0.0, 4.0, -2.0), 60, 72.0, 64.0)
-        sound(f, "nivaris.wing", rel(f, -5.0, 6.0, -23.0), 3f, 0.7f)
+        scene.line(rel(f, -10.0, 6.5, -24.0), rel(f, -8.0, 4.8, -19.0), start.add(0.0, 2.0, 0.0), spot.add(0.0, 3.8, -1.5), 52, 70.0, 60.0)
+        sound(f, "nivaris.wing", rel(f, -8.0, 6.0, -21.0), 3f, 0.7f)
         yieldAll(glideAndLand(f, d, start, spot, 40))
+        wait(12)
         d.showNow()
         scene.home(18)
         wait(18)
@@ -560,6 +565,7 @@ internal object Entrance {
     private fun glideAndLand(f: EirholmFight, d: NivarisEntity, from: Vec3d, spot: Vec3d, ticks: Int): Script = script {
         d.flying = true
         d.play(NivarisPose.LAND, ticks)
+        val settleAt = (ticks - 10).coerceAtLeast(1)
         for (i in 1..ticks) {
             val k = i / ticks.toDouble()
             // Erst gleiten, zuletzt steil herab (Gewicht).
@@ -567,6 +573,8 @@ internal object Entrance {
             val y = from.y + (spot.y - from.y) * (k * k * (3 - 2 * k))
             f.place(d, Vec3d(xz.x, y, xz.z))
             f.face(d, spot.add(0.0, 0.0, -10.0))
+            // Windungen legen sich schon im letzten Sinkflug weich auf das Plateau, statt steil in die Luft zu stehen.
+            if (i == settleAt) d.flying = false
             yield(Unit)
         }
         f.place(d, spot)
@@ -578,10 +586,10 @@ internal object Entrance {
         }
     }
 
-    /** Entity während des Lösens: folgt dem Weg, sobald er in Reichweite ist, sonst am Stellvertreterpunkt. */
-    private fun follow(f: EirholmFight, d: NivarisEntity, u: Double, proxy: Vec3d) {
+    /** Entity während des Lösens: folgt dem Weg erst, wenn die Zuschauer wieder am Plateau sind (nie aus Trackingweite). */
+    private fun follow(f: EirholmFight, d: NivarisEntity, u: Double, proxy: Vec3d, allowEntityMove: Boolean = true) {
         val e = EntrancePath.entityAt(u)
-        f.place(d, if (u > EntrancePath.GLIDE.fwd && EntrancePath.followable(e)) f.abs(e) else proxy)
+        f.place(d, if (allowEntityMove && u > EntrancePath.GLIDE.fwd && EntrancePath.followable(e)) f.abs(e) else proxy)
         val t = EntrancePath.tangent(u)
         val yaw = (Math.toDegrees(atan2(t.z, t.x)) - 90.0).toFloat()
         d.yaw = yaw
@@ -624,15 +632,37 @@ class CineScene(private val f: EirholmFight, private val onAbort: () -> Unit) {
 
     private fun ease(t: Double): Double = t.coerceIn(0.0, 1.0).let { it * it * (3 - 2 * it) }
 
-    /** Wie tief liegt [p] unter dem Gelände (Fernlandschaft samt Berg, plus Abstand)? 0 = frei. */
-    private fun below(p: Vec3d, margin: Double = 4.0): Double {
+    /** Wie tief liegt [p] unter dem Gelände (Fernlandschaft samt Berg & Umgebung ±3 Blöcke, plus Abstand)? 0 = frei. */
+    private fun below(p: Vec3d, margin: Double = 4.5): Double {
         val rx = kotlin.math.floor(p.x).toInt() - f.origin.x
         val rz = kotlin.math.floor(p.z).toInt() - f.origin.z
         if (rx !in dev.henny.hha_arius.arena.FarPlan.X_MIN..dev.henny.hha_arius.arena.FarPlan.X_MAX ||
             rz !in dev.henny.hha_arius.arena.FarPlan.Z_MIN..dev.henny.hha_arius.arena.FarPlan.Z_MAX) return 0.0
-        val top = f.origin.y + dev.henny.hha_arius.arena.FarPlan.top(rx, rz) + 1.0
-        if (top <= f.origin.y + 0.5) return 0.0                     // flaches Feld: die Szenen planen selbst über dem Boden
+        var highest = Int.MIN_VALUE
+        for (dx in intArrayOf(-3, 0, 3)) for (dz in intArrayOf(-3, 0, 3)) {
+            val sx = rx + dx
+            val sz = rz + dz
+            if (sx !in dev.henny.hha_arius.arena.FarPlan.X_MIN..dev.henny.hha_arius.arena.FarPlan.X_MAX ||
+                sz !in dev.henny.hha_arius.arena.FarPlan.Z_MIN..dev.henny.hha_arius.arena.FarPlan.Z_MAX) continue
+            val t = max(dev.henny.hha_arius.arena.FarPlan.top(sx, sz), dev.henny.hha_arius.arena.FarPlan.terrain(sx, sz))
+            if (t > highest) highest = t
+        }
+        if (highest <= 0) return 0.0                                 // flaches Feld: die Szenen planen selbst über dem Boden
+        val top = f.origin.y + highest + 1.0
         return (top + margin + 2.0 - p.y).coerceAtLeast(0.0)
+    }
+
+    /** Direkte Kamerafahrt ohne Gelände-Anhebung (für geprüfte Höhlen- und Schlucht-Kameras), merkt den Verlauf für [home]. */
+    fun rawLine(
+        from: Vec3d, to: Vec3d, lookFrom: Vec3d, lookTo: Vec3d, ticks: Int, fovFrom: Double = 70.0, fovTo: Double = fovFrom,
+        lookAt: net.minecraft.entity.Entity? = null, lookOffset: Double = 1.6,
+    ) {
+        shot { Cine.camera(it, from, to, lookFrom, lookTo, ticks, fovFrom, fovTo, lookAt, lookOffset) }
+        camStart = f.server.ticks
+        camAt = { age ->
+            val k = ease(age / ticks.coerceAtLeast(1).toDouble())
+            Triple(from.lerp(to, k), lookAt?.takeIf { !it.isRemoved }?.entityPos?.add(0.0, lookOffset, 0.0) ?: lookFrom.lerp(lookTo, k), fovFrom + (fovTo - fovFrom) * k)
+        }
     }
 
     /** Gerade Kamerafahrt (siehe [Cine.camera]); merkt sich den Verlauf für [home]. */
@@ -642,10 +672,10 @@ class CineScene(private val f: EirholmFight, private val onAbort: () -> Unit) {
     ) {
         // Seit 1.5.1: Kamera nie im Berg (Crix: beim Auftritt war die Kamera im Massiv). Die ganze Fahrt wird angehoben.
         var lift = 0.0
-        for (i in 0..8) lift = maxOf(lift, below(from.lerp(to, i / 8.0)))
+        for (i in 0..16) lift = maxOf(lift, below(from.lerp(to, i / 16.0)))
         val b0 = from.add(0.0, lift, 0.0)
         val b1 = to.add(0.0, lift, 0.0)
-        // Seit 1.10.0: freie Sicht auf den Blickpunkt über die ganze Fahrt ([CineSafety]); sonst näher heran bzw. höher.
+        // Seit 1.10.0: freie Sicht auf den Blickpunkt über die ganze Fahrt ([CineSafety]); sonst höher bzw. näher heran.
         val target = lookAt?.takeIf { !it.isRemoved }?.entityPos?.add(0.0, lookOffset, 0.0)
         fun focus(k: Double): Vec3d = target ?: lookFrom.lerp(lookTo, k)
         fun moved(fix: CineSafety.Fix, b: Vec3d, k: Double): Vec3d {
@@ -655,7 +685,7 @@ class CineScene(private val f: EirholmFight, private val onAbort: () -> Unit) {
         val fix = CineSafety.pick(f.world, f.origin) { fx ->
             val c0 = moved(fx, b0, 0.0)
             val c1 = moved(fx, b1, 1.0)
-            (0..8).map { i -> val k = ease(i / 8.0); c0.lerp(c1, k) to focus(k) }
+            (0..12).map { i -> val k = ease(i / 12.0); c0.lerp(c1, k) to focus(k) }
         }
         val a0 = moved(fix, b0, 0.0)
         val a1 = moved(fix, b1, 1.0)

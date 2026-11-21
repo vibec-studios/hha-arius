@@ -49,6 +49,7 @@ object AriusLayers {
     private val snowPipe = pipeline("snow", BlendFunction.TRANSLUCENT, false, null)
     private val moonPipe = pipeline("moon", BlendFunction.TRANSLUCENT, true, null)
     private val glowPipe = pipeline("moon_glow", BlendFunction.TRANSLUCENT_PREMULTIPLIED_ALPHA, false, 0.5f)
+    private val attackGlowPipe = pipeline("attack_glow", BlendFunction.TRANSLUCENT_PREMULTIPLIED_ALPHA, false, 0.85f)
 
     private fun layer(name: String, pipe: RenderPipeline?, tex: Identifier, fallback: () -> RenderLayer): RenderLayer {
         if (pipe == null) return fallback()
@@ -59,12 +60,21 @@ object AriusLayers {
         }
     }
 
+    val INK: RenderLayer by lazy { layer("warning_ink", snowPipe, HhaArius.id("textures/fx/white.png")) { VfxLayers.SHARD_ALPHA } }
     val SNOW: RenderLayer by lazy { layer("snow", snowPipe, VfxLayers.GLOW) { VfxLayers.SMOKE_ALPHA } }
     val VEIL: RenderLayer by lazy { layer("veil", snowPipe, VfxLayers.SMOKE) { VfxLayers.SMOKE_ALPHA } }
     val MOON: RenderLayer by lazy { layer("moon", moonPipe, VfxLayers.SHARD) { VfxLayers.SHARD_ALPHA } }
     val MOON_GLOW: RenderLayer by lazy { layer("moon_glow", glowPipe, VfxLayers.GLOW) { VfxLayers.GLOW_ADD } }
     val MOON_FLARE: RenderLayer by lazy { layer("moon_flare", glowPipe, VfxLayers.FLARE) { VfxLayers.FLARE_ADD } }
+    /** Fog-free, full-brightness attack & telegraph layers that stay crisp in blizzards and 1500% fullbright gamma. */
+    val VFX_GLOW: RenderLayer by lazy { layer("vfx_glow", attackGlowPipe, VfxLayers.GLOW) { VfxLayers.GLOW_ADD } }
+    val VFX_FLOW: RenderLayer by lazy { layer("vfx_flow", attackGlowPipe, VfxLayers.NOISE) { VfxLayers.FLOW_ADD } }
+    val VFX_FLARE: RenderLayer by lazy { layer("vfx_flare", attackGlowPipe, VfxLayers.FLARE) { VfxLayers.FLARE_ADD } }
+    val VFX_RUNE: RenderLayer by lazy { layer("vfx_rune", attackGlowPipe, VfxLayers.RUNE_CIRCLE) { VfxLayers.RUNE_ADD } }
+    val VFX_SHARD: RenderLayer by lazy { layer("vfx_shard", snowPipe, VfxLayers.SHARD) { VfxLayers.SHARD_ALPHA } }
 
     /** Erzwingt die Registrierung der Pipelines vor dem ersten Shader-Reload. */
-    fun init() = Unit
+    fun init() {
+        snowPipe; moonPipe; glowPipe; attackGlowPipe
+    }
 }

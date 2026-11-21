@@ -103,6 +103,10 @@ object MotionClient {
 
     /** Lage für [e] am aktuellen Abspielzeitpunkt setzen (Ende des Entity-Ticks). */
     private fun apply(e: EirholmPuppet) {
+        if (e.vehicle is NivarisEntity) {
+            tracks.remove(e.id)
+            return
+        }
         val t = tracks[e.id] ?: return
         if (clientTick - t.lastSeen > 40 || play.isNaN()) return
         val s = t.samples

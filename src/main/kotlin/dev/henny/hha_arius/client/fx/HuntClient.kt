@@ -53,5 +53,6 @@ object HuntClient {
         HuntCine.reset()
         RopeBridges.reset()
         HuntScares.reset()
+        KickAnim.reset()
     }
 }

@@ -281,6 +281,9 @@ enum class FxKind {
 
     /** Seit 1.9.0: Zeitlupen-Look (Farbentzug, Vignette, Zeitwellen) für life Ticks, a = Stärke 0..1. */
     TIME_SLOW,
+
+    /** Tempel-Tritt: benutzerdefinierte Spieler-Schleuderanimation für e1 (a = Treffer-Stopp, b = Flugzeit, life = gesamt). */
+    KICK_FLING,
 }
 
 /**

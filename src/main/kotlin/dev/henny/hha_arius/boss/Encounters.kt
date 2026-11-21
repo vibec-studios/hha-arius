@@ -58,6 +58,7 @@ object Encounters {
         dev.henny.hha_arius.net.HuntNet.init()
         dev.henny.hha_arius.portal.Portals.init()
         dev.henny.hha_arius.boss.HuntGuard.init()
+        dev.henny.hha_arius.arena.HighlandView.init()
         dev.henny.hha_arius.arena.RouteCheck.registerCommand()
         ServerTickEvents.END_SERVER_TICK.register { server ->
             if (pendingArrivals.isNotEmpty()) {
@@ -82,8 +83,6 @@ object Encounters {
             if (Hold.isHeld(entity) && !Hold.allowDamage) return@register false
             // In der Arena gibt es keinen Fallschaden: Tritte, Stürze und das Gewölbe sollen nicht zusätzlich strafen.
             if (entity.entityWorld.registryKey == WORLD && source.isIn(DamageTypeTags.IS_FALL)) return@register false
-            // Schildblöcke gegen Solvane zählen für die Anpassung „Schildmauer“.
-            if (entity.isBlocking && source.attacker is AriusEntity) fightOf(entity)?.onShieldBlock(entity)
             true
         }
         ServerPlayConnectionEvents.DISCONNECT.register { handler, _ ->

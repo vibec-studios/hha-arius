@@ -290,14 +290,19 @@ object HuntScares {
         ms.pop()
     }
 
-    /** Solvanes Auge in einem Loch der Wand. */
+    /** Solvanes Auge hinter einem Felsspalt: dunkle Schuppen-Silhouette, eiskalte Iris, bewegliche Schlitzpupille und Lider. */
     private class Eye(val at: Vec3d, val into: Vec3d, val size: Double, life: Int) : Fx(life) {
         override fun render(d: VfxDraw, t: Float) {
-            val fx = AriusClientConfig.fx.coerceIn(0.3f, 1f)
-            val open = when {
+            val fx = AriusClientConfig.fx.coerceIn(0.35f, 1f)
+            val presence = when {
                 t < 8f -> t / 8f
-                t in 38f..44f -> abs(t - 41f) / 3f // Blinzeln
-                t > life - 8f -> ((life - t) / 8f).coerceAtLeast(0f)
+                t > life - 10f -> ((life - t) / 10f).coerceAtLeast(0f)
+                else -> 1f
+            }.coerceIn(0f, 1f)
+            val open = when {
+                t < 14f -> (t / 14f).let { it * it * (3f - 2f * it) }
+                t in 40f..48f -> abs(t - 44f) / 4f // scharfes Blinzeln
+                t > life - 12f -> ((life - t) / 12f).coerceAtLeast(0f).let { it * it * (3f - 2f * it) }
                 else -> 1f
             }.coerceIn(0f, 1f)
             val n = into.normalize()
@@ -306,51 +311,61 @@ object HuntScares {
             if (right.lengthSquared() < 1e-4) right = Vec3d(1.0, 0.0, 0.0)
             right = right.normalize()
             val vert = right.crossProduct(n).normalize()
-            val c = at.add(n.multiply(-0.05))
-            // Glut um das Auge (in der Dunkelheit sichtbar)
-            d.disc(VfxLayers.GLOW_ADD, c, right.multiply(size * 1.7), vert.multiply(size * 1.05 * (0.3 + 0.7 * open)), 1.0, withAlpha(0xFF5FC4FF.toInt(), 0.16f * open * fx), 0.0)
-            if (open < 0.05f) return
-            // Als Pixelgrafik aus kleinen, voll beleuchteten Würfeln: Mandelform, Iris, Schlitzpupille, die dem Spieler folgt.
-            val p = MinecraftClient.getInstance().player
-            var lookX = 0.0
-            var lookY = 0.0
-            if (p != null) {
-                val to = p.eyePos.subtract(c)
-                lookX = to.dotProduct(right).coerceIn(-6.0, 6.0) / 6.0 * 2.2
-                lookY = to.dotProduct(vert).coerceIn(-6.0, 6.0) / 6.0 * 0.8
+            val c = at.add(n.multiply(-0.08))
+            // 1) Dunkler Drachenkopf / Schuppen-Fassung füllt den gesamten Felsspalt, damit draußen kein greller Schnee durchscheint.
+            d.disc(VfxLayers.SHARD_ALPHA, c.add(n.multiply(-0.22)), right.multiply(size * 2.35), vert.multiply(size * 1.75), 1.0, withAlpha(0xFF070C14.toInt(), 0.96f * presence), 0.0)
+            d.disc(VfxLayers.SHARD_ALPHA, c.add(n.multiply(-0.14)), right.multiply(size * 1.48), vert.multiply(size * 0.92), 1.0, withAlpha(0xFF0F1A28.toInt(), 0.94f * presence), 0.0)
+            // Eiskalter Nebelschein, der in die Höhle fällt
+            d.disc(VfxLayers.GLOW_ADD, c.add(n.multiply(0.18)), right.multiply(size * 1.55), vert.multiply(size * 0.95 * (0.25 + 0.75 * open)), 1.0, withAlpha(0xFF54BEFF.toInt(), 0.24f * open * fx), 0.0)
+            if (open < 0.04f) return
+
+            // 2) Blickrichtung: Pupille wandert langsam und fixiert die Kamera.
+            val to = d.cam.subtract(c)
+            val lookX = (to.dotProduct(right).coerceIn(-6.0, 6.0) / 6.0) * size * 0.26
+            val lookY = (to.dotProduct(vert).coerceIn(-4.0, 4.0) / 4.0) * size * 0.11 * open
+            val eyeH = size * 0.56 * open
+            val eyeW = size * 1.08
+
+            // 3) Augenhöhle (tiefblau-schwarz) & mehrschichtige Eis-Iris
+            d.disc(VfxLayers.SHARD_ALPHA, c.add(n.multiply(-0.06)), right.multiply(eyeW), vert.multiply(eyeH), 1.0, withAlpha(0xFF0B1C30.toInt(), 0.95f * presence), 0.0)
+            val irisC = c.add(right.multiply(lookX)).add(vert.multiply(lookY))
+            val irisR = minOf(eyeW * 0.54, eyeH * 0.96)
+            val irisW = irisR * 1.08
+            val irisH = irisR * 0.96
+            d.disc(VfxLayers.SHARD_ALPHA, irisC.add(n.multiply(-0.02)), right.multiply(irisW), vert.multiply(irisH), 1.0, withAlpha(0xFF1F69AD.toInt(), 0.94f * presence), 0.0)
+            d.disc(VfxLayers.GLOW_ADD, irisC.add(n.multiply(0.01)), right.multiply(irisW * 0.88), vert.multiply(irisH * 0.88), 1.0, withAlpha(0xFF66D2FF.toInt(), 0.75f * open * fx), 0.0)
+            d.disc(VfxLayers.GLOW_ADD, irisC.add(n.multiply(0.025)), right.multiply(irisW * 0.58), vert.multiply(irisH * 0.64), 1.0, withAlpha(0xFFD6F6FF.toInt(), 0.78f * open * fx), 0.0)
+            // Iris-Ring & feine radiale Lichtfasern
+            d.ring(VfxLayers.GLOW_ADD, irisC.add(n.multiply(0.03)), right, vert, irisR * 0.72, irisR * 0.96, withAlpha(0xFF9EE4FF.toInt(), 0.55f * open * fx), withAlpha(0xFF2874B8.toInt(), 0.15f * open), segments = 28)
+            for (k in 0 until 8) {
+                val ang = k * PI / 4.0 + 0.2
+                val dir = right.multiply(cos(ang) * irisW * 0.85).add(vert.multiply(sin(ang) * irisH * 0.85))
+                d.band(VfxLayers.GLOW_ADD, irisC.add(dir.multiply(0.28)).add(n.multiply(0.03)), irisC.add(dir).add(n.multiply(0.03)), n, size * 0.022, withAlpha(0xFFE4F8FF.toInt(), 0.5f * open * fx), withAlpha(0xFF56B8FF.toInt(), 0f))
             }
-            val cell = size * 2.0 / 15.0
-            val mc = MinecraftClient.getInstance()
-            val q = org.joml.Quaternionf().setFromNormalized(
-                org.joml.Matrix3f(
-                    org.joml.Vector3f(right.x.toFloat(), right.y.toFloat(), right.z.toFloat()),
-                    org.joml.Vector3f(vert.x.toFloat(), vert.y.toFloat(), vert.z.toFloat()),
-                    org.joml.Vector3f(-n.x.toFloat(), -n.y.toFloat(), -n.z.toFloat()),
-                ),
-            )
-            for (ix in -7..7) for (iy in -4..4) {
-                val edge = 4.3 * (1.0 - (ix / 7.6) * (ix / 7.6)) * open
-                if (abs(iy) > edge) continue
-                val dx = ix - lookX
-                val dy = iy - lookY
-                val r2 = dx * dx + dy * dy
-                val state = when {
-                    abs(iy) > edge - 0.9 -> Blocks.GRAY_CONCRETE
-                    abs(dx) <= 0.6 && abs(dy) <= 3.2 -> Blocks.BLACK_CONCRETE
-                    ix.toDouble() == floor(lookX) + 2.0 && iy.toDouble() == floor(lookY) + 2.0 -> Blocks.WHITE_CONCRETE
-                    r2 <= 5.0 -> Blocks.WHITE_CONCRETE
-                    r2 <= 14.0 -> Blocks.LIGHT_BLUE_CONCRETE
-                    else -> Blocks.BLUE_CONCRETE
-                }.defaultState
-                val at = c.add(right.multiply(ix * cell)).add(vert.multiply(iy * cell))
-                ms.push()
-                ms.translate(at.x - d.cam.x, at.y - d.cam.y, at.z - d.cam.z)
-                ms.multiply(q)
-                ms.scale(cell.toFloat(), cell.toFloat(), (cell * 0.4).toFloat())
-                ms.translate(-0.5f, -0.5f, -0.5f)
-                mc.blockRenderManager.renderBlockAsEntity(state, ms, d.consumers, 0xF000F0, OverlayTexture.DEFAULT_UV)
-                ms.pop()
-            }
+
+            // 4) Scharfe senkrechte Reptilien-Schlitzpupille (verengt sich leicht beim Fixieren)
+            val narrow = (1.0 - 0.3 * ((t - 14f) / 24f).coerceIn(0f, 1f)).toDouble()
+            val pupilW = irisW * (0.14 + 0.07 * narrow)
+            val pupilH = irisH * 0.86
+            d.disc(VfxLayers.SHARD_ALPHA, irisC.add(n.multiply(0.05)), right.multiply(pupilW), vert.multiply(pupilH), 1.0, withAlpha(0xFF020408.toInt(), 0.98f * presence), 0.0)
+            d.band(VfxLayers.SHARD_ALPHA, irisC.add(vert.multiply(-pupilH * 0.92)).add(n.multiply(0.055)), irisC.add(vert.multiply(pupilH * 0.92)).add(n.multiply(0.055)), right, pupilW * 0.72, withAlpha(0xFF020408.toInt(), 0.98f * presence), withAlpha(0xFF020408.toInt(), 0.98f * presence))
+
+            // 5) Schwere dunkle Augenlider oben & unten (formen die Mandelkontur und schließen beim Blinzeln)
+            val lidClose = 1.0 - open
+            val upperY = eyeH * 0.92 + size * 0.26 * (1.0 - lidClose)
+            val lowerY = -eyeH * 0.92 - size * 0.26 * (1.0 - lidClose)
+            d.disc(VfxLayers.SHARD_ALPHA, c.add(vert.multiply(upperY)).add(n.multiply(0.075)), right.multiply(eyeW * 1.18), vert.multiply(size * 0.44), 1.0, withAlpha(0xFF0B111B.toInt(), 0.96f * presence), 0.0)
+            d.disc(VfxLayers.SHARD_ALPHA, c.add(vert.multiply(lowerY)).add(n.multiply(0.075)), right.multiply(eyeW * 1.15), vert.multiply(size * 0.42), 1.0, withAlpha(0xFF0B111B.toInt(), 0.96f * presence), 0.0)
+            // Scharfer Lidrand (eisiger Reflex an der oberen Braue)
+            val browL = c.add(right.multiply(-eyeW * 0.92)).add(vert.multiply(eyeH * 0.2)).add(n.multiply(0.085))
+            val browM = c.add(vert.multiply(eyeH * 0.88)).add(n.multiply(0.085))
+            val browR = c.add(right.multiply(eyeW * 0.92)).add(vert.multiply(eyeH * 0.2)).add(n.multiply(0.085))
+            d.band(VfxLayers.GLOW_ADD, browL, browM, vert, size * 0.03, withAlpha(0xFF7EC8FF.toInt(), 0.1f * open), withAlpha(0xFFBCEBFF.toInt(), 0.42f * open * fx))
+            d.band(VfxLayers.GLOW_ADD, browM, browR, vert, size * 0.03, withAlpha(0xFFBCEBFF.toInt(), 0.42f * open * fx), withAlpha(0xFF7EC8FF.toInt(), 0.1f * open))
+
+            // 6) Eiskalter Glanzpunkt
+            val glint = irisC.add(right.multiply(irisW * 0.34)).add(vert.multiply(irisH * 0.32)).add(n.multiply(0.09))
+            d.billboard(VfxLayers.FLARE_ADD, glint, size * 0.34 * open, withAlpha(0xFFF0FCFF.toInt(), 0.88f * open * fx), 0.0)
         }
     }
 

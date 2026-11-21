@@ -33,6 +33,7 @@ class AriusRenderState : LivingEntityRenderState() {
     var sheathed = false
 
     /** [dev.henny.hha_arius.boss.AriusBlade]: Solvane, keine Klinge oder Eisklinge. */
+    val iceItem = net.minecraft.client.render.item.ItemRenderState()
     var blade = AriusBlade.HELD
     var eyeGlow = 40
     var lead = false
@@ -158,7 +159,7 @@ private val SPRING_C = floatArrayOf(0.42f, 0.45f, 0.5f, 0.3f, 0.55f, 0.55f, 0.6f
  * Die Überblendung startet bei einem Posenwechsel aus der Haltung, die das Modell im Bild davor tatsächlich hatte
  * (je Entity gemerkt), auch mitten in einem Schlag; ohne Merkwert aus der Endhaltung von previousPose.
  */
-class AriusModel(root: ModelPart, private val bladeOnly: Boolean = false) : EntityModel<AriusRenderState>(root) {
+class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
 
     private fun path(p: String): ModelPart = p.split('/').fold(root) { m, n -> m.getChild(n) }
     private val parts: Array<ModelPart> = Array(Keys.COUNT) { path(Keys.BONES[it]) }
@@ -172,7 +173,6 @@ class AriusModel(root: ModelPart, private val bladeOnly: Boolean = false) : Enti
     private val formAll: Array<ModelPart> = formParts.flatten().distinct().toTypedArray()
     private val solvane = path(Keys.SOLVANE)
     private val solvaneTree: List<ModelPart> = solvane.traverse()
-    private val allParts: List<ModelPart> = root.traverse()
     private val sheathHilt = path(Keys.SHEATH_HILT)
     private val scabbard = path(Keys.SHEATH_HILT.substringBeforeLast('/'))
 
@@ -812,19 +812,9 @@ class AriusModel(root: ModelPart, private val bladeOnly: Boolean = false) : Enti
         for (p in formAll) p.visible = true
         for (p in formParts[MathHelper.clamp(state.form, 0, 2)]) p.visible = false
         val hand = inHand(pose, t, w, state.sheathed, m)
-        // Solvane: in der Hand, in der Scheide (nur als echte Klinge), oder gar nicht (Drache). Die Eisklinge hat dieselbe
-        // Geometrie am selben Knochen, wird aber von einer eigenen Instanz ([bladeOnly]) durchscheinend gezeichnet; hier
-        // bleibt der Knochen sichtbar (Schwertspur, Anker), nur seine Quader entfallen.
         solvane.visible = hand && state.blade != AriusBlade.NONE
         sheathHilt.visible = !hand && state.blade == AriusBlade.HELD
-        val ice = state.blade == AriusBlade.ICE
-        if (bladeOnly) {
-            for (p in allParts) p.hidden = true
-            for (p in solvaneTree) p.hidden = false
-            solvane.visible = solvane.visible && ice
-        } else {
-            for (p in solvaneTree) p.hidden = ice
-        }
+        for (part in solvaneTree) part.hidden = state.blade == AriusBlade.ICE
 
         springs(m, v, dt)
         // Hand am Heft der Scheide: die Scheide darf dann nicht schwingen.

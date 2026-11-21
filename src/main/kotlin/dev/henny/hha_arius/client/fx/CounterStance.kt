@@ -8,18 +8,10 @@ import dev.henny.hha_arius.boss.AriusEntity
 import dev.henny.hha_arius.boss.AriusForm
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext
 import net.minecraft.client.MinecraftClient
-import net.minecraft.client.gui.DrawContext
-import net.minecraft.text.Text
-import net.minecraft.util.Formatting
 import net.minecraft.util.math.Vec3d
 import kotlin.math.sin
 
-/**
- * Seit 1.11.0: Die Konterhaltung von Arius ist unübersehbar. Solange [AriusEntity.counterStance] gilt: rot glühende
- * Klinge, roter Warnring genau in Konter-Reichweite, ein durchgestrichenes Schwert über seinem Kopf, rote Bildränder und
- * „NICHT SCHLAGEN“ am Fadenkreuz. Endet die Haltung, ohne dass jemand hineingeschlagen hat, zeigt ein goldener Stoß:
- * jetzt darf man. Nur Darstellung; was zählt, entscheidet der Server.
- */
+/** Konterhaltung und offenes Trefferfenster direkt an Klinge und Boden. */
 object CounterStance {
 
     private const val RED = 0xFFFF2A38.toInt()
@@ -32,8 +24,6 @@ object CounterStance {
     /** Reichweite der Parade auf dem Server (siehe `EirholmFight.hitArius`). */
     private const val REACH = 5.0
 
-    /** Wie weit die Bildschirmwarnung reicht. */
-    private const val WARN_RANGE = 22.0
 
     private const val RELEASE_TICKS = 16
 
@@ -103,89 +93,46 @@ object CounterStance {
         val x = Vec3d(1.0, 0.0, 0.0)
         val z = Vec3d(0.0, 0.0, 1.0)
 
-        // Warnring: seine Reichweite, dazu eine rotierende Rune.
-        d.disc(VfxLayers.RUNE_ADD, ground, x, z, REACH, withAlpha(RED, 0.5f * a), t * 0.05)
-        d.ring(VfxLayers.SHARD_ALPHA, ground.add(0.0, 0.01, 0.0), x, z, REACH - 0.24, REACH + 0.04, withAlpha(SOLID, 0.92f * intro), withAlpha(SOLID, 0.92f * intro), segments = 72)
-        d.ring(VfxLayers.GLOW_ADD, ground, x, z, REACH - 0.5, REACH + 0.2, withAlpha(RED, 0.7f * a), withAlpha(RED, 0.7f * a), segments = 72)
-        d.ring(VfxLayers.GLOW_ADD, ground, x, z, REACH * 0.55, REACH - 0.28, withAlpha(RED, 0f), withAlpha(RED, 0.22f * a), segments = 64)
+        // Warnring: seine Reichweite, dazu eine rotierende Rune (nebelfrei für Sturm-Sichtbarkeit).
+        d.disc(AriusLayers.VFX_RUNE, ground, x, z, REACH, withAlpha(RED, 0.62f * a), t * 0.05)
+        d.ring(AriusLayers.INK, ground.add(0.0, 0.008, 0.0), x, z, REACH - 0.30, REACH + 0.08, withAlpha(0xFF42060C.toInt(), 0.94f * intro), withAlpha(0xFF42060C.toInt(), 0.94f * intro), segments = 72)
+        d.ring(AriusLayers.VFX_SHARD, ground.add(0.0, 0.015, 0.0), x, z, REACH - 0.22, REACH + 0.02, withAlpha(SOLID, 0.96f * intro), withAlpha(SOLID, 0.96f * intro), segments = 72)
+        d.ring(AriusLayers.VFX_GLOW, ground, x, z, REACH - 0.55, REACH + 0.22, withAlpha(RED, 0.85f * a), withAlpha(RED, 0.85f * a), segments = 72)
+        d.ring(AriusLayers.VFX_GLOW, ground, x, z, REACH * 0.55, REACH - 0.28, withAlpha(RED, 0f), withAlpha(RED, 0.28f * a), segments = 64)
 
         // Glühende Klinge (in der Scheide: glühender Griff).
         val anchor = BladeAnchors.of(e)
         if (anchor != null && !e.sheathed) {
             val side = d.camForward.crossProduct(anchor.tip.subtract(anchor.base)).let { if (it.lengthSquared() < 1e-5) d.camRight else it.normalize() }
-            d.band(VfxLayers.SHARD_ALPHA, anchor.base, anchor.tip, side, 0.13, withAlpha(SOLID, 0.95f * intro), withAlpha(SOLID, 0.85f * intro))
-            d.band(VfxLayers.GLOW_ADD, anchor.base, anchor.tip, side, 0.3, withAlpha(RED, 0.75f * a), withAlpha(RED, 0.5f * a))
-            d.band(VfxLayers.GLOW_ADD, anchor.base, anchor.tip, side, 0.09, withAlpha(HOT, 0.95f * a), withAlpha(HOT, 0.85f * a))
-            d.billboard(VfxLayers.FLARE_ADD, anchor.tip, 0.55 + 0.2 * pulse, withAlpha(RED, 0.9f * a))
+            d.band(AriusLayers.VFX_SHARD, anchor.base, anchor.tip, side, 0.14, withAlpha(SOLID, 0.96f * intro), withAlpha(SOLID, 0.88f * intro))
+            d.band(AriusLayers.VFX_GLOW, anchor.base, anchor.tip, side, 0.32, withAlpha(RED, 0.85f * a), withAlpha(RED, 0.6f * a))
+            d.band(AriusLayers.VFX_GLOW, anchor.base, anchor.tip, side, 0.10, withAlpha(HOT, 0.95f * a), withAlpha(HOT, 0.85f * a))
+            d.billboard(AriusLayers.VFX_FLARE, anchor.tip, 0.62 + 0.22 * pulse, withAlpha(RED, 0.95f * a))
         } else if (anchor != null) {
-            d.billboard(VfxLayers.GLOW_ADD, anchor.sheath, 0.75, withAlpha(RED, 0.85f * a))
-            d.billboard(VfxLayers.FLARE_ADD, anchor.sheath, 0.4, withAlpha(HOT, 0.95f * a))
+            d.billboard(AriusLayers.VFX_GLOW, anchor.sheath, 0.82, withAlpha(RED, 0.9f * a))
+            d.billboard(AriusLayers.VFX_FLARE, anchor.sheath, 0.45, withAlpha(HOT, 0.95f * a))
         }
 
-        // Zeichen über dem Kopf: durchgestrichene Klinge.
+        // Zeichen über dem Kopf: durchgestrichene Klinge (nur visuelle Markierung, kein HUD-Text / kein Fadenkreuz).
         val icon = base.add(0.0, e.height + 0.95, 0.0)
         val r = d.camRight
         val u = d.camUp
-        val size = 0.46
-        d.ring(VfxLayers.SHARD_ALPHA, icon, r, u, size * 0.82, size, withAlpha(SOLID, intro), withAlpha(SOLID, intro), segments = 40)
+        val size = 0.48
+        d.ring(AriusLayers.INK, icon, r, u, size * 0.78, size * 1.06, withAlpha(0xFF3A040A.toInt(), intro), withAlpha(0xFF3A040A.toInt(), intro), segments = 40)
+        d.ring(AriusLayers.VFX_SHARD, icon, r, u, size * 0.83, size, withAlpha(SOLID, intro), withAlpha(SOLID, intro), segments = 40)
         val bladeA = icon.add(u.multiply(-size * 0.62)).add(r.multiply(-size * 0.62))
         val bladeB = icon.add(u.multiply(size * 0.62)).add(r.multiply(size * 0.62))
-        d.band(VfxLayers.GLOW_ADD, bladeA, bladeB, r.subtract(u).normalize(), 0.05, withAlpha(HOT, 0.95f * a), withAlpha(HOT, 0.95f * a))
+        d.band(AriusLayers.VFX_GLOW, bladeA, bladeB, r.subtract(u).normalize(), 0.055, withAlpha(HOT, 0.98f * a), withAlpha(HOT, 0.98f * a))
         val barA = icon.add(u.multiply(size * 0.68)).add(r.multiply(-size * 0.68))
         val barB = icon.add(u.multiply(-size * 0.68)).add(r.multiply(size * 0.68))
-        d.band(VfxLayers.SHARD_ALPHA, barA, barB, r.add(u).normalize(), 0.075, withAlpha(SOLID, intro), withAlpha(SOLID, intro))
+        d.band(AriusLayers.VFX_SHARD, barA, barB, r.add(u).normalize(), 0.08, withAlpha(SOLID, intro), withAlpha(SOLID, intro))
     }
 
     private fun drawRelease(d: VfxDraw, r: Release, t: Float) {
         val k = (t / RELEASE_TICKS).coerceIn(0f, 1f)
         val col = if (r.open) GOLD else 0xFFFFFFFF.toInt()
         val radius = REACH * (0.75 + 0.6 * k)
-        val a = (1f - k) * (if (r.open) 0.9f else 0.45f)
-        d.ring(VfxLayers.GLOW_ADD, r.pos.add(0.0, 0.1, 0.0), Vec3d(1.0, 0.0, 0.0), Vec3d(0.0, 0.0, 1.0), radius - 0.35, radius, withAlpha(col, a), withAlpha(col, a), segments = 64)
-    }
-
-    fun renderHud(ctx: DrawContext) {
-        val client = MinecraftClient.getInstance()
-        val player = client.player ?: return
-        val world = client.world ?: return
-        val td = client.renderTickCounter.getTickProgress(true)
-        val w = ctx.scaledWindowWidth
-        val h = ctx.scaledWindowHeight
-        val cx = w / 2
-        val cy = h / 2
-
-        val near = live.values.mapNotNull { l ->
-            val e = world.getEntityById(l.id) ?: return@mapNotNull null
-            if (e.squaredDistanceTo(player) > WARN_RANGE * WARN_RANGE) null else l
-        }.maxByOrNull { it.age }
-        if (near != null) {
-            val t = near.age + td
-            val a = (t / 3f).coerceIn(0f, 1f) * (0.78f + 0.22f * sin(t * 0.9f))
-            // Rote Bildränder.
-            val edge = (h * 0.07f).toInt().coerceAtLeast(10)
-            ctx.fillGradient(0, 0, w, edge, withAlpha(RED, 0.5f * a), withAlpha(RED, 0f))
-            ctx.fillGradient(0, h - edge, w, h, withAlpha(RED, 0f), withAlpha(RED, 0.5f * a))
-            // Rotes Kreuz über dem Fadenkreuz.
-            for (i in -7..7) {
-                ctx.fill(cx + i, cy + i, cx + i + 2, cy + i + 2, withAlpha(RED, a))
-                ctx.fill(cx + i, cy - i, cx + i + 2, cy - i + 2, withAlpha(RED, a))
-            }
-            label(ctx, Text.translatable("hha_arius.counter.warn").formatted(Formatting.BOLD), cx, cy - 72, 2f, withAlpha(RED, a.coerceAtLeast(0.6f)))
-            label(ctx, Text.translatable("hha_arius.counter.warn_sub"), cx, cy - 54, 1f, withAlpha(0xFFFFE0DC.toInt(), a.coerceAtLeast(0.6f)))
-            return
-        }
-        val rel = released.filter { it.open && it.pos.squaredDistanceTo(player.entityPos) <= WARN_RANGE * WARN_RANGE }.minByOrNull { it.age } ?: return
-        val k = ((rel.age + td) / RELEASE_TICKS).coerceIn(0f, 1f)
-        label(ctx, Text.translatable("hha_arius.counter.open").formatted(Formatting.BOLD), cx, cy - 72, 2f + 0.5f * (1f - k), withAlpha(GOLD, 1f - k * k))
-    }
-
-    private fun label(ctx: DrawContext, text: Text, cx: Int, y: Int, scale: Float, color: Int) {
-        val font = MinecraftClient.getInstance().textRenderer
-        val m = ctx.matrices
-        m.pushMatrix()
-        m.translate(cx.toFloat(), y.toFloat())
-        m.scale(scale, scale)
-        ctx.drawTextWithShadow(font, text, -font.getWidth(text) / 2, -4, color)
-        m.popMatrix()
+        val a = (1f - k) * (if (r.open) 0.92f else 0.5f)
+        d.ring(AriusLayers.VFX_GLOW, r.pos.add(0.0, 0.1, 0.0), Vec3d(1.0, 0.0, 0.0), Vec3d(0.0, 0.0, 1.0), radius - 0.35, radius, withAlpha(col, a), withAlpha(col, a), segments = 64)
     }
 }

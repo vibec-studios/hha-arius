@@ -51,18 +51,29 @@ object CineSafety {
         for (p in players) if (!p.isDisconnected && ServerPlayNetworking.canSend(p, ChaseCamS2C.ID)) ServerPlayNetworking.send(p, payload)
     }
 
-    /** Ist [p] fest (Block mit Kollisionsform bzw. unter der Fernlandschaft, wenn der Chunk nicht geladen ist)? */
+    /** Ist [p] fest (Block mit Kollisionsform, Berg-Kluft oder im/unter dem hohlen Berg-Relief)? */
     fun solid(world: ServerWorld, origin: BlockPos, p: Vec3d): Boolean {
         val bx = floor(p.x).toInt()
         val by = floor(p.y).toInt()
         val bz = floor(p.z).toInt()
+        val rx = bx - origin.x
+        val rz = bz - origin.z
+        if (rx in FarPlan.X_MIN..FarPlan.X_MAX && rz in FarPlan.Z_MIN..FarPlan.Z_MAX) {
+            val top = runCatching { FarPlan.top(rx, rz) }.getOrDefault(-1)
+            // Berg-Kluft nach dem Schnitt: auch wenn dort Luft ausgehoben wurde, darf keine Szenenkamera in den Riss geraten.
+            val footZ = dev.henny.hha_arius.arena.ArenaLayout.SPIRE.z - FarPlan.MASSIF_R - 6
+            val backZ = dev.henny.hha_arius.arena.ArenaLayout.SPIRE.z + FarPlan.MASSIF_R + 6
+            if (rz.toDouble() in footZ..backZ && kotlin.math.abs(rx + 0.5 - dev.henny.hha_arius.arena.ArenaLayout.CUT_X) <= 14.0) {
+                if (top >= 4 && by <= origin.y + top + 4) return true
+            }
+            // FarBuild baut nur eine 8–12 Blöcke dicke Berghaut: Auch bei geladenen Chunks zählt das hohle Berginnere als fest.
+            if (top >= 4 && by <= origin.y + top) return true
+        }
         if (world.chunkManager.isChunkLoaded(bx shr 4, bz shr 4)) {
             val pos = BlockPos(bx, by, bz)
             val st = world.getBlockState(pos)
             return !st.isAir && !st.getCollisionShape(world, pos).isEmpty
         }
-        val rx = bx - origin.x
-        val rz = bz - origin.z
         if (rx !in FarPlan.X_MIN..FarPlan.X_MAX || rz !in FarPlan.Z_MIN..FarPlan.Z_MAX) return false
         val top = runCatching { FarPlan.top(rx, rz) }.getOrDefault(-1)
         return top >= 0 && by <= origin.y + top
@@ -100,8 +111,8 @@ object CineSafety {
     class Fix(val scale: Double, val lift: Double)
 
     private val FIXES = listOf(
-        Fix(1.0, 0.0), Fix(1.0, 3.0), Fix(0.85, 0.0), Fix(0.85, 3.0), Fix(1.0, 6.0), Fix(0.7, 2.0), Fix(1.0, 10.0),
-        Fix(0.7, 6.0), Fix(0.55, 2.0), Fix(1.0, 16.0), Fix(0.55, 8.0), Fix(0.4, 4.0), Fix(1.0, 24.0), Fix(0.4, 12.0),
+        Fix(1.0, 0.0), Fix(1.0, 3.0), Fix(1.0, 6.0), Fix(1.0, 10.0), Fix(1.0, 16.0), Fix(1.0, 24.0),
+        Fix(0.85, 0.0), Fix(0.85, 3.0), Fix(0.7, 2.0), Fix(0.7, 6.0), Fix(0.55, 2.0), Fix(0.55, 8.0), Fix(0.4, 4.0), Fix(0.4, 12.0),
     )
 
     /**

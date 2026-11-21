@@ -57,6 +57,7 @@ object AriusFxClient {
             if (!client.isPaused) {
                 effects.removeIf { !it.advance(world) || (it is WhiteHoleFx && it.finished) }
                 DragonVeil.tick(world)
+                IceBladeAura.tick(world)
                 SliceRender.tick()
                 CutHalves.tick()
                 Atmos.tick(world)
@@ -77,6 +78,10 @@ object AriusFxClient {
             Atmos.render(draw)
             CloudSea.render(draw)
             DragonVeil.render(draw)
+            client.world?.let {
+                IceBladeAura.render(it, draw)
+                GroundWarnings.render(it, draw)
+            }
             if (effects.isEmpty()) return@register
             for (fx in effects) fx.render(draw, matrices, fx.age + tickDelta)
             for (fx in effects) if (fx is WhiteHoleFx) WhiteLens.render(fx, tickDelta)
@@ -138,6 +143,7 @@ object AriusFxClient {
     }
 
     fun reset() {
+        GroundWarnings.reset()
         effects.clear()
         DragonVeil.reset()
         SliceRender.clear()

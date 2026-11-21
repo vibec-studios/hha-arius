@@ -1,0 +1,18 @@
+{
+  "textures": {"particle": "hha_arius:item/ice_blade_facet", "heart": "hha_arius:item/ice_blade_core", "facet": "hha_arius:item/ice_blade_facet", "rim": "hha_arius:item/ice_blade_rim"},
+  "elements": [
+    {"from": [7.35, 0, 7.45], "to": [8.65, 4.1, 8.55], "faces": {"up": {"texture": "#heart"}, "down": {"texture": "#heart"}, "north": {"texture": "#heart"}, "south": {"texture": "#heart"}, "east": {"texture": "#heart"}, "west": {"texture": "#heart"}}},
+    {"from": [6.8, 3.7, 7], "to": [9.2, 5.2, 9], "faces": {"up": {"texture": "#facet"}, "down": {"texture": "#facet"}, "north": {"texture": "#facet"}, "south": {"texture": "#facet"}, "east": {"texture": "#facet"}, "west": {"texture": "#facet"}}},
+    {"from": [5.9, 3.7, 7.55], "to": [6.9, 7.0, 8.45], "faces": {"up": {"texture": "#rim"}, "down": {"texture": "#rim"}, "north": {"texture": "#rim"}, "south": {"texture": "#rim"}, "east": {"texture": "#rim"}, "west": {"texture": "#rim"}}, "rotation": {"origin": [6.55, 4.4, 8], "axis": "z", "angle": 22.5}},
+    {"from": [9.1, 3.7, 7.45], "to": [10.3, 6.4, 8.55], "faces": {"up": {"texture": "#facet"}, "down": {"texture": "#facet"}, "north": {"texture": "#facet"}, "south": {"texture": "#facet"}, "east": {"texture": "#facet"}, "west": {"texture": "#facet"}}, "rotation": {"origin": [9.5, 4.4, 8], "axis": "z", "angle": -22.5}},
+    {"from": [7.05, 4.8, 7.2], "to": [8.95, 11.6, 8.8], "faces": {"up": {"texture": "#heart"}, "down": {"texture": "#heart"}, "north": {"texture": "#heart"}, "south": {"texture": "#heart"}, "east": {"texture": "#heart"}, "west": {"texture": "#heart"}}},
+    {"from": [7.25, 11.6, 7.45], "to": [8.8, 14.35, 8.55], "faces": {"up": {"texture": "#heart"}, "down": {"texture": "#heart"}, "north": {"texture": "#heart"}, "south": {"texture": "#heart"}, "east": {"texture": "#heart"}, "west": {"texture": "#heart"}}},
+    {"from": [7.55, 14.35, 7.7], "to": [8.5, 16.0, 8.3], "faces": {"up": {"texture": "#rim"}, "down": {"texture": "#rim"}, "north": {"texture": "#rim"}, "south": {"texture": "#rim"}, "east": {"texture": "#rim"}, "west": {"texture": "#rim"}}},
+    {"from": [6.45, 5.1, 7.55], "to": [7.05, 10.5, 8.45], "faces": {"up": {"texture": "#rim"}, "down": {"texture": "#rim"}, "north": {"texture": "#rim"}, "south": {"texture": "#rim"}, "east": {"texture": "#rim"}, "west": {"texture": "#rim"}}},
+    {"from": [6.7, 10.5, 7.65], "to": [7.25, 13.35, 8.35], "faces": {"up": {"texture": "#rim"}, "down": {"texture": "#rim"}, "north": {"texture": "#rim"}, "south": {"texture": "#rim"}, "east": {"texture": "#rim"}, "west": {"texture": "#rim"}}},
+    {"from": [8.95, 5.25, 7.5], "to": [9.65, 9.7, 8.5], "faces": {"up": {"texture": "#facet"}, "down": {"texture": "#facet"}, "north": {"texture": "#facet"}, "south": {"texture": "#facet"}, "east": {"texture": "#facet"}, "west": {"texture": "#facet"}}},
+    {"from": [8.8, 9.7, 7.6], "to": [9.35, 12.45, 8.4], "faces": {"up": {"texture": "#facet"}, "down": {"texture": "#facet"}, "north": {"texture": "#facet"}, "south": {"texture": "#facet"}, "east": {"texture": "#facet"}, "west": {"texture": "#facet"}}},
+    {"from": [8.35, 7.4, 7.55], "to": [9.05, 11.0, 8.45], "faces": {"up": {"texture": "#heart"}, "down": {"texture": "#heart"}, "north": {"texture": "#heart"}, "south": {"texture": "#heart"}, "east": {"texture": "#heart"}, "west": {"texture": "#heart"}}, "rotation": {"origin": [8.5, 7.6, 8], "axis": "z", "angle": -22.5}},
+    {"from": [7.2, 4.6, 7.58], "to": [8.15, 7.3, 8.42], "faces": {"up": {"texture": "#rim"}, "down": {"texture": "#rim"}, "north": {"texture": "#rim"}, "south": {"texture": "#rim"}, "east": {"texture": "#rim"}, "west": {"texture": "#rim"}}, "rotation": {"origin": [7.6, 5.0, 8], "axis": "z", "angle": 22.5}}
+  ]
+}

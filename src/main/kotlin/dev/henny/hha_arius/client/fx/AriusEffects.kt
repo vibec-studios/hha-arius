@@ -105,9 +105,13 @@ abstract class AriusFx(val life: Int) {
                     if (AriusClientConfig.flash) ScreenFlash.start(p.a, p.life)
                     null
                 }
-                FxKind.DEBRIS_CLOUD -> DebrisCloudFx(pos, p.a.toDouble().coerceIn(1.0, 40.0), p.life)
+                FxKind.DEBRIS_CLOUD -> DebrisCloudFx(pos, p.a.toDouble().coerceIn(1.0, if (p.b > 0.5f) 68.0 else 40.0), p.life, cloudOnly = p.b > 0.5f)
                 FxKind.TIME_SLOW -> {
                     CineGrade.slow(p.life, p.a)
+                    null
+                }
+                FxKind.KICK_FLING -> {
+                    KickAnim.start(p.e1, p.a, p.b, p.life)
                     null
                 }
                 null -> null
@@ -140,10 +144,11 @@ class ReverseWind(private val center: Vec3d, private val radius: Double, life: I
 class Seam(private val from: Vec3d, private val to: Vec3d, private val height: Double, life: Int) : AriusFx(life) {
     override fun render(d: VfxDraw, matrices: MatrixStack, t: Float) {
         val k = fadeInOut(t, 2f, 6f)
-        d.band(VfxLayers.GLOW_ADD, from, to, UP, 0.045, withAlpha(WHITE, k), withAlpha(ICE, k))
+        d.band(AriusLayers.INK, from, to, UP, 0.085, withAlpha(0xFF103F66.toInt(), 0.75f * k), withAlpha(0xFF56C8FF.toInt(), 0.85f * k))
+        d.band(AriusLayers.VFX_GLOW, from, to, UP, 0.055, withAlpha(WHITE, k), withAlpha(ICE, k))
         if (height > 0.0) {
             val mid = Vec3d(0.0, height / 2, 0.0)
-            d.band(VfxLayers.GLOW_ADD, from.add(mid), to.add(mid), UP, height / 2, withAlpha(ICE, k * 0.12f), withAlpha(ICE, k * 0.06f))
+            d.band(AriusLayers.VFX_GLOW, from.add(mid), to.add(mid), UP, height / 2, withAlpha(ICE, k * 0.22f), withAlpha(ICE, k * 0.10f))
         }
     }
 }
@@ -173,9 +178,10 @@ class Edge(private val e: Entity, life: Int) : AriusFx(life) {
     override fun render(d: VfxDraw, matrices: MatrixStack, t: Float) {
         val k = (t / life).coerceIn(0f, 1f)
         val (base, tip) = blade(d.tickDelta)
-        val glow = withAlpha(WHITE, 0.3f + 0.7f * k)
-        d.tube(VfxLayers.GLOW_ADD, listOf(base, tip), { 0.04 + 0.06 * k }, { glow })
-        d.billboard(VfxLayers.FLARE_ADD, tip.lerp(base, 0.3), 0.4 + 1.2 * k, withAlpha(ICE, 0.8f * k))
+        val glow = withAlpha(WHITE, 0.4f + 0.6f * k)
+        d.tube(AriusLayers.INK, listOf(base, tip), { 0.05 + 0.05 * k }, { withAlpha(0xFF144B78.toInt(), 0.55f * k) })
+        d.tube(AriusLayers.VFX_GLOW, listOf(base, tip), { 0.045 + 0.065 * k }, { glow })
+        d.billboard(AriusLayers.VFX_FLARE, tip.lerp(base, 0.3), 0.5 + 1.3 * k, withAlpha(ICE, 0.9f * k))
     }
 }
 
@@ -259,7 +265,11 @@ class Front(
         val r = min(maxR, 3.0 + speed * t)
         val k = min(1f, (life - t) / 6f).coerceIn(0f, 1f)
         val segments = 96
-        val vc = d.buffer(VfxLayers.GLOW_ADD)
+        val h = 2.8
+        val top = withAlpha(ICE, 0f)
+        val bottom = withAlpha(WHITE, 0.85f * k)
+        val darkBot = withAlpha(0xFF144B78.toInt(), 0.55f * k)
+        val ink = d.buffer(AriusLayers.INK)
         for (i in 0 until segments) {
             val a0 = i * 2 * PI / segments
             val a1 = (i + 1) * 2 * PI / segments
@@ -267,9 +277,21 @@ class Front(
             if (inGap(mid, r)) continue
             val p0 = Vec3d(center.x + sin(a0) * r, center.y, center.z + cos(a0) * r)
             val p1 = Vec3d(center.x + sin(a1) * r, center.y, center.z + cos(a1) * r)
-            val h = 2.6
-            val top = withAlpha(ICE, 0f)
-            val bottom = withAlpha(WHITE, 0.75f * k)
+            with(d) {
+                ink.put(p0, 0f, 1f, darkBot)
+                ink.put(p1, 1f, 1f, darkBot)
+                ink.put(p1.add(0.0, h * 0.7, 0.0), 1f, 0f, top)
+                ink.put(p0.add(0.0, h * 0.7, 0.0), 0f, 0f, top)
+            }
+        }
+        val vc = d.buffer(AriusLayers.VFX_GLOW)
+        for (i in 0 until segments) {
+            val a0 = i * 2 * PI / segments
+            val a1 = (i + 1) * 2 * PI / segments
+            val mid = (a0 + a1) / 2
+            if (inGap(mid, r)) continue
+            val p0 = Vec3d(center.x + sin(a0) * r, center.y, center.z + cos(a0) * r)
+            val p1 = Vec3d(center.x + sin(a1) * r, center.y, center.z + cos(a1) * r)
             with(d) {
                 vc.put(p0, 0f, 1f, bottom)
                 vc.put(p1, 1f, 1f, bottom)
@@ -292,14 +314,20 @@ class Front(
     }
 }
 
-/** Goldener Resonanzfaden zwischen Arius' Brust und Nivaris' Herzkern. */
+/** Goldener Resonanzfaden zwischen Arius' Brust und Nivaris' Herzkern (bzw. Spitze der Eisnadel im Windungs-Modus). */
 class Thread(private val a: Entity, private val b: Entity, life: Int) : AriusFx(life) {
     override fun render(d: VfxDraw, matrices: MatrixStack, t: Float) {
         val k = fadeInOut(t, 5f, 8f)
         val from = a.getLerpedPos(d.tickDelta).add(0.0, 1.35, 0.0)
-        val yaw = Math.toRadians(b.yaw.toDouble())
-        val fwd = Vec3d(-sin(yaw), 0.0, cos(yaw))
-        val to = b.getLerpedPos(d.tickDelta).add(fwd.multiply(2.6)).add(0.0, 2.3, 0.0)
+        val to = if (b is dev.henny.hha_arius.boss.NivarisEntity && b.mode == dev.henny.hha_arius.boss.NivarisMode.COIL) {
+            val slot = Math.floorDiv(kotlin.math.floor(b.x).toInt() + dev.henny.hha_arius.arena.ArenaLayout.SLOT_SPACING / 2, dev.henny.hha_arius.arena.ArenaLayout.SLOT_SPACING)
+            val o = dev.henny.hha_arius.arena.ArenaLayout.origin(slot)
+            Vec3d.of(o).add(dev.henny.hha_arius.boss.EntrancePath.HEAD_RAISED)
+        } else {
+            val yaw = Math.toRadians(b.yaw.toDouble())
+            val fwd = Vec3d(-sin(yaw), 0.0, cos(yaw))
+            b.getLerpedPos(d.tickDelta).add(fwd.multiply(2.6)).add(0.0, 2.3, 0.0)
+        }
         val path = (0..16).map { i ->
             val s = i / 16.0
             from.lerp(to, s).add(0.0, sin(s * PI) * 0.6 + sin(t * 0.3 + s * 8) * 0.05, 0.0)
@@ -389,7 +417,8 @@ class ClearWave(private val center: Vec3d, private val radius: Double, life: Int
         val s = (t / life).coerceIn(0f, 1f).toDouble()
         val r = radius * (1 - (1 - s) * (1 - s))
         val k = (1f - s.toFloat())
-        d.ring(VfxLayers.GLOW_ADD, center.add(0.0, 0.08, 0.0), X, Z, max(0.0, r - 1.2), r, withAlpha(WHITE, 0f), withAlpha(ICE, 0.7f * k), segments = 64)
+        d.ring(AriusLayers.INK, center.add(0.0, 0.08, 0.0), X, Z, max(0.0, r - 0.9), r, withAlpha(0xFF144C76.toInt(), 0f), withAlpha(0xFF4FB8EE.toInt(), 0.72f * k), segments = 64)
+        d.ring(AriusLayers.VFX_GLOW, center.add(0.0, 0.11, 0.0), X, Z, max(0.0, r - 1.3), r + 0.1, withAlpha(WHITE, 0f), withAlpha(ICE, 0.85f * k), segments = 64)
     }
 }
 
@@ -641,21 +670,23 @@ class GiantBladeFx(private val arius: Entity, private val length: Double, privat
         val tip = hilt.add(dir.multiply(len))
         val across = right
         val pulse = 0.9f + 0.1f * sin(t * 1.3f)
-        // Klingenkörper: breiter weißer Kern, blauer Saum, weicher Schein
-        d.band(VfxLayers.GLOW_ADD, hilt, tip, across, 1.1 + 0.6 * grow, withAlpha(0xFFFFFFFF.toInt(), 0.95f * fade * pulse), withAlpha(0xFFE6F6FF.toInt(), 0.85f * fade))
-        d.band(VfxLayers.GLOW_ADD, hilt, tip, across, 2.0 + 1.0 * grow, withAlpha(0xFF8FC8FF.toInt(), 0.45f * fade), withAlpha(0xFF6FB0FF.toInt(), 0.3f * fade))
-        d.band(VfxLayers.FLOW_ADD, hilt, tip, across, 2.6 + 1.2 * grow, withAlpha(0xFFBFE6FF.toInt(), 0.3f * fade), withAlpha(0xFFBFE6FF.toInt(), 0.15f * fade), uScale = 0.2f, uOffset = -t * 0.1f)
-        d.billboard(VfxLayers.FLARE_ADD, tip, 3.0 + 2.0 * grow, withAlpha(0xFFFFFFFF.toInt(), 0.8f * fade))
-        d.billboard(VfxLayers.GLOW_ADD, hilt, 4.0, withAlpha(0xFFBFE6FF.toInt(), 0.6f * fade))
+        // Klingenkörper: breiter weißer Kern, blauer Saum, weicher Schein (nebelfrei für volle Sichtbarkeit im Sturm)
+        d.band(AriusLayers.INK, hilt, tip, across, 1.3 + 0.65 * grow, withAlpha(0xFF124672.toInt(), 0.65f * fade), withAlpha(0xFF56C2F5.toInt(), 0.55f * fade))
+        d.band(AriusLayers.VFX_GLOW, hilt, tip, across, 1.1 + 0.6 * grow, withAlpha(0xFFFFFFFF.toInt(), 0.95f * fade * pulse), withAlpha(0xFFE6F6FF.toInt(), 0.85f * fade))
+        d.band(AriusLayers.VFX_GLOW, hilt, tip, across, 2.0 + 1.0 * grow, withAlpha(0xFF8FC8FF.toInt(), 0.52f * fade), withAlpha(0xFF6FB0FF.toInt(), 0.35f * fade))
+        d.band(AriusLayers.VFX_FLOW, hilt, tip, across, 2.6 + 1.2 * grow, withAlpha(0xFFBFE6FF.toInt(), 0.38f * fade), withAlpha(0xFFBFE6FF.toInt(), 0.2f * fade), uScale = 0.2f, uOffset = -t * 0.1f)
+        d.billboard(AriusLayers.VFX_FLARE, tip, 3.2 + 2.0 * grow, withAlpha(0xFFFFFFFF.toInt(), 0.9f * fade))
+        d.billboard(AriusLayers.VFX_GLOW, hilt, 4.2, withAlpha(0xFFBFE6FF.toInt(), 0.65f * fade))
         // Der Himmel dahinter lädt sich auf: großer blauer Schein und Strahlen hinter ihm
         if (t < strikeAt + 8) {
             val sky = base.add(fwd.multiply(-20.0)).add(0.0, 18.0, 0.0)
-            d.billboard(VfxLayers.GLOW_ADD, sky, 40.0 * grow, withAlpha(0xFF4F8FE0.toInt(), 0.35f * grow * fade))
+            d.billboard(AriusLayers.VFX_GLOW, sky, 40.0 * grow, withAlpha(0xFF4F8FE0.toInt(), 0.38f * grow * fade))
             d.billboard(VfxLayers.RAYS_ADD, sky, 55.0 * grow, withAlpha(0xFFBFE6FF.toInt(), 0.3f * grow * fade), t * 0.4)
         }
         // Schweifbogen im Schlag
         if (s > 0f && fade > 0f) {
-            d.arc(VfxLayers.GLOW_ADD, hilt, UP, fwd, len * 0.6, len, 0.0, Math.toRadians(125.0 * s), withAlpha(0xFFFFFFFF.toInt(), 0f), withAlpha(0xFFE6F6FF.toInt(), 0.7f * fade), segments = 24)
+            d.arc(AriusLayers.INK, hilt, UP, fwd, len * 0.65, len, 0.0, Math.toRadians(125.0 * s), withAlpha(0xFF144B78.toInt(), 0f), withAlpha(0xFF70D0FF.toInt(), 0.72f * fade), segments = 24)
+            d.arc(AriusLayers.VFX_GLOW, hilt, UP, fwd, len * 0.6, len, 0.0, Math.toRadians(125.0 * s), withAlpha(0xFFFFFFFF.toInt(), 0f), withAlpha(0xFFE6F6FF.toInt(), 0.85f * fade), segments = 24)
         }
     }
 }
@@ -693,20 +724,25 @@ class FrozenStarFx(private val ground: Vec3d, private val radius: Double, privat
 
 
 /**
- * Staub- und Eissplitterwolke (seit 1.9.0, Gletscherbruch im Weißen Horizont): dicke Schneeschwaden quellen auf und
- * steigen, Eissplitter fliegen im Bogen heraus. Nur gezeichnet (keine Partikel), also auch weit weg von der Kamera.
+ * Staub- und Schneewolke: dicke Schneeschwaden quellen auf, wirbeln und teilen sich wieder. Bei [cloudOnly] = true
+ * (Bergspaltung) entstehen nur weiche, dichte Wolken- und Nebelbänke ohne schwebende Quader-Splitter.
  */
-class DebrisCloudFx(private val center: Vec3d, private val radius: Double, life: Int) : AriusFx(life) {
-    private class Puff(val off: Vec3d, val rise: Double, val grow: Double, val spin: Double, val tint: Float)
+class DebrisCloudFx(private val center: Vec3d, private val radius: Double, life: Int, private val cloudOnly: Boolean = false) : AriusFx(life) {
+    private class Puff(val off: Vec3d, val drift: Vec3d, val rise: Double, val grow: Double, val spin: Double, val tint: Float)
     private class Bit(val vel: Vec3d, val size: Double, val spin: Double)
 
     private val rng = java.util.Random(center.hashCode().toLong())
-    private val puffs = List(16) {
+    private val puffs = List(if (cloudOnly) 30 else 16) { i ->
         val a = rng.nextDouble() * PI * 2
-        val r = rng.nextDouble() * radius * 0.55
-        Puff(Vec3d(cos(a) * r, rng.nextDouble() * radius * 0.3, sin(a) * r), 0.04 + rng.nextDouble() * 0.08, 0.35 + rng.nextDouble() * 0.5, (rng.nextDouble() - 0.5) * 3.0, rng.nextFloat())
+        val r = rng.nextDouble() * radius * (if (cloudOnly) 0.72 else 0.55)
+        val side = if (i % 2 == 0) 1.0 else -1.0
+        val drift = if (cloudOnly) Vec3d(side * (0.4 + rng.nextDouble() * 0.7), 0.12 + rng.nextDouble() * 0.18, (rng.nextDouble() - 0.5) * 0.35) else Vec3d.ZERO
+        Puff(
+            Vec3d(cos(a) * r, (rng.nextDouble() - (if (cloudOnly) 0.2 else 0.0)) * radius * (if (cloudOnly) 0.55 else 0.3), sin(a) * r),
+            drift, 0.04 + rng.nextDouble() * 0.08, 0.4 + rng.nextDouble() * 0.55, (rng.nextDouble() - 0.5) * 3.0, rng.nextFloat(),
+        )
     }
-    private val bits = List(22) {
+    private val bits = if (cloudOnly) emptyList() else List(22) {
         val a = rng.nextDouble() * PI * 2
         val up = 0.25 + rng.nextDouble() * 0.5
         val out = 0.25 + rng.nextDouble() * 0.6
@@ -716,13 +752,19 @@ class DebrisCloudFx(private val center: Vec3d, private val radius: Double, life:
     override val persistent: Boolean get() = true
 
     override fun render(d: VfxDraw, matrices: MatrixStack, t: Float) {
-        val k = fadeInOut(t, 3f, life * 0.45f)
+        val k = fadeInOut(t, if (cloudOnly) 8f else 3f, life * (if (cloudOnly) 0.38f else 0.45f))
         val s = (t / life).coerceIn(0f, 1f).toDouble()
-        for (p in puffs) {
-            val pos = center.add(p.off.multiply(1.0 + s * 0.8)).add(0.0, p.rise * t, 0.0)
-            val size = radius * (0.3 + p.grow * (1.0 - (1.0 - s) * (1.0 - s)))
-            val col = lerpColor(0xFFC9D3DD.toInt(), 0xFFF4F8FC.toInt(), p.tint)
-            d.billboard(VfxLayers.CLOUD_ALPHA, pos, size, withAlpha(col, 0.62f * k), (p.spin * t) % 360.0)
+        val part = if (cloudOnly) ((s - 0.45) / 0.55).coerceIn(0.0, 1.0).let { it * it } else 0.0
+        for ((idx, p) in puffs.withIndex()) {
+            val pos = center
+                .add(p.off.multiply(1.0 + s * (if (cloudOnly) 0.55 else 0.8)))
+                .add(p.drift.multiply(part * radius * 1.15))
+                .add(0.0, p.rise * t, 0.0)
+            val size = radius * ((if (cloudOnly) 0.52 else 0.3) + p.grow * (1.0 - (1.0 - s) * (1.0 - s)))
+            val col = lerpColor(0xFFD2DCE6.toInt(), 0xFFF7FAFD.toInt(), p.tint)
+            val layer = if (cloudOnly && idx % 3 == 0) VfxLayers.SMOKE_ALPHA else VfxLayers.CLOUD_ALPHA
+            val alpha = (if (cloudOnly) 0.78f else 0.62f) * k
+            d.billboard(layer, pos, size, withAlpha(col, alpha), (p.spin * t) % 360.0)
         }
         for (b in bits) {
             if (t > life * 0.6f) continue

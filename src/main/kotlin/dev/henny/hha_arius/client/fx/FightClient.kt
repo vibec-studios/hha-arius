@@ -67,7 +67,6 @@ object FightClient {
             ImpactFrame.render(ctx)
             if (!MinecraftClient.getInstance().options.hudHidden) {
                 ParryHud.renderHud(ctx)
-                CounterStance.renderHud(ctx)
                 ClashHud.render(ctx)
             }
         }
@@ -184,7 +183,11 @@ object PunishCam {
         val rawAxis = Vec3d(ep.x - pp.x, 0.0, ep.z - pp.z)
         val rawSep = rawAxis.length()
         val fixed = axis ?: (if (rawSep < 1e-3) Vec3d(0.0, 0.0, 1.0) else rawAxis.multiply(1.0 / rawSep)).also { axis = it }
-        val wantMid = pp.lerp(ep, 0.5).add(0.0, 1.15, 0.0)
+        val actors = pp.lerp(ep, 0.5).add(0.0, 1.55, 0.0)
+        // Keep the landing and airborne beats in the same composition. Only track sustained horizontal travel.
+        val previous = mid ?: actors
+        val shift = Vec3d(actors.x - previous.x, 0.0, actors.z - previous.z)
+        val wantMid = previous.add(shift.normalize().multiply((shift.length() - 1.3).coerceAtLeast(0.0)))
         // Kritisch gedämpfte Feder: Auch wenn das Opfer per Teleport springt, ändert sich die Geschwindigkeit der Kamera nur weich.
         val first = mid == null
         var m = mid ?: wantMid
@@ -197,7 +200,7 @@ object PunishCam {
         val across = Vec3d(-fixed.z, 0.0, fixed.x).multiply(side)
         val ang = Math.toRadians(-25.0 + age * 0.4)
         val dir = across.multiply(cos(ang)).add(fixed.multiply(sin(ang)))
-        val wantDist = 3.6 + sep * 0.55
+        val wantDist = 5.4 + sep * 0.25
         val offset = dir.multiply(wantDist).add(0.0, 0.85, 0.0)
         val full = offset.length()
         val out = offset.multiply(1.0 / full)
@@ -212,7 +215,7 @@ object PunishCam {
         rigLook = m
     }
 
-    private const val FOLLOW = 0.09
+    private const val FOLLOW = 0.045
 
     fun reset() {
         on = false
@@ -310,6 +313,8 @@ object SilenceLens {
     private var uniforms: GpuBuffer? = null
     private var warned = false
     private val SIZE = Std140SizeCalculator().putVec4().get()
+
+    fun activeStrength(): Float = value.coerceIn(0f, 1f)
 
     fun set(strength: Float, fade: Int) {
         target = strength.coerceIn(0f, 1f)
@@ -413,7 +418,7 @@ object ParryHud {
 
     private fun holding(client: MinecraftClient): Boolean =
         // In der Konter-Bestrafung und anderen gehaltenen Momenten kann man nicht parieren, also auch keine Anzeige.
-        AriusClientConfig.parryCue && !PunishCam.hidesHands() && !HoldClient.isHeld() &&
+        AriusClientConfig.parryCue && !CounterStance.active && !PunishCam.hidesHands() && !HoldClient.isHeld() &&
             client.player?.mainHandStack?.isOf(GearItems.SOLVANE) == true
 
     fun onCue(p: ParryCueS2C) {

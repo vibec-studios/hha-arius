@@ -86,6 +86,7 @@ object QteClient {
         val down = down(k)
         if (down && !wasDown) {
             presses++
+            RideClient.onLocalQtePress(kind)
             client.player?.playSound(SoundEvents.BLOCK_NOTE_BLOCK_HAT.value(), 0.6f, 1.2f + 0.08f * presses)
             if (presses >= need) finish(true)
         }

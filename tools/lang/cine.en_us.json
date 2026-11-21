@@ -1,5 +1,6 @@
 {
-  "hha_arius.ride.grip_one": "Grip: ONE hand – every further mistake costs health!",
-  "hha_arius.msg.ride_slip": "One hand slips off the spike! The wind tears at you.",
+  "hha_arius.ride.grip_one": "Grip: ONE hand – nail 1 QTE to grab back on with both hands!",
+  "hha_arius.msg.ride_recover": "You get both hands back on the spike!",
+  "hha_arius.msg.ride_slip": "One hand slips off the spike! Nail one dodge to recover your grip.",
   "hha_arius.msg.ride_slip_again": "You slam against her scales – hold on!"
 }

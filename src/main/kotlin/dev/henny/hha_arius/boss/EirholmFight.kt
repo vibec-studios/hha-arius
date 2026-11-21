@@ -586,9 +586,15 @@ class EirholmFight(
         duelTarget = best.uuid
     }
 
+    /** Players a new attack can actually reach. Existing windups stay locked so a dodge still works. */
+    fun combatTargets(): List<ServerPlayerEntity> = players().filter { p ->
+        !Hold.isHeld(p) && !Hold.inGrace(p) && (phase != Phase.FINALE ||
+            (kotlin.math.abs(p.y - floorY) <= 4.0 && clampToArena(p.entityPos, -2.0).squaredDistanceTo(p.entityPos) < 0.01))
+    }
+
     /** Duellziel, nur zwischen zwei Angriffen wechseln (die Angriffe rufen das zu Beginn ab). */
     fun target(): ServerPlayerEntity? {
-        val list = players()
+        val list = if (phase == Phase.FINALE && ariusVulnerable) combatTargets() else players()
         val chosen = list.firstOrNull { it.uuid == duelTarget } ?: list.minByOrNull { p -> arius?.squaredDistanceTo(p) ?: 0.0 }
         if (chosen != null && chosen.uuid != announcedTarget && list.size > 1) {
             announcedTarget = chosen.uuid
@@ -650,8 +656,6 @@ class EirholmFight(
             return 0f
         }
         if (!ariusVulnerable) return 0f
-        // Seit 1.10.0: Stille-Duell auf dem Gipfel (Klingenkreuzen statt Schaden) und Befreien aus der Konter-Bestrafung.
-        if (moves.summit.onAriusHit(player, projectile)) return 0f
         val f = fighters[player.uuid]
         val front = isInFront(a, source.position ?: player.entityPos)
         // Konterhaltung: Nahkampf wird pariert und mit einer Kombo bestraft (seit 1.9.0, Wukong).
@@ -672,6 +676,7 @@ class EirholmFight(
         dmg = moves.summit.limit(dmg)
         dmg = min(dmg, ariusHp + 1f)
         ariusHp -= dmg
+        if (phase == Phase.FINALE && ariusHp <= 0f) moves.summit.onFinalBlow()
         record(player, dmg)
         moves.onAllyHit(player, dmg)
         if (f != null) {
@@ -842,11 +847,21 @@ class EirholmFight(
         e.setPosition(pos.x, pos.y, pos.z)
     }
 
+    private var navigationActor: AriusEntity? = null
+    private var groundRoute: AriusNavigation? = null
+
     /**
      * Ein Schritt in Richtung [to] auf der Laufhöhe [y] mit [speed] Blöcken je Tick; weicht Säulen seitlich aus.
      * Gibt true zurück, wenn das Ziel erreicht ist.
      */
     fun stepToward(e: Entity, to: Vec3d, speed: Double, y: Double = floorY, faceIt: Boolean = true): Boolean {
+        if (e is AriusEntity) {
+            if (navigationActor !== e) {
+                navigationActor = e
+                groundRoute = AriusNavigation(this, e)
+            }
+            return groundRoute!!.step(to, speed, faceIt)
+        }
         val dx = to.x - e.x
         val dz = to.z - e.z
         val d = sqrt(dx * dx + dz * dz)
@@ -1024,6 +1039,7 @@ class EirholmFight(
         Hold.drop(player)
         AriusNet.send(player, MusicS2C("", 20))
         AriusNet.send(player, dev.henny.hha_arius.net.AtmosS2C(-1, 1))
+        AriusNet.send(player, dev.henny.hha_arius.net.SilenceS2C(0f, 1))
         ariusBar.removePlayer(player)
         dragonBar.removePlayer(player)
         if (players().isEmpty() && phase != Phase.BUILD && !ended) {

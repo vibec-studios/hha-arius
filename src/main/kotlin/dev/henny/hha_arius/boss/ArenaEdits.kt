@@ -21,6 +21,7 @@ class ArenaEdits(private val world: ServerWorld) {
         if (current == state) return
         originals.putIfAbsent(key, current)
         world.setBlockState(key, state, FLAGS)
+        dev.henny.hha_arius.arena.HighlandView.changed(world, key.x, key.z)
     }
 
     fun clear(pos: BlockPos) = set(pos, Blocks.AIR.defaultState)
@@ -41,13 +42,17 @@ class ArenaEdits(private val world: ServerWorld) {
         for (pos in positions) {
             val original = originals[pos] ?: continue
             world.setBlockState(pos, original, FLAGS)
+            dev.henny.hha_arius.arena.HighlandView.changed(world, pos.x, pos.z)
             originals.remove(pos)
         }
     }
 
     /** Alles wiederherstellen. */
     fun restore() {
-        for ((pos, state) in originals) world.setBlockState(pos, state, FLAGS)
+        for ((pos, state) in originals) {
+            world.setBlockState(pos, state, FLAGS)
+            dev.henny.hha_arius.arena.HighlandView.changed(world, pos.x, pos.z)
+        }
         originals.clear()
     }
 

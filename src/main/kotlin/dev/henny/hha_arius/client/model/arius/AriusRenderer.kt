@@ -26,9 +26,7 @@ import kotlin.math.sin
  * ([RenderLayers.eyes], Alpha moduliert): die dezente Leuchtmaske des Atlas (Klingenkante, Rüstungsnähte) und die Augen
  * aus einer eigenen Textur, deren Stärke [AriusEntity.eyeGlow] und [AriusEntity.lead] steuern.
  *
- * Abschnitt III ([AriusBlade.ICE]): Solvane ist der Drache, Arius führt eine Klinge aus weißem Eislicht. Gleiche
- * Geometrie am selben Knochen, gezeichnet von einer zweiten Modellinstanz, die nur das Schwert zeigt
- * ([AriusModel] mit `bladeOnly`): durchscheinend-leuchtend (entityTranslucentEmissive) plus ein additiver Schimmer.
+ * Sobald Solvane Drachenform annimmt, trägt der Handknochen dieselbe kristalline Eisklinge wie beim Wurf.
  * Nebenbei schreibt der Renderer die Lage von Klinge und Scheide in [BladeAnchors] (für den Lichtstrom).
  */
 class AriusRenderer(context: EntityRendererFactory.Context) :
@@ -39,9 +37,8 @@ class AriusRenderer(context: EntityRendererFactory.Context) :
     private val darkGlow = RenderLayers.eyes(tex("arius_dark_glow"))
     private val whiteGlow = RenderLayers.eyes(tex("arius_white_glow"))
     private val eyes = RenderLayers.eyes(tex("arius_eyes"))
-    private val iceModel = AriusModel(context.getPart(AriusRenderers.LAYER), bladeOnly = true)
-    private val iceBody = RenderLayers.entityTranslucentEmissive(white)
-    private val iceGlow = RenderLayers.eyes(white)
+    private val items = context.itemModelManager
+    private val iceBlade = AriusBlade.iceStack()
     private var bladeChain: List<ModelPart>? = null
     private var sheathChain: List<ModelPart>? = null
 
@@ -63,12 +60,9 @@ class AriusRenderer(context: EntityRendererFactory.Context) :
                     val extra = if (state.lead) 0.7f + 0.2f * sin(state.age * 0.25f) else (base - 0.85f) * 4f
                     batch.submitModel(contextModel, state, matrices, eyes, FULL_BRIGHT, OverlayTexture.DEFAULT_UV, tint(extra), null, 0, null)
                 }
-                // Eisklinge: kühler, durchscheinender Körper, darüber ein leiser, atmender Schimmer.
-                if (state.blade == AriusBlade.ICE) {
-                    val shimmer = 0.42f + 0.12f * sin(state.age * 0.21f) + (if (state.lead) 0.12f else 0f)
-                    batch.submitModel(iceModel, state, matrices, iceBody, FULL_BRIGHT, OverlayTexture.DEFAULT_UV, iceTint(0.62f), null, 0, null)
-                    batch.submitModel(iceModel, state, matrices, iceGlow, FULL_BRIGHT, OverlayTexture.DEFAULT_UV, iceTint(shimmer), null, 0, null)
-                }
+                // Set the actor's current pose before sampling bones; queue submission itself defers model drawing.
+                contextModel.setAngles(state)
+                if (state.blade == AriusBlade.ICE && !state.sheathed) renderIceBlade(matrices, queue, state)
                 anchors(matrices, state)
             }
         })
@@ -76,8 +70,19 @@ class AriusRenderer(context: EntityRendererFactory.Context) :
 
     private fun tint(alpha: Float): Int = ((MathHelper.clamp(alpha, 0f, 1f) * 255f).toInt() shl 24) or 0xFFFFFF
 
-    /** Eislicht: helles Blauweiß. */
-    private fun iceTint(alpha: Float): Int = ((MathHelper.clamp(alpha, 0f, 1f) * 255f).toInt() shl 24) or 0xD4F0FF
+    private fun renderIceBlade(matrices: MatrixStack, queue: OrderedRenderCommandQueue, state: AriusRenderState) {
+        val blade = bladeChain ?: chainTo(AriusModel.Keys.SOLVANE)?.also { bladeChain = it } ?: return
+        if (!blade.last().visible) return
+        matrices.push()
+        for (part in blade) part.applyTransform(matrices)
+        // Item-model Y points towards the tip. The hilt rests at y=3 in the 16-unit item model.
+        matrices.multiply(net.minecraft.util.math.RotationAxis.POSITIVE_X.rotationDegrees(-90f))
+        matrices.multiply(net.minecraft.util.math.RotationAxis.POSITIVE_Y.rotationDegrees(90f))
+        matrices.scale(2.6f, 2.6f, 2.6f)
+        matrices.translate(0f, 5f / 16f, 0f)
+        state.iceItem.render(matrices, queue, FULL_BRIGHT, OverlayTexture.DEFAULT_UV, 0)
+        matrices.pop()
+    }
 
     private fun chainTo(path: String): List<ModelPart>? = runCatching {
         val out = ArrayList<ModelPart>()
@@ -140,6 +145,7 @@ class AriusRenderer(context: EntityRendererFactory.Context) :
         state.form = entity.form
         state.sheathed = entity.sheathed
         state.blade = entity.bladeState
+        if (state.blade == AriusBlade.ICE) items.updateForLivingEntity(state.iceItem, iceBlade, net.minecraft.item.ItemDisplayContext.NONE, entity)
         state.eyeGlow = entity.eyeGlow
         state.lead = entity.lead
         state.open = entity.open

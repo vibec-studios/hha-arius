@@ -103,12 +103,14 @@ object SnowStorm {
             gust = 1f
         }
         gust = (gust - 1f / 80f).coerceAtLeast(0f)
+        val silence = SilenceLens.activeStrength()
+        val hush = 1f - silence * 0.90f
         val wave = 0.75 + 0.25 * sin(age * 0.045) + 0.15 * sin(age * 0.17 + 1.3)
-        val g = kotlin.math.sin(gust * PI.toFloat()).coerceAtLeast(0f)
+        val g = kotlin.math.sin(gust * PI.toFloat()).coerceAtLeast(0f) * hush
         whiteout = (g * (snow / 1.1f).coerceIn(0f, 1f)).coerceIn(0f, 1f)
-        val speed = windBase * (wave + 1.4 * g)
+        val speed = windBase * (wave + 1.4 * g) * (0.12f + 0.88f * hush)
         wind = Vec3d(cos(windAngle) * speed, 0.0, sin(windAngle) * speed)
-        strength = snow * (1f + g) * fx
+        strength = snow * (1f + g) * fx * hush
         // Dach über der Kamera: unter Dächern kaum Schnee (weich überblendet).
         val sky = world.isSkyVisible(BlockPos.ofFloored(cam.x, cam.y + 1.0, cam.z))
         roof += ((if (sky) 0f else 1f) - roof) * 0.1f
@@ -176,21 +178,23 @@ object SnowStorm {
     fun render(d: VfxDraw, snow: Float) {
         if (!worldMode()) return
         val fx = AriusClientConfig.fx.coerceIn(0f, 1f)
-        val k = (snow * fx * (1f - 0.85f * roof)).coerceIn(0f, 2.2f)
+        val hush = 1f - SilenceLens.activeStrength() * 0.92f
+        val k = (snow * fx * hush * (1f - 0.85f * roof)).coerceIn(0f, 2.2f)
         if (k <= 0.02f) return
         val cam = d.cam
         val td = d.tickDelta.toDouble()
+        val clarity = if (GroundWarnings.nearWarning) 0.42f else 1f
         // Sichtweite der Stimmung (Nebelende, in Böen kürzer): fernere Flocken verblassen darin.
         val vis = Atmos.visibility().toDouble().coerceIn(10.0, 80.0)
-        draw(d, near, (NEAR * (k / 1.6f).coerceAtMost(1f)).toInt(), cam, td, 0.85f, 2.0, 2.2, vis)
-        draw(d, mid, (MID * (k / 1.5f).coerceAtMost(1f)).toInt(), cam, td, 0.72f, 2.4, 1.8, vis)
+        draw(d, near, (NEAR * (k / 1.6f).coerceAtMost(1f)).toInt(), cam, td, 0.85f * (0.55f + 0.45f * clarity), 2.0, 2.2, vis)
+        draw(d, mid, (MID * (k / 1.5f).coerceAtMost(1f)).toInt(), cam, td, 0.72f * (0.65f + 0.35f * clarity), 2.4, 1.8, vis)
         draw(d, far, (FAR * ((k - 0.4f) / 1.4f).coerceIn(0f, 1f)).toInt(), cam, td, 0.5f, 3.0, 2.6, vis)
         val along = Vec3d(wind.x, 0.0, wind.z).let { if (it.lengthSquared() < 1e-6) Vec3d(1.0, 0.0, 0.0) else it.normalize() }
         // Bodentreiben: stehende Fahnen entlang des Windes (weiche Ränder, keine harten Flächen)
         val veil = d.buffer(AriusLayers.VEIL)
         for (dr in drifts) {
             val t = (dr.age + d.tickDelta) / dr.life
-            val a = (sin(t * PI) * 0.42 * k).toFloat().coerceIn(0f, 0.55f)
+            val a = (sin(t * PI) * 0.42 * k * clarity).toFloat().coerceIn(0f, 0.55f)
             if (a <= 0.01f) continue
             val c = withAlpha(0xFFD9E3EE.toInt(), a)
             val h = along.multiply(dr.len * 0.5)
@@ -206,7 +210,7 @@ object SnowStorm {
             val dist = s.pos.distanceTo(cam)
             val nearFade = ((dist - 2.5) / 4.0).coerceIn(0.0, 1.0)
             val farFade = (1.0 - dist / vis).coerceIn(0.0, 1.0)
-            val a = (sin(t * PI) * 0.34 * k * nearFade * (0.4 + 0.6 * farFade)).toFloat().coerceIn(0f, 0.45f)
+            val a = (sin(t * PI) * 0.34 * k * clarity * nearFade * (0.4 + 0.6 * farFade)).toFloat().coerceIn(0f, 0.45f)
             if (a <= 0.01f) continue
             d.billboard(AriusLayers.VEIL, s.pos, s.size, withAlpha(0xFFCFDAE7.toInt(), a), s.seed * 6.0 + t * 0.8)
         }
@@ -349,7 +353,9 @@ object SnowStorm {
      */
     fun renderWhiteout(ctx: DrawContext, snow: Float) {
         val fx = AriusClientConfig.fx.coerceIn(0f, 1f)
-        val a = ((whiteout * 0.42f + (snow - 1.5f).coerceAtLeast(0f) * 0.08f) * fx * (1f - 0.8f * roof)).coerceIn(0f, 0.4f)
+        val hush = 1f - SilenceLens.activeStrength() * 0.95f
+        val maxWash = if (GroundWarnings.nearWarning) 0.09f else 0.4f
+        val a = ((whiteout * 0.42f + (snow - 1.5f).coerceAtLeast(0f) * 0.08f) * fx * hush * (1f - 0.8f * roof)).coerceIn(0f, maxWash)
         if (a <= 0.01f) return
         ctx.fill(0, 0, ctx.scaledWindowWidth, ctx.scaledWindowHeight, withAlpha(0xFFE9F1FA.toInt(), a))
     }

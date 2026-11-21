@@ -62,17 +62,17 @@ object HhaArius : ModInitializer {
 
 object AriusEntities {
 
-    val ARIUS: EntityType<AriusEntity> = register("arius", 0.85f, 2.2f, ::AriusEntity)
-    val NIVARIS: EntityType<NivarisEntity> = register("nivaris", 4.5f, 3.6f, ::NivarisEntity)
-    val NIVARIS_HEAD: EntityType<dev.henny.hha_arius.boss.NivarisHeadEntity> = register("nivaris_head", 1.9f, 1.9f, ::NivarisHeadEntity)
+    val ARIUS: EntityType<AriusEntity> = register("arius", 0.85f, 2.2f, ::AriusEntity, trackingRange = 24)
+    val NIVARIS: EntityType<NivarisEntity> = register("nivaris", 4.5f, 3.6f, ::NivarisEntity, trackingRange = 32)
+    val NIVARIS_HEAD: EntityType<dev.henny.hha_arius.boss.NivarisHeadEntity> = register("nivaris_head", 1.9f, 1.9f, ::NivarisHeadEntity, trackingRange = 24)
 
-    private fun <T : Entity> register(name: String, width: Float, height: Float, factory: (EntityType<T>, World) -> T): EntityType<T> {
+    private fun <T : Entity> register(name: String, width: Float, height: Float, factory: (EntityType<T>, World) -> T, trackingRange: Int = 16): EntityType<T> {
         val key: RegistryKey<EntityType<*>> = RegistryKey.of(RegistryKeys.ENTITY_TYPE, HhaArius.id(name))
         return Registry.register(
             Registries.ENTITY_TYPE, key,
             EntityType.Builder.create({ type: EntityType<T>, world -> factory(type, world) }, SpawnGroup.MONSTER)
                 .dimensions(width, height)
-                .maxTrackingRange(16)
+                .maxTrackingRange(trackingRange)
                 .trackingTickInterval(1)
                 .makeFireImmune()
                 .build(key),

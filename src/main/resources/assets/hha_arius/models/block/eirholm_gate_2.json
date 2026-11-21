@@ -1,0 +1,71 @@
+{
+  "parent": "hha_arius:block/eirholm_gate",
+  "elements": [
+    {
+      "from": [
+        0,
+        0,
+        7.65
+      ],
+      "to": [
+        16,
+        16,
+        8.35
+      ],
+      "shade": false,
+      "faces": {
+        "north": {
+          "uv": [
+            8,
+            0,
+            0,
+            8
+          ],
+          "texture": "#portal"
+        },
+        "south": {
+          "uv": [
+            0,
+            0,
+            8,
+            8
+          ],
+          "texture": "#portal"
+        }
+      }
+    },
+    {
+      "from": [
+        0,
+        0,
+        6.8
+      ],
+      "to": [
+        16,
+        16,
+        9.2
+      ],
+      "shade": false,
+      "faces": {
+        "north": {
+          "uv": [
+            0,
+            0,
+            8,
+            8
+          ],
+          "texture": "#portal"
+        },
+        "south": {
+          "uv": [
+            8,
+            0,
+            0,
+            8
+          ],
+          "texture": "#portal"
+        }
+      }
+    }
+  ]
+}

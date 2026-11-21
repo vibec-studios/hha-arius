@@ -19,9 +19,17 @@ import kotlin.math.sqrt
  */
 class RailRun(
     private val f: EirholmFight, private val d: NivarisEntity, waypoints: List<Vec3d>,
-    private val speed: Double = 1.4, radius: Double = DragonRail.MIN_RADIUS,
+    speed: Double = 1.0, radius: Double = DragonRail.MIN_RADIUS,
 ) {
-    private val pts = DragonRail.path(d.entityPos, DragonRail.heading(f, d), waypoints, radius)
+    /** Ruhigeres, schwereres Flugtempo (höchstens 1,25 Blöcke/Tick) für flüssige Kurven ohne Ruckeln. */
+    private val speed: Double = (speed * 0.72).coerceIn(0.75, 1.25)
+    private val pts = DragonRail.clearTerrain(
+        DragonRail.path(
+            d.entityPos, DragonRail.heading(f, d), waypoints, radius,
+            if (f.arenaRadius > 40.0) f.arenaCenter else null, (f.arenaRadius - 10.0).coerceAtLeast(32.0),
+        ),
+        f.origin, f.floorY, clearance = 4.5,
+    )
     private val last = pts.lastIndex
     private var s = 0.0
 

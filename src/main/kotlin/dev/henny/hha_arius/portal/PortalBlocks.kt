@@ -44,8 +44,7 @@ import net.minecraft.world.tick.ScheduledTickView
  * Blöcke der Welt-Überarbeitung 1.10.0:
  * * **Raureif-Torstein** ([FRAME]): Rahmen des Tors nach Eirholm (wie ein Netherportal, 2–21 breit, 3–21 hoch, Ecken
  *   egal). Mit dem Siegel von Eirholm angeklickt, füllt sich der Rahmen mit dem Tor.
- * * **Tor nach Eirholm** ([PORTAL]): wirbelndes Frostlicht. Wer zwei Sekunden darin steht, bricht mit dem Siegel als
- *   Einsatz nach Eirholm auf; in Eirholm selbst führt es nach dem Sieg zurück ([Portals]).
+ * * **Tor nach Eirholm** ([PORTAL]): wirbelndes Frostlicht. Wer zwei Sekunden darin steht, bricht nach Eirholm auf; in Eirholm selbst führt es nach dem Sieg zurück ([Portals]).
  * * **Hängebrückendeck** ([DECK]): unsichtbare, stabile Kollision (1–8 Schichten wie Schnee) unter den Planken, die der
  *   Client schwingend zeichnet.
  */
@@ -102,11 +101,11 @@ class RimeFrameBlock(settings: Settings) : Block(settings) {
 class EirholmGateBlock(settings: Settings) : Block(settings) {
 
     init {
-        defaultState = stateManager.defaultState.with(AXIS, Direction.Axis.X)
+        defaultState = stateManager.defaultState.with(AXIS, Direction.Axis.X).with(PANEL, 4)
     }
 
     override fun appendProperties(builder: StateManager.Builder<Block, BlockState>) {
-        builder.add(AXIS)
+        builder.add(AXIS, PANEL)
     }
 
     override fun getOutlineShape(state: BlockState, world: BlockView, pos: BlockPos, context: ShapeContext): VoxelShape =
@@ -148,6 +147,7 @@ class EirholmGateBlock(settings: Settings) : Block(settings) {
 
     companion object {
         val AXIS = Properties.HORIZONTAL_AXIS
+        val PANEL: IntProperty = IntProperty.of("panel", 0, 4)
         private val X_SHAPE: VoxelShape = createCuboidShape(0.0, 0.0, 6.0, 16.0, 16.0, 10.0)
         private val Z_SHAPE: VoxelShape = createCuboidShape(6.0, 0.0, 0.0, 10.0, 16.0, 16.0)
     }

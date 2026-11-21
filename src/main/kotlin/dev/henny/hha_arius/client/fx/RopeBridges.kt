@@ -154,7 +154,16 @@ object RopeBridges {
             val b = dr.at(k + 1, td)
             if (a.squaredDistanceTo(d.cam) > 130.0 * 130.0) continue
             val along = b.subtract(a).let { if (it.lengthSquared() < 1e-6) Vec3d(0.0, -1.0, 0.0) else it.normalize() }
-            for (sgn in intArrayOf(-1, 1)) seg(d, rope, a.add(dr.side.multiply(sgn * 1.72)), b.add(dr.side.multiply(sgn * 1.72)), 0.08)
+            val normal = dr.side.crossProduct(along).let { if (it.lengthSquared() < 1e-6) Vec3d(0.0, 1.0, 0.0) else it.normalize() }
+            for (sgn in intArrayOf(-1, 1)) {
+                val fa = a.add(dr.side.multiply(sgn * 1.72))
+                val fb = b.add(dr.side.multiply(sgn * 1.72))
+                seg(d, rope, fa, fb, 0.08)
+                val ha = a.add(dr.side.multiply(sgn * 1.88)).add(normal.multiply(0.95))
+                val hb = b.add(dr.side.multiply(sgn * 1.88)).add(normal.multiply(0.95))
+                seg(d, rope, ha, hb, 0.075)
+                if (k % 2 == 0) seg(d, rope, fa, ha, 0.045)
+            }
             for (h in 0..1) {
                 val key = k * 2 + h
                 if (((key * 7919) % 11) < 3) continue // ein Teil der Planken hat der Sturz abgerissen
@@ -297,6 +306,9 @@ object RopeBridges {
                     k = e
                 }
             }
+            // Nur wenn der Großteil der Brücke eingestürzt ist (ohne laufenden Drop), gelten die Seile als gerissen.
+            val missingMid = (6..(n - 6).coerceAtLeast(6)).count { !present[it] }
+            val bridgeCollapsed = n > 14 && missingMid > (n - 12) * 0.65
             for (k in 0..n) {
                 val p = pts[k] ?: continue
                 if (p.squaredDistanceTo(cam) > 110.0 * 110.0) continue
@@ -318,27 +330,28 @@ object RopeBridges {
                     } else {
                         box(d, if (k % 7 == 3) planksDark else planks, p.add(0.0, -0.06, 0.0), along, side, 0.44, 0.1, 3.3 + jitter * 0.15, tilt)
                     }
-                } else if (gapLen[k] < 4 && (k > 0 && present[k - 1] || k < n && present[k + 1])) {
-                    // Rand eines Bruchs: abgebrochene Stummel an den Seilen.
-                    for (sgn in intArrayOf(-1, 1)) box(d, planksDark, p.add(side.multiply(sgn * 1.35)).add(0.0, -0.14, 0.0), along, side, 0.4, 0.08, 0.62, sgn * 0.3)
+                } else if (!bridgeCollapsed && gapLen[k] < 12 && (k > 0 && present[k - 1] || k < n && present[k + 1])) {
+                    // Rand verlorener Bretter: gesplitterte Brettstummel hängen noch an den intakten Tragseilen.
+                    for (sgn in intArrayOf(-1, 1)) box(d, planksDark, p.add(side.multiply(sgn * 1.38)).add(0.0, -0.12, 0.0), along, side, 0.38, 0.08, 0.58, sgn * 0.25)
                 }
-                // Seile nur, wo die Brücke nicht auf langer Strecke weg ist
-                val intactRope = gapLen[k] < 4
+                // Verlorene Bretter trennen die Tragseile nicht: Fußseile, Handläufe und Hänger bleiben durchgehend straff.
+                val intactRope = !bridgeCollapsed || present[k]
                 if (k < n) {
                     val q = pts[k + 1]!!
                     val qs = sides[k + 1]!!
-                    if (intactRope && gapLen[minOf(k + 1, n)] < 4) {
+                    val nextIntact = !bridgeCollapsed || present[minOf(k + 1, n)]
+                    if (intactRope && nextIntact) {
                         for (sgn in intArrayOf(-1, 1)) {
                             val a = p.add(side.multiply(sgn * 1.72)).add(0.0, -0.05, 0.0)
                             val b = q.add(qs.multiply(sgn * 1.72)).add(0.0, -0.05, 0.0)
-                            seg(d, rope, a, b, 0.07)
+                            seg(d, rope, a, b, 0.075)
                             val ha = p.add(side.multiply(sgn * 1.9)).add(0.0, 1.05 + 0.08 * (4 * (k * PLANK / span.length) * (1 - k * PLANK / span.length)), 0.0)
                             val hb = q.add(qs.multiply(sgn * 1.9)).add(0.0, 1.05 + 0.08 * (4 * ((k + 1) * PLANK / span.length) * (1 - (k + 1) * PLANK / span.length)), 0.0)
                             seg(d, rope, ha, hb, 0.085)
                             if (k % 2 == 0) seg(d, rope, a, ha, 0.045)
                         }
-                    } else if (intactRope != (gapLen[minOf(k + 1, n)] < 4)) {
-                        // Rand einer Einsturzlücke: gerissene Seile hängen herab
+                    } else if (intactRope != nextIntact) {
+                        // Nur bei ganz eingestürzter Brücke hängen die gerissenen Seile am Kopf herab.
                         val edge = if (intactRope) p else q
                         val es = if (intactRope) side else qs
                         for (sgn in intArrayOf(-1, 1)) {
@@ -356,7 +369,7 @@ object RopeBridges {
                 for (sgn in intArrayOf(-1, 1)) seg(d, rope, p.add(side.multiply(sgn * 1.9)).add(0.0, 1.05, 0.0), p.add(side.multiply(sgn * 2.1)).add(0.0, 2.6, 0.0), 0.1)
             }
             // Während der Jagd: die Seile am fernen Kopf leuchten, hier kann man sie kappen.
-            if (HuntCine.active && present[n / 2]) {
+            if (HuntCine.active && !bridgeCollapsed) {
                 val p = pts[n]!!
                 val side = sides[n]!!
                 val pulse = (0.6 + 0.4 * sin(t * 0.25)).toFloat()

@@ -1,9 +1,37 @@
 {
   "variants": {
-    "axis=x": {
+    "axis=x,panel=0": {
+      "model": "hha_arius:block/eirholm_gate_0"
+    },
+    "axis=z,panel=0": {
+      "model": "hha_arius:block/eirholm_gate_0",
+      "y": 90
+    },
+    "axis=x,panel=1": {
+      "model": "hha_arius:block/eirholm_gate_1"
+    },
+    "axis=z,panel=1": {
+      "model": "hha_arius:block/eirholm_gate_1",
+      "y": 90
+    },
+    "axis=x,panel=2": {
+      "model": "hha_arius:block/eirholm_gate_2"
+    },
+    "axis=z,panel=2": {
+      "model": "hha_arius:block/eirholm_gate_2",
+      "y": 90
+    },
+    "axis=x,panel=3": {
+      "model": "hha_arius:block/eirholm_gate_3"
+    },
+    "axis=z,panel=3": {
+      "model": "hha_arius:block/eirholm_gate_3",
+      "y": 90
+    },
+    "axis=x,panel=4": {
       "model": "hha_arius:block/eirholm_gate"
     },
-    "axis=z": {
+    "axis=z,panel=4": {
       "model": "hha_arius:block/eirholm_gate",
       "y": 90
     }

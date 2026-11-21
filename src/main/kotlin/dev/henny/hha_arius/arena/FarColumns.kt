@@ -114,10 +114,6 @@ internal object FarColumns {
             for (y in 0..max(surface, 0) + 2) p.set(y, FarPlan.AIR)
             p.set(-1, if (abs(x - 310) <= 3 && abs(z - 75) <= 1) FarPlan.CHISELED else FarPlan.STONEBRICK)
         }
-        for (g in FarPlan.RETURN_GATES) {
-            if (z != g.z || x !in g.x0 - 1..g.x1 + 1) continue
-            for (y in g.y0 - 1..g.y1 + 1) p.set(y, if (g.frame(x, y, z)) FarPlan.PORTAL_FRAME else FarPlan.AIR)
-        }
         // Offenes Hochland: Eisspitzen, Frostwälder, Findlinge, Seen, Ruinen.
         if (surface <= 6 && !onPath && !plinth) {
             if (surface <= -1) FarPlan.iceSpike(x, z)?.let { sp ->
@@ -125,6 +121,8 @@ internal object FarColumns {
             }
             Highland.write(x, z, surface, p)
         }
+        // Dauerhafte Felsbögen und Eisgrate entlang Solvanes Ritt-Route (QTE-Hindernisse als fester Teil der Dimension).
+        RideLandmarks.write(x, z, surface, p)
     }
 
     /** Wegfläche (Pfad und Tunnel): Hangschnitt oder Damm, Schneeschichten als Rampe, Pfosten, Tunneldecke. */

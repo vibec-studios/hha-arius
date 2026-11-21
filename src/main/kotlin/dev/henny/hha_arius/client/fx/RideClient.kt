@@ -1,12 +1,17 @@
 package dev.henny.hha_arius.client.fx
 
+import dev.henny.hha_arius.boss.AriusEntity
 import dev.henny.hha_arius.boss.NivarisEntity
 import dev.henny.hha_arius.boss.NivarisShape
+import dev.henny.hha_arius.boss.Qte
+import dev.henny.hha_arius.boss.RideAction
+import dev.henny.hha_arius.boss.RideActionS2C
 import dev.henny.hha_arius.boss.RideGripS2C
 import dev.henny.hha_arius.boss.RideHooks
 import dev.henny.hha_arius.boss.RideSeatS2C
 import dev.henny.hha_arius.boss.RideSeats
 import dev.henny.hha_arius.client.model.nivaris.NivarisRenderState
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking
 import net.minecraft.client.MinecraftClient
@@ -16,32 +21,31 @@ import net.minecraft.client.render.entity.model.PlayerEntityModel
 import net.minecraft.client.render.entity.state.PlayerEntityRenderState
 import net.minecraft.client.util.math.MatrixStack
 import net.minecraft.entity.Entity
+import net.minecraft.entity.LivingEntity
+import net.minecraft.entity.player.PlayerEntity
 import net.minecraft.item.ItemStack
 import net.minecraft.text.Text
+import net.minecraft.util.math.MathHelper
 import net.minecraft.util.math.Vec3d
 import org.joml.Matrix3f
 import org.joml.Quaternionf
 import org.joml.Vector3f
 import kotlin.math.PI
 import kotlin.math.atan2
+import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * Ritt auf Solvanes Rücken im Client (seit 1.10.0 neu, Crix: „man soll sich am Eisdorn auf ihrem Rücken festhalten –
- * die hohe, blasse Kristallplatte –, die Beine stehen nicht auf ihr, sie flattern im Wind“):
+ * Ritt auf Solvanes Rücken im Client:
  * * **Am echten Dorn:** Reiter `i` greift die Kristallplatte (`crest`) von Glied [RideHooks.glied] des gezeichneten
  *   Körpers. [anchor] rechnet den Griffpunkt je Frame aus dem Körper ([dev.henny.hha_arius.client.model.nivaris.NivarisBody]),
- *   [riderPos] setzt die Entity des Reiters im Tick dorthin (die Kamera der ersten Person sitzt so im Kopf des Reiters).
- * * **Dritte Person:** [transform] legt die Figur waagerecht in den Fahrtwind: Kopf zum Dorn, Brust zum Rücken der
- *   Drachin, die Füße schweben hinter ihr. [applyPose]: beide Arme umklammern den Dorn, die Beine flattern; nach einem
- *   Fehler hält nur noch eine Hand, der andere Arm reißt im Wind nach hinten.
- * * **Erste Person:** [handTargets] liefert die Griffpunkte links und rechts am Dorn im Blickraum (gezeichnet in
- *   [dev.henny.hha_arius.gear.client.art.GauntletFirstPerson]).
- * Den Griff (2/1/0) meldet der Server je Spieler ([RideGripS2C]); ohne Meldung gelten beide Hände.
- *
- * Seit 1.11.0 (Crix): Die Beine gehen **zur Seite** statt nach hinten über ihren Rücken, die Arme sind länger, damit der
- * Kopf nicht mehr im Drachen steckt, und in der Hand ist nichts. Jeder hat einen festen Dorn ([RideSeatS2C]), Arius sitzt
- * als Mitfahrer entspannt auf ihrem Kopf.
+ *   [riderPos] setzt die Entity des Reiters im Tick dorthin (inkl. weichem Aufsprung-Bogen statt schlagartigem Teleport).
+ * * **Sinnvolle QTE-Ausweichhaltungen:** Ducken presst Körper und Kamera tief flach an Solvanes Rückgrat unter die
+ *   festen Bögen; Hochziehen hebt Körper und angezogene Beine hoch über die festen Eisgrate; Hämmern/Stützen ziehen
+ *   spürbar am Eisdorn.
+ * * **Mehrspieler-Sync:** Jeder Client gleicht lokal und für alle Mitspieler den Reitzustand gegen den
+ *   DataTracker ([NivarisEntity.syncedRiderIds]) und die S2C-Pakete ab; beim Absteigen werden Pose, Armlänge und
+ *   Vehicle-Referenz sofort bereinigt.
  */
 object RideClient {
 
@@ -50,6 +54,17 @@ object RideClient {
     /** Feste Plätze je Entity-ID ([RideSeatS2C]). */
     private val seats = HashMap<Int, Int>()
 
+    /** Letzte freie Weltposition von Spielern vor dem Aufsitzen (für weichen Aufsprung statt Pop-In). */
+    private val lastFreePos = HashMap<Int, Vec3d>()
+
+    private class MountAnim(val from: Vec3d, val startTick: Int, val duration: Float)
+    private val mountAnims = HashMap<Int, MountAnim>()
+
+    private class ActionAnim(val action: Int, val startTick: Int, val duration: Float)
+    private val actionAnims = HashMap<Int, ActionAnim>()
+
+    private var clientTick = 0
+
     /** Je Drachin: Sitz von Arius relativ zu ihr und seine Blickrichtung (Grad). */
     private class Perch(val at: Vec3d, val yaw: Float)
 
@@ -57,7 +72,7 @@ object RideClient {
 
     /** Lage eines Reiters relativ zur Render-Position der Drachin: Griff, Kopfrichtung (vorn), Rückenrichtung (oben). */
     private class Anchor(val grip: Vec3d, val head: Vec3d, val back: Vec3d) {
-        val right: Vec3d = head.crossProduct(back).normalize()
+        val right: Vec3d = head.crossProduct(back).let { if (it.lengthSquared() < 1e-6) Vec3d(1.0, 0.0, 0.0) else it.normalize() }
 
         /** Fußpunkt der liegenden Figur. */
         val feet: Vec3d = grip.subtract(head.multiply(REACH)).subtract(back.multiply(BELOW))
@@ -73,42 +88,160 @@ object RideClient {
     private val anchors = HashMap<Int, Array<Anchor?>>()
 
     fun init() {
-        ClientPlayNetworking.registerGlobalReceiver(RideGripS2C.ID) { p, _ ->
-            if (p.grip <= 0) grips.remove(p.entityId) else grips[p.entityId] = p.grip
+        ClientPlayNetworking.registerGlobalReceiver(RideGripS2C.ID) { p, ctx ->
+            if (p.grip <= 0) {
+                grips.remove(p.entityId)
+                actionAnims.remove(p.entityId)
+                mountAnims.remove(p.entityId)
+                ctx.client().world?.getEntityById(p.entityId)?.let { e ->
+                    if (e.vehicle is NivarisEntity) e.stopRiding()
+                }
+            } else {
+                grips[p.entityId] = p.grip
+            }
         }
-        ClientPlayNetworking.registerGlobalReceiver(RideSeatS2C.ID) { p, _ ->
-            if (p.seat == RideSeats.NONE) seats.remove(p.entityId) else seats[p.entityId] = p.seat
+        ClientPlayNetworking.registerGlobalReceiver(RideSeatS2C.ID) { p, ctx ->
+            if (p.seat == RideSeats.NONE) {
+                seats.remove(p.entityId)
+                grips.remove(p.entityId)
+                actionAnims.remove(p.entityId)
+                mountAnims.remove(p.entityId)
+                ctx.client().world?.getEntityById(p.entityId)?.let { e ->
+                    if (e.vehicle is NivarisEntity) e.stopRiding()
+                }
+            } else {
+                seats[p.entityId] = p.seat
+            }
+        }
+        ClientPlayNetworking.registerGlobalReceiver(RideActionS2C.ID) { p, _ ->
+            if (p.action == RideAction.NONE || p.ticks <= 0) actionAnims.remove(p.entityId)
+            else actionAnims[p.entityId] = ActionAnim(p.action, clientTick, p.ticks.toFloat())
+        }
+        ClientTickEvents.END_CLIENT_TICK.register { client ->
+            if (!client.isPaused) clientTick++
+            val world = client.world ?: return@register
+            reconcile(world)
         }
         ClientPlayConnectionEvents.DISCONNECT.register { _, _ ->
             grips.clear()
             anchors.clear()
             seats.clear()
             perches.clear()
+            lastFreePos.clear()
+            mountAnims.clear()
+            actionAnims.clear()
         }
         RideHooks.riderPos = { d, passenger -> riderPos(d, passenger) }
         RideHooks.clientSeat = { e -> seats[e.id] }
     }
 
+    /**
+     * Lokale Sofort-Rückmeldung aus [QteClient], sobald der Spieler die Taste drückt (ohne Netzwerklatenz).
+     */
+    fun onLocalQtePress(kind: Qte.Kind) {
+        val player = MinecraftClient.getInstance().player ?: return
+        if (grip(player) <= 0) return
+        val act = when (kind) {
+            Qte.Kind.SNEAK -> RideAction.DUCK
+            Qte.Kind.JUMP -> RideAction.VAULT
+            Qte.Kind.USE -> RideAction.BRACE
+            Qte.Kind.MASH, Qte.Kind.ATTACK -> RideAction.TUG
+        }
+        val dur = if (act == RideAction.TUG) 8f else 28f
+        actionAnims[player.id] = ActionAnim(act, clientTick, dur)
+    }
+
+    /**
+     * Mehrspieler-Abgleich je Tick: prüft den lokalen Spieler und alle fremden Spieler gegen [NivarisEntity.syncedRiderIds],
+     * löst steckengebliebene Vehicle-Bindungen sofort und startet beim frischen Aufsitzen den weichen Aufsprung-Bogen.
+     */
+    private fun reconcile(world: net.minecraft.client.world.ClientWorld) {
+        for (p in world.players) {
+            val v = p.vehicle
+            if (v is NivarisEntity) {
+                if (v.isRemoved || (v.hasSyncedRiders && p.id !in v.syncedRiderIds)) {
+                    p.stopRiding()
+                    clearEntity(p.id)
+                } else if (p.id !in mountAnims) {
+                    val prev = lastFreePos[p.id]
+                    val startFrom = prev ?: p.entityPos
+                    val target = anchorOf(p)?.let { v.entityPos.add(it.entity) }
+                    val distSq = if (target != null) startFrom.squaredDistanceTo(target) else 0.0
+                    // Wenn der Spieler von außerhalb auf Solvane gehoben wird: 14 Ticks weicher Bogen statt Pop-In.
+                    val dur = if (distSq in 3.0..2400.0) 14f else 0f
+                    mountAnims[p.id] = MountAnim(startFrom, clientTick, dur)
+                }
+            } else {
+                lastFreePos[p.id] = p.entityPos
+                if (p.id in grips || p.id in seats || p.id in mountAnims || p.id in actionAnims) clearEntity(p.id)
+            }
+        }
+        for (e in world.entities) {
+            if (e is AriusEntity) {
+                val v = e.vehicle
+                if (v is NivarisEntity && (v.isRemoved || (v.hasSyncedRiders && e.id !in v.syncedRiderIds))) {
+                    e.stopRiding()
+                    seats.remove(e.id)
+                }
+            }
+        }
+        actionAnims.entries.removeIf { clientTick - it.value.startTick > it.value.duration + 4 }
+    }
+
+    private fun clearEntity(id: Int) {
+        grips.remove(id)
+        seats.remove(id)
+        mountAnims.remove(id)
+        actionAnims.remove(id)
+    }
+
     /** Griff des Spielers [e]: 0 = reitet nicht auf ihr, sonst 2 (beide Hände) oder 1 (eine Hand). */
     @JvmStatic
     fun grip(e: Entity?): Int {
-        if (e == null || e !is net.minecraft.entity.player.PlayerEntity || e.vehicle !is NivarisEntity) return 0
-        return grips[e.id] ?: 2
+        if (e == null || e !is PlayerEntity) return 0
+        val v = e.vehicle as? NivarisEntity ?: return 0
+        if (v.isRemoved) return 0
+        if (v.hasSyncedRiders && e.id !in v.syncedRiderIds) return 0
+        if (seats[e.id] == RideSeats.NONE) return 0
+        val g = grips[e.id]
+        if (g != null && g <= 0) return 0
+        return g ?: 2
+    }
+
+    /** Fortschritt des Aufsprung-Bogens 0..1 (1 = voll am Dorn). */
+    private fun mountProgress(id: Int): Float {
+        val m = mountAnims[id] ?: return 1f
+        if (m.duration <= 0.1f) return 1f
+        val u = ((clientTick - m.startTick) / m.duration).coerceIn(0f, 1f)
+        return u * u * (3f - 2f * u)
+    }
+
+    /** Aktive QTE-Ausweichaktion und ihre weiche Hüllkurve 0..1. */
+    private fun actionWeight(id: Int): Pair<Int, Float> {
+        val a = actionAnims[id] ?: return RideAction.NONE to 0f
+        val age = (clientTick - a.startTick).toFloat()
+        if (age < 0f || age > a.duration) return RideAction.NONE to 0f
+        val u = age / a.duration
+        val env = when {
+            u < 0.18f -> (u / 0.18f).let { it * it * (3f - 2f * it) }
+            u > 0.72f -> ((1f - u) / 0.28f).let { it * it * (3f - 2f * it) }
+            else -> 1f
+        }
+        return a.action to env.coerceIn(0f, 1f)
     }
 
     // --- Griffpunkte am gezeichneten Körper ------------------------------------------------------------------------
 
     /**
      * Aus dem fertigen Körper eines Frames ([pts] Welt, Rahmen in [s]): Griffpunkt an der Kristallplatte jedes
-     * Reiterglieds. Modell (tools/assets/nivaris_model.py, `crest`): Drehpunkt (0, −6,5, 9), Höhe 15, nach hinten
-     * geneigt (−34°); gegriffen bei 72 % der Höhe, wo der Kristall noch kräftig ist.
+     * Reiterglieds und Arius' fester Sitzplatz zwischen den Hörnern auf dem Schädeldach.
      */
     fun anchor(d: NivarisEntity, s: NivarisRenderState, pts: Array<Vec3d>, headUp: Vec3d, headFwd: Vec3d) {
         val out = arrayOfNulls<Anchor>(SEATS)
         val base = Vec3d(s.x, s.y, s.z)
         val q = 0.72
-        val c = kotlin.math.cos(-34.0 * PI / 180.0)
-        val sn = kotlin.math.sin(-34.0 * PI / 180.0)
+        val c = cos(-34.0 * PI / 180.0)
+        val sn = sin(-34.0 * PI / 180.0)
         val uy = -6.5 + (-15.0 * q) * c
         val uz = 9.0 + (-15.0 * q) * sn
         for (i in 0 until SEATS) {
@@ -127,9 +260,11 @@ object RideClient {
             out[i] = Anchor(grip.subtract(base), head, up.normalize())
         }
         anchors[d.id] = out
-        // Arius: auf dem Schädel, kurz hinter dem Kopfgelenk, in Blickrichtung.
-        val top = pts[0].add(headUp.multiply(PERCH_UP)).subtract(headFwd.multiply(PERCH_BACK)).subtract(0.0, PERCH_SEAT, 0.0)
-        perches[d.id] = Perch(top.subtract(base), Math.toDegrees(atan2(headFwd.z, headFwd.x)).toFloat() - 90f)
+        // Arius: fest auf dem Schädeldach direkt zwischen den Hörnern, Blick nach vorn entlang headFwd (nie nach hinten rutschend).
+        val levelUp = headUp.lerp(Vec3d(0.0, 1.0, 0.0), 0.45).let { if (it.lengthSquared() < 1e-6) Vec3d(0.0, 1.0, 0.0) else it.normalize() }
+        val top = pts[0].add(levelUp.multiply(PERCH_UP)).add(headFwd.multiply(PERCH_FWD)).subtract(0.0, PERCH_SEAT, 0.0)
+        val flatYaw = Math.toDegrees(atan2(headFwd.z, headFwd.x)).toFloat() - 90f
+        perches[d.id] = Perch(top.subtract(base), flatYaw)
     }
 
     private fun seatOf(d: NivarisEntity, e: Entity): Int = RideHooks.seatOf(d, e)
@@ -146,79 +281,129 @@ object RideClient {
         val i = seatOf(d, passenger)
         if (i == RideSeats.HEAD) {
             val p = perches[d.id] ?: return null
+            val target = d.entityPos.add(p.at)
             passenger.yaw = p.yaw
-            if (passenger is net.minecraft.entity.LivingEntity) {
+            passenger.lastYaw = p.yaw
+            if (passenger is LivingEntity) {
                 passenger.bodyYaw = p.yaw
+                passenger.lastBodyYaw = p.yaw
                 passenger.headYaw = p.yaw
+                passenger.lastHeadYaw = p.yaw
             }
-            return d.entityPos.add(p.at)
+            return target
         }
         if (i < 0) return null
         val a = anchors[d.id]?.getOrNull(i) ?: return null
-        return d.entityPos.add(a.entity)
+        var target = d.entityPos.add(a.entity)
+        val (act, w) = actionWeight(passenger.id)
+        if (w > 0.01f) {
+            target = when (act) {
+                RideAction.DUCK -> target.subtract(a.back.multiply(1.18 * w)).add(a.head.multiply(0.22 * w))
+                RideAction.VAULT -> target.add(a.back.multiply(1.15 * w)).add(a.head.multiply(0.18 * w))
+                RideAction.TUG -> target.add(a.head.multiply(0.20 * w))
+                RideAction.BRACE -> target.subtract(a.back.multiply(0.35 * w)).add(a.head.multiply(0.15 * w))
+                else -> target
+            }
+        }
+        val m = mountAnims[passenger.id]
+        if (m != null && m.duration > 0.1f) {
+            val k = mountProgress(passenger.id).toDouble()
+            if (k < 0.999) {
+                val arc = sin(k * PI) * 2.2
+                return m.from.lerp(target, k).add(0.0, arc, 0.0)
+            }
+        }
+        return target
     }
 
     // --- Dritte Person -----------------------------------------------------------------------------------------------
 
     private val m3 = Matrix3f()
     private val rot = Quaternionf()
+    private val upright = Quaternionf()
 
     /**
      * Ersetzt die Vanilla-Drehung der Figur (PlayerEntityRenderer.setupTransforms): waagerecht, Kopf zum Dorn, Brust
-     * zu ihrem Rücken. True = erledigt.
+     * zu ihrem Rücken – reagiert sichtbar auf Ducken (flach an den Rücken), Hochziehen (über den Dorn) und weiches
+     * Aufspringen. True = erledigt.
      */
     @JvmStatic
     fun transform(state: PlayerEntityRenderState, matrices: MatrixStack): Boolean {
+        if (!state.hasVehicle) return false
         val world = MinecraftClient.getInstance().world ?: return false
         val e = world.getEntityById(state.id) ?: return false
-        if (grip(e) <= 0) return false
+        val g = grip(e)
+        if (g <= 0) return false
         val a = anchorOf(e) ?: return false
-        // Rumpf leicht im Wind wiegen (um die Kopfachse), mit einer Hand stärker.
         val t = state.age
-        val roll = (if (grip(e) == 1) 0.12 else 0.03) * sin(t * 0.37)
-        val back = a.back.multiply(kotlin.math.cos(roll)).add(a.right.multiply(kotlin.math.sin(roll)))
-        val right = a.head.crossProduct(back)
-        val off = a.feet.subtract(a.entity)
-        matrices.translate(off.x.toFloat(), off.y.toFloat(), off.z.toFloat())
+        val (act, aw) = actionWeight(e.id)
+        val roll = (if (g == 1) 0.12 else 0.03) * sin(t * 0.37)
+        val back = a.back.multiply(cos(roll)).add(a.right.multiply(sin(roll))).normalize()
+        val right = a.head.crossProduct(back).let { if (it.lengthSquared() < 1e-6) a.right else it.normalize() }
+        // QTE-Ausweichversatz in der Figur (zusätzlich zur Entity-Lage, damit man das Ducken/Hochziehen klar sieht).
+        val shiftBack = when (act) {
+            RideAction.DUCK -> -0.35 * aw
+            RideAction.VAULT -> 0.45 * aw
+            RideAction.BRACE -> -0.15 * aw
+            else -> 0.0
+        }
+        val off = a.feet.subtract(a.entity).add(back.multiply(shiftBack))
+        val mp = mountProgress(e.id)
+        matrices.translate((off.x * mp).toFloat(), (off.y * mp).toFloat(), (off.z * mp).toFloat())
         // Spalten: lokal x → rechts, y → Kopf, z → Rücken (lokal −z ist die Brust/Front der Figur).
         m3.set(
             right.x.toFloat(), right.y.toFloat(), right.z.toFloat(),
             a.head.x.toFloat(), a.head.y.toFloat(), a.head.z.toFloat(),
             back.x.toFloat(), back.y.toFloat(), back.z.toFloat(),
         )
-        matrices.multiply(rot.setFromNormalized(m3))
+        rot.setFromNormalized(m3)
+        if (!rot.isFinite) return false
+        if (mp < 0.999f) {
+            // Während des Aufsprung-Bogens weich von aufrecht in die liegende Reithaltung überblenden.
+            upright.rotationY((PI - Math.toRadians(state.bodyYaw.toDouble())).toFloat())
+            upright.slerp(rot, mp)
+            matrices.multiply(upright)
+        } else {
+            matrices.multiply(rot)
+        }
         return true
     }
 
-    /** Ende von PlayerEntityModel.setAngles: Arme um den Dorn, Beine flattern im Fahrtwind. */
+    /** Ende von PlayerEntityModel.setAngles: Arme um den Dorn, Beine flattern bzw. ducken/hochziehen bei QTEs. */
     @JvmStatic
     fun applyPose(model: PlayerEntityModel, state: PlayerEntityRenderState) {
+        // Immer zuerst zurücksetzen, damit kein Spieler nach dem Absteigen gestreckte Reit-Arme behält!
+        model.rightArm.yScale = 1f
+        model.leftArm.yScale = 1f
         if (!state.hasVehicle) return
         val e = MinecraftClient.getInstance().world?.getEntityById(state.id) ?: return
         val grip = grip(e)
         if (grip <= 0) return
         val t = state.age
         val wild = if (grip == 1) 1.6f else 1f
-        // Kopf hebt sich und blickt nach vorn in den Wind.
-        model.head.pitch = -1.05f + 0.04f * sin(t * 0.23f)
-        model.head.yaw = 0.12f * sin(t * 0.11f)
+        val (act, aw) = actionWeight(e.id)
+        // Kopf hebt sich und blickt nach vorn in den Wind; beim Ducken flach nach unten an den Rücken gedrückt.
+        val duckPitch = if (act == RideAction.DUCK) 0.95f * aw else 0f
+        model.head.pitch = -1.05f + duckPitch + 0.04f * sin(t * 0.23f)
+        model.head.yaw = 0.12f * sin(t * 0.11f) * (1f - aw * 0.8f)
         model.head.roll = 0f
-        model.body.pitch = 0f
+        model.body.pitch = if (act == RideAction.VAULT) -0.25f * aw else 0f
         model.body.yaw = 0f
         model.body.roll = 0f
         val pi = PI.toFloat()
         val jitter = 0.035f * sin(t * 1.7f)
+        val tugLift = if (act == RideAction.TUG) 0.22f * aw else 0f
         // Längere Arme (Crix): Die Hände erreichen den Dorn, der Kopf bleibt davor frei.
         model.rightArm.yScale = ARM_LENGTH
         model.leftArm.yScale = if (grip >= 2) ARM_LENGTH else 1.15f
         // Rechte Hand am Dorn (rechte Seite), Arm über Kopf nach vorn-oben, leicht nach innen.
-        model.rightArm.pitch = -pi - 0.24f + jitter
+        model.rightArm.pitch = -pi - 0.24f + jitter - tugLift
         model.rightArm.yaw = 0f
-        model.rightArm.roll = 0.2f
+        model.rightArm.roll = 0.2f + if (act == RideAction.BRACE) 0.12f * aw else 0f
         if (grip >= 2) {
-            model.leftArm.pitch = -pi - 0.24f - jitter
+            model.leftArm.pitch = -pi - 0.24f - jitter - tugLift
             model.leftArm.yaw = 0f
-            model.leftArm.roll = -0.2f
+            model.leftArm.roll = -0.2f - if (act == RideAction.BRACE) 0.12f * aw else 0f
         } else {
             // Nur noch eine Hand: der linke Arm reißt im Wind nach hinten und rudert.
             model.leftArm.pitch = -pi - 1.5f + 0.55f * sin(t * 0.6f)
@@ -226,11 +411,22 @@ object RideClient {
             model.leftArm.roll = -(0.7f + 0.35f * sin(t * 0.45f))
             model.rightArm.roll = 0.14f
         }
-        // Beine nach außen zu beiden Seiten ihres Rückens (nicht nach hinten über die Dornen); sie flattern im Wind.
-        model.rightLeg.roll = LEG_SPREAD + 0.07f * wild * sin(t * 0.9f)
-        model.leftLeg.roll = -LEG_SPREAD - 0.07f * wild * sin(t * 1.05f)
-        model.rightLeg.pitch = wild * (0.14f * sin(t * 1.15f) + 0.05f * sin(t * 2.4f + 1f))
-        model.leftLeg.pitch = wild * (0.14f * sin(t * 1.15f + 2.3f) + 0.05f * sin(t * 2.9f))
+        // Beine: normal nach außen gespreizt (flatternd); beim Hochziehen (JUMP) eng angezogen über den Rücken,
+        // beim Ducken (SNEAK) flach und schmal hinter dem Rückgrat!
+        val spread = when (act) {
+            RideAction.VAULT -> MathHelper.lerp(aw, LEG_SPREAD, 0.14f)
+            RideAction.DUCK -> MathHelper.lerp(aw, LEG_SPREAD, 0.32f)
+            else -> LEG_SPREAD
+        }
+        val legLift = when (act) {
+            RideAction.VAULT -> -1.15f * aw
+            RideAction.DUCK -> 0.12f * aw
+            else -> 0f
+        }
+        model.rightLeg.roll = spread + 0.07f * wild * sin(t * 0.9f) * (1f - aw * 0.7f)
+        model.leftLeg.roll = -spread - 0.07f * wild * sin(t * 1.05f) * (1f - aw * 0.7f)
+        model.rightLeg.pitch = legLift + wild * (0.14f * sin(t * 1.15f) + 0.05f * sin(t * 2.4f + 1f)) * (1f - aw * 0.6f)
+        model.leftLeg.pitch = legLift + wild * (0.14f * sin(t * 1.15f + 2.3f) + 0.05f * sin(t * 2.9f)) * (1f - aw * 0.6f)
         model.rightLeg.yaw = 0.05f * sin(t * 0.7f)
         model.leftLeg.yaw = -0.05f * sin(t * 0.8f)
     }
@@ -262,15 +458,22 @@ object RideClient {
     // --- Erste Person ------------------------------------------------------------------------------------------------
 
     /**
-     * Erste Person (seit 1.11.0): Die Augen liegen über der Spitze des Dorns. Direkt dahinter füllte seine dunkle Rückseite
-     * die Bildmitte, und man sah weder die Bögen noch die Grate, vor denen die Prompts warnen. Null = nicht reitend.
+     * Erste Person: Die Augen liegen über der Spitze des Dorns; beim Ducken taucht die Kamera tief hinter den Dorn ab,
+     * beim Hochziehen steigt sie spürbar an. Null = nicht reitend.
      */
     fun overTheSpike(cam: Vec3d): Vec3d? {
         val client = MinecraftClient.getInstance()
         val player = client.player ?: return null
         if (!client.options.perspective.isFirstPerson || grip(player) <= 0) return null
         val a = anchorOf(player) ?: return null
-        return cam.add(a.back.multiply(EYE_LIFT))
+        val (act, aw) = actionWeight(player.id)
+        val delta = when (act) {
+            RideAction.DUCK -> -1.10 * aw
+            RideAction.VAULT -> 0.72 * aw
+            RideAction.BRACE -> -0.25 * aw
+            else -> 0.0
+        }
+        return cam.add(a.back.multiply(EYE_LIFT + delta))
     }
 
     /**
@@ -281,10 +484,12 @@ object RideClient {
         val client = MinecraftClient.getInstance()
         val player = client.player ?: return null
         val d = player.vehicle as? NivarisEntity ?: return null
+        if (grip(player) <= 0) return null
         val a = anchorOf(player) ?: return null
         val base = d.getLerpedPos(tickDelta)
-        // Der Blick liegt über dem Dorn ([overTheSpike]): Die Hände greifen nah an seiner Spitze, sonst lägen sie unter dem Bild.
-        val grip = base.add(a.grip).add(a.back.multiply(HAND_LIFT))
+        val (act, aw) = actionWeight(player.id)
+        val lift = HAND_LIFT + if (act == RideAction.DUCK) -0.42 * aw else if (act == RideAction.VAULT) 0.25 * aw else 0.0
+        val grip = base.add(a.grip).add(a.back.multiply(lift))
         val cam = client.gameRenderer.camera
         val inv = Quaternionf(cam.rotation).conjugate()
         fun view(p: Vec3d): Vector3f = inv.transform(Vector3f((p.x - cam.cameraPos.x).toFloat(), (p.y - cam.cameraPos.y).toFloat(), (p.z - cam.cameraPos.z).toFloat()))
@@ -325,9 +530,9 @@ object RideClient {
     /** Beine: so weit zur Seite gespreizt (Bogenmaß). */
     private const val LEG_SPREAD = 1.12f
 
-    /** Arius auf dem Kopf: über dem Kopfgelenk, etwas nach hinten; der Sitz liegt [PERCH_SEAT] über seinen Füßen. */
-    private const val PERCH_UP = 1.15
-    private const val PERCH_BACK = 0.15
+    /** Arius auf dem Kopf: fest auf dem Schädeldach leicht vor dem Kopfgelenk (zwischen den Hörnern). */
+    private const val PERCH_UP = 1.12
+    private const val PERCH_FWD = 0.30
     private const val PERCH_SEAT = 0.55
 
     /** Kopfmitte über den Füßen entlang der Körperachse. */

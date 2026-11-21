@@ -40,9 +40,7 @@ import java.util.UUID
  *
  * * **Bauen:** Rahmen aus Raureif-Torstein wie ein Netherportal (innen 2–21 breit, 3–21 hoch, senkrecht, Ecken
  *   beliebig). Mit dem **Siegel von Eirholm** einen Rahmenstein benutzen: das Tor füllt sich (das Siegel bleibt).
- * * **Hindurch:** Wer zwei Sekunden im Tor steht, bricht auf. Das Siegel ist wie beim Ritual der Einsatz
- *   ([Encounters.requestStart]: Instanz-Slot, Bau, Mitnahme der Gruppe im Umkreis von 12 Blöcken). Ohne Siegel stößt
- *   das Tor zurück. Gemerkt wird ein Platz **vor** dem Tor (Blick vom Tor weg) als Rückkehrpunkt.
+ * * **Hindurch:** Wer zwei Sekunden im Tor steht, bricht auf. Gemerkt wird ein Platz **vor** dem Tor (Blick vom Tor weg) als Rückkehrpunkt.
  * * **Zurück:** Nach dem Sieg bleiben alle in Eirholm und können sich umsehen ([Encounters.stayAfterVictory]); die
  *   Rückkehrtore auf dem Gipfel und am Feld leuchten auf. Durch sie geht es an den gemerkten Platz (sonst an den
  *   Rückkehrpunkt des Kampfes, sonst an den Weltspawn); erst dort wird die Beute ausgezahlt.
@@ -152,7 +150,11 @@ object Portals {
 
     private fun fill(world: ServerWorld, frame: Frame) {
         val state = PortalBlocks.PORTAL.defaultState.with(EirholmGateBlock.AXIS, frame.axis)
-        for (c in frame.cells()) world.setBlockState(c, state, 2 or 16)
+        for (c in frame.cells()) {
+            val along = if (frame.axis == Direction.Axis.X) c.x - frame.corner.x else c.z - frame.corner.z
+            val panel = (along and 1) + 2 * ((c.y - frame.corner.y) and 1)
+            world.setBlockState(c, state.with(EirholmGateBlock.PANEL, panel), 2 or 16)
+        }
         val mid = Vec3d.ofCenter(frame.corner).add(Vec3d.of(frame.along.vector).multiply((frame.width - 1) / 2.0)).add(0.0, (frame.height - 1) / 2.0, 0.0)
         world.playSound(null, mid.x, mid.y, mid.z, SoundEvents.BLOCK_END_PORTAL_SPAWN, SoundCategory.BLOCKS, 0.9f, 1.4f)
         world.playSound(null, mid.x, mid.y, mid.z, SoundEvents.BLOCK_BEACON_ACTIVATE, SoundCategory.BLOCKS, 1.2f, 0.7f)
@@ -164,19 +166,23 @@ object Portals {
 
     /** Nach dem Sieg: die Rückkehrtore der Instanz leuchten auf (gesetzt ohne ArenaEdits, sie bleiben stehen). */
     fun lightReturn(world: ServerWorld, origin: BlockPos) {
-        val state = PortalBlocks.PORTAL.defaultState.with(EirholmGateBlock.AXIS, Direction.Axis.X)
         for (g in FarPlan.RETURN_GATES) {
-            for (x in g.x0..g.x1) for (y in g.y0..g.y1) world.setBlockState(origin.add(x, y, g.z), state, 2 or 16)
-            val mid = Vec3d(origin.x + (g.x0 + g.x1) / 2.0 + 0.5, origin.y + (g.y0 + g.y1) / 2.0, origin.z + g.z + 0.5)
-            world.playSound(null, mid.x, mid.y, mid.z, SoundEvents.BLOCK_END_PORTAL_SPAWN, SoundCategory.BLOCKS, 3f, 1.2f)
+            for (x in g.x0 - 1..g.x1 + 1) for (y in g.y0 - 1..g.y1 + 1) {
+                if (g.frame(x, y, g.z)) world.setBlockState(origin.add(x, y, g.z), PortalBlocks.FRAME.defaultState, 2 or 16)
+            }
+            fill(world, Frame(origin.add(g.x0, g.y0, g.z), Direction.Axis.X, g.x1 - g.x0 + 1, g.y1 - g.y0 + 1))
         }
     }
 
-    /** Vor einem neuen Kampf in der Instanz: Rückkehrtore wieder dunkel. */
+    /** Entfernt auch Rahmen aus alten Instanzen und stellt die begehbare Schwelle wieder her. */
     fun extinguishReturn(world: ServerWorld, origin: BlockPos) {
-        for (g in FarPlan.RETURN_GATES) for (x in g.x0..g.x1) for (y in g.y0..g.y1) {
+        for (g in FarPlan.RETURN_GATES) for (x in g.x0 - 1..g.x1 + 1) for (y in g.y0 - 1..g.y1 + 1) {
             val pos = origin.add(x, y, g.z)
-            if (PortalBlocks.isGate(world.getBlockState(pos))) world.setBlockState(pos, Blocks.AIR.defaultState, 2 or 16)
+            val state = world.getBlockState(pos)
+            if (PortalBlocks.isGate(state) || PortalBlocks.isFrame(state)) {
+                val floor = if (g.y0 == 0) Blocks.CHISELED_STONE_BRICKS else Blocks.SNOW_BLOCK
+                world.setBlockState(pos, (if (y == g.y0 - 1) floor else Blocks.AIR).defaultState, 2 or 16)
+            }
         }
     }
 
@@ -208,19 +214,9 @@ object Portals {
             needsExit.add(player.uuid)
             return
         }
-        val seal = dev.henny.hha_arius.gear.SealRitual.findSeal(player)
-        if (seal == null) {
-            player.sendMessage(Text.translatable("hha_arius.portal.need_seal").formatted(Formatting.AQUA), true)
-            world.playSound(null, player.x, player.y, player.z, SoundEvents.BLOCK_GLASS_BREAK, SoundCategory.BLOCKS, 0.6f, 0.6f)
-            val push = front.first.subtract(player.entityPos).let { Vec3d(it.x, 0.0, it.z) }.let { if (it.lengthSquared() < 1e-4) Vec3d(0.0, 0.0, 1.0) else it.normalize() }
-            player.addVelocity(push.x * 0.6, 0.25, push.z * 0.6)
-            player.velocityDirty = true
-            needsExit.add(player.uuid)
-            return
-        }
         needsExit.add(player.uuid)
         world.playSound(null, player.x, player.y, player.z, SoundEvents.BLOCK_PORTAL_TRAVEL, SoundCategory.BLOCKS, 0.4f, 1.5f)
-        if (Encounters.requestStart(player, seal)) {
+        if (Encounters.requestStart(player, ItemStack.EMPTY)) {
             homes(world.server ?: return).put(player, world, front.first, front.second)
             // Mitgenommene in der Nähe des Tors kehren ebenfalls vor das Tor zurück.
             for (other in world.players) if (other !== player && other.squaredDistanceTo(player) <= 12.0 * 12.0 && Encounters.isParticipant(other)) {

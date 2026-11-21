@@ -24,6 +24,7 @@ public abstract class ArtPlayerRendererMixin {
     )
     private void hhaArius$artTurn(PlayerEntityRenderState state, MatrixStack matrices, float bodyYaw, float baseHeight, CallbackInfo ci) {
         ArtPose.applyTurn(state, matrices);
+        dev.henny.hha_arius.client.fx.KickAnim.applyTransform(state, matrices);
     }
 
     @Inject(

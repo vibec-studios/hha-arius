@@ -1,5 +1,6 @@
 {
-  "hha_arius.ride.grip_one": "Halt: EINE Hand – jeder weitere Fehler kostet Leben!",
-  "hha_arius.msg.ride_slip": "Eine Hand rutscht vom Dorn! Der Fahrtwind reißt an dir.",
+  "hha_arius.ride.grip_one": "Halt: EINE Hand – 1 Treffer holt beide Hände zurück!",
+  "hha_arius.msg.ride_recover": "Du packst wieder mit beiden Händen am Dorn zu!",
+  "hha_arius.msg.ride_slip": "Eine Hand rutscht vom Dorn! Ein sauberer Reflex holt den Halt zurück.",
   "hha_arius.msg.ride_slip_again": "Du schlägst gegen ihre Schuppen – halt dich fest!"
 }

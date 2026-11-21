@@ -42,11 +42,7 @@ object CineClient {
         MotionClient.init()
         AriusMusic.init()
         FrozenMoon.init()
-        FarTerrain.init()
-        net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents.END_MAIN.register { context ->
-            val mc = MinecraftClient.getInstance()
-            FarTerrain.render(dev.henny.hha.client.vfx.VfxDraw(context.consumers(), mc.gameRenderer.camera, mc.renderTickCounter.getTickProgress(true)))
-        }
+        HighlandViewClient.init()
         ClientPlayNetworking.registerGlobalReceiver(ChaseCamS2C.ID) { p, _ ->
             chaseTarget = p.target
             chaseLeft = p.ticks
@@ -117,17 +113,32 @@ object CineClient {
     }
 
     private fun unstuck(world: World, pos: Vec3d, yaw: Float, pitch: Float): Pose? {
-        if (!solid(world, pos)) return null
+        if (!blocked(world, pos)) return null
         val y = Math.toRadians(yaw.toDouble())
         val p = Math.toRadians(pitch.toDouble())
         val fwd = Vec3d(-kotlin.math.sin(y) * kotlin.math.cos(p), -kotlin.math.sin(p), kotlin.math.cos(y) * kotlin.math.cos(p))
+        // Erst nach oben herausheben (außen am Hang/Fels), dann entlang der Blickrichtung vorrücken.
+        var up = 0.5
+        while (up <= 18.0) {
+            val q = pos.add(0.0, up, 0.0)
+            if (!blocked(world, q)) return Pose(q, yaw, pitch)
+            up += 0.5
+        }
         var s = 0.25
         while (s <= 24.0) {
             val q = pos.add(fwd.multiply(s))
-            if (!solid(world, q) && !solid(world, q.add(fwd.multiply(0.4)))) return Pose(q.add(fwd.multiply(0.3)), yaw, pitch)
+            if (!blocked(world, q) && !solid(world, q.add(fwd.multiply(0.45)))) return Pose(q.add(fwd.multiply(0.3)), yaw, pitch)
             s += 0.25
         }
         return null
+    }
+
+    private fun blocked(world: World, p: Vec3d): Boolean {
+        if (solid(world, p)) return true
+        val m = 0.35
+        return solid(world, p.add(m, 0.0, 0.0)) || solid(world, p.add(-m, 0.0, 0.0)) ||
+            solid(world, p.add(0.0, m, 0.0)) || solid(world, p.add(0.0, -m, 0.0)) ||
+            solid(world, p.add(0.0, 0.0, m)) || solid(world, p.add(0.0, 0.0, -m))
     }
 
     private fun solid(world: World, p: Vec3d): Boolean {

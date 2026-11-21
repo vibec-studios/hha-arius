@@ -92,7 +92,7 @@ object CameraKick {
 
     /** [strength] in Grad (Ausschlag nach oben), [side] −1..1 seitlicher Anteil. */
     fun kick(strength: Float, side: Float = 0f) {
-        if (!enabled()) return
+        if (!enabled() || PunishCam.hidesHands()) return
         val now = ArtAnims.ticks.toFloat()
         // Ein stärkerer Stoß ersetzt einen schwächeren, der noch läuft.
         if (now - start < RISE + DECAY && strength < pitchAmp * envelope(now - start)) return
@@ -111,6 +111,7 @@ object CameraKick {
     /** Ausschlag (Grad) als (Gieren, Nicken), oder null. */
     @JvmStatic
     fun offset(tickDelta: Float): FloatArray? {
+        if (PunishCam.hidesHands()) return null
         if (CinePlayer.active) return cineSway(tickDelta)
         val t = ArtAnims.ticks + tickDelta - start
         val e = envelope(t)
@@ -372,10 +373,10 @@ object Impacts {
                 val s = speed * speeds[i]
                 val head = at.add(dirs[i].multiply(s * 3.0 * (1.0 - Math.exp(-t * 0.55))))
                 val tail = at.add(dirs[i].multiply(s * 3.0 * (1.0 - Math.exp(-max(0f, t - 1.2f) * 0.55))))
-                d.ribbon(VfxLayers.GLOW_ADD, listOf(tail, head), { 0.035 * (0.5 + 0.5 * k) }, { withAlpha(if (it > 0.5f) core else edge, 0.85f * k * fx) },
+                d.ribbon(AriusLayers.VFX_GLOW, listOf(tail, head), { 0.04 * (0.5 + 0.5 * k) }, { withAlpha(if (it > 0.5f) core else edge, 0.92f * k * fx) },
                     uScale = 0f, uOffset = 0.5f)
             }
-            if (t < 2.5f) d.billboard(VfxLayers.GLOW_ADD, at, 0.35 * (1.0 - t / 2.5), withAlpha(core, 0.55f * fx * (1f - t / 2.5f)))
+            if (t < 2.5f) d.billboard(AriusLayers.VFX_GLOW, at, 0.4 * (1.0 - t / 2.5), withAlpha(core, 0.65f * fx * (1f - t / 2.5f)))
         }
     }
 
@@ -387,8 +388,9 @@ object Impacts {
             val r = 0.15 + radius * grow
             val (a, b) = basisOf(dir)
             val k = (1f - u) * fx
-            d.ring(VfxLayers.GLOW_ADD, at, a, b, r * 0.82, r, withAlpha(color, 0f), withAlpha(color, 0.55f * k), segments = 40, uTile = 0f, uOffset = 0.5f)
-            d.ring(VfxLayers.GLOW_ADD, at.add(dir.multiply(0.25 * grow)), a, b, r * 0.55, r * 0.75, withAlpha(color, 0f), withAlpha(color, 0.25f * k), segments = 32, uTile = 0f, uOffset = 0.5f)
+            d.ring(AriusLayers.INK, at, a, b, r * 0.84, r, withAlpha(0xFF1A4B70.toInt(), 0f), withAlpha(0xFF5DC4F5.toInt(), 0.55f * k), segments = 40)
+            d.ring(AriusLayers.VFX_GLOW, at, a, b, r * 0.82, r, withAlpha(color, 0f), withAlpha(color, 0.65f * k), segments = 40, uTile = 0f, uOffset = 0.5f)
+            d.ring(AriusLayers.VFX_GLOW, at.add(dir.multiply(0.25 * grow)), a, b, r * 0.55, r * 0.75, withAlpha(color, 0f), withAlpha(color, 0.3f * k), segments = 32, uTile = 0f, uOffset = 0.5f)
         }
     }
 
@@ -415,7 +417,8 @@ object Impacts {
                 val s = size[i] * (0.6 + 0.4 * k)
                 // Scherbe als schmale Raute: zwei kurze Striche über Kreuz
                 val a = Vec3d(cos(ang), sin(ang) * 0.6, sin(ang)).normalize().multiply(s * 1.6)
-                d.ribbon(VfxLayers.GLOW_ADD, listOf(p.subtract(a), p.add(a)), { s * 0.45 }, { withAlpha(color, 0.8f * k * fx) }, uScale = 0f, uOffset = 0.5f)
+                d.ribbon(AriusLayers.INK, listOf(p.subtract(a), p.add(a)), { s * 0.48 }, { withAlpha(0xFF1A5882.toInt(), 0.75f * k * fx) }, uScale = 0f, uOffset = 0.5f)
+                d.ribbon(AriusLayers.VFX_GLOW, listOf(p.subtract(a), p.add(a)), { s * 0.42 }, { withAlpha(color, 0.9f * k * fx) }, uScale = 0f, uOffset = 0.5f)
             }
         }
     }

@@ -115,6 +115,7 @@ class FarBuild(private val world: ServerWorld, private val origin: BlockPos) {
             columns++
             columnInChunk++
             if (columnInChunk >= 256) {
+                HighlandView.changed(world, c.startX, c.startZ)
                 columnInChunk = 0
                 chunkIndex++
             }

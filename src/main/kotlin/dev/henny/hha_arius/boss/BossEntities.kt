@@ -217,6 +217,10 @@ object AriusBlade {
 
     /** Eine Klinge aus weißem Eislicht in der Hand, die Scheide ist leer (Abschnitt III). */
     const val ICE = 2
+
+    fun iceStack() = net.minecraft.item.ItemStack(net.minecraft.item.Items.BLUE_ICE).apply {
+        set(net.minecraft.component.DataComponentTypes.ITEM_MODEL, dev.henny.hha_arius.HhaArius.id("ice_blade"))
+    }
 }
 
 /** Nivaris, die Alte vom Eirgletscher. Siehe [NivarisPose]. */
@@ -225,6 +229,8 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
     /** Seit 1.11.0: tatsächliche Flugrichtung (aus [EirholmFight.place]), damit die nächste Bahn ohne Knick anschließt. */
     var travelDir: net.minecraft.util.math.Vec3d? = null
     var travelTick = -100L
+
+    override fun shouldRender(distance: Double): Boolean = distance < 512.0 * 512.0
 
     // --- Ritt (seit 1.8.0): bis zu acht Spieler sitzen hintereinander auf ihrem Rücken ---------------------------------
 
@@ -256,6 +262,44 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
         builder.add(MODE, NivarisMode.NORMAL)
         builder.add(UNCOIL, 0f)
         builder.add(VEIL, 0f)
+        builder.add(BODY_ROLL, 0f)
+        builder.add(RIDERS, "")
+    }
+
+    /** Zusätzliche Längsrolle des Körpers in Bogenmaß (Fassrolle beim Abwurf der Reiter). */
+    var bodyRoll: Float
+        get() = dataTracker.get(BODY_ROLL)
+        set(value) = dataTracker.set(BODY_ROLL, value)
+
+    /** Serverseitig aktive Mitfahrer-IDs (Komma-getrennt) für zuverlässigen Mehrspieler-Abgleich auf Clients. */
+    private var syncedRidersRaw: String
+        get() = dataTracker.get(RIDERS)
+        set(value) = dataTracker.set(RIDERS, value)
+
+    private var cachedRidersKey: String? = null
+    private var cachedRiderIds: Set<Int> = emptySet()
+
+    /** Client: ob der Server den Mitfahrer-Stand über den DataTracker geliefert hat. */
+    var hasSyncedRiders = false
+        private set
+
+    /** Client: aktuelle serverseitige Mitfahrer-Entity-IDs. */
+    val syncedRiderIds: Set<Int>
+        get() {
+            val raw = syncedRidersRaw
+            if (raw != cachedRidersKey) {
+                cachedRidersKey = raw
+                cachedRiderIds = if (raw.isEmpty()) emptySet() else raw.split(',').mapNotNull { it.toIntOrNull() }.toSet()
+            }
+            return cachedRiderIds
+        }
+
+    override fun onTrackedDataSet(data: TrackedData<*>) {
+        super.onTrackedDataSet(data)
+        if (data == RIDERS && entityWorld.isClient) {
+            hasSyncedRiders = true
+            cachedRidersKey = null
+        }
     }
 
     /** Darstellung des Schlangenkörpers, siehe [NivarisMode] (Windung um die Nadel im Auftritt). */
@@ -299,6 +343,8 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
     private var seenUncoil = 0f
     private var lastVeil = Float.NaN
     private var seenVeil = Float.NaN
+    private var lastRoll = 0f
+    private var seenRoll = 0f
 
     /**
      * Fortschritt des Lösens zwischen den Ticks (Client). Seit 1.10.0 aus den Tick-Werten [lastUncoil] → [seenUncoil]
@@ -306,6 +352,9 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
      * nächsten Tick wieder zurück – das sichtbare Ruckeln beim Flug über die Schlucht).
      */
     fun uncoilAt(tickDelta: Float): Float = lastUncoil + (seenUncoil - lastUncoil) * tickDelta
+
+    /** Längsrolle zwischen den Ticks (Client). */
+    fun rollAt(tickDelta: Float): Float = lastRoll + (seenRoll - lastRoll) * tickDelta
 
     /** Client: Lösen-Fortschritt aus dem Bewegungspuffer ([MotionSync]) für diesen Tick. */
     fun smoothUncoil(value: Float) {
@@ -338,10 +387,17 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
             seenVeil = veil
             // Größter regulärer Schritt 1/20 je Tick; größere Sprünge (Überspringen) sofort.
             if (kotlin.math.abs(seenVeil - lastVeil) > 0.12f) lastVeil = seenVeil
-        } else if (veilRate != 0f) {
-            val v = (veil + veilRate).coerceIn(0f, 1f)
-            veil = v
-            if (v <= 0f || v >= 1f) veilRate = 0f
+            lastRoll = seenRoll
+            seenRoll = bodyRoll
+            if (kotlin.math.abs(seenRoll - lastRoll) > 1.2f) lastRoll = seenRoll
+        } else {
+            val cur = if (passengerList.isEmpty()) "" else passengerList.joinToString(",") { it.id.toString() }
+            if (cur != syncedRidersRaw) syncedRidersRaw = cur
+            if (veilRate != 0f) {
+                val v = (veil + veilRate).coerceIn(0f, 1f)
+                veil = v
+                if (v <= 0f || v >= 1f) veilRate = 0f
+            }
         }
     }
 
@@ -382,6 +438,8 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
         private val MODE: TrackedData<Int> = DataTracker.registerData(NivarisEntity::class.java, TrackedDataHandlerRegistry.INTEGER)
         private val UNCOIL: TrackedData<Float> = DataTracker.registerData(NivarisEntity::class.java, TrackedDataHandlerRegistry.FLOAT)
         private val VEIL: TrackedData<Float> = DataTracker.registerData(NivarisEntity::class.java, TrackedDataHandlerRegistry.FLOAT)
+        private val BODY_ROLL: TrackedData<Float> = DataTracker.registerData(NivarisEntity::class.java, TrackedDataHandlerRegistry.FLOAT)
+        private val RIDERS: TrackedData<String> = DataTracker.registerData(NivarisEntity::class.java, TrackedDataHandlerRegistry.STRING)
 
         /**
          * Trefferbox 4,5 × 3,6: der Rumpf vorn (Glieder 2–4). Der 96 Blöcke lange Körper ist nur Darstellung und

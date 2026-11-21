@@ -48,7 +48,8 @@ class VerifyBoss : FabricClientGameTest {
                 "holefail" -> hole(feed = false)
                 "duo" -> duo()
                 "waves" -> waves()
-                "clash" -> clash()
+                "clash", "laststand" -> lastStand()
+                "shield" -> shield()
                 else -> log("unknown case $c")
             }
             cmd("hhaarius stop")
@@ -624,81 +625,67 @@ class VerifyBoss : FabricClientGameTest {
         }
     }
 
-    private fun VerifyKit.swing(srv: MinecraftServer, index: Int) {
-        val b = bots.getOrNull(index) ?: return
-        srv.playerManager.getPlayer(b.id)?.swingHand(Hand.MAIN_HAND)
+    private fun VerifyKit.lastStand() {
+        finaleFight()
+        addBots(2)
+        try {
+            server { srv ->
+                val f = checkNotNull(fight())
+                f.fighters[bots[0].id]?.ko = true
+                srv.playerManager.getPlayer(bots[1].id)?.networkHandler?.onDisconnected(
+                    net.minecraft.network.DisconnectionInfo(net.minecraft.text.Text.literal("verify leave")))
+                f.moves.summit.debugJumpToLastStand()
+            }
+            check(waitUntil(1200, 1) { server { fight()?.moves?.summit?.stage == 2 } })
+            lookAtArius()
+            shot("last_stand_windup")
+            check(waitUntil(180, 1) { server { fight()?.moves?.summit?.stage == 3 } })
+            lookAtArius()
+            shot("last_stand_open")
+            check(server { srv ->
+                val f = checkNotNull(fight())
+                val a = checkNotNull(f.arius)
+                val before = f.ariusHp
+                a.damage(f.world, f.world.damageSources.playerAttack(player(srv)), 8f)
+                f.ariusHp in 0.01f..<before && a.open
+            })
+            server { srv ->
+                val f = checkNotNull(fight())
+                f.arius!!.damage(f.world, f.world.damageSources.playerAttack(player(srv)), f.ariusMax)
+                check(f.ariusHp <= 0f)
+            }
+            log("last stand: tracked thrust, opening and lethal player hit passed with a knocked-out and disconnected ally")
+        } finally {
+            server { srv ->
+                for (b in bots) srv.playerManager.getPlayer(b.id)?.networkHandler?.onDisconnected(
+                    net.minecraft.network.DisconnectionInfo(net.minecraft.text.Text.literal("verify end")))
+            }
+            bots.clear()
+        }
     }
 
-    /**
-     * Letzter Zusammenprall zu viert. Erster Anlauf: niemand schlägt (er muss wiederholen). Zweiter Anlauf: ein Bot geht
-     * k. o., einer trennt die Verbindung, von den zwei Übrigen kreuzt einer: das reicht für den Sieg.
-     */
-    private fun VerifyKit.clash() {
-        finaleFight()
-        addBots(3)
-        log("clash: players=${server { fight()?.players()?.size }}")
-        server { fight()?.moves?.summit?.debugJumpToSilence() }
-        var attempt = 0
-        var was = false
-        var koDone = false
-        var shots = 0
-        var hit = false
-        var winTick = -1
-        var nowShot = false
-        for (t in 0 until 3200) {
-            val inClash = server { fight()?.moves?.summit?.inLastClash == true }
-            val open = server { fight()?.moves?.summit?.clashWindow == true }
-            val alive = server { fight()?.players()?.size ?: 0 }
-            if (inClash && !was) {
-                attempt++
-                hit = false
-                log("clash: attempt $attempt starts at t=$t with $alive players")
-            }
-            if (!inClash && was) log("clash: attempt $attempt ended at t=$t, players=$alive, hp=${server { fight()?.ariusHp }}")
-            was = inClash
-            if (inClash && attempt == 2 && !koDone) {
-                koDone = true
-                server { srv ->
-                    val f = fight() ?: return@server
-                    val ko = bots.getOrNull(0)?.let { srv.playerManager.getPlayer(it.id) }
-                    // Im Training gibt es kein echtes k. o.; der Zustand ist derselbe wie nach einem im Ernstkampf.
-                    if (ko != null) f.fighters[ko.uuid]?.ko = true
-                    val gone = bots.getOrNull(1)?.let { srv.playerManager.getPlayer(it.id) }
-                    gone?.networkHandler?.onDisconnected(net.minecraft.network.DisconnectionInfo(net.minecraft.text.Text.literal("verify")))
-                }
-                log("clash: bot0 knocked out, bot1 disconnected, players now ${server { fight()?.players()?.size }}")
-            }
-            if (inClash && open && !nowShot) {
-                nowShot = true
-                lookAtArius()
-                shot("clash_now")
-            }
-            if (inClash && !open) nowShot = false
-            if (inClash && open && attempt >= 2 && !hit) {
-                hit = true
-                server { srv -> swing(srv, 2) }
-                log("clash: bot2 strikes in the window at t=$t")
-            }
-            if (inClash && shots < 14 && t % 6 == 0) {
-                lookAtArius()
-                shot("clash_%02d".format(shots++))
-            }
-            keepBots(1)
-            if (server { fight()?.let { it.moves.summit.stage >= 3 } == true } && winTick < 0) {
-                winTick = t
-                log("clash: won at t=$t after $attempt attempt(s)")
-            }
-            if (winTick >= 0 && t > winTick + 60) break
-            if (server { fight() == null }) {
-                log("clash: fight gone at t=$t")
-                break
-            }
-        }
-        log("clash: result winTick=$winTick attempts=$attempt")
+    private fun VerifyKit.shield() {
+        temple()
+        faceArius(3.0)
         server { srv ->
-            for (b in bots) srv.playerManager.getPlayer(b.id)?.networkHandler?.onDisconnected(net.minecraft.network.DisconnectionInfo(net.minecraft.text.Text.literal("verify end")))
+            val p = player(srv)
+            p.setStackInHand(Hand.OFF_HAND, ItemStack(Items.SHIELD))
+            p.setCurrentHand(Hand.OFF_HAND)
         }
-        bots.clear()
-        tick(10)
+        tick(6)
+        server { srv ->
+            val p = player(srv)
+            val f = checkNotNull(fight())
+            val shield = p.offHandStack
+            val a = checkNotNull(f.arius)
+            f.place(a, p.entityPos.add(p.rotationVector.x * 2, 0.0, p.rotationVector.z * 2))
+            val before = p.health
+            check(p.isBlocking)
+            Damage.hit(p, a, Damage.Kind.SOLVANE, 3f, 1f)
+            check(p.health == before && p.itemCooldownManager.isCoolingDown(shield) && !p.isBlocking)
+            Damage.hit(p, a, Damage.Kind.SOLVANE, 3f, 1f)
+            check(p.health < before)
+        }
+        log("shield: light hit blocked, shield disabled, follow-up dealt damage")
     }
 }

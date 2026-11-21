@@ -20,5 +20,6 @@ public abstract class ArtPlayerModelMixin {
         ArtPose.apply((PlayerEntityModel) (Object) this, state);
         // Seit 1.8.1: Ritt auf Solvane – festhalten am Eisdorn statt sitzen.
         dev.henny.hha_arius.client.fx.RideClient.applyPose((PlayerEntityModel) (Object) this, state);
+        dev.henny.hha_arius.client.fx.KickAnim.applyPose((PlayerEntityModel) (Object) this, state);
     }
 }
