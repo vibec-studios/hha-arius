@@ -48,7 +48,17 @@ object Encounters {
      */
     private val pendingArrivals = LinkedHashMap<UUID, Pair<ServerPlayerEntity, ServerWorld?>>()
 
+    /**
+     * Seit 1.10.0: Wer nach dem Sieg in Eirholm bleibt, um sich umzusehen (Spieler → Instanz-Slot). Solange jemand in
+     * einer Instanz ist, wird ihr Slot nicht für einen neuen Kampf vergeben; zurück geht es durch die Rückkehrtore.
+     */
+    private val explorers = HashMap<UUID, Int>()
+
     fun init() {
+        dev.henny.hha_arius.net.HuntNet.init()
+        dev.henny.hha_arius.portal.Portals.init()
+        dev.henny.hha_arius.boss.HuntGuard.init()
+        dev.henny.hha_arius.arena.RouteCheck.registerCommand()
         ServerTickEvents.END_SERVER_TICK.register { server ->
             if (pendingArrivals.isNotEmpty()) {
                 val due = pendingArrivals.values.toList()
@@ -90,6 +100,7 @@ object Encounters {
         }
         ServerEntityWorldChangeEvents.AFTER_PLAYER_CHANGE_WORLD.register { player, origin, destination ->
             if (origin.registryKey == WORLD) {
+                if (destination.registryKey != WORLD) explorers.remove(player.uuid)
                 fights.values.firstOrNull { it.world === origin && it.isParticipant(player) && !it.ended }?.onLeave(player)
                 // Enderperlen, die noch im Hochland fliegen, würden ihn später ungefragt zurückziehen.
                 discardPearlsIn(player, WORLD)
@@ -130,11 +141,19 @@ object Encounters {
     /** Ein Spieler steht (wieder) in der Arena-Welt: in seinen Kampf einsteigen oder nach Hause. */
     private fun onArrive(player: ServerPlayerEntity, from: ServerWorld?) {
         if (player.entityWorld.registryKey != WORLD) return
-        val fight = fights[slotOf(player.x)]
-        if (fight != null && !fight.ended) {
+        val slot = slotOf(player.x)
+        val fight = fights[slot]
+        if (fight != null && !fight.ended && !fight.isParticipant(player) && explorers[player.uuid] == slot) {
+            // Ein neuer Kampf läuft in der Instanz, die er erkundet hat: nach Hause.
+            explorers.remove(player.uuid)
+            dev.henny.hha_arius.portal.Portals.sendBack(player)
+        } else if (fight != null && !fight.ended) {
             // Kam er von außen dazu (nicht über das Siegel), braucht er einen eigenen Rückweg.
             if (from != null && from.registryKey != WORLD && !fight.isParticipant(player)) AriusState.rememberFallbackHome(player, from)
             fight.onJoin(player)
+        } else if (explorers[player.uuid] == slot) {
+            // Nach dem Sieg geblieben (Wiedereinloggen): bleibt, das Rückkehrtor wartet.
+            player.sendMessage(Text.translatable("hha_arius.portal.explore").formatted(Formatting.AQUA), false)
         } else if (!player.isCreative && !player.isSpectator) {
             AriusState.sendHome(player)
             player.sendMessage(Text.translatable("hha_arius.msg.sent_home").formatted(Formatting.GRAY), false)
@@ -240,7 +259,9 @@ object Encounters {
             HhaArius.LOGGER.error("Arena-Dimension {} fehlt (Datapack nicht geladen?)", WORLD.value)
             return false
         }
-        val slot = (0 until BossConfig.maxInstances()).firstOrNull { it !in fights } ?: run {
+        // Seit 1.10.0: kein Slot, in dem noch jemand ist (Erkunden nach dem Sieg).
+        val occupied = world.players.map { slotOf(it.x) }.toSet() + explorers.values
+        val slot = (0 until BossConfig.maxInstances()).firstOrNull { it !in fights && it !in occupied } ?: run {
             player.sendMessage(Text.translatable("hha_arius.msg.full").formatted(Formatting.RED), true)
             return false
         }
@@ -254,6 +275,7 @@ object Encounters {
         val mode = if (dirty) 2 else 1
         // Das Siegel ist der Einsatz: Es wird jetzt entnommen und bei Niederlage/Abbruch zurückgegeben.
         val stake = if (training == 0 && !seal.isEmpty) seal.copyWithCount(1).also { seal.decrement(1) } else ItemStack.EMPTY
+        dev.henny.hha_arius.portal.Portals.extinguishReturn(world, origin)
         val fight = EirholmFight(world, slot, player, invited, training, mode, stake)
         // Entnahme und Einsatzvermerk landen in derselben Spielerdatei.
         if (!stake.isEmpty) Ledgers.of(player).stake = fight.encounterId
@@ -262,6 +284,23 @@ object Encounters {
         if (training == 0) for (p in listOf(player) + invited) Advancements.grant(p, "seal")
         return true
     }
+
+    /**
+     * Nach dem Sieg (seit 1.10.0): Der Spieler bleibt in Eirholm. Rückkehrtore leuchten, die Beute wartet bis zur
+     * Rückkehr ([dev.henny.hha_arius.portal.Portals.sendBack]).
+     */
+    fun stayAfterVictory(player: ServerPlayerEntity, slot: Int) {
+        if (player.entityWorld.registryKey != WORLD || player.isDisconnected) return
+        explorers[player.uuid] = slot
+        dev.henny.hha_arius.net.AriusNet.send(player, dev.henny.hha_arius.net.AtmosS2C(dev.henny.hha_arius.net.AtmosMode.REVEAL, 120))
+        player.sendMessage(Text.translatable("hha_arius.portal.stay").formatted(Formatting.AQUA), false)
+    }
+
+    fun leaveExplorer(player: ServerPlayerEntity) {
+        explorers.remove(player.uuid)
+    }
+
+    fun isExplorer(player: ServerPlayerEntity): Boolean = player.uuid in explorers
 
     /** Für Befehle: bringt einen laufenden Kampf direkt in einen Abschnitt. */
     fun stop(server: MinecraftServer) {

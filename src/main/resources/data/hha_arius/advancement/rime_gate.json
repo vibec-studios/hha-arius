@@ -1,0 +1,29 @@
+{
+  "display": {
+    "icon": {
+      "count": 1,
+      "id": "hha_arius:rime_gate_stone"
+    },
+    "title": {
+      "translate": "advancements.hha_arius.rime_gate.title"
+    },
+    "description": {
+      "translate": "advancements.hha_arius.rime_gate.description"
+    },
+    "frame": "goal",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false,
+    "background": "minecraft:block/packed_ice"
+  },
+  "criteria": {
+    "granted": {
+      "trigger": "minecraft:impossible"
+    }
+  },
+  "requirements": [
+    [
+      "granted"
+    ]
+  ]
+}

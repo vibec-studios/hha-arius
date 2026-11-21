@@ -11,6 +11,9 @@ class StartupTest : FabricClientGameTest {
             context.runOnClient<RuntimeException> { client ->
                 check(client.world != null) { "Client world did not load" }
                 check(client.player != null) { "Client player did not load" }
+                // Seit 1.10.0: Selbsttest des Jagdwegs (durchgehender Boden, Kopffreiheit, keine Stufen > 0,6).
+                val issues = dev.henny.hha_arius.arena.RouteCheck.plan(20)
+                check(issues.isEmpty()) { "Jagdweg unterbrochen: " + issues.joinToString("; ") }
             }
         }
     }

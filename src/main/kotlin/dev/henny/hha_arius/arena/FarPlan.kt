@@ -25,7 +25,7 @@ import kotlin.math.sin
  */
 internal object FarPlan {
 
-    const val VERSION = 12 // 12: Jagdweg über drei eigene Berge mit echten Brücken und offenen Tunneln, Horst und Feld weit draußen und größer, Gipfelmauer mit Tor, Hochland mit Wäldern und Ruinen, Reste älterer Fassungen werden abgeräumt; 11: Drachenhorst, Gipfelkrone, Nebengipfel mit Tunneln, Schluchtbrücken; 10: Berg massiv/dicke Haut, Eisspitzen-Weite, Phase-III-Arena; 9: Ranken nur als schmaler Streifen an echten Stufen; 8: Massiv größer, Kletterweg mit Ranken; 7: endloses Schneefeld, Riesenmassiv mit Spiralweg (neue Dimension); 6: Feld im Hochland statt Balkon, kein Massiv; 5: Bergmassiv mit Terrasse statt schwebendem Balkon; 4: Balkon als Felsschelf mit Strebe, Schneebänder am Horn; 3: Alpen (Felshorn, Fels/Schnee, offenes Hochland); 2: Himmelsbalkon an der Nadel
+    const val VERSION = 13 // 13: zwei Ebenen je Spalte (Brücken schneiden die Windungen darunter nicht mehr ab), Hängebrücken B1/B3, acht Höhlen mit Hauben, Nebengängen und Fenstern, Rückkehrtore auf Gipfel und Feld; 12: Jagdweg über drei eigene Berge mit echten Brücken und offenen Tunneln, Horst und Feld weit draußen und größer, Gipfelmauer mit Tor, Hochland mit Wäldern und Ruinen, Reste älterer Fassungen werden abgeräumt; 11: Drachenhorst, Gipfelkrone, Nebengipfel mit Tunneln, Schluchtbrücken; 10: Berg massiv/dicke Haut, Eisspitzen-Weite, Phase-III-Arena; 9: Ranken nur als schmaler Streifen an echten Stufen; 8: Massiv größer, Kletterweg mit Ranken; 7: endloses Schneefeld, Riesenmassiv mit Spiralweg (neue Dimension); 6: Feld im Hochland statt Balkon, kein Massiv; 5: Bergmassiv mit Terrasse statt schwebendem Balkon; 4: Balkon als Felsschelf mit Strebe, Schneebänder am Horn; 3: Alpen (Felshorn, Fels/Schnee, offenes Hochland); 2: Himmelsbalkon an der Nadel
 
     const val X_MIN = ArenaLayout.FAR_X_MIN
     const val X_MAX = ArenaLayout.FAR_X_MAX
@@ -200,7 +200,35 @@ internal object FarPlan {
         if (rim > t) t = rim
         val s = spireTop(x, z)
         if (s > t) t = s
+        val hood = caveHood(x, z)
+        if (hood > t) t = hood
         return t.coerceIn(Y_MIN, ArenaLayout.SPIRE_TOP)
+    }
+
+    /**
+     * Seit 1.10.0: Felshaube über einer Höhle der Jagd. Über Hauptgang und Bergseite die Decke ([HuntRoute.Theme.height])
+     * plus drei Blöcke Fels und etwas Rauschen; auf der Talseite läuft sie ab 5,5 Blöcken neben der Mittellinie aus
+     * (eine überhängende Felsnase). Vor der Eiswand der Kristallgrotte fehlt sie (Blick nach draußen).
+     */
+    fun caveHood(x: Int, z: Int): Int {
+        var best = Int.MIN_VALUE
+        for (h in longArrayOf(HuntRoute.hit(x, z), HuntRoute.groundSecond(x, z))) if (h >= 0) best = max(best, hoodOf(h, x, z))
+        return best
+    }
+
+    private fun hoodOf(h: Long, x: Int, z: Int): Int {
+        val i = HuntRoute.hitIndex(h)
+        if (HuntRoute.kind(i) != HuntRoute.TUNNEL) return Int.MIN_VALUE
+        val c = HuntRoute.caveOf(i) ?: return Int.MIN_VALUE
+        val lat = HuntRoute.hitLateral(h)
+        val f = floor(HuntRoute.y(i)).toInt()
+        val top = f + c.theme.height + 4 + (vnoise(x, z, 5, 1301) * 3.0).toInt()
+        if (HuntRoute.outward(i, x, z)) {
+            val u = c.u(i)
+            if (c.iceFrom >= 0 && u in c.iceFrom..c.iceTo && lat > 4.5) return Int.MIN_VALUE
+            if (lat > 5.5) return top - ((lat - 5.5) * 3.5).toInt()
+        }
+        return top
     }
 
     /**
@@ -215,6 +243,28 @@ internal object FarPlan {
         val f = floor(HuntRoute.y(i)).toInt()
         return if (HuntRoute.kind(i) == HuntRoute.TUNNEL && t > f + 5) t else f
     }
+
+    // --- Rückkehrtore (seit 1.10.0) ----------------------------------------------------------------------------------
+
+    /**
+     * Ein Tor aus Raureif-Torstein (relativ): Rahmen in der Ebene z = [z], innen x [x0]..[x1], y [y0]..[y1]. Nach dem
+     * Sieg leuchtet es auf ([dev.henny.hha_arius.portal.Portals]) und bringt jeden dorthin zurück, wo er Eirholm betrat.
+     */
+    class Gate(val x0: Int, val x1: Int, val y0: Int, val y1: Int, val z: Int) {
+        fun frame(x: Int, y: Int, zz: Int): Boolean =
+            zz == z && x in x0 - 1..x1 + 1 && y in y0 - 1..y1 + 1 && !(x in x0..x1 && y in y0..y1)
+
+        fun inner(x: Int, y: Int, zz: Int): Boolean = zz == z && x in x0..x1 && y in y0..y1
+    }
+
+    /** Auf der Gipfelschulter nahe dem Tor der Klinge (außerhalb der Finalarena) und am Rand des Feldes. */
+    val RETURN_GATES: List<Gate> = listOf(
+        Gate(16, 18, SHOULDER_Y.toInt() + 1, SHOULDER_Y.toInt() + 4, 268),
+        Gate(309, 311, 0, 3, 75),
+    )
+
+    /** Sockel des Feld-Tors: ebene Steinplatte (x 305..315, z 71..79) auf Lauffläche 0. */
+    fun gatePlinth(x: Int, z: Int): Boolean = x in 305..315 && z in 71..79
 
     fun inCore(x: Int, z: Int): Boolean =
         x in ArenaPlan.X_MIN..ArenaPlan.X_MAX && z in ArenaPlan.Z_MIN..ArenaPlan.Z_MAX
@@ -252,6 +302,15 @@ internal object FarPlan {
     const val POLISHED = 34
     const val SOUL_HANG = 35
     const val AIR = 40
+    const val BARRIER = 50
+    const val ICE = 51
+    /** Unsichtbares Licht: [LIGHT] + n (Stufe 4, 8, 12, 15). */
+    const val LIGHT = 52
+    const val END_ROD_DOWN = 56
+    const val SEA_LANTERN = 57
+    const val PORTAL_FRAME = 60
+    /** Deck einer Hängebrücke mit 1..8 Schichten: [DECK] + n − 1. */
+    const val DECK = 70
     /** Schneeschichten 1..8: [SNOW_LAYER] + n − 1. */
     const val SNOW_LAYER = 41
 
@@ -743,6 +802,13 @@ internal object FarPlan {
         SOUL_HANG -> Blocks.SOUL_LANTERN.defaultState.with(net.minecraft.block.LanternBlock.HANGING, true)
         POLISHED -> Blocks.POLISHED_ANDESITE.defaultState
         AIR -> Blocks.AIR.defaultState
+        BARRIER -> Blocks.BARRIER.defaultState
+        ICE -> Blocks.ICE.defaultState
+        in LIGHT..LIGHT + 3 -> Blocks.LIGHT.defaultState.with(net.minecraft.block.LightBlock.LEVEL_15, intArrayOf(4, 8, 12, 15)[id - LIGHT])
+        END_ROD_DOWN -> Blocks.END_ROD.defaultState.with(net.minecraft.state.property.Properties.FACING, net.minecraft.util.math.Direction.DOWN)
+        SEA_LANTERN -> Blocks.SEA_LANTERN.defaultState
+        PORTAL_FRAME -> dev.henny.hha_arius.portal.PortalBlocks.FRAME.defaultState
+        in DECK..DECK + 7 -> dev.henny.hha_arius.portal.PortalBlocks.DECK.defaultState.with(dev.henny.hha_arius.portal.DeckBlock.LAYERS, id - DECK + 1)
         in SNOW_LAYER..SNOW_LAYER + 7 -> Blocks.SNOW.defaultState.with(net.minecraft.block.SnowBlock.LAYERS, id - SNOW_LAYER + 1)
         else -> Blocks.PACKED_ICE.defaultState
     }

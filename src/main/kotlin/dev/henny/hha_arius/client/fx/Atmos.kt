@@ -71,12 +71,27 @@ object Atmos {
 
     private val glints = ArrayList<Glint>()
 
+    /**
+     * Seit 1.10.0: Stimmung der Jagd (Hunt.HUNT_ATMOS). Ziel ist der Whiteout, aber [current] mischt nach Ort: auf dem
+     * Feld nur Schneetreiben, zum Fuß der Berge hin zieht der Sturm zu, in Höhlen dunkel und still.
+     */
+    private var hunt = false
+
+    /** 0 = weit vor den Bergen … 1 = am Fuß oder auf dem Berg (geglättet). */
+    private var footK = 0f
+
+    /** 0..1 in einer Höhle der Jagd (geglättet), dazu ihre Art. */
+    private var caveK = 0f
+    private var caveTheme: dev.henny.hha_arius.arena.HuntRoute.Theme? = null
+
     fun handle(p: AtmosS2C) {
         if (p.mode < 0) {
             active = false
+            hunt = false
             return
         }
-        val target = MOODS.getOrNull(p.mode) ?: return
+        hunt = p.mode == dev.henny.hha_arius.boss.Hunt.HUNT_ATMOS
+        val target = (if (hunt) MOODS[AtmosMode.WHITEOUT] else MOODS.getOrNull(p.mode)) ?: return
         from = current()
         to = target
         blend = 0f
@@ -86,6 +101,9 @@ object Atmos {
 
     fun reset() {
         active = false
+        hunt = false
+        footK = 0f
+        caveK = 0f
         SnowStorm.reset()
         veils.clear()
         glints.clear()
@@ -107,10 +125,50 @@ object Atmos {
         val t = blend.coerceIn(0f, 1f)
         val s = t * t * (3 - 2 * t)
         fun f(a: Float, b: Float) = a + (b - a) * s
-        return Mood(
+        val m = Mood(
             f(from.fogStart, to.fogStart), f(from.fogEnd, to.fogEnd), lerpColor(from.fog, to.fog, s), lerpColor(from.sky, to.sky, s),
             f(from.light, to.light), f(from.snow, to.snow), f(from.wind, to.wind), f(from.veil, to.veil),
         )
+        return if (hunt) huntMood(m) else m
+    }
+
+    private fun mix(a: Mood, b: Mood, k: Float): Mood {
+        fun f(x: Float, y: Float) = x + (y - x) * k
+        return Mood(f(a.fogStart, b.fogStart), f(a.fogEnd, b.fogEnd), lerpColor(a.fog, b.fog, k), lerpColor(a.sky, b.sky, k), f(a.light, b.light), f(a.snow, b.snow), f(a.wind, b.wind), f(a.veil, b.veil))
+    }
+
+    /** Höhlenstimmung je Art: kurze, dunkle Sicht, kaum Schnee. */
+    private fun caveMood(t: dev.henny.hha_arius.arena.HuntRoute.Theme?): Mood = when (t) {
+        dev.henny.hha_arius.arena.HuntRoute.Theme.DARK -> Mood(0f, 13f, 0xFF0B111A.toInt(), 0xFF0B111A.toInt(), 0.35f, 0.05f, 0.2f, 0f)
+        dev.henny.hha_arius.arena.HuntRoute.Theme.CRAWL -> Mood(0f, 11f, 0xFF141A22.toInt(), 0xFF141A22.toInt(), 0.4f, 0.05f, 0.2f, 0f)
+        dev.henny.hha_arius.arena.HuntRoute.Theme.CRYSTAL -> Mood(2f, 34f, 0xFF7FA9CF.toInt(), 0xFF7FA9CF.toInt(), 0.7f, 0.1f, 0.3f, 0f)
+        dev.henny.hha_arius.arena.HuntRoute.Theme.WIND -> Mood(1f, 22f, 0xFFB5C6D8.toInt(), 0xFFB5C6D8.toInt(), 0.6f, 0.9f, 2.4f, 0.6f)
+        else -> Mood(1f, 30f, 0xFF3B5068.toInt(), 0xFF3B5068.toInt(), 0.55f, 0.1f, 0.3f, 0f)
+    }
+
+    private fun huntMood(whiteout: Mood): Mood {
+        var m = mix(MOODS[AtmosMode.SNOW], whiteout, footK)
+        if (caveK > 0.01f) m = mix(m, caveMood(caveTheme), caveK)
+        val breath = HuntScares.breathAt()
+        if (breath > 0.01f) m = mix(m, Mood(0f, 6f, 0xFFDCEBF7.toInt(), 0xFFDCEBF7.toInt(), 0.9f, 0.4f, 0.4f, 0.4f), breath * 0.85f)
+        return m
+    }
+
+    /** Ort der Kamera für die Jagdstimmung: Abstand zum Fuß der Berge, Höhle. */
+    private fun huntPlace(cam: Vec3d) {
+        val slot = Math.floorDiv(kotlin.math.floor(cam.x).toInt() + ArenaLayout.SLOT_SPACING / 2, ArenaLayout.SLOT_SPACING)
+        val o = ArenaLayout.origin(slot)
+        val rx = cam.x - o.x
+        val rz = cam.z - o.z
+        var foot = Double.MAX_VALUE
+        for (pk in dev.henny.hha_arius.arena.HuntRoute.MOUNTS) foot = minOf(foot, kotlin.math.hypot(rx - pk.x, rz - pk.z) - pk.r)
+        foot = minOf(foot, kotlin.math.hypot(rx - (ArenaLayout.SPIRE.x + 0.5), rz - (ArenaLayout.SPIRE.z + 0.5)) - FarPlan.MASSIF_R)
+        // ab 45 Blöcke vor dem Fuß zieht der Sturm zu, ab dem Fuß voll
+        val want = (1.0 - (foot / 45.0)).coerceIn(0.0, 1.0).let { it * it * (3 - 2 * it) }.toFloat()
+        footK += (want - footK) * 0.04f
+        val cave = HuntScares.caveAtCamera()
+        if (cave != null) caveTheme = cave.theme
+        caveK += ((if (cave != null) 1f else 0f) - caveK) * 0.08f
     }
 
     // Sturmböe: Nebel zieht kurz zu (Whiteout).
@@ -152,6 +210,7 @@ object Atmos {
         if (world.registryKey != ArenaDimension.WORLD) return
         val client = MinecraftClient.getInstance()
         val cam = client.gameRenderer.camera.cameraPos
+        if (hunt) huntPlace(cam)
         val m = current()
         val fx = AriusClientConfig.fx.coerceIn(0f, 1f)
         val r = AriusFx.random()

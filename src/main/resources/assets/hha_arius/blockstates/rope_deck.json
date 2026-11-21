@@ -1,0 +1,9 @@
+{
+  "multipart": [
+    {
+      "apply": {
+        "model": "hha_arius:block/rope_deck"
+      }
+    }
+  ]
+}

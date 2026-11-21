@@ -1,0 +1,11 @@
+{
+  "variants": {
+    "axis=x": {
+      "model": "hha_arius:block/eirholm_gate"
+    },
+    "axis=z": {
+      "model": "hha_arius:block/eirholm_gate",
+      "y": 90
+    }
+  }
+}
