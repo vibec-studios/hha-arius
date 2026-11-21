@@ -20,7 +20,7 @@ You can also build a **Gate to Eirholm**: a Nether-style frame of **Rime Gate St
 2 seconds while carrying a Seal to start the encounter.
 
 1. **The Temple of the White Blade**: Arius alone, in three stances (flowing, overhead, sheathed iai). Long combo chains
-   with delayed strikes and feints, and a perfect counter: hit him in his counter stance and he parries, locks you in
+   with delayed strikes and feints, and a perfect counter: his red stance says *don't strike*. Hit him anyway and he parries, locks you in
    and beats you down with seven kicks, punches and cuts. Allies can break him off you. He also breaks off your healing. Below 40 % he takes you seriously and adapts to repeated
    tactics, within limits.
 2. **The Cut**: the wind turns, the hall goes silent, a single line crosses the temple. He strikes, nothing happens for
@@ -29,16 +29,20 @@ You can also build a **Gate to Eirholm**: a Nether-style frame of **Rime Gate St
    dives along lit lanes and slams the ground, rains ice spears, coils around you and, once per air phase, draws in
    *Winter's Wrath* – find the gold zone or choke her breath with hits to the throat. After each big attack she is
    open.
-4. **The ride**: for over a minute you cling to an ice spike on her back with both arms, legs in the wind, through the
-   storm around the mountain. A missed prompt costs health, but you never fall off.
+4. **The ride**: for over a minute you cling to an ice spike on her back, one spike per player, while Arius sits on her
+   head. Duck under arches, pull up over ridges and hack ice off your hands. A missed prompt costs health, but you never
+   fall off.
 5. **The Heart of the Glacier**: Arius sheds his dark armour and fights in white on an open field far to the east,
-   **in rhythm** with Solvane: five duo attacks such as *Dragon Ride*, *Twin Fang* and *Frost Prison* have clear safe
-   paths. Once per fight: **the white hole** drives you outward against a storm wall – reach a golden shelter or the calm
-   eye beside him, or deal enough damage to break it.
-6. **The Heir's Wrath**: he chases you over three ever higher mountains, across swaying rope bridges and through eight
-   different caves that collapse if you are too slow, while Solvane stalks you through the walls, up to the Gate of the Blade.
+   **in rhythm** with Solvane: connected duo chains flow from his sword into her bite and end in a joint strike, with
+   clear safe paths. Once per fight: **the white hole** drives you out, then reverses and drags you in. Feed it light
+   shards to turn it on them, or it erupts.
+6. **The Heir's Wrath**: he chases you over three ever higher mountains, across swaying rope bridges (cut the ropes while he
+   is on one) and through eight different caves that collapse if you are too slow, while Solvane stalks you through the
+   walls, up to the Gate of the Blade.
 7. **The summit**: a last real duel. Blade echoes fight beside him, below half health he draws fully for *The Last
-   Horizon*, and at the very end the storm stops: **Silence**, a black-and-white duel of single draws, and one last clash.
+   Horizon*, then he throws everything at you: clones, dragon breath, falling moons, the White Horizon and the white hole.
+   At the very end the storm stops: **Silence**, a black-and-white duel of single draws, and a **Last Clash** in which
+   every player faces their own opponent.
 
 Every attack is announced on the ground through HHA's telegraph system. **Gold always means safe or open.** Vanilla
 movement, shield and bow are enough to win. Dying in the sanctum knocks you out instead: you keep everything and rejoin
@@ -86,6 +90,18 @@ arena).
 Armour, gauntlets and Solvane share one resource, **frost resonance**. It recharges passively (faster out of combat and
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
+
+### New in 1.11.0
+
+- **Arius:** an unmistakable red counter stance, a smoother and harder parry punishment, a White Hole that reverses and can be turned against the bosses, and protection against mace burst.
+- **Finale:** four escalating waves with everything he has, and a Last Clash built for 1–4 players with an exact "NOW!".
+- **Duo attacks:** connected chains: sword, bite and scoop, a short ride, then a joint strike.
+- **Solvane:** fixed flight routes with a minimum turn radius, authored ground shapes, and no more loose head.
+- **Cutscenes:** distant mountains render, cameras stay out of the rock, and the kick and throw-off really launch you.
+- **Ride:** new clinging pose, one ice spike per player, Arius seated on her head, and prompts that match what is happening.
+- **Hunt:** believable rope bridges with breaking planks, cuttable ropes, forced mini-cutscenes, a fixed route for Arius, shorter attack ranges and ice that stays frozen.
+- **Gear:** abilities deal ×1.7 and gauntlets ×1.3 against these bosses, and the Solvane parry window is exact.
+- **Music:** clean transitions without pitch warping or double starts.
 
 ### New in 1.10.0
 
