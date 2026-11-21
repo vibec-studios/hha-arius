@@ -1043,14 +1043,14 @@ class EirholmFight(
             Advancements.grant(p, "white_blade")
             if (flawless) Advancements.grant(p, "no_storm")
         }
+        // Seit 1.10.0: Niemand wird hinausgeworfen. Die Rückkehrtore leuchten, nach 20 s räumt der Kampf auf und alle
+        // dürfen bleiben und sich umsehen; die Beute gibt es beim Durchschreiten eines Rückkehrtors.
+        dev.henny.hha_arius.portal.Portals.lightReturn(world, origin)
         task(script {
             wait(400)
             val everyone = audience()
             finish(win = true)
-            for (p in everyone) {
-                AriusState.sendHome(p)
-                Encounters.deliverPending(p)
-            }
+            for (p in everyone) Encounters.stayAfterVictory(p, slot)
         })
     }
 

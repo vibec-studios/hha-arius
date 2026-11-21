@@ -19,5 +19,6 @@ object HhaAriusClient : ClientModInitializer {
         Preload.init()
         dev.henny.hha_arius.gear.client.FrostHud.init()
         EntityRendererRegistry.register(AriusEntities.NIVARIS_HEAD, ::EmptyEntityRenderer)
+        dev.henny.hha_arius.client.fx.HuntClient.init()
     }
 }
