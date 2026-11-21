@@ -8,7 +8,9 @@
     "gear.MobGoalsAccessor",
     "gear.MeleeAttackGoalAccessor",
     "gear.PowderSnowBlockMixin",
-    "boss.PlayerRideMixin"
+    "boss.PlayerRideMixin",
+    "boss.ArenaIceMixin",
+    "boss.ArenaSnowMixin"
   ],
   "client": [
     "gear.client.CapeFeatureArmorMixin",

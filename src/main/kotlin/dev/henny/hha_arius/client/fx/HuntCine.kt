@@ -67,6 +67,9 @@ object HuntCine {
 
     private var lastSlow = -100L
 
+    private var ropeProgress = 0f
+    private var ropeLeft = 0
+
     fun reset() {
         active = false
         ariusId = -1
@@ -79,6 +82,13 @@ object HuntCine {
         tremor = 0f
         fadeAge = -1
         portalLeft = 0
+        ropeLeft = 0
+    }
+
+    /** Fortschrittsbalken beim Kappen der Seile. */
+    fun ropeProgress(k: Float, life: Int) {
+        ropeProgress = k.coerceIn(0f, 1f)
+        ropeLeft = life
     }
 
     fun state(on: Boolean, id: Int) {
@@ -192,6 +202,7 @@ object HuntCine {
         if (warpLeft > 0) warpLeft--
         if (fadeAge >= 0 && ++fadeAge > fadeLife) fadeAge = -1
         if (portalLeft > 0) portalLeft--
+        if (ropeLeft > 0) ropeLeft--
         if (rush > 0) rush--
         if (player == null || world == null) return
         // Nähe zu Arius
@@ -249,15 +260,30 @@ object HuntCine {
 
     // --- HUD ----------------------------------------------------------------------------------------------------------
 
+    /**
+     * Filmbalken. Seit 1.11.0 schmaler und **unter** dem HUD gezeichnet (eigene Ebene vor den Vanilla-Ebenen, siehe
+     * [HuntClient]): Bossleiste, Herzen und Hotbar liegen darüber und bleiben immer lesbar.
+     */
+    fun renderBars(ctx: DrawContext) {
+        if (!inEirholm() || letterboxK <= 0.01f) return
+        val w = ctx.scaledWindowWidth
+        val h = ctx.scaledWindowHeight
+        val bar = (h * 0.075f * letterboxK).toInt()
+        ctx.fill(0, 0, w, bar, 0xFF000000.toInt())
+        ctx.fill(0, h - bar, w, h, 0xFF000000.toInt())
+    }
+
     fun renderHud(ctx: DrawContext, tickDelta: Float) {
         if (!inEirholm()) return
         val w = ctx.scaledWindowWidth
         val h = ctx.scaledWindowHeight
-        // Balken
-        if (letterboxK > 0.01f) {
-            val bar = (h * 0.11f * letterboxK).toInt()
-            ctx.fill(0, 0, w, bar, 0xFF000000.toInt())
-            ctx.fill(0, h - bar, w, h, 0xFF000000.toInt())
+        // Seile kappen: Balken unter dem Fadenkreuz
+        if (ropeLeft > 0) {
+            val bw = 64
+            val x = (w - bw) / 2
+            val y = h / 2 + 14
+            ctx.fill(x - 1, y - 1, x + bw + 1, y + 4, 0xC0000000.toInt())
+            ctx.fill(x, y, x + (bw * ropeProgress).toInt(), y + 3, 0xFFFFD27A.toInt())
         }
         // Tor lädt: frostiger Wirbel vom Rand
         if (portalLeft > 0) {

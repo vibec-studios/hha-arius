@@ -54,6 +54,16 @@ import kotlin.math.sqrt
  * * **Lawine** am Hang der Zweiten Wacht, **Arius schneidet durch den Fels** neben ihnen, viele Filmeffekte am Client
  *   (Herzschlag, Atmen, Vignette, Farbsäume, Zeitlupe, Balken, Kippen; [HuntFx]).
  * Die Jagd endet, wenn jemand das Tor zur Gipfelarena erreicht ([arrive]).
+ *
+ * Seit 1.11.0:
+ * * **Arius hat eine feste Route:** Er läuft auf der Wegmitte der dichten Punktfolge und springt nur zwischen geprüften
+ *   Landepunkten ([HuntRoute.stations], [dev.henny.hha_arius.arena.RouteCheck]), der Sprung folgt dem Weg. Früher lief er
+ *   auf Sehnen der groben Wegpunkte und sprang frei an den Hang, dabei landete er im Berg.
+ * * **Solvane fliegt auf einer festen Begleitbahn** ([DragonRail]) außen und über dem Gelände. Früher zog sie als
+ *   gedämpfter Punkt neben der Route her, mitten durch die Dritte Wacht, während die Spieler im Tunnel waren.
+ * * **Hängebrücken:** Morsche Planken brechen unter dem Fuß. Am fernen Kopf kann man die Seile kappen, sobald alle
+ *   drüben sind; steht Arius auf der Brücke, stürzt er, nimmt echten Schaden, und Solvane trägt ihn wieder hinauf.
+ * * **Kurze Szenen** (je einmal, überspringbar): ihr Auge im Schlitz, das Geröll, Solvane neben dir im Tunnel.
  */
 class Hunt(private val f: EirholmFight) {
 
@@ -120,7 +130,7 @@ class Hunt(private val f: EirholmFight) {
 
     private lateinit var route: Route
 
-    /** Weg, den Arius auf der Route zurückgelegt hat. */
+    /** Bogenlänge von Arius auf der dichten Route ([HuntRoute]). */
     private var aS = 0.0
     private var busy = false
     private var dragonBusy = false
@@ -147,6 +157,159 @@ class Hunt(private val f: EirholmFight) {
     /** Endpunkt der Route: das Tor zur Gipfelarena. */
     val gate: Vec3d get() = route.at(route.length)
 
+    /** Punkt der dichten Route zur Bogenlänge [a] (Wegmitte, Lauffläche), absolut. */
+    private fun pathAt(a: Double): Vec3d {
+        val i = HuntRoute.indexOfArc(a)
+        val ai = HuntRoute.arc(i)
+        val j = (if (ai <= a) i + 1 else i - 1).coerceIn(0, HuntRoute.size - 1)
+        val aj = HuntRoute.arc(j)
+        val k = if (abs(aj - ai) < 1e-6) 0.0 else ((a - ai) / (aj - ai)).coerceIn(0.0, 1.0)
+        return point(i).lerp(point(j), k)
+    }
+
+    private fun tangentAt(a: Double): Vec3d = tangentVec(HuntRoute.indexOfArc(a))
+
+    // --- Kurze Szenen -------------------------------------------------------------------------------------------------
+
+    private var pendingScene: (() -> Script)? = null
+    private var pendingUntil = 0L
+    private var inScene = false
+    private val sceneDone = HashSet<String>()
+
+    /** Merkt eine einmalige kurze Szene vor; sie beginnt, sobald kein Angriff mehr läuft (spätestens nach 2,5 s). */
+    private fun queueScene(id: String, wait: Int = 50, scene: () -> Script): Boolean {
+        if (pendingScene != null || inScene || id in sceneDone) return false
+        sceneDone += id
+        pendingScene = scene
+        pendingUntil = f.now + wait
+        return true
+    }
+
+    /** Kurze Szene (überspringbar, Eingaben gesperrt, kein Schaden). */
+    private fun mini(onAbort: () -> Unit = {}, body: CineScene.() -> Script): Script = script {
+        val scene = CineScene(f, onAbort)
+        yieldAll(scene.play(scene.body()))
+    }
+
+    /** Kamera ohne Anheben über das Gelände (für Einstellungen in Höhlen; [CineScene.line] würde sie aus dem Berg heben). */
+    private fun CineScene.cam(
+        from: Vec3d, to: Vec3d, lookFrom: Vec3d, lookTo: Vec3d, ticks: Int, fov0: Double, fov1: Double,
+        lookAt: net.minecraft.entity.Entity? = null, lookOffset: Double = 1.6,
+    ) = shot { Cine.camera(it, from, to, lookFrom, lookTo, ticks, fov0, fov1, lookAt, lookOffset) }
+
+    private fun airAt(q: Vec3d): Boolean {
+        val pos = BlockPos.ofFloored(q)
+        val st = f.world.getBlockState(pos)
+        return st.getCollisionShape(f.world, pos).isEmpty && !st.isOpaqueFullCube
+    }
+
+    /** Liegt ein Spieler auf der Sichtlinie von [q] nach [target]? */
+    private fun playerInView(q: Vec3d, target: Vec3d): Boolean {
+        val v = target.subtract(q)
+        val len2 = v.lengthSquared().coerceAtLeast(1e-6)
+        return f.players().any { p ->
+            val c = p.entityPos.add(0.0, 1.0, 0.0)
+            val k = c.subtract(q).dotProduct(v) / len2
+            k in 0.0..1.0 && q.add(v.multiply(k)).squaredDistanceTo(c) < 1.6 * 1.6
+        }
+    }
+
+    /**
+     * Bester Kamerapunkt aus [spots]: in der Luft, mindestens 3 Blöcke von jedem Spieler (sonst schaut man in dessen Kopf),
+     * freie Sicht auf [target] und kein Spieler davor. Sonst der erste, der wenigstens in der Luft liegt.
+     */
+    private fun freeCam(spots: List<Vec3d>, target: Vec3d): Vec3d = spots.firstOrNull { q ->
+        airAt(q) && f.players().all { it.eyePos.squaredDistanceTo(q) > 9.0 && it.entityPos.squaredDistanceTo(q) > 9.0 } &&
+            !playerInView(q, target) &&
+            f.world.raycast(net.minecraft.world.RaycastContext(q, target, net.minecraft.world.RaycastContext.ShapeType.COLLIDER, net.minecraft.world.RaycastContext.FluidHandling.NONE, net.minecraft.block.ShapeContext.absent())).type == net.minecraft.util.hit.HitResult.Type.MISS
+    } ?: spots.firstOrNull { airAt(it) } ?: spots.first()
+
+    /** Ihr Auge im Schlitz der Wand: die Kamera wird hingezogen. */
+    private fun eyeScene(c: HuntRoute.Cave, u: Double): Script = mini {
+        script {
+            val i = HuntRoute.indexOfArc(c.a0 + u)
+            val slit = beside(i, 5.2, 3.0)
+            cam(beside(i, -2.4, 2.0), beside(i, 1.5, 2.7), slit, slit, 58, 56.0, 38.0)
+            eye(c, u, f.players(), 1.05f)
+            wait(58)
+        }
+    }
+
+    /** Geröll verschließt den Gang: Blick von vorn auf die Stelle. */
+    private fun sealScene(run: CaveRun): Script = mini(onAbort = { if (!run.sealed) seal(run, f.players()) }) {
+        script {
+            val c = run.c
+            val mid = pathAt(c.a0 + (c.plugFrom + c.plugTo) / 2).add(0.0, 1.8, 0.0)
+            val lat = (c.theme.lane - 0.7).coerceAtLeast(0.4)
+            val spots = listOf(6.0, 9.0, 12.0, 4.0).filter { c.plugTo + it < c.length - 1.0 }.flatMap { du ->
+                val q = pathAt(c.a0 + c.plugTo + du)
+                val t = tangentAt(c.a0 + c.plugTo + du)
+                val s = Vec3d(-t.z, 0.0, t.x).multiply(lat)
+                listOf(q.add(s).add(0.0, 1.5, 0.0), q.subtract(s).add(0.0, 1.5, 0.0))
+            }
+            val from = freeCam(spots.ifEmpty { listOf(pathAt(c.a0 + c.plugTo + 3.0).add(0.0, 1.5, 0.0)) }, mid)
+            cam(from, from.lerp(mid, 0.22), mid, mid, 46, 66.0, 52.0)
+            cue("glacier.crack", mid, 4f, 0.6f)
+            HuntNet.fx(f.audience(), HuntFx.RUMBLE, mid, a = 0.7f, life = 20)
+            wait(12)
+            if (!run.sealed) seal(run, f.players())
+            wait(32)
+        }
+    }
+
+    /** Solvane schießt mit angelegten Schwingen durch die Mitte des Tunnels an der Kamera vorbei. */
+    private fun tunnelScene(d: NivarisEntity, c: HuntRoute.Cave): Script = script {
+        dragonBusy = true
+        try {
+            yieldAll(mini {
+                script {
+                    val up = 2.6 // Rumpfachse liegt 1,8 über dem Entity-Punkt, also genau in der Mitte des Gangs
+                    val speed = 1.9
+                    val wps = ArrayList<Vec3d>()
+                    var u = 6.0
+                    while (u < c.length - 4.0) {
+                        wps += pathAt(c.a0 + u).add(0.0, up, 0.0)
+                        u += 9.0
+                    }
+                    wps += pathAt(c.a1 + 16.0).add(0.0, up + 5.0, 0.0)
+                    val entry = pathAt(c.a0 - 16.0).add(0.0, up + 1.0, 0.0)
+                    f.place(d, entry)
+                    f.face(d, wps.first())
+                    d.flying = true
+                    d.play(NivarisPose.DIVE)
+                    // 1) Von vorn: sie kommt durch den Gang auf die Kamera zu. 2) Sie ist vorbei, der Leib zieht über uns weg.
+                    val camU = c.length * 0.62
+                    val t = tangentAt(c.a0 + camU)
+                    val s = Vec3d(-t.z, 0.0, t.x).multiply(2.2)
+                    val base = pathAt(c.a0 + camU)
+                    val back = pathAt(c.a0 + c.length * 0.1).add(0.0, 3.2, 0.0)
+                    val camA = freeCam(listOf(base.add(s).add(0.0, 1.3, 0.0), base.subtract(s).add(0.0, 1.3, 0.0), pathAt(c.a0 + camU + 5.0).add(s).add(0.0, 1.3, 0.0)), back)
+                    val pass = ((16.0 + camU) / speed).toInt()
+                    cam(camA, camA.add(t.multiply(2.5)), back, back.add(0.0, 0.6, 0.0), pass, 70.0, 78.0)
+                    cue("nivaris.roar", camA, 5f, 0.8f)
+                    cue("nivaris.wing", camA, 4f, 0.6f)
+                    val flight = DragonRail.fly(f, d, wps, speed).iterator()
+                    var n = 0
+                    while (flight.hasNext()) {
+                        flight.next()
+                        if (++n == pass) {
+                            val ahead = pathAt(c.a1 + 6.0).add(0.0, 3.0, 0.0)
+                            val camB = camA.subtract(t.multiply(1.5))
+                            cam(camB, camB.add(t.multiply(3.0)), ahead, ahead, 34, 80.0, 66.0)
+                            cue("nivaris.wing", camB, 5f, 0.8f)
+                        }
+                        yield(Unit)
+                    }
+                    wait(8)
+                }
+            })
+            d.play(NivarisPose.GLIDE)
+            yieldAll(rejoinRail(d))
+        } finally {
+            dragonBusy = false
+        }
+    }
+
     // --- Hilfen -----------------------------------------------------------------------------------------------------
 
     private fun flatDir(from: Vec3d, to: Vec3d): Vec3d {
@@ -164,6 +327,7 @@ class Hunt(private val f: EirholmFight) {
 
     /** Fester Schaden in Herzen × 2, unabhängig von Rüstung (wie seit 1.7.0 in der Jagd). */
     private fun exactHit(p: ServerPlayerEntity, amount: Float, kind: Damage.Kind = Damage.Kind.SOLVANE) {
+        if (inScene) return
         val a = f.arius ?: return
         val red = Damage.reduction(p)
         Damage.hit(p, a, kind, (amount / (1.0 - red).coerceAtLeast(0.05)).toFloat(), 1f)
@@ -172,6 +336,7 @@ class Hunt(private val f: EirholmFight) {
 
     /** Stoß entlang der Route (nie zum Abhang, siehe [HuntGuard]). */
     private fun launch(p: ServerPlayerEntity, v: Vec3d) {
+        if (inScene) return
         Fx.launchPlayer(p, HuntGuard.redirect(f, p, v))
     }
 
@@ -205,15 +370,6 @@ class Hunt(private val f: EirholmFight) {
         var air = 0
         for (k in 2..8) if (f.world.getBlockState(feet.down(k)).isAir) air++
         return air >= 5
-    }
-
-    /** Seite der Route, auf der das Gelände tiefer liegt (dort fliegt Solvane, dort ist der Abhang). */
-    private fun lowSide(s: Double): Vec3d {
-        val p = route.at(s)
-        val dir = route.dir(s)
-        val side = Vec3d(-dir.z, 0.0, dir.x)
-        fun h(v: Vec3d): Int = runCatching { FarPlan.top(floor(v.x).toInt() - f.origin.x, floor(v.z).toInt() - f.origin.z) }.getOrDefault(0)
-        return if (h(p.add(side.multiply(12.0))) <= h(p.subtract(side.multiply(12.0)))) side else side.multiply(-1.0)
     }
 
     // --- dichte Route (HuntRoute), absolut ---------------------------------------------------------------------------
@@ -434,7 +590,16 @@ class Hunt(private val f: EirholmFight) {
                 f.world.spawnParticles(BlockStateParticleEffect(ParticleTypes.BLOCK, Blocks.COBBLESTONE.defaultState), top.x, top.y, top.z, 6, 0.8, 0.1, 0.8, 0.05)
                 vanilla(SoundEvents.BLOCK_POINTED_DRIPSTONE_FALL, top, 1.2f, 0.7f)
             }
-            if (age == 160L && !run.sealed) seal(run, players)
+            // Einmal als kurze Szene, sobald jemand in der Nähe ist.
+            if (age >= 138L && !run.sealed && "seal" !in sceneDone) {
+                val plug = pathAt(c.a0 + c.plugTo)
+                if (players.any { it.squaredDistanceTo(plug) < 26.0 * 26.0 }) queueScene("seal") { sealScene(run) }
+            }
+            if (age >= 160L && !run.sealed && pendingScene == null) seal(run, players)
+            // Solvane fliegt einmal durch die lange Höhle der Dritten Wacht, neben den Spielern her.
+            if (c.theme == HuntRoute.Theme.LAKE && "tunnel" !in sceneDone && !dragonBusy && leaderArc - c.a0 in 3.0..c.length * 0.6) {
+                f.nivaris?.takeIf { !f.dragonDowned && !it.isRemoved }?.let { d -> queueScene("tunnel") { tunnelScene(d, c) } }
+            }
             // Arius schlägt den Pfropfen auf, wenn er davorsteht.
             val a = f.arius
             if (run.sealed && !run.opened && a != null && !busy && a.entityPos.squaredDistanceTo(point(HuntRoute.indexOfArc(c.a0 + c.plugFrom))) < 7.0 * 7.0) {
@@ -524,7 +689,10 @@ class Hunt(private val f: EirholmFight) {
             HuntRoute.Theme.DARK -> if (u >= (c.windows.firstOrNull() ?: 10.0) - 7.0) {
                 run.scared = true
                 val w = c.windows.firstOrNull { it > u - 2.0 } ?: c.windows.last()
-                if (c.i0 > HuntRoute.size / 2) crackBreath(c, w, inCave) else eye(c, w, inCave, 1.4f)
+                when {
+                    c.i0 > HuntRoute.size / 2 -> crackBreath(c, w, inCave)
+                    !queueScene("eye") { eyeScene(c, w) } -> eye(c, w, inCave, 1.4f)
+                }
             }
             HuntRoute.Theme.CRAWL -> if (u >= 4.0) {
                 run.scared = true
@@ -544,7 +712,7 @@ class Hunt(private val f: EirholmFight) {
                 run.scared = true
                 fallRoar(c, inCave)
             }
-            HuntRoute.Theme.LAKE -> if (rearArc >= c.a0 + 3.0 || u >= 22.0) {
+            HuntRoute.Theme.LAKE -> if ((rearArc >= c.a0 + 3.0 || u >= 22.0) && pendingScene == null && ("tunnel" in sceneDone || u > c.length * 0.6)) {
                 run.scared = true
                 run.fillFront = c.a0
                 run.fillUntil = f.now + ((c.length / FILL_SPEED).toLong() + 120L)
@@ -585,7 +753,7 @@ class Hunt(private val f: EirholmFight) {
         val near = f.players().filter { it.squaredDistanceTo(crack) < 70.0 * 70.0 }
         HuntNet.fx(near, HuntFx.CRACK_BREATH, crack, end, a = 30f, life = 50)
         cue("nivaris.inhale", crack, 3f, 0.8f)
-        val line = f.calls.line(Vec3d(crack.x, point(i).y, crack.z), Vec3d(end.x, point(i).y, end.z), 2.6f, 30, Telegraph.Pace.HEAVY, style = Vfx.Style.SOUL)
+        val line = f.calls.line(Vec3d(crack.x, point(i).y, crack.z), Vec3d(end.x, point(i).y, end.z), 1.9f, 30, Telegraph.Pace.HEAVY, style = Vfx.Style.SOUL)
         f.task(script {
             wait(line.ticks)
             cue("nivaris.breath", crack, 4f, 1.1f)
@@ -598,34 +766,36 @@ class Hunt(private val f: EirholmFight) {
         })
     }
 
-    /** Ihr Leib gleitet draußen an der Eiswand der Kristallgrotte vorbei (echte Solvane, nur verschoben). */
+    /**
+     * Ihr Leib gleitet draußen an der Eiswand der Kristallgrotte vorbei. Seit 1.11.0 auf einer Bahn, die dem Bogen des
+     * Wegs folgt (die frühere Gerade schnitt durch den Fels). Ist draußen kein Platz, zeigt sich nur ihr Auge.
+     */
     private fun slidePast(d: NivarisEntity, c: HuntRoute.Cave): Script = script {
-        val i0 = HuntRoute.indexOfArc(c.a0 + c.iceFrom - 10.0)
-        val i1 = HuntRoute.indexOfArc(c.a0 + c.iceTo + 10.0)
-        val from = beside(i0, 10.5, 1.0)
-        val to = beside(i1, 10.5, 1.5)
+        val wps = ArrayList<Vec3d>()
+        var u = c.iceFrom - 10.0
+        var free = true
+        while (u <= c.iceTo + 10.0) {
+            val q = beside(HuntRoute.indexOfArc(c.a0 + u), 12.0, 2.5)
+            val top = runCatching { FarPlan.top(floor(q.x).toInt() - f.origin.x, floor(q.z).toInt() - f.origin.z) }.getOrDefault(0)
+            if (f.origin.y + top + 3.0 > q.y) free = false
+            wps += q
+            u += 5.0
+        }
+        if (!free) {
+            eye(c, (c.iceFrom + c.iceTo) / 2, f.players(), 2.2f, out = 4.9, ice = true)
+            return@script
+        }
         d.flying = true
         d.play(NivarisPose.GLIDE)
-        // erst unbemerkt an den Anfang
-        val start = d.entityPos
-        for (k in 1..16) { f.place(d, start.lerp(from, k / 16.0)); f.face(d, from.add(to.subtract(from))); yield(Unit) }
-        val viewers = f.players().filter { it.squaredDistanceTo(from) < 60.0 * 60.0 }
-        cue("nivaris.wing", from, 4f, 0.5f)
-        vanilla(SoundEvents.ENTITY_ELDER_GUARDIAN_CURSE, from.lerp(to, 0.5), 1.2f, 0.6f)
-        HuntNet.fx(viewers, HuntFx.LETTERBOX, from, life = 50)
-        val n = 34
-        for (k in 1..n) {
-            val t = k / n.toDouble()
-            val e = t * t * (3 - 2 * t)
-            f.place(d, from.lerp(to, e).add(0.0, sin(t * PI) * 0.8, 0.0))
-            f.face(d, to.add(to.subtract(from)))
-            if (k == n / 2) {
-                cue("nivaris.roar", d.entityPos, 3f, 0.8f)
-                HuntNet.fx(viewers, HuntFx.IMPACT, d.entityPos, a = 0.4f, life = 14)
-            }
-            yield(Unit)
-        }
-        wait(4)
+        val first = wps.first()
+        val viewers = f.players().filter { it.squaredDistanceTo(first) < 60.0 * 60.0 }
+        cue("nivaris.wing", first, 4f, 0.5f)
+        vanilla(SoundEvents.ENTITY_ELDER_GUARDIAN_CURSE, wps[wps.size / 2], 1.2f, 0.6f)
+        HuntNet.fx(viewers, HuntFx.LETTERBOX, first, life = 50)
+        yieldAll(DragonRail.fly(f, d, wps, 1.5))
+        cue("nivaris.roar", d.entityPos, 3f, 0.8f)
+        HuntNet.fx(viewers, HuntFx.IMPACT, d.entityPos, a = 0.4f, life = 14)
+        yieldAll(rejoinRail(d))
     }
 
     /** Brüllen in der Wasserfall-Kaverne: Bildschock, dann fallen Eiszapfen (drei angesagte Ringe). */
@@ -638,7 +808,7 @@ class Hunt(private val f: EirholmFight) {
         f.task(script {
             wait(14)
             val targets = viewers.filter { it.isAlive }.map { it.entityPos }.ifEmpty { listOf(mid.add(0.0, -c.theme.height.toDouble(), 0.0)) }
-            val rings = targets.take(3).map { f.calls.ring(it, 2.2f, 26, pace = Telegraph.Pace.QUICK) }
+            val rings = targets.take(3).map { f.calls.ring(it, 1.8f, 26, pace = Telegraph.Pace.QUICK) }
             for (t in targets.take(3)) HuntNet.fx(f.players().filter { it.squaredDistanceTo(t) < 50.0 * 50.0 }, HuntFx.BOULDER, t.add(0.0, c.theme.height - 1.0, 0.0), t, a = 0.5f, b = 1f, life = 26)
             wait(26)
             vanilla(SoundEvents.BLOCK_GLASS_BREAK, mid, 3f, 0.6f)
@@ -732,12 +902,11 @@ class Hunt(private val f: EirholmFight) {
 
     private fun deck(span: HuntRoute.Span) = decks.getOrPut(span.id) { deckOf(span) }
 
-    private var planksBroken = 0
-    private var nextPlanks = 0L
-    private var collapseFront = -1.0
-    private var collapseDone = false
-    private var rearStill = 0
-    private var lastRear = 0.0
+    private val weakHit = HashSet<Int>()
+    private val weakCache = HashMap<Int, DoubleArray>()
+    private val cutSpans = HashSet<Int>()
+    private val ropeHold = HashMap<Pair<Int, UUID>, Int>()
+    private var wound = 0f
 
     /** Entfernt Deck (und Geländer) zwischen Bogenlänge [a0] und [a1] auf [span]; true, wenn etwas fiel. */
     private fun dropDeck(span: HuntRoute.Span, a0: Double, a1: Double, rails: Boolean): Boolean {
@@ -754,64 +923,267 @@ class Hunt(private val f: EirholmFight) {
         return any
     }
 
-    private fun tickBridges(players: List<ServerPlayerEntity>, leaderArc: Double, rearArc: Double) {
-        val now = f.now
-        val b1 = spans.firstOrNull() ?: return
-        // B1: angekündigte Plankenbrüche vor dem Vordersten (Lücke 1,5 Blöcke, man springt darüber).
-        if (planksBroken < 2 && now >= nextPlanks && leaderArc in b1.a0 + 8.0..b1.a1 - 18.0) {
-            val g = leaderArc + 10.0 + rnd.nextDouble() * 3.0
-            val clear = players.none { abs(arcOf(it) - g) < 4.0 }
-            if (clear) {
-                planksBroken++
-                nextPlanks = now + 140
-                val at = point(HuntRoute.indexOfArc(g))
-                val near = players.filter { it.squaredDistanceTo(at) < 60.0 * 60.0 }
-                HuntNet.fx(near, HuntFx.PLANKS_SHAKE, at, a = 2.5f, life = 40)
-                vanilla(SoundEvents.ENTITY_CREAKING_SWAY, at, 2f, 0.6f)
-                vanilla(SoundEvents.BLOCK_SCAFFOLDING_STEP, at, 2f, 0.5f)
-                val dir = tangentVec(HuntRoute.indexOfArc(g))
-                f.calls.line(at.subtract(dir.multiply(1.0)), at.add(dir.multiply(1.5)), 3.4f, 40, Telegraph.Pace.HEAVY)
-                f.task(script {
-                    wait(40)
-                    if (dropDeck(b1, g - 0.75, g + 0.75, false)) {
-                        vanilla(SoundEvents.BLOCK_BAMBOO_WOOD_BREAK, at, 3f, 0.6f)
-                        vanilla(SoundEvents.ITEM_LEAD_BREAK, at, 2f, 0.8f)
-                        HuntNet.fx(f.players().filter { it.squaredDistanceTo(at) < 60.0 * 60.0 }, HuntFx.PLANKS_FALL, at, dir, a = 3f, life = 40)
+    private fun tickBridges(players: List<ServerPlayerEntity>) {
+        for (span in spans) {
+            if (span.id in cutSpans) {
+                ferryStragglers(span, players)
+            } else {
+                tickWeakPlanks(span, players)
+                tickRopes(span, players)
+            }
+        }
+    }
+
+    /** Morsche Planken: Wer darauftritt, hört sie knacken; kurz darauf bricht die Planke (Lücke 1,5 Blöcke). */
+    private fun tickWeakPlanks(span: HuntRoute.Span, players: List<ServerPlayerEntity>) {
+        val weak = weakCache.getOrPut(span.id) { HuntRoute.weakPlanks(span) }
+        for ((k, rel) in weak.withIndex()) {
+            val key = span.id * 1000 + k
+            if (key in weakHit) continue
+            val g = span.a0 + rel
+            val on = players.firstOrNull { p ->
+                p.isOnGround && denseIndex(p, 1.0, 1.4).let { i -> i in span.i0..span.i1 && abs(HuntRoute.arc(i) - g) < 1.0 }
+            } ?: continue
+            weakHit += key
+            val at = point(HuntRoute.indexOfArc(g))
+            val dir = tangentVec(HuntRoute.indexOfArc(g))
+            HuntNet.fx(players.filter { it.squaredDistanceTo(at) < 60.0 * 60.0 }, HuntFx.PLANKS_SHAKE, at, a = 2f, life = 14)
+            vanilla(SoundEvents.ENTITY_CREAKING_SWAY, at, 2f, 0.7f)
+            vanilla(SoundEvents.BLOCK_SCAFFOLDING_STEP, at, 2f, 0.5f)
+            on.sendMessage(Text.translatable("hha_arius.hunt.plank").formatted(Formatting.GOLD), true)
+            f.task(script {
+                wait(14)
+                if (span.id !in cutSpans && dropDeck(span, g - 0.75, g + 0.75, false)) {
+                    vanilla(SoundEvents.BLOCK_BAMBOO_WOOD_BREAK, at, 3f, 0.6f)
+                    vanilla(SoundEvents.ITEM_LEAD_BREAK, at, 2f, 0.8f)
+                    HuntNet.fx(f.players().filter { it.squaredDistanceTo(at) < 60.0 * 60.0 }, HuntFx.PLANKS_FALL, at, dir, a = 3f, life = 40)
+                }
+            })
+        }
+    }
+
+    /**
+     * Seile am fernen Kopf: Wer dort steht, sieht die Ansage und hält Schleichen. Gekappt wird erst, wenn **alle** Kämpfenden
+     * drüben sind; so stürzt nie ein Mitspieler ab und niemand bleibt auf der falschen Seite.
+     */
+    private fun tickRopes(span: HuntRoute.Span, players: List<ServerPlayerEntity>) {
+        if (pendingScene != null) return
+        val far = point(span.i1)
+        val across = span.a1 - 2.5
+        val atPost = players.filter { arcOf(it) >= across && it.squaredDistanceTo(far) < 6.0 * 6.0 && abs(it.y - far.y) < 3.0 }
+        ropeHold.keys.removeIf { k -> k.first == span.id && atPost.none { it.uuid == k.second } }
+        if (atPost.isEmpty()) return
+        val behind = players.firstOrNull { arcOf(it) < across }
+        for (p in atPost) {
+            if (f.now % 10L == 0L) {
+                val msg = if (behind != null) Text.translatable("hha_arius.hunt.rope.wait", behind.displayName).formatted(Formatting.GRAY)
+                else Text.translatable("hha_arius.hunt.rope.prompt", Text.keybind("key.sneak")).formatted(Formatting.GOLD, Formatting.BOLD)
+                p.sendMessage(msg, true)
+            }
+            if (behind != null || !p.isSneaking) {
+                ropeHold.remove(span.id to p.uuid)
+                continue
+            }
+            val h = (ropeHold[span.id to p.uuid] ?: 0) + 1
+            ropeHold[span.id to p.uuid] = h
+            HuntNet.fx(p, HuntFx.ROPE_PROGRESS, far, a = h / ROPE_HOLD.toFloat(), life = 6)
+            if (h >= ROPE_HOLD) {
+                cutRopes(span)
+                return
+            }
+        }
+    }
+
+    private fun cutRopes(span: HuntRoute.Span) {
+        cutSpans += span.id
+        ropeHold.clear()
+        vanilla(SoundEvents.ITEM_SHEARS_SNIP, point(span.i1), 2f, 0.7f)
+        val a = f.arius
+        if (a != null && !a.isRemoved && aS in span.a0 + 1.0..span.a1 - 1.0) {
+            pendingScene = { ropeScene(span) }
+            pendingUntil = f.now + 120
+        } else {
+            dropBridge(span)
+        }
+    }
+
+    /** Das Deck fällt: Kollision weg, am Client schwingt die Brücke am nahen Anker herab. */
+    private fun dropBridge(span: HuntRoute.Span) {
+        val at = point(span.i1)
+        dropDeck(span, span.a0, span.a1, true)
+        HuntNet.fx(f.audience(), HuntFx.BRIDGE_DROP, at, a = span.id.toFloat(), life = 200)
+        val near = f.players().filter { it.squaredDistanceTo(at) < 60.0 * 60.0 }
+        HuntNet.fx(near, HuntFx.IMPACT, at, a = 0.6f, life = 16)
+        vanilla(SoundEvents.ITEM_LEAD_BREAK, at, 4f, 0.5f)
+        cue("ridge.break", at, 5f, 0.5f)
+        for (p in f.players()) p.sendMessage(Text.translatable("hha_arius.hunt.rope.cut").formatted(Formatting.GOLD, Formatting.BOLD), true)
+    }
+
+    /** Wer (nach k. o. oder Nachzug) noch vor einer gekappten Brücke steht, wird hinübergetragen: nie abgeschnitten. */
+    private fun ferryStragglers(span: HuntRoute.Span, players: List<ServerPlayerEntity>) {
+        for (p in players) {
+            val s = safe[p.uuid] ?: continue
+            if (s.pending >= 0 || Hold.isHeld(p) || HuntRoute.arc(s.index) >= span.a0) continue
+            if (HuntRoute.arc(s.index) < span.a0 - 12.0) continue
+            s.index = rescueTarget(HuntRoute.indexOfArc(span.a1 + 3.0))
+            s.pending = s.index
+            s.pendingAt = f.now + 4
+            HuntNet.fx(p, HuntFx.FADE, p.entityPos, a = 4f, b = 14f, life = 22, color = 0xFFF2F6FA.toInt())
+        }
+    }
+
+    /** Echter Schaden an Arius: sofort auf der Leiste, im Finale zieht er ihm denselben Anteil ab ([carryWound]). */
+    private fun hurtArius(a: AriusEntity, frac: Float) {
+        wound += frac
+        f.ariusHp = (f.ariusHp - f.ariusMax * frac).coerceAtLeast(f.ariusMax * 0.05f)
+        f.updateBars()
+        a.play(AriusPose.STAGGER, 10)
+        cue("nivaris.land", a.entityPos, 3f, 1.3f)
+        if (!Cine.muted) {
+            f.fx(FxKind.DEBRIS_CLOUD, a.entityPos.add(0.0, 1.0, 0.0), a = 3f, life = 20)
+            Vfx.shockwave(f.world, Vfx.Style.HEAVEN, a.entityPos, 3f, 10, 1f)
+        }
+    }
+
+    /** Die Wunde aus der Jagd bleibt: Sobald das Finale sein Leben gesetzt hat, wird ihr Anteil abgezogen. */
+    private fun carryWound() {
+        val w = wound
+        if (w <= 0f) return
+        wound = 0f
+        f.task(script {
+            while (!f.ended && !(f.phase == EirholmFight.Phase.FINALE && f.ariusVulnerable)) yield(Unit)
+            if (!f.ended) {
+                f.ariusHp = (f.ariusHp - f.ariusMax * w).coerceAtLeast(f.ariusMax * 0.5f)
+                f.updateBars()
+            }
+        })
+    }
+
+    /**
+     * Die Seile reißen, während Arius auf der Brücke steht: Er stürzt mit dem Deck, schlägt hart auf (echter Schaden),
+     * Solvane fängt ihn im Flug und trägt ihn auf die andere Seite. Etwa 5 s, überspringbar.
+     */
+    private fun ropeScene(span: HuntRoute.Span): Script = script {
+        val a = f.arius
+        if (a == null || a.isRemoved || aS !in span.a0 + 1.0..span.a1 - 1.0) {
+            dropBridge(span)
+            return@script
+        }
+        val d = f.nivaris?.takeIf { !it.isRemoved && !f.dragonDowned }
+        val landingArc = HuntRoute.arc(HuntRoute.stationBefore(span.a1 + 9.0)).coerceAtLeast(span.a1 + 1.0)
+        val landing = pathAt(landingArc)
+        val far = point(span.i1)
+        val dir = tangentAt(span.a1 - 2.0)
+        val side = Vec3d(-dir.z, 0.0, dir.x)
+        var dropped = false
+        var hurt = false
+        val finish = {
+            if (!dropped) { dropped = true; dropBridge(span) }
+            if (!hurt) { hurt = true; hurtArius(a, 0.08f) }
+            f.place(a, landing)
+            f.face(a, landing.add(tangentAt(landingArc)))
+            aS = landingArc
+            a.play(AriusPose.IDLE)
+        }
+        if (d != null) dragonBusy = true
+        try {
+            yieldAll(mini(onAbort = { finish() }) {
+                script {
+                    // 1) Am Anker: die Seile reißen, Blick über die Brücke auf ihn.
+                    val knot = far.add(side.multiply(1.9)).add(0.0, 1.5, 0.0)
+                    val cam0 = freeCam(listOf(
+                        far.subtract(dir.multiply(3.0)).add(side.multiply(4.2)).add(0.0, 2.4, 0.0),
+                        far.subtract(dir.multiply(3.0)).add(side.multiply(-4.2)).add(0.0, 2.4, 0.0),
+                        far.add(dir.multiply(5.0)).add(side.multiply(2.5)).add(0.0, 3.0, 0.0),
+                        far.add(dir.multiply(2.6)).add(side.multiply(-0.8)).add(0.0, 2.2, 0.0),
+                    ), knot)
+                    cam(cam0, cam0.lerp(knot, 0.2), knot, knot.subtract(dir.multiply(3.0)), 12, 58.0, 48.0)
+                    f.face(a, far)
+                    a.play(AriusPose.GUARD, 10)
+                    wait(8)
+                    dropped = true
+                    dropBridge(span)
+                    a.play(AriusPose.STAGGER, 20)
+                    // 2) Er stürzt. Solvane kommt von außen und fängt ihn nach etwa 30 Ticks.
+                    val fallFrom = a.entityPos
+                    val floorY = f.origin.y + runCatching { FarPlan.top(floor(fallFrom.x).toInt() - f.origin.x, floor(fallFrom.z).toInt() - f.origin.z) }.getOrDefault(0) + 2.0
+                    fun fallY(n: Int) = maxOf(fallFrom.y - 0.035 * n * n, floorY + 3.0)
+                    val catchTicks = 30
+                    val catchAt = Vec3d(fallFrom.x, fallY(catchTicks) - 1.6, fallFrom.z)
+                    // Nah bei ihm, frei über dem Tal: Er fällt, die Kamera sinkt mit.
+                    var sgn = 1.0
+                    fun near(s: Double, k: Double) = Vec3d(fallFrom.x, fallFrom.y + (catchAt.y + 3.0 - fallFrom.y) * k + 1.4 * (1 - k), fallFrom.z).add(side.multiply(s * (6.0 + 2.0 * k)))
+                    if (!airAt(near(1.0, 0.0)) || !airAt(near(1.0, 1.0))) sgn = -1.0
+                    cam(near(sgn, 0.0), near(sgn, 1.0), fallFrom.add(0.0, 1.0, 0.0), catchAt, catchTicks + 4, 62.0, 72.0, lookAt = a, lookOffset = 1.1)
+                    val inbound = d?.let { DragonRail.path(it.entityPos, f.facing(it), listOf(catchAt.subtract(dir.multiply(10.0)), catchAt)) }
+                    d?.let {
+                        it.flying = true
+                        it.play(NivarisPose.DIVE)
                     }
+                    for (n in 1..catchTicks) {
+                        f.place(a, Vec3d(fallFrom.x, fallY(n), fallFrom.z))
+                        if (d != null && inbound != null) {
+                            val q = (inbound.lastIndex * (n / catchTicks.toDouble())).toInt().coerceAtMost(inbound.lastIndex)
+                            f.place(d, inbound[q])
+                            f.face(d, inbound[(q + 6).coerceAtMost(inbound.lastIndex)].takeIf { it.squaredDistanceTo(inbound[q]) > 0.01 } ?: inbound[q].add(dir))
+                        }
+                        if (n == 18) cue("nivaris.roar", catchAt, 4f, 0.9f)
+                        yield(Unit)
+                    }
+                    val landIdx = HuntRoute.indexOfArc(landingArc)
+                    val landingCam = freeCam(listOf(beside(landIdx, 5.0, 3.2), beside(landIdx, 8.0, 5.0), beside(landIdx, -2.4, 2.6), landing.add(dir.multiply(4.0)).add(0.0, 3.0, 0.0)), landing.add(0.0, 1.2, 0.0))
+                    // 3) Harter Aufprall auf ihrem Rücken: echter Schaden.
+                    hurt = true
+                    hurtArius(a, 0.08f)
+                    if (d != null) {
+                        for (p in f.audience()) p.sendMessage(Text.translatable("hha_arius.hunt.rope.caught").formatted(Formatting.AQUA, Formatting.BOLD), true)
+                        d.play(NivarisPose.GLIDE)
+                        val carry = DragonRail.path(d.entityPos, dir, listOf(catchAt.add(dir.multiply(14.0)).add(0.0, 6.0, 0.0), landing.add(0.0, 7.5, 0.0)))
+                        val cam2 = landingCam
+                        val ticks = (carry.size * DragonRail.STEP / 2.1).toInt().coerceIn(16, 40)
+                        cam(cam2, cam2.add(0.0, 0.8, 0.0), catchAt, landing, ticks + 12, 70.0, 58.0, lookAt = a, lookOffset = 1.2)
+                        for (n in 1..ticks) {
+                            val q = (carry.lastIndex * (n / ticks.toDouble())).toInt().coerceAtMost(carry.lastIndex)
+                            f.place(d, carry[q])
+                            f.face(d, carry[(q + 6).coerceAtMost(carry.lastIndex)].takeIf { it.squaredDistanceTo(carry[q]) > 0.01 } ?: carry[q].add(dir))
+                            f.place(a, carry[q].add(0.0, 3.0, 0.0))
+                            yield(Unit)
+                        }
+                        // Sie lässt ihn über dem Weg los.
+                        val rel = a.entityPos
+                        a.play(AriusPose.STAB_GROUND, 8)
+                        for (n in 1..8) {
+                            f.place(a, rel.lerp(landing, n / 8.0))
+                            yield(Unit)
+                        }
+                    } else {
+                        // Ohne Solvane: ein gewaltiger Sprung aus der Tiefe.
+                        val rel = a.entityPos
+                        a.play(AriusPose.LAUNCH, 6)
+                        val cam2 = landingCam
+                        cam(cam2, cam2, rel, landing, 28, 66.0, 60.0, lookAt = a, lookOffset = 1.2)
+                        for (n in 1..20) {
+                            val k = n / 20.0
+                            f.place(a, rel.lerp(landing, k).add(0.0, sin(k * PI) * 9.0, 0.0))
+                            yield(Unit)
+                        }
+                    }
+                    f.place(a, landing)
+                    cue("arius.stab_ground", landing, 3f, 0.9f)
+                    Vfx.shockwave(f.world, Vfx.Style.HEAVEN, landing, 3.5f, 12, 1.4f)
+                    wait(6)
+                }
+            })
+            finish()
+        } finally {
+            if (d != null) {
+                f.task(script {
+                    try { yieldAll(rejoinRail(d)) } finally { dragonBusy = false }
                 })
             }
         }
-        // B3: Einsturz hinter der Gruppe, sobald alle auf der Brücke sind.
-        val b3 = spans.getOrNull(1) ?: return
-        if (collapseDone) return
-        if (collapseFront < 0) {
-            if (rearArc >= b3.a0 + 8.0 && rearArc < b3.a1) {
-                collapseFront = b3.a0 + 3.0
-                lastRear = rearArc
-                val at = point(b3.i0)
-                cue("ridge.break", at, 5f, 0.5f)
-                vanilla(SoundEvents.ITEM_LEAD_BREAK, at, 4f, 0.5f)
-                HuntNet.fx(players, HuntFx.LETTERBOX, at, life = 70)
-                HuntNet.fx(players, HuntFx.IMPACT, at, a = 0.6f, life = 16)
-                for (p in players) p.sendMessage(Text.translatable("hha_arius.hunt.collapse").formatted(Formatting.GOLD, Formatting.BOLD), true)
-            }
-            return
-        }
-        rearStill = if (abs(rearArc - lastRear) < 0.05) rearStill + 1 else 0
-        lastRear = rearArc
-        val keep = if (rearStill > 60) 2.0 else 5.0
-        val want = (rearArc - keep).coerceAtMost(b3.a1 - 3.0)
-        val step = (want - collapseFront).coerceIn(0.0, 0.25)
-        val before = collapseFront
-        collapseFront += step
-        if (floor(collapseFront) > floor(before)) {
-            if (dropDeck(b3, before - 0.5, collapseFront, true)) {
-                val at = point(HuntRoute.indexOfArc(collapseFront))
-                if (floor(collapseFront).toInt() % 2 == 0) vanilla(SoundEvents.BLOCK_BAMBOO_WOOD_BREAK, at, 2.5f, 0.6f + rnd.nextFloat() * 0.3f)
-                HuntNet.fx(players.filter { it.squaredDistanceTo(at) < 70.0 * 70.0 }, HuntFx.PLANKS_FALL, at, tangentVec(HuntRoute.indexOfArc(collapseFront)), a = 2f, life = 40)
-            }
-        }
-        if (collapseFront >= b3.a1 - 3.1 || rearArc > b3.a1 + 10.0) collapseDone = true
+        nextAttack = f.now + 60
+        nextLeap = f.now + 60
     }
 
     // --- Lawine ---------------------------------------------------------------------------------------------------
@@ -865,6 +1237,7 @@ class Hunt(private val f: EirholmFight) {
     fun run(): Script = script {
         val a = f.arius ?: return@script
         buildRoute()
+        buildRail()
         val rage = CineScene(f) { f.atmos(HUNT_ATMOS, 20) }
         yieldAll(rage.play(script { yieldAll(rageScene(rage, a)) }))
         f.chasing = true
@@ -878,13 +1251,19 @@ class Hunt(private val f: EirholmFight) {
         HuntNet.fx(f.audience(), HuntFx.STATE, a.entityPos, a = 1f, e1 = a.id)
         f.fxAll(FxKind.RAGE_AURA, a.entityPos, life = 20 * 60 * 25, e1 = a)
         for (p in f.players()) p.sendMessage(Text.translatable("hha_arius.msg.chase").formatted(Formatting.AQUA, Formatting.BOLD), false)
+        // Am Ende der Schlacht steht seine Leiste auf null: In der Jagd zeigt sie, was ihm geblieben ist.
+        if (f.ariusHp <= 0f) f.ariusHp = f.ariusMax * 0.4f
+        f.updateBars()
         val d = f.nivaris?.takeIf { !f.dragonDowned }
         d?.let {
             it.flying = true
             it.resonance = true
             it.play(NivarisPose.GLIDE)
+            dragonBusy = true
+            f.task(script { try { yieldAll(rejoinRail(it)) } finally { dragonBusy = false } })
         }
-        aS = route.project(a.entityPos).first
+        aS = 0.0
+        current = this@Hunt
         nextAttack = f.now + 70
         nextDragon = f.now + 140
         nextStar = f.now + 600
@@ -901,22 +1280,37 @@ class Hunt(private val f: EirholmFight) {
                 }
                 guardPlayers(players)
                 huntMusic(players)
-                val progress = players.associateWith { route.project(it.entityPos).first }
-                val leader = progress.maxByOrNull { it.value }!!.key
-                val rear = progress.minByOrNull { it.value }!!.key
-                val leaderArc = players.maxOf { arcOf(it) }
-                val rearArc = players.minOf { arcOf(it) }
+                val leader = players.maxByOrNull { arcOf(it) }!!
+                val rear = players.minByOrNull { arcOf(it) }!!
+                val leaderArc = arcOf(leader)
+                val rearArc = arcOf(rear)
+                lastLeaderArc = leaderArc
+                // Eine vorgemerkte kurze Szene beginnt, sobald kein Angriff mehr läuft.
+                val next = pendingScene
+                if (next != null && ((!busy && !dragonBusy) || f.now >= pendingUntil)) {
+                    pendingScene = null
+                    inScene = true
+                    try {
+                        yieldAll(next())
+                    } finally {
+                        inScene = false
+                    }
+                    nextAttack = maxOf(nextAttack, f.now + 30)
+                    nextLeap = maxOf(nextLeap, f.now + 30)
+                    continue
+                }
                 tickCaves(players, leaderArc, rearArc)
-                tickBridges(players, leaderArc, rearArc)
+                tickBridges(players)
                 tickAvalanche(players, leaderArc, rearArc)
                 tickWind(players)
                 if (f.now % 20L == 0L) HuntNet.fx(f.audience(), HuntFx.STATE, a.entityPos, a = 1f, e1 = a.id, life = 40)
-                if (d != null) tickDragon(d, leader, progress[leader] ?: 0.0)
-                if (!busy) chaseTick(a, rear, progress[rear] ?: 0.0, leader, progress[leader] ?: 0.0)
+                if (d != null) tickDragon(d, leader, leaderArc)
+                if (!busy && pendingScene == null) chaseTick(a, rear, rearArc, leader, leaderArc)
                 yield(Unit)
             }
         } finally {
             f.chasing = false
+            current = null
             HuntNet.fx(f.audience(), HuntFx.STATE, a.entityPos, a = 0f)
         }
     }
@@ -943,18 +1337,28 @@ class Hunt(private val f: EirholmFight) {
                 return
             }
         }
-        // Weit zurück oder auf einer anderen Windung: Sprung (über die Flanke, wenn sie über ihm sind).
-        if (now >= nextLeap && (gap > 30.0 || (d3 < 30.0 && gap > 12.0 && t.y - a.y > 5.0))) {
-            val to = ground(route.at((sT - 5.0).coerceAtLeast(aS)))
-            start { leap(a, to, t) }
+        // Eine gekappte Brücke liegt vor ihm: ein gewaltiger Sprung auf den Landepunkt drüben.
+        val gone = spans.firstOrNull { it.id in cutSpans && aS >= it.a0 - 3.0 && aS < it.a1 + 1.0 }
+        if (gone != null && now >= nextLeap) {
+            val across = gone.a1 + 8.0
+            start { leap(a, across, t) }
             nextLeap = now + 60
             return
+        }
+        // Weit zurück oder auf einer anderen Windung: Sprung von Landepunkt zu Landepunkt, immer den Weg entlang.
+        if (now >= nextLeap && (gap > 30.0 || (d3 < 30.0 && gap > 12.0 && t.y - a.y > 5.0))) {
+            val to = clearAhead(aS, minOf(sT - 5.0, aS + 44.0))
+            if (to > aS + 4.0) {
+                start { leap(a, to, t) }
+                nextLeap = now + 60
+                return
+            }
         }
         // Mittlere Entfernung: Fernangriff.
         if (now >= nextAttack && d3 in 7.0..34.0) {
             var pick = rnd.nextInt(4)
             if (pick == lastRanged) pick = (pick + 1) % 4
-            val onBridge = f.players().firstOrNull { overGap(it) && abs(route.project(it.entityPos).first - aS) < 40.0 }
+            val onBridge = f.players().firstOrNull { overGap(it) && abs(arcOf(it) - aS) < 40.0 }
             lastRanged = pick
             when {
                 now >= nextStar && rnd.nextFloat() < 0.4f -> { nextStar = now + 640; start { chaseStar(a, leader, sL) } }
@@ -973,21 +1377,53 @@ class Hunt(private val f: EirholmFight) {
             gap > 6.0 -> 0.34
             else -> 0.0
         }
-        if (speed > 0.0) {
-            aS = (aS + speed).coerceAtMost(route.length)
-            val want = route.at(aS)
-            var pos = ground(want)
-            if (pos.y - a.y > 1.2) {
-                // Stufe oder Hindernis: kleiner Sprung
-                pos = pos.add(0.0, 0.4, 0.0)
-                if (f.now % 6L == 0L) cue("arius.wind_step", a.entityPos, 1.2f, 1.5f)
-            }
+        if (speed > 0.0 && gone == null) {
+            aS = clearAhead(aS, aS + speed).coerceIn(aS, HuntRoute.arc(HuntRoute.size - 1))
+            val want = pathAt(aS)
+            // Nach einem Angriff abseits der Mitte läuft er weich auf die Wegmitte zurück.
+            val off = Vec3d(a.x - want.x, 0.0, a.z - want.z)
+            val pos = if (off.lengthSquared() in 0.01..64.0) want.add(off.multiply(0.8)) else want
             f.place(a, pos)
-            f.face(a, a.entityPos.add(route.dir(aS)))
+            f.face(a, a.entityPos.add(tangentAt(aS)))
             if (a.pose != AriusPose.IDLE) a.play(AriusPose.IDLE)
         } else {
             f.face(a, t.entityPos)
         }
+    }
+
+    /** Wie hoch Arius über Wegpunkt [i] gerade springen kann: echte Kopffreiheit (bis 14) abzüglich seiner Größe. */
+    private fun liftRoom(i: Int): Double {
+        val p = point(i)
+        val base = BlockPos.ofFloored(p.x, p.y + 0.05, p.z)
+        var free = 0
+        while (free < 14) {
+            val q = base.up(free)
+            if (!f.world.getBlockState(q).getCollisionShape(f.world, q).isEmpty) break
+            free++
+        }
+        return maxOf(HuntRoute.liftAt(i), free - (p.y - base.y) - 2.2)
+    }
+
+    /** Bis wohin Arius von [from] nach [to] kommt, ohne in einen geschlossenen Geröllpfropfen zu laufen. */
+    private fun clearAhead(from: Double, to: Double): Double {
+        var end = to
+        for (run in caves) {
+            if (!run.sealed || run.opened) continue
+            val plug = run.c.a0 + run.c.plugFrom
+            if (from < plug && plug - 2.5 < end) end = maxOf(from, plug - 2.5)
+        }
+        return end
+    }
+
+    /** Ein sicherer Standplatz nahe [want]: auf der Lauffläche des Wegs, sonst die Wegmitte auf Höhe von Arius' Bogenlänge. */
+    private fun safeNear(want: Vec3d): Vec3d {
+        val i = HuntRoute.indexAtHeight(floor(want.x).toInt() - f.origin.x, floor(want.z).toInt() - f.origin.z, want.y - f.origin.y, -0.4, 1.6)
+        if (i >= 0) {
+            val g = ground(want)
+            if (abs(g.y - point(i).y) <= 1.2 && f.passable(g)) return g
+            return point(i)
+        }
+        return pathAt(aS)
     }
 
     private fun start(attack: () -> Script) {
@@ -997,26 +1433,44 @@ class Hunt(private val f: EirholmFight) {
                 yieldAll(attack())
             } finally {
                 busy = false
-                f.arius?.let { aS = maxOf(aS - 4.0, route.project(it.entityPos).first) }
+                f.arius?.let {
+                    val i = HuntRoute.indexAtHeight(floor(it.x).toInt() - f.origin.x, floor(it.z).toInt() - f.origin.z, it.y - f.origin.y, 2.0, 2.0)
+                    if (i >= 0) aS = maxOf(aS - 4.0, HuntRoute.arc(i))
+                }
             }
         })
     }
 
-    /** Sprung im Bogen nach [to] (absolut, Boden), Landung mit kleinem Ring. */
-    private fun leap(a: AriusEntity, to: Vec3d, t: ServerPlayerEntity): Script = script {
+    /**
+     * Sprung den Weg entlang auf den letzten Landepunkt vor Bogenlänge [toArc]: Die Bahn folgt der Wegmitte und bleibt
+     * unter der erlaubten Höhe ([HuntRoute.liftAt]), er kann also weder in den Hang noch durch eine Decke geraten.
+     */
+    private fun leap(a: AriusEntity, toArc: Double, t: ServerPlayerEntity): Script = script {
+        val station = HuntRoute.stationBefore(toArc)
+        val target = HuntRoute.arc(station)
+        val fromArc = aS
         val from = a.entityPos
-        val dist = from.distanceTo(to)
-        val ticks = (10 + dist / 2.2).toInt().coerceIn(12, 26)
-        val ring = f.calls.ring(to, 3.0f, ticks, pace = Telegraph.Pace.QUICK)
+        val to = point(station)
+        val startOff = from.subtract(pathAt(fromArc))
+        val dist = abs(target - fromArc) + Vec3d(startOff.x, 0.0, startOff.z).length()
+        val ticks = (10 + dist / 2.2).toInt().coerceIn(12, 28)
+        val ring = f.calls.ring(to, 2.4f, ticks, pace = Telegraph.Pace.QUICK)
         a.play(AriusPose.LAUNCH, 6)
         cue("arius.wind_step", from, 3f, 0.8f)
         if (!Cine.muted) f.fx(FxKind.DASH_STREAK, from, to, life = ticks + 4)
-        val lift = 4.0 + dist * 0.12 + maxOf(0.0, to.y - from.y) * 0.3
+        var cap = 12.0
+        var scan = minOf(fromArc, target)
+        while (scan <= maxOf(fromArc, target)) {
+            cap = minOf(cap, liftRoom(HuntRoute.indexOfArc(scan)))
+            scan += 1.0
+        }
+        val lift = minOf(2.0 + dist * 0.1, cap)
         for (i in 1..ticks) {
             val k = i / ticks.toDouble()
-            val xz = from.lerp(to, k)
-            val y = from.y + (to.y - from.y) * k + sin(k * PI) * lift
-            f.place(a, Vec3d(xz.x, y, xz.z))
+            val base = pathAt(fromArc + (target - fromArc) * k)
+            // Stand er neben der Wegmitte (Feld, nach einem Hieb), läuft der Versatz in der ersten Hälfte aus.
+            val fade = (1.0 - k / 0.45).coerceIn(0.0, 1.0).let { it * it }
+            f.place(a, Vec3d(base.x + startOff.x * fade, base.y + startOff.y * fade + sin(k * PI) * lift, base.z + startOff.z * fade))
             f.face(a, t.entityPos)
             if (i == ticks - 6) a.play(AriusPose.STAB_GROUND, 6)
             yield(Unit)
@@ -1030,27 +1484,28 @@ class Hunt(private val f: EirholmFight) {
             exactHit(p, 6f, Damage.Kind.IMPACT)
             launch(p, flatDir(to, p.entityPos).multiply(0.6).add(0.0, 0.4, 0.0))
         }
-        nearMiss(to, 6.0, hit)
-        aS = route.project(to).first
+        nearMiss(to, 5.0, hit)
+        aS = target
         wait(6)
     }
 
     /**
-     * Er schneidet sich neben ihnen durch die Talwand der Höhle: Sprung nach draußen neben das Ziel, eine leuchtende Naht
-     * im Fels (Ansage), der Schnitt reißt ein Loch, er tritt hinter ihnen in den Gang.
+     * Er schneidet sich neben ihnen durch die Talwand der Höhle: Sprung den Gang entlang hinter das Ziel, eine leuchtende
+     * Naht im Fels (Ansage), der Schnitt reißt ein Loch in die Wand und fegt quer über den Gang.
      */
     private fun cutIn(a: AriusEntity, t: ServerPlayerEntity, ti: Int, cave: HuntRoute.Cave): Script = script {
         val i = (ti - 10).coerceAtLeast(cave.i0 + 16)
-        val outside = ground(beside(i, 8.5, 2.0))
-        yieldAll(leap(a, outside, t))
+        val back = clearAhead(aS, HuntRoute.arc(i))
+        if (back > aS + 4.0) yieldAll(leap(a, back, t))
+        val stand = a.entityPos
         val wallIn = beside(i, cave.theme.lane + 0.3, 1.0)
         val wallOut = beside(i, 7.0, 1.0)
         f.face(a, wallIn)
         a.play(AriusPose.CUT_CHARGE, 20)
-        cue("cut.charge", outside, 4f, 1.0f)
+        cue("cut.charge", stand, 4f, 1.0f)
         val near = f.players().filter { it.squaredDistanceTo(wallIn) < 60.0 * 60.0 }
         HuntNet.fx(near, HuntFx.ROCK_CUT, wallOut.add(0.0, 2.0, 0.0), wallIn.add(0.0, 2.0, 0.0), life = 24)
-        val zone = f.calls.line(Vec3d(wallIn.x, point(i).y, wallIn.z), Vec3d(beside(i, -cave.theme.lane, 0.0).x, point(i).y, beside(i, -cave.theme.lane, 0.0).z), 3.0f, 22, Telegraph.Pace.HEAVY)
+        val zone = f.calls.line(Vec3d(wallIn.x, point(i).y, wallIn.z), Vec3d(beside(i, -cave.theme.lane, 0.0).x, point(i).y, beside(i, -cave.theme.lane, 0.0).z), 2.2f, 22, Telegraph.Pace.HEAVY)
         wait(zone.ticks)
         a.play(AriusPose.SPIN_CUT, 10)
         cue("cut.strike", wallIn, 5f, 0.8f)
@@ -1069,7 +1524,7 @@ class Hunt(private val f: EirholmFight) {
             f.edits.clear(pos)
         }
         if (!Cine.muted) {
-            f.fx(FxKind.SLASH_ARC, wallIn.add(0.0, 1.0, 0.0), flatDir(outside, wallIn), a = 5f, b = 1f, life = 12)
+            f.fx(FxKind.SLASH_ARC, wallIn.add(0.0, 1.0, 0.0), flatDir(stand, wallIn), a = 5f, b = 1f, life = 12)
             f.fx(FxKind.DEBRIS_CLOUD, wallIn.add(0.0, 1.0, 0.0), a = 4f, life = 30)
         }
         f.calls.roomShake(wallIn, 4f, 30f)
@@ -1079,12 +1534,8 @@ class Hunt(private val f: EirholmFight) {
             launch(p, tangentVec(i).multiply(0.5).add(0.0, 0.3, 0.0))
         }
         HuntNet.fx(near, HuntFx.IMPACT, wallIn, a = 0.8f, life = 18)
-        nearMiss(wallIn, 7.0, hit)
+        nearMiss(wallIn, 5.5, hit)
         wait(6)
-        // hinein in den Gang
-        val inside = ground(point(i).add(0.0, 0.5, 0.0))
-        for (k in 1..6) { f.place(a, outside.lerp(inside, k / 6.0)); yield(Unit) }
-        aS = route.project(inside).first
         a.play(AriusPose.IDLE)
         wait(8)
     }
@@ -1095,17 +1546,17 @@ class Hunt(private val f: EirholmFight) {
             val t = t0.takeIf { it.isAlive && it in f.players() } ?: break
             if (a.entityPos.distanceTo(t.entityPos) > 4.5) {
                 val from = a.entityPos
-                val to = ground(t.entityPos.subtract(flatDir(from, t.entityPos).multiply(1.6)))
+                val to = safeNear(t.entityPos.subtract(flatDir(from, t.entityPos).multiply(1.6)))
                 for (i in 1..4) { f.place(a, from.lerp(to, i / 4.0)); yield(Unit) }
                 if (!Cine.muted) f.fx(FxKind.DASH_STREAK, from, to, life = 8)
             }
             f.face(a, t.entityPos)
             val dir = f.facing(a)
-            val cone = f.calls.cone(a.entityPos, dir, 4.4f, 70f, if (k == 0) 12 else 10, if (k == 0) Telegraph.Pace.HEAVY else Telegraph.Pace.FOLLOW_UP)
+            val cone = f.calls.cone(a.entityPos, dir, COMBO_RANGE, 70f, if (k == 0) 12 else 10, if (k == 0) Telegraph.Pace.HEAVY else Telegraph.Pace.FOLLOW_UP)
             a.play(listOf(AriusPose.COMBO_1, AriusPose.COMBO_2, AriusPose.LAUNCH)[k], cone.ticks)
             wait(cone.ticks)
             cue("arius.slash", a.entityPos, 3f, 1.0f + k * 0.1f)
-            if (!Cine.muted) f.fx(FxKind.SLASH_ARC, a.entityPos.add(0.0, 1.1, 0.0), dir, a = 4.4f, b = if (k == 2) 1f else 0.2f, life = 10)
+            if (!Cine.muted) f.fx(FxKind.SLASH_ARC, a.entityPos.add(0.0, 1.1, 0.0), dir, a = COMBO_RANGE, b = if (k == 2) 1f else 0.2f, life = 10)
             val hit = sameLevel(cone.hits(f.players()), a.y)
             for (p in hit) {
                 exactHit(p, 6f)
@@ -1123,19 +1574,19 @@ class Hunt(private val f: EirholmFight) {
         f.face(a, t.entityPos)
         val from = a.entityPos
         val dir = flatDir(from, t.entityPos)
-        val dist = from.distanceTo(t.entityPos)
+        val reach = minOf(from.distanceTo(t.entityPos) + WAVE_OVERSHOOT, WAVE_MAX)
         val side = Vec3d(-dir.z, 0.0, dir.x)
         for (k in 0 until 3) {
             val off = side.multiply(listOf(0.0, -1.8, 1.8)[k])
             val l0 = from.add(off)
-            val l1 = from.add(off).add(dir.multiply(dist + 8.0))
-            val line = f.calls.line(l0, Vec3d(l1.x, t.y, l1.z), 2.2f, if (k == 0) 16 else 10, if (k == 0) Telegraph.Pace.PROJECTILE else Telegraph.Pace.FOLLOW_UP)
+            val l1 = from.add(off).add(dir.multiply(reach))
+            val line = f.calls.line(l0, Vec3d(l1.x, t.y, l1.z), 1.7f, if (k == 0) 16 else 10, if (k == 0) Telegraph.Pace.PROJECTILE else Telegraph.Pace.FOLLOW_UP)
             a.play(if (k % 2 == 0) AriusPose.COMBO_1 else AriusPose.COMBO_2, line.ticks)
             wait(line.ticks)
             cue("arius.slash", from, 3f, 0.9f + k * 0.1f)
             if (!Cine.muted) {
                 f.fx(FxKind.SLASH_ARC, from.add(0.0, 1.1, 0.0), dir, a = 5f, b = 0f, life = 12)
-                Vfx.crescent(f.world, Vfx.Style.HEAVEN, from.add(off).add(0.0, 0.8, 0.0), dir, (dist + 8.0).toFloat(), 2f, 10)
+                Vfx.crescent(f.world, Vfx.Style.HEAVEN, from.add(off).add(0.0, 0.8, 0.0), dir, reach.toFloat(), 1.7f, 10)
             }
             val hit = line.hits(f.players()).filter { abs(it.y - t.y) <= 4.0 }
             for (p in hit) exactHit(p, 6f)
@@ -1144,7 +1595,7 @@ class Hunt(private val f: EirholmFight) {
                 val v = l1.subtract(l0)
                 val tt = ((q.subtract(l0)).dotProduct(v) / v.lengthSquared().coerceAtLeast(1e-6)).coerceIn(0.0, 1.0)
                 val c = l0.add(v.multiply(tt))
-                if (Vec3d(q.x - c.x, 0.0, q.z - c.z).length() < 3.4) HuntNet.fx(p, HuntFx.NEAR_MISS, c, life = 14)
+                if (Vec3d(q.x - c.x, 0.0, q.z - c.z).length() < 2.9) HuntNet.fx(p, HuntFx.NEAR_MISS, c, life = 14)
             }
         }
         a.play(AriusPose.IDLE)
@@ -1161,9 +1612,9 @@ class Hunt(private val f: EirholmFight) {
         val group = f.calls.boss()
         val lines = listOf(-0.28, 0.0, 0.28).map { off ->
             val dd = Vec3d(dir.x * kotlin.math.cos(off) - dir.z * sin(off), 0.0, dir.x * sin(off) + dir.z * kotlin.math.cos(off))
-            val to = from.add(dd.multiply(from.distanceTo(t.entityPos) + 10.0))
+            val to = from.add(dd.multiply(minOf(from.distanceTo(t.entityPos) + SPEAR_OVERSHOOT, SPEAR_MAX)))
             if (!Cine.muted) f.fx(FxKind.CRYSTAL, from.add(0.0, 2.6, 0.0).add(dd.multiply(0.8)), to.add(0.0, 1.0, 0.0), a = 20f, life = 28)
-            group.line(from, to, 1.6f, 20, Telegraph.Pace.PROJECTILE)
+            group.line(from, to, 1.25f, 20, Telegraph.Pace.PROJECTILE)
         }
         wait(20)
         cue("arius.thrust", from, 3f, 1.2f)
@@ -1178,23 +1629,25 @@ class Hunt(private val f: EirholmFight) {
     }
 
     /**
-     * Lawine aus der Flanke: Er springt über die Spieler hinweg an den Hang oberhalb der Route und schlägt in den Schnee;
-     * drei Schneewalzen rollen quer über den Weg vor dem Vordersten (je 3 Herzen, wirft entlang der Route zurück).
+     * Lawine aus der Flanke: Er springt auf einen Landepunkt hinter dem Vordersten und schlägt in den Schnee; drei
+     * Schneewalzen rollen quer über den Weg vor dem Vordersten (je 3 Herzen, wirft entlang der Route zurück). Seit 1.11.0
+     * decken sie nicht mehr die ganze Wegbreite: Man kann seitlich ausweichen.
      */
     private fun flankAvalanche(a: AriusEntity, leader: ServerPlayerEntity, sL: Double): Script = script {
-        val up = lowSide(sL).multiply(-1.0)
-        val perch = ground(route.at(sL + 6.0).add(up.multiply(9.0)).add(0.0, 6.0, 0.0))
-        yieldAll(leap(a, perch, leader))
-        f.face(a, route.at(sL))
+        val perch = clearAhead(aS, sL - 4.0)
+        if (perch > aS + 4.0) yieldAll(leap(a, perch, leader))
+        f.face(a, pathAt(sL))
         a.play(AriusPose.STAB_GROUND, 20)
-        cue("glacier.collapse", perch, 5f, 0.8f)
+        cue("glacier.collapse", a.entityPos, 5f, 0.8f)
         f.calls.roomShake(leader.entityPos, 4f, 40f)
         val waves = (0 until 3).map { k ->
             val sp = sL + 12.0 - k * 6.0
-            val pt = route.at(sp)
-            val dir = route.dir(sp)
+            val pt = pathAt(sp)
+            val dir = tangentAt(sp)
             val side = Vec3d(-dir.z, 0.0, dir.x)
-            val line = f.calls.line(pt.add(side.multiply(-6.0)), pt.add(side.multiply(6.0)), 3.2f, 24 + k * 9, Telegraph.Pace.HEAVY)
+            // Versetzt: jede Walze lässt eine Wegseite frei.
+            val shift = side.multiply(listOf(1.3, -1.3, 1.3)[k])
+            val line = f.calls.line(pt.add(shift).add(side.multiply(-AVA_HALF)), pt.add(shift).add(side.multiply(AVA_HALF)), 2.4f, 24 + k * 9, Telegraph.Pace.HEAVY)
             Triple(line, pt, dir)
         }
         var elapsed = 0
@@ -1203,9 +1656,9 @@ class Hunt(private val f: EirholmFight) {
             elapsed = line.ticks
             cue("ridge.break", pt, 4f, 0.7f)
             if (!Cine.muted) {
-                f.fx(FxKind.CLEAR_WAVE, pt, a = 7f, life = 16)
-                f.fx(FxKind.DEBRIS_CLOUD, pt.add(0.0, 1.0, 0.0), a = 5f, life = 30)
-                Vfx.shockwave(f.world, Vfx.Style.STORM, pt, 6f, 12, 1.4f)
+                f.fx(FxKind.CLEAR_WAVE, pt, a = 5f, life = 16)
+                f.fx(FxKind.DEBRIS_CLOUD, pt.add(0.0, 1.0, 0.0), a = 4f, life = 30)
+                Vfx.shockwave(f.world, Vfx.Style.STORM, pt, 4.5f, 12, 1.4f)
             }
             val hit = sameLevel(line.hits(f.players()), pt.y)
             for (p in hit) {
@@ -1222,13 +1675,12 @@ class Hunt(private val f: EirholmFight) {
      * vom Steg.
      */
     private fun bridgeGale(a: AriusEntity, t: ServerPlayerEntity): Script = script {
-        val (s, _) = route.project(t.entityPos)
-        val dir = route.dir(s)
+        val dir = tangentAt(arcOf(t))
         val pt = Vec3d(t.x, t.y, t.z)
         f.face(a, pt)
         a.play(AriusPose.SPIN_CUT, 22)
         cue("cut.reverse_wind", a.entityPos, 3f, 1.2f)
-        val line = f.calls.line(pt.subtract(dir.multiply(7.0)), pt.add(dir.multiply(7.0)), 3.4f, 22, Telegraph.Pace.HEAVY)
+        val line = f.calls.line(pt.subtract(dir.multiply(GALE_HALF)), pt.add(dir.multiply(GALE_HALF)), 2.6f, 22, Telegraph.Pace.HEAVY)
         wait(line.ticks)
         cue("cut.strike", pt, 3f, 1.3f)
         vanilla(SoundEvents.ENTITY_BREEZE_WIND_BURST.value(), pt, 2f, 0.7f)
@@ -1245,14 +1697,14 @@ class Hunt(private val f: EirholmFight) {
 
     /** Der gefrorene Stern in der Jagd: über der Route vor dem Vordersten, kleiner, aber 5 Herzen. */
     private fun chaseStar(a: AriusEntity, leader: ServerPlayerEntity, sL: Double): Script = script {
-        val spot = route.at(sL + 8.0)
+        val spot = pathAt(sL + 8.0)
         a.play(AriusPose.CORE_RAISE)
         val ticks = 54
         for (p in f.audience()) Cine.title(listOf(p), "hha_arius.feat.frozen_star", "hha_arius.feat.frozen_star.sub", 40)
         HuntNet.fx(f.players(), HuntFx.LETTERBOX, spot, life = ticks + 10)
-        f.fxAll(FxKind.FROZEN_STAR, spot, a = 7f, b = ticks.toFloat(), life = ticks + 40)
+        f.fxAll(FxKind.FROZEN_STAR, spot, a = STAR_RADIUS, b = ticks.toFloat(), life = ticks + 40)
         cue("core.form", spot.add(0.0, 30.0, 0.0), 5f, 0.6f)
-        val ring = f.calls.ring(spot, 7f, ticks)
+        val ring = f.calls.ring(spot, STAR_RADIUS, ticks)
         wait(ring.ticks)
         cue("glacier.collapse", spot, 6f, 1.2f)
         f.calls.roomShake(spot, 6f, 40f)
@@ -1261,26 +1713,122 @@ class Hunt(private val f: EirholmFight) {
             exactHit(p, 10f, Damage.Kind.IMPACT)
             dev.henny.hha_arius.gear.Frostbite.add(p, 40f)
         }
-        nearMiss(spot, 10.0, hit)
+        nearMiss(spot, STAR_RADIUS + 2.5, hit)
         for (p in f.players()) if (p.squaredDistanceTo(spot) < 30.0 * 30.0) HuntNet.fx(p, HuntFx.IMPACT, spot, a = 0.6f, life = 16)
         @Suppress("UNUSED_VARIABLE") val unused = leader
         a.play(AriusPose.IDLE)
     }
 
-    /** Solvane fliegt außen an der Route neben dem Vordersten und speit von Zeit zu Zeit Frost über den Weg. */
+    // --- Solvane: feste Begleitbahn --------------------------------------------------------------------------------------
+
+    /** Dichte Flugbahn neben und über dem Weg; [arcs] = Bogenlänge des Wegs, den jeder Bahnpunkt begleitet (monoton). */
+    private class EscortRail(val pts: List<Vec3d>, val arcs: DoubleArray) {
+        fun indexFor(a: Double): Int {
+            var lo = 0
+            var hi = arcs.size - 1
+            while (lo < hi) {
+                val mid = (lo + hi) / 2
+                if (arcs[mid] < a) lo = mid + 1 else hi = mid
+            }
+            return lo
+        }
+    }
+
+    private lateinit var rail: EscortRail
+    private var railS = 0.0
+    private var lastLeaderArc = 0.0
+
+    /** Höchste Geländekante um [v] (Radius [r]), absolut. */
+    private fun terrainTop(v: Vec3d, r: Int): Double {
+        var top = Int.MIN_VALUE
+        val x = floor(v.x).toInt() - f.origin.x
+        val z = floor(v.z).toInt() - f.origin.z
+        for (dx in intArrayOf(-r, 0, r)) for (dz in intArrayOf(-r, 0, r)) {
+            val h = runCatching { FarPlan.top(x + dx, z + dz) }.getOrDefault(Int.MIN_VALUE)
+            if (h > top) top = h
+        }
+        return if (top == Int.MIN_VALUE) v.y else f.origin.y + top + 1.0
+    }
+
+    /**
+     * Baut die Begleitbahn einmal vorab: alle 22 Blöcke ein Punkt zur Talseite und über dem Weg, daraus [DragonRail.path]
+     * (Mindestradius, keine Schleifen). Die Höhe wird danach über das Gelände gehoben und geglättet.
+     */
+    private fun buildRail() {
+        val wps = ArrayList<Vec3d>()
+        val wpArc = ArrayList<Double>()
+        val end = HuntRoute.arc(HuntRoute.size - 1)
+        var s = 0.0
+        while (s < end) {
+            val q = beside(HuntRoute.indexOfArc(s), 30.0, 18.0)
+            wps += Vec3d(q.x, maxOf(q.y, terrainTop(q, 12) + 12.0), q.z)
+            wpArc += s
+            s += 22.0
+        }
+        val raw = DragonRail.path(wps[0], wps[1].subtract(wps[0]), wps.drop(1))
+        val arcs = DoubleArray(raw.size)
+        var w = 0
+        for ((k, p) in raw.withIndex()) {
+            while (w < wps.lastIndex && p.squaredDistanceTo(wps[w + 1]) <= p.squaredDistanceTo(wps[w])) w++
+            arcs[k] = wpArc[w]
+        }
+        val floorY = DoubleArray(raw.size)
+        var last = 0.0
+        for (k in raw.indices) {
+            if (k % 4 == 0) last = terrainTop(raw[k], 9) + 9.0
+            floorY[k] = last
+        }
+        var ys = DoubleArray(raw.size) { maxOf(raw[it].y, floorY[it]) }
+        repeat(4) {
+            val n = DoubleArray(ys.size)
+            var sum = 0.0
+            val half = 24
+            for (k in 0..minOf(half, ys.lastIndex)) sum += ys[k]
+            for (k in ys.indices) {
+                val lo = k - half
+                val hi = k + half
+                n[k] = sum / (minOf(hi, ys.lastIndex) - maxOf(lo, 0) + 1)
+                if (hi + 1 <= ys.lastIndex) sum += ys[hi + 1]
+                if (lo >= 0) sum -= ys[lo]
+            }
+            ys = DoubleArray(n.size) { maxOf(n[it], floorY[it]) }
+        }
+        rail = EscortRail(raw.indices.map { Vec3d(raw[it].x, ys[it], raw[it].z) }, arcs)
+    }
+
+    /** Ein Tick auf der Bahn: holt zum Vordersten auf, wartet, wenn sie vorn ist; nie rückwärts. */
+    private fun stepRail(d: NivarisEntity) {
+        val last = rail.pts.lastIndex
+        val err = rail.indexFor(lastLeaderArc + 16.0) - railS
+        val v = when {
+            err < -90.0 -> 0.0
+            err < 0.0 -> 0.25
+            else -> (err * 0.02).coerceIn(0.5, 3.4)
+        }
+        railS = (railS + v).coerceAtMost(last.toDouble())
+        val k = floor(railS).toInt().coerceAtMost(last - 1)
+        val pos = rail.pts[k].lerp(rail.pts[k + 1], railS - k)
+        f.place(d, pos)
+        f.face(d, rail.pts[(k + 10).coerceAtMost(last)])
+    }
+
+    /** Von wo auch immer zurück auf die Bahn, ein Stück vor dem Vordersten. */
+    private fun rejoinRail(d: NivarisEntity): Script = script {
+        val k = (rail.indexFor(lastLeaderArc + 16.0) + 40).coerceAtMost(rail.pts.lastIndex)
+        d.flying = true
+        d.play(NivarisPose.GLIDE)
+        yieldAll(DragonRail.fly(f, d, listOf(rail.pts[k]), 1.6))
+        railS = k.toDouble()
+    }
+
+    /** Solvane begleitet die Spieler auf der Bahn und speit von Zeit zu Zeit Frost über den Weg vor dem Vordersten. */
     private fun tickDragon(d: NivarisEntity, leader: ServerPlayerEntity, sL: Double) {
         if (dragonBusy) return
-        orbit += 0.03
-        val ahead = sL + 10.0
-        val p = route.at(ahead)
-        val out = lowSide(ahead)
-        val want = p.add(out.multiply(24.0 + sin(orbit) * 6.0)).add(route.dir(ahead).multiply(kotlin.math.cos(orbit) * 10.0)).add(0.0, 14.0, 0.0)
-        f.place(d, d.entityPos.lerp(want, 0.08))
-        f.face(d, p)
+        stepRail(d)
         // In Höhlen sieht man sie nicht: dann kein Anflug mit Atem (die Höhle hat ihre eigenen Auftritte).
         val li = denseIndex(leader, 1.0, 2.0)
         val inCave = li >= 0 && HuntRoute.kind(li) == HuntRoute.TUNNEL
-        if (f.now >= nextDragon && !inCave) {
+        if (f.now >= nextDragon && !inCave && pendingScene == null) {
             dragonBusy = true
             nextDragon = f.now + 170 + rnd.nextInt(60)
             f.task(script {
@@ -1289,39 +1837,36 @@ class Hunt(private val f: EirholmFight) {
         }
     }
 
-    /** Anflug von außen, Frostatem längs über den Weg vor dem Vordersten (3,5 Herzen, Frost). */
+    /** Frostatem von der Bahn längs über den Weg vor dem Vordersten (3,5 Herzen, Frost); sie fliegt dabei weiter. */
     private fun dragonStrafe(d: NivarisEntity, sL: Double): Script = script {
-        val p0 = route.at(sL + 4.0)
-        val p1 = route.at(sL + 26.0)
-        val out = lowSide(sL + 15.0)
-        val perch = p0.lerp(p1, 0.5).add(out.multiply(16.0)).add(0.0, 10.0, 0.0)
-        val from = d.entityPos
-        for (i in 1..20) {
-            f.place(d, from.lerp(perch, i / 20.0))
-            f.face(d, p0.lerp(p1, 0.5))
-            yield(Unit)
-        }
+        val p0 = pathAt(sL + 8.0)
+        val p1 = pathAt(sL + 8.0 + STRAFE_LEN)
+        val mid = p0.lerp(p1, 0.5)
         d.play(NivarisPose.INHALE, 26)
-        cue("nivaris.inhale", perch, 4f)
-        val line = f.calls.line(p0, p1, 3.4f, 26, Telegraph.Pace.HEAVY, style = Vfx.Style.SOUL)
+        cue("nivaris.inhale", d.entityPos, 4f)
+        val line = f.calls.line(p0, p1, 2.6f, 26, Telegraph.Pace.HEAVY, style = Vfx.Style.SOUL)
         for (i in 0 until line.ticks) {
             d.throatGlow = i * 100 / line.ticks
+            stepRail(d)
             yield(Unit)
         }
         d.throatGlow = 0
         d.play(NivarisPose.BREATH)
-        cue("nivaris.breath", perch, 5f)
+        cue("nivaris.breath", d.entityPos, 5f)
         if (!Cine.muted) {
-            Vfx.beam(f.world, Vfx.Style.SOUL, perch.add(0.0, 2.0, 0.0), p0.lerp(p1, 0.5).add(0.0, 0.5, 0.0), 2.4f, 16)
+            Vfx.beam(f.world, Vfx.Style.SOUL, d.entityPos.add(0.0, 2.0, 0.0), mid.add(0.0, 0.5, 0.0), 2.4f, 16)
             f.fx(FxKind.DRAGON_BREATH, d.entityPos, a = 26f, life = 20, e1 = d)
         }
-        val hit = f.players().filter { abs(it.y - p0.lerp(p1, 0.5).y) <= 6.0 && line.contains(it) }
+        val hit = f.players().filter { abs(it.y - mid.y) <= 6.0 && line.contains(it) }
         for (p in hit) {
             exactHit(p, 7f, Damage.Kind.FROST_BREATH)
             dev.henny.hha_arius.gear.Frostbite.add(p, 30f)
         }
-        nearMiss(p0.lerp(p1, 0.5), 9.0, hit)
-        wait(16)
+        nearMiss(mid, 6.5, hit)
+        for (i in 0 until 16) {
+            stepRail(d)
+            yield(Unit)
+        }
         d.play(NivarisPose.GLIDE)
     }
 
@@ -1373,6 +1918,7 @@ class Hunt(private val f: EirholmFight) {
         f.chasing = false
         f.calls.reset()
         f.onSummit = true
+        carryWound()
         HuntNet.fx(f.audience(), HuntFx.STATE, a.entityPos, a = 0f)
         val center = f.arenaCenter.let { Vec3d(it.x, f.floorY, it.z) }
         val gatePos = gate
@@ -1415,7 +1961,7 @@ class Hunt(private val f: EirholmFight) {
                 p.teleport(f.world, s.x, s.y, s.z, emptySet(), yaw, 0f, false)
                 p.onLanding()
             }
-            val below = ground(route.at((route.length - 24.0).coerceAtLeast(0.0)))
+            val below = point(HuntRoute.stationBefore(HuntRoute.arc(HuntRoute.stations.last()) - 20.0))
             f.place(a, below)
             f.face(a, center)
             scene.once { Cine.fade(it, 0xF2F6FA, 1.0, 0.0, 20) }
@@ -1460,5 +2006,57 @@ class Hunt(private val f: EirholmFight) {
          * dem Feld, voll ab dem Fuß der Berge, in Höhlen dunkel und still.
          */
         const val HUNT_ATMOS = 21
+
+        /** Ticks, die man Schleichen halten muss, um die Seile zu kappen. */
+        private const val ROPE_HOLD = 16
+
+        // Reichweiten (seit 1.11.0 kürzer, damit man ausweichen kann; alt in Klammern).
+        private const val COMBO_RANGE = 3.8f // (4,4)
+        private const val WAVE_OVERSHOOT = 2.5 // Sicheln über das Ziel hinaus (8)
+        private const val WAVE_MAX = 22.0 // (unbegrenzt)
+        private const val SPEAR_OVERSHOOT = 3.0 // Speere über das Ziel hinaus (10)
+        private const val SPEAR_MAX = 24.0 // (unbegrenzt)
+        private const val AVA_HALF = 3.0 // halbe Breite der Schneewalze (6)
+        private const val GALE_HALF = 4.5 // halbe Länge des Sturmstoßes (7)
+        private const val STAR_RADIUS = 5f // gefrorener Stern (7)
+        private const val STRAFE_LEN = 14.0 // Frostatem-Streifen (22)
+
+        /** Laufende Jagd (nur für die Sichtprüfung). */
+        @JvmStatic
+        var current: Hunt? = null
+            private set
     }
+
+    // --- Nur für die Sichtprüfung (VerifyHunt) ---------------------------------------------------------------------------
+
+    fun debugPoint(arc: Double): Vec3d = pathAt(arc)
+
+    /** Hängebrücken als (Anfang, Ende) in Bogenlänge. */
+    fun debugSpans(): List<Pair<Double, Double>> = spans.map { it.a0 to it.a1 }
+
+    /** Höhlen als (Art, Anfang, Ende). */
+    fun debugCaves(): List<Triple<String, Double, Double>> = HuntRoute.caves.map { Triple(it.theme.name, it.a0, it.a1) }
+
+    /** Stellt Arius auf Bogenlänge [arc]. */
+    fun debugArius(arc: Double) {
+        aS = arc
+        f.arius?.let { f.place(it, pathAt(arc)) }
+    }
+
+    /** Hält die Angriffe an oder gibt sie wieder frei. */
+    fun debugQuiet(ticks: Int) {
+        nextAttack = f.now + ticks
+        nextDragon = f.now + ticks
+        nextLeap = f.now + ticks
+        nextCut = f.now + ticks
+        nextStar = f.now + ticks
+    }
+
+    fun debugRail(): List<Vec3d> = rail.pts
+
+    fun debugAriusArc(): Double = aS
+
+    fun debugInScene(): Boolean = inScene
+
+    fun debugPending(): Boolean = pendingScene != null
 }

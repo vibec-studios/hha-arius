@@ -79,6 +79,12 @@ enum class HuntFx {
 
     /** Das Tor lädt (Wirbel, Vignette): a = Ticks bis zum Aufbruch. */
     PORTAL_CHARGE,
+
+    /** Seit 1.11.0: Die Seile einer Hängebrücke sind gekappt, das Deck fällt; a = Brücken-Id. */
+    BRIDGE_DROP,
+
+    /** Seit 1.11.0: Fortschritt beim Kappen der Seile (a = 0..1), life = Anzeigedauer. */
+    ROPE_PROGRESS,
 }
 
 /** Paket zu [HuntFx]. Ursprung der Instanz ergibt der Client aus der Position (wie die Landschaftseffekte). */

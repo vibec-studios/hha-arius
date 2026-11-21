@@ -390,6 +390,67 @@ internal object HuntRoute {
         spanList += Span(spanList.size, i0, i1, sag, y0)
     }
 
+    // --- Arius' feste Route (seit 1.11.0) ----------------------------------------------------------------------------
+
+    /** Abstand der Sprungpunkte entlang des Wegs. */
+    private const val STATION_STEP = 7.0
+
+    /**
+     * Die festen Landepunkte von Arius: Wegmitte alle [STATION_STEP] Blöcke, ohne das freie Stück der Hängebrücken und
+     * ohne die Stelle, an der Geröll den Hauptgang verschließt. [RouteCheck] prüft jeden gegen das gebaute Gelände.
+     */
+    val stations: IntArray by lazy {
+        val out = ArrayList<Int>()
+        var next = 0.0
+        for (i in 0 until b.n) {
+            if (b.kind[i] == GATE) break
+            val a = b.arc[i]
+            if (a < next) continue
+            val span = spanOf(i)
+            if (span != null && a > span.a0 + HEAD && a < span.a1 - HEAD) continue
+            val cave = caveOf(i)
+            if (cave != null && cave.u(i) in cave.plugFrom - 1.5..cave.plugTo + 1.5) continue
+            out += i
+            next = a + STATION_STEP
+        }
+        out.toIntArray()
+    }
+
+    /** Letzter Sprungpunkt mit Bogenlänge ≤ [a] (oder der erste). */
+    fun stationBefore(a: Double): Int {
+        val s = stations
+        var lo = 0
+        var hi = s.size - 1
+        while (lo < hi) {
+            val mid = (lo + hi + 1) / 2
+            if (b.arc[s[mid]] <= a) lo = mid else hi = mid - 1
+        }
+        return s[lo]
+    }
+
+    /**
+     * Sprunghöhe, die der Bauplan über Wegpunkt [i] immer frei hält (Arius ist 2 hoch; [RouteCheck] prüft sie). Im Spiel
+     * misst [dev.henny.hha_arius.boss.Hunt] zusätzlich die echte Kopffreiheit und springt im Freien höher.
+     */
+    fun liftAt(i: Int): Double = when (kind(i)) {
+        TUNNEL -> caveOf(i)?.theme.let { t -> ((t?.height ?: 4) - (if (t?.lamps == true) 4.0 else 3.2)).coerceAtLeast(0.0) } // Laternen hängen eine Stufe unter der Decke
+        ROPE, BRIDGE -> 1.8
+        else -> 1.0
+    }
+
+    /** Morsche Planken einer Hängebrücke (Bogenlänge ab Brückenanfang): sie brechen, wenn jemand darauftritt. */
+    fun weakPlanks(span: Span): DoubleArray {
+        val out = ArrayList<Double>()
+        var s = HEAD + 5.0
+        var n = 0
+        while (s < span.length - HEAD - 5.0) {
+            out += s + FarPlan.h32(span.id, n, 17, 1801) * 1.5
+            s += 8.0 + FarPlan.h32(span.id, n, 31, 1803) * 5.0
+            n++
+        }
+        return out.toDoubleArray()
+    }
+
     val size: Int get() = b.n
     fun x(i: Int) = b.x[i.coerceIn(0, b.n - 1)]
     fun z(i: Int) = b.z[i.coerceIn(0, b.n - 1)]

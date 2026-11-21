@@ -38,6 +38,11 @@ object HuntClient {
                 }
             }
         }
+        // Die Filmbalken liegen unter allen Vanilla-Ebenen (Bossleiste, Herzen, Hotbar bleiben sichtbar).
+        net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry.attachElementBefore(
+            net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements.MISC_OVERLAYS,
+            dev.henny.hha_arius.HhaArius.id("hunt_letterbox"),
+        ) { ctx, _ -> HuntCine.renderBars(ctx) }
         HudRenderCallback.EVENT.register { ctx, counter -> HuntCine.renderHud(ctx, counter.getTickProgress(true)) }
         ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> reset() }
     }
