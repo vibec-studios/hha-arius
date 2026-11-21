@@ -479,7 +479,8 @@ object RideClient {
         val a = anchorOf(player) ?: return null
         val (act, aw) = actionWeight(player.id)
         val delta = when (act) {
-            RideAction.DUCK -> -1.10 * aw
+            // Nur so tief, dass die Kamera über dem eigenen Dorn bleibt (tiefer lag sie im Kristall).
+            RideAction.DUCK -> -0.42 * aw
             RideAction.VAULT -> 0.72 * aw
             RideAction.BRACE -> -0.25 * aw
             else -> 0.0
@@ -553,8 +554,8 @@ object RideClient {
     private const val LEG_SPREAD = 1.12f
 
     /** Arius auf dem Kopf: fest auf dem Schädeldach leicht vor dem Kopfgelenk (zwischen den Hörnern). */
-    private const val PERCH_UP = 1.12
-    private const val PERCH_FWD = 0.30
+    private const val PERCH_UP = 1.66
+    private const val PERCH_FWD = 0.62
     private const val PERCH_SEAT = 0.55
 
     /** Kopfmitte über den Füßen entlang der Körperachse. */

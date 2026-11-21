@@ -628,14 +628,20 @@ class DragonRide(private val f: EirholmFight) {
         var tick = 0
         var stormOn = false
         var diveOn = false
-        var prev = f.abs(RideRoute.at(s))
+        // Der Anflug endet nie exakt auf der Route (Geländeanhebung): Der Rest läuft über 90 Blöcke weich aus, statt zu springen.
+        val seam = d.entityPos.subtract(f.abs(RideRoute.at(RideRoute.JOIN)))
+        fun routeAt(q: Double): Vec3d {
+            val k = ((q - RideRoute.JOIN) / SEAM_BLEND).coerceIn(0.0, 1.0)
+            return f.abs(RideRoute.at(q)).add(seam.multiply(1.0 - k * k * (3.0 - 2.0 * k)))
+        }
+        var prev = routeAt(s)
         while (s < dropFrom) {
             speed += (pace(s) - speed).coerceIn(-0.006, 0.006)
             s = min(dropFrom, s + speed)
             tick++
             val u = s / length
-            val pos = f.abs(RideRoute.at(s))
-            val ahead = f.abs(RideRoute.at(min(length, s + 6.0)))
+            val pos = routeAt(s)
+            val ahead = routeAt(min(length, s + 6.0))
             f.place(d, pos)
             f.face(d, if (ahead.squaredDistanceTo(pos) > 1e-4) ahead else pos.add(pos.subtract(prev)))
             prev = pos
@@ -875,6 +881,9 @@ class DragonRide(private val f: EirholmFight) {
 
         /** So lange bleibt die Haltung nach dem Hindernis. */
         const val HOLD_PAST = 16
+
+        /** Strecke, auf der der Anflug in die Route übergeht (Blöcke). */
+        const val SEAM_BLEND = 90.0
 
         /** Anlauf vor dem Abwurfpunkt (Blöcke). */
         const val DROP_RUNUP = 34.0
