@@ -263,6 +263,23 @@ class Hunt(private val f: EirholmFight) {
     /** Bogenlänge des letzten sicheren Punkts (Fortschritt für Ereignisse). */
     private fun arcOf(p: ServerPlayerEntity): Double = safe[p.uuid]?.let { HuntRoute.arc(it.index) } ?: 0.0
 
+    /** Seit 1.10.0: Ist Arius nah, legt sich für diesen Spieler die Spannungsspur über die Jagdmusik. */
+    private val closeMusic = HashSet<UUID>()
+
+    private fun huntMusic(players: List<ServerPlayerEntity>) {
+        val a = f.arius ?: return
+        for (p in players) {
+            val d = p.squaredDistanceTo(a)
+            if (p.uuid !in closeMusic && d < 11.0 * 11.0) {
+                closeMusic.add(p.uuid)
+                MusicCue.play(p, "hunt_close", 16)
+            } else if (p.uuid in closeMusic && d > 18.0 * 18.0) {
+                closeMusic.remove(p.uuid)
+                MusicCue.play(p, "hunt", 40)
+            }
+        }
+    }
+
     private fun guardPlayers(players: List<ServerPlayerEntity>) {
         val now = f.now
         for (p in players) {
@@ -855,7 +872,8 @@ class Hunt(private val f: EirholmFight) {
         a.form = AriusForm.WHITE
         a.bladeState = AriusBlade.ICE
         a.sheathed = false
-        f.music("music.transform", 30)
+        f.music("music.hunt", 30)
+        MusicCue.play(f, "hunt", 30)
         f.atmos(HUNT_ATMOS, 40)
         HuntNet.fx(f.audience(), HuntFx.STATE, a.entityPos, a = 1f, e1 = a.id)
         f.fxAll(FxKind.RAGE_AURA, a.entityPos, life = 20 * 60 * 25, e1 = a)
@@ -882,6 +900,7 @@ class Hunt(private val f: EirholmFight) {
                     break
                 }
                 guardPlayers(players)
+                huntMusic(players)
                 val progress = players.associateWith { route.project(it.entityPos).first }
                 val leader = progress.maxByOrNull { it.value }!!.key
                 val rear = progress.minByOrNull { it.value }!!.key
@@ -1379,6 +1398,8 @@ class Hunt(private val f: EirholmFight) {
             // 1) Vom Gipfel auf das Tor: der Erste tritt herauf, der Sturm reißt auf.
             f.atmos(AtmosMode.REVEAL, 60)
             f.music(null, 40)
+            MusicCue.play(f, "silence", 40)
+            closeMusic.clear()
             val look = gatePos.add(0.0, 1.4, 0.0)
             val cam = gatePos.add(toCenter.multiply(9.0)).add(side.multiply(4.0)).add(0.0, 2.2, 0.0)
             scene.line(cam, cam.add(toCenter.multiply(-1.5)).add(0.0, -0.4, 0.0), look, look, 44, 58.0, 52.0, lookAt = first, lookOffset = 1.4)

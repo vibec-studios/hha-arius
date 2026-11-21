@@ -1584,6 +1584,7 @@ class AriusMoves(private val f: EirholmFight) {
         try {
             Hold.allowLong(player, 150)
             Hold.freeze(player, 24)
+            MusicCue.sting(listOf(player), "punish")
             dev.henny.hha_arius.net.AriusNet.send(player, dev.henny.hha_arius.net.CineCamS2C(true, a.id, 140, 0))
             player.sendMessage(Text.translatable("hha_arius.msg.punished").formatted(Formatting.RED), true)
             for (p in f.players()) if (p !== player) {

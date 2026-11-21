@@ -1074,6 +1074,7 @@ class EirholmFight(
         ended = true
         phase = Phase.END
         music(null, 40)
+        MusicCue.forget(this)
         for (p in audience()) Hold.drop(p)
         ariusBar.clearPlayers()
         dragonBar.clearPlayers()

@@ -247,6 +247,7 @@ class Summit(private val f: EirholmFight) {
         a.play(AriusPose.IAI_STANCE)
         a.sheathed = true
         f.music(null, 30)
+        MusicCue.play(f, "silence", 30)
         f.atmos(dev.henny.hha_arius.net.AtmosMode.CLEAR, 50)
         for (p in f.audience()) {
             AriusNet.send(p, SilenceS2C(1f, 40))

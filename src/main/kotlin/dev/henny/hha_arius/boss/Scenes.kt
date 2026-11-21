@@ -1590,7 +1590,9 @@ class Scenes(private val f: EirholmFight) {
         f.reviveAll(f.finaleSpots())
         f.ariusVulnerable = false
         f.dragonVulnerable = false
-        f.music("music.finale", 60)
+        val finaleTrack = if (f.onSummit) "summit" else "finale"
+        f.music("music.$finaleTrack", 60)
+        MusicCue.play(f, finaleTrack, 60)
         MusicCue.sting(f, "phase")
         f.nivaris?.let { d ->
             d.flying = false
@@ -1632,6 +1634,8 @@ class Scenes(private val f: EirholmFight) {
     /** Unter 50 %: Er zieht die Klinge ganz, die Augen flammen auf, ein Stoß drückt alle zurück (kein Schaden). */
     private fun secondWind(a: AriusEntity): Script = script {
         f.calls.reset()
+        if (f.onSummit) MusicCue.play(f, "summit_final", 30)
+        MusicCue.sting(f, "phase")
         a.sheathed = false
         a.play(AriusPose.CORE_RAISE)
         a.eyeGlow = 100
