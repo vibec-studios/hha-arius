@@ -3,6 +3,7 @@ package dev.henny.hha_arius.client.fx
 import dev.henny.hha.client.vfx.VfxDraw
 import dev.henny.hha_arius.arena.ArenaDimension
 import dev.henny.hha_arius.arena.ArenaLayout
+import dev.henny.hha_arius.arena.FarPlan
 import dev.henny.hha_arius.arena.HuntRoute
 import dev.henny.hha_arius.portal.PortalBlocks
 import net.minecraft.block.BlockState
@@ -14,6 +15,7 @@ import net.minecraft.client.util.math.MatrixStack
 import net.minecraft.sound.SoundEvents
 import net.minecraft.util.math.BlockPos
 import net.minecraft.util.math.Vec3d
+import org.joml.Matrix3f
 import org.joml.Quaternionf
 import org.joml.Vector3f
 import kotlin.math.abs
@@ -32,6 +34,11 @@ import kotlin.math.sqrt
  * * angekündigte Brüche zittern ([shake]); fehlt das Deck (gebrochen, eingestürzt), fehlen die Planken, über längeren
  *   Lücken hängen die gerissenen Seile herab.
  * Wer selbst auf der Brücke steht, spürt ein leichtes Kippen ([localRoll]) und hört Knarren.
+ *
+ * Seit 1.11.0: Jede Planke liegt in einer festen Basis aus Laufrichtung und Querachse. Vorher drehte `rotationTo` von +X
+ * auf die Laufrichtung: Auf B3 (läuft fast genau nach −X) ist diese Drehung mehrdeutig, die Planken wirbelten wie ein
+ * Fächer. Morsche Planken ([HuntRoute.weakPlanks]) sind sichtbar gesplittert und brechen unter dem Fuß. Gekappte Seile
+ * lassen das Deck als Kette am nahen Anker herabschwingen ([Drop]). Am fernen Kopf markiert ein Leuchten die Seile.
  */
 object RopeBridges {
 
@@ -52,8 +59,110 @@ object RopeBridges {
 
     fun reset() {
         shakes.clear()
+        drops.clear()
         localSway = 0f
         onBridge = false
+    }
+
+    fun clearDrops() = drops.clear()
+
+    // --- Gekappte Brücke: Kette aus Punkten (Verlet), am nahen Kopf aufgehängt --------------------------------------------
+
+    private class Drop(val span: HuntRoute.Span, val o: BlockPos, val side: Vec3d, start: List<Vec3d>) {
+        val cur = Array(start.size) { start[it] }
+        val old = Array(start.size) { start[it] }
+        val prev = Array(start.size) { start[it] }
+        private val tops = HashMap<Long, Double>()
+
+        private fun floorAt(p: Vec3d): Double {
+            val x = floor(p.x).toInt() - o.x
+            val z = floor(p.z).toInt() - o.z
+            return tops.getOrPut((x.toLong() shl 32) or (z.toLong() and 0xFFFFFFFFL)) {
+                o.y + runCatching { FarPlan.top(x, z) }.getOrDefault(-64) + 1.15
+            }
+        }
+
+        fun tick() {
+            for (i in cur.indices) prev[i] = cur[i]
+            for (i in 1 until cur.size) {
+                val v = cur[i].subtract(old[i]).multiply(0.985)
+                old[i] = cur[i]
+                cur[i] = cur[i].add(v).add(0.0, -0.055, 0.0)
+            }
+            repeat(10) {
+                cur[0] = start0
+                for (i in 0 until cur.size - 1) {
+                    val d = cur[i + 1].subtract(cur[i])
+                    val len = d.length().coerceAtLeast(1e-6)
+                    val fix = d.multiply((len - LINK) / len)
+                    if (i == 0) {
+                        cur[1] = cur[1].subtract(fix)
+                    } else {
+                        cur[i] = cur[i].add(fix.multiply(0.5))
+                        cur[i + 1] = cur[i + 1].subtract(fix.multiply(0.5))
+                    }
+                }
+                for (i in 1 until cur.size) {
+                    val fl = floorAt(cur[i])
+                    if (cur[i].y < fl) {
+                        cur[i] = Vec3d(cur[i].x, fl, cur[i].z)
+                        old[i] = Vec3d(old[i].x + (cur[i].x - old[i].x) * 0.4, fl, old[i].z + (cur[i].z - old[i].z) * 0.4)
+                    }
+                }
+            }
+        }
+
+        private val start0 = start[0]
+
+        fun at(i: Int, td: Float): Vec3d = prev[i].lerp(cur[i], td.toDouble())
+    }
+
+    private const val LINK = 1.0
+    private val drops = HashMap<Int, Drop>()
+
+    /** Die Seile von Brücke [id] sind gekappt: das Deck fällt (am nahen Kopf hängend). */
+    fun drop(id: Int, at: Vec3d) {
+        val span = HuntRoute.ropeSpans.getOrNull(id) ?: return
+        if (id in drops) return
+        val o = origin(at)
+        val n = span.length.toInt().coerceAtLeast(2)
+        val pts = (0..n).map { k ->
+            val i = HuntRoute.indexOfArc(span.a0 + k * span.length / n)
+            Vec3d(o.x + HuntRoute.x(i), o.y + HuntRoute.standY(i), o.z + HuntRoute.z(i))
+        }
+        val (tx, tz) = HuntRoute.tangent(span.i0)
+        drops[id] = Drop(span, o, Vec3d(-tz, 0.0, tx), pts)
+        HuntCine.playAt(SoundEvents.ITEM_LEAD_BREAK, at, 2.5f, 0.6f)
+        HuntCine.playAt(SoundEvents.BLOCK_BAMBOO_WOOD_BREAK, at, 2.5f, 0.5f)
+    }
+
+    private fun renderDrop(dr: Drop, d: VfxDraw) {
+        val td = d.tickDelta
+        val n = dr.cur.size - 1
+        var s = 0.0
+        while (s <= dr.span.length) {
+            if (s < 3.0 || s > dr.span.length - 3.0) {
+                val i = HuntRoute.indexOfArc(dr.span.a0 + s)
+                val c = Vec3d(dr.o.x + HuntRoute.x(i), dr.o.y + HuntRoute.standY(i) - 0.06, dr.o.z + HuntRoute.z(i))
+                val (tx, tz) = HuntRoute.tangent(i)
+                box(d, planks, c, Vec3d(tx, 0.0, tz), Vec3d(-tz, 0.0, tx), 0.44, 0.1, 3.3, 0.0)
+            }
+            s += PLANK
+        }
+        for (k in 0 until n) {
+            val a = dr.at(k, td)
+            val b = dr.at(k + 1, td)
+            if (a.squaredDistanceTo(d.cam) > 130.0 * 130.0) continue
+            val along = b.subtract(a).let { if (it.lengthSquared() < 1e-6) Vec3d(0.0, -1.0, 0.0) else it.normalize() }
+            for (sgn in intArrayOf(-1, 1)) seg(d, rope, a.add(dr.side.multiply(sgn * 1.72)), b.add(dr.side.multiply(sgn * 1.72)), 0.08)
+            for (h in 0..1) {
+                val key = k * 2 + h
+                if (((key * 7919) % 11) < 3) continue // ein Teil der Planken hat der Sturz abgerissen
+                val c = a.lerp(b, h * 0.5 + 0.25)
+                val twist = (((key * 3571) % 17) / 17.0 - 0.5) * 0.5
+                box(d, if (key % 7 == 3) planksDark else planks, c, along, dr.side, 0.44, 0.1, 3.1, twist)
+            }
+        }
     }
 
     private fun origin(cam: Vec3d): BlockPos {
@@ -72,7 +181,7 @@ object RopeBridges {
     /** Seitliches Schwingen (Blöcke) an Bogenlänge u (0..1) zur Zeit t. */
     private fun sway(span: HuntRoute.Span, u: Double, t: Double): Double {
         val belly = belly(span, u * span.length)
-        return belly * wind() * (sin(t * 0.045 + span.id * 1.7) + 0.35 * sin(t * 0.13 + u * 6.0))
+        return belly * wind() * (sin(t * 0.04 + span.id * 1.7) + 0.2 * sin(t * 0.09 + u * 3.1))
     }
 
     private fun bob(span: HuntRoute.Span, u: Double, t: Double): Double {
@@ -83,6 +192,7 @@ object RopeBridges {
     fun tick() {
         time++
         shakes.removeIf { --it.left <= 0 }
+        for (dr in drops.values) dr.tick()
         val mc = MinecraftClient.getInstance()
         val p = mc.player ?: return
         val world = mc.world ?: return
@@ -113,6 +223,8 @@ object RopeBridges {
         return localSway * (1.1f * sin(t * 0.045f) + 0.4f * sin(t * 0.13f)) * (0.6f + SnowStorm.strength.coerceIn(0f, 2f) * 0.3f)
     }
 
+    private val weakCache = HashMap<Int, DoubleArray>()
+
     private val planks: BlockState get() = Blocks.SPRUCE_PLANKS.defaultState
     private val planksDark: BlockState get() = Blocks.DARK_OAK_PLANKS.defaultState
     private val rope: BlockState get() = Blocks.BROWN_WOOL.defaultState
@@ -130,6 +242,11 @@ object RopeBridges {
             val mx = o.x + HuntRoute.x(mid)
             val mz = o.z + HuntRoute.z(mid)
             if ((mx - cam.x) * (mx - cam.x) + (mz - cam.z) * (mz - cam.z) > 190.0 * 190.0) continue
+            drops[span.id]?.let { dr ->
+                renderDrop(dr, d)
+                continue
+            }
+            val weak = weakCache.getOrPut(span.id) { HuntRoute.weakPlanks(span) }
             // Lasten (Spieler auf der Brücke) als Bogenlängen
             val loads = ArrayList<Double>()
             for (pl in others) {
@@ -186,11 +303,24 @@ object RopeBridges {
                 val side = sides[k]!!
                 val next = pts[minOf(k + 1, n)]!!
                 val prev = pts[maxOf(k - 1, 0)]!!
-                val along = next.subtract(prev).let { if (it.lengthSquared() < 1e-6) Vec3d(1.0, 0.0, 0.0) else it.normalize() }
+                val along = next.subtract(prev).let { if (it.lengthSquared() < 1e-6) Vec3d(side.z, 0.0, -side.x) else it.normalize() }
+                // Die Brücke neigt sich beim Pendeln leicht in die Schwingung.
+                val bank = (p.subtract(Vec3d(o.x + HuntRoute.x(HuntRoute.indexOfArc(span.a0 + k * PLANK)), p.y, o.z + HuntRoute.z(HuntRoute.indexOfArc(span.a0 + k * PLANK)))).dotProduct(side) * 0.16).coerceIn(-0.12, 0.12)
                 if (present[k]) {
                     val jitter = ((k * 7919) % 13) / 13.0 - 0.5
-                    val tilt = (if (k % 5 == 0) 0.06 else 0.0) + jitter * 0.03
-                    box(d, if (k % 7 == 3) planksDark else planks, p.add(0.0, -0.06, 0.0), along, side, 0.44, 0.1, 3.3 + jitter * 0.15, tilt)
+                    val tilt = (if (k % 5 == 0) 0.05 else 0.0) + jitter * 0.03 + bank
+                    val cracked = weak.any { abs(it - k * PLANK) < 0.75 }
+                    if (cracked) {
+                        // Morsch: dunkel, gesplittert, in zwei ungleiche Stücke gebrochen.
+                        val off = 0.55 + jitter * 0.3
+                        box(d, planksDark, p.add(side.multiply(off + 0.75)).add(0.0, -0.1, 0.0), along, side, 0.4, 0.09, 1.55, tilt + 0.14)
+                        box(d, planksDark, p.add(side.multiply(off - 1.25)).add(0.0, -0.12, 0.0), along, side, 0.4, 0.09, 1.1, tilt - 0.16)
+                    } else {
+                        box(d, if (k % 7 == 3) planksDark else planks, p.add(0.0, -0.06, 0.0), along, side, 0.44, 0.1, 3.3 + jitter * 0.15, tilt)
+                    }
+                } else if (gapLen[k] < 4 && (k > 0 && present[k - 1] || k < n && present[k + 1])) {
+                    // Rand eines Bruchs: abgebrochene Stummel an den Seilen.
+                    for (sgn in intArrayOf(-1, 1)) box(d, planksDark, p.add(side.multiply(sgn * 1.35)).add(0.0, -0.14, 0.0), along, side, 0.4, 0.08, 0.62, sgn * 0.3)
                 }
                 // Seile nur, wo die Brücke nicht auf langer Strecke weg ist
                 val intactRope = gapLen[k] < 4
@@ -225,6 +355,18 @@ object RopeBridges {
                 val side = sides[end]!!
                 for (sgn in intArrayOf(-1, 1)) seg(d, rope, p.add(side.multiply(sgn * 1.9)).add(0.0, 1.05, 0.0), p.add(side.multiply(sgn * 2.1)).add(0.0, 2.6, 0.0), 0.1)
             }
+            // Während der Jagd: die Seile am fernen Kopf leuchten, hier kann man sie kappen.
+            if (HuntCine.active && present[n / 2]) {
+                val p = pts[n]!!
+                val side = sides[n]!!
+                val pulse = (0.6 + 0.4 * sin(t * 0.25)).toFloat()
+                for (sgn in intArrayOf(-1, 1)) {
+                    val knot = p.add(side.multiply(sgn * 2.0)).add(0.0, 1.9, 0.0)
+                    d.billboard(dev.henny.hha.client.vfx.VfxLayers.GLOW_ADD, knot, 1.5, dev.henny.hha.client.vfx.withAlpha(0xFFFFC766.toInt(), 0.5f * pulse), 0.0)
+                    d.billboard(dev.henny.hha.client.vfx.VfxLayers.FLARE_ADD, knot, 0.55 + 0.2 * pulse, dev.henny.hha.client.vfx.withAlpha(0xFFFFF1CC.toInt(), 0.9f * pulse), t * 0.03)
+                    d.band(dev.henny.hha.client.vfx.VfxLayers.GLOW_ADD, knot, knot.add(0.0, 3.2, 0.0), d.camRight, 0.16, dev.henny.hha.client.vfx.withAlpha(0xFFFFC766.toInt(), 0.55f * pulse), dev.henny.hha.client.vfx.withAlpha(0xFFFFC766.toInt(), 0f))
+                }
+            }
         }
     }
 
@@ -236,7 +378,14 @@ object RopeBridges {
         val world = mc.world ?: return
         ms.push()
         ms.translate(c.x - d.cam.x, c.y - d.cam.y, c.z - d.cam.z)
-        val q = Quaternionf().rotationTo(Vector3f(1f, 0f, 0f), Vector3f(along.x.toFloat(), along.y.toFloat(), along.z.toFloat()))
+        // Feste Basis: x = Laufrichtung, z = Querachse (senkrecht dazu), y = oben. Eindeutig für jede Richtung.
+        val x = Vector3f(along.x.toFloat(), along.y.toFloat(), along.z.toFloat()).normalize()
+        val z = Vector3f(side.x.toFloat(), side.y.toFloat(), side.z.toFloat())
+        z.sub(Vector3f(x).mul(z.dot(x)))
+        if (z.lengthSquared() < 1e-5f) z.set(-x.z, 0f, x.x)
+        z.normalize()
+        val y = Vector3f(z).cross(x).normalize()
+        val q = Quaternionf().setFromNormalized(Matrix3f(x, y, z))
         q.rotateX(roll.toFloat())
         ms.multiply(q)
         ms.scale(lx.toFloat(), ly.toFloat(), lz.toFloat())
@@ -244,7 +393,6 @@ object RopeBridges {
         val light = WorldRenderer.getLightmapCoordinates(world, BlockPos.ofFloored(c.x, c.y + 0.5, c.z))
         mc.blockRenderManager.renderBlockAsEntity(state, ms, d.consumers, light, OverlayTexture.DEFAULT_UV)
         ms.pop()
-        @Suppress("UNUSED_VARIABLE") val s = side
     }
 
     /**

@@ -13,6 +13,8 @@ import kotlin.math.floor
  * * **Kopffreiheit:** 1,8 Blöcke frei darüber,
  * * **Stufen:** entlang der Mitte nie mehr als 0,6 von Punkt zu Punkt (laufen ohne Springen),
  * * **Reste:** keine Lücke im Bauplan (KEEP) in der Kopffreiheit – dort bliebe stehen, was eine ältere Fassung baute.
+ * * **Arius (seit 1.11.0):** jeder Sprungpunkt ([HuntRoute.stations]) hat Boden und Kopffreiheit, und über der ganzen
+ *   Wegmitte ist die erlaubte Sprunghöhe ([HuntRoute.liftAt]) frei, damit er nie in Fels landet oder durch die Decke springt.
  * [plan] prüft den Bauplan ([FarColumns], genau das, was gebaut wird), [world] die echten Blöcke einer Instanz.
  * Aufrufbar über `/ariusroute` (Op) und im Client-Spieltest.
  */
@@ -195,7 +197,36 @@ object RouteCheck {
             }
             i += 2
         }
+        if (out.size < limit) leaps(probe, end, limit, out)
         return out
+    }
+
+    /** Arius' feste Route: Landepunkte und Sprungbahn über der Wegmitte. */
+    private fun leaps(probe: Probe, end: Int, limit: Int, out: MutableList<Issue>) {
+        for (i in HuntRoute.stations) {
+            if (out.size >= limit) return
+            val x = floor(HuntRoute.x(i)).toInt()
+            val z = floor(HuntRoute.z(i)).toInt()
+            val stand = HuntRoute.standY(i)
+            val t = probe.top(x, z, stand - 0.62, stand + 0.62)
+            if (t.isNaN()) {
+                out += Issue(i, HuntRoute.arc(i), HuntRoute.kind(i), 0.0, "Sprungpunkt: kein Boden")
+            } else if (probe.clear(x, z, t, t + 2.2) == false) {
+                out += Issue(i, HuntRoute.arc(i), HuntRoute.kind(i), 0.0, "Sprungpunkt: Kopffreiheit < 2,2")
+            }
+        }
+        var i = 0
+        while (i <= end && out.size < limit) {
+            val stand = HuntRoute.standY(i)
+            val cx = floor(HuntRoute.x(i)).toInt()
+            val cz = floor(HuntRoute.z(i)).toInt()
+            // Von der echten Oberkante der Spalte aus: sie gehört oft zum Nachbarpunkt und liegt eine Schneeschicht höher.
+            val floorTop = probe.top(cx, cz, stand - 0.62, stand + 0.62).let { if (it.isNaN()) stand else it }
+            if (probe.clear(cx, cz, floorTop, floorTop + HuntRoute.liftAt(i) + 2.0) == false) {
+                out += Issue(i, HuntRoute.arc(i), HuntRoute.kind(i), 0.0, "Sprungbahn: Fels in Höhe %.1f".format(HuntRoute.liftAt(i) + 2.0))
+            }
+            i += 2
+        }
     }
 
     private fun checkAt(probe: Probe, x: Int, z: Int, stand: Double, i: Int, off: Double, out: MutableList<Issue>, prefix: String = ""): Double? {

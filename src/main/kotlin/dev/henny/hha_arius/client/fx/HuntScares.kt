@@ -65,7 +65,10 @@ object HuntScares {
         val pos = Vec3d(p.x, p.y, p.z)
         val dir = Vec3d(p.dx, p.dy, p.dz)
         when (HuntFx.entries.getOrNull(p.kind) ?: return) {
-            HuntFx.STATE -> HuntCine.state(p.a > 0.5f, p.e1)
+            HuntFx.STATE -> {
+                HuntCine.state(p.a > 0.5f, p.e1)
+                if (p.a <= 0.5f) RopeBridges.clearDrops()
+            }
             HuntFx.NEAR_MISS -> HuntCine.nearMiss(pos)
             HuntFx.IMPACT -> HuntCine.impact(p.a)
             HuntFx.LETTERBOX -> HuntCine.letterbox(p.life)
@@ -93,6 +96,8 @@ object HuntScares {
             HuntFx.AVALANCHE -> add(Avalanche(origin(pos.x), dir.x, dir.y, p.a.toDouble(), p.life))
             HuntFx.ROCK_CUT -> add(Seam(pos, dir, p.life))
             HuntFx.PORTAL_CHARGE -> HuntCine.portalCharge(p.a.toInt())
+            HuntFx.BRIDGE_DROP -> RopeBridges.drop(p.a.toInt(), pos)
+            HuntFx.ROPE_PROGRESS -> HuntCine.ropeProgress(p.a, p.life)
         }
     }
 
@@ -303,22 +308,49 @@ object HuntScares {
             val vert = right.crossProduct(n).normalize()
             val c = at.add(n.multiply(-0.05))
             // Glut um das Auge (in der Dunkelheit sichtbar)
-            d.disc(VfxLayers.GLOW_ADD, c, right.multiply(size * 1.9), vert.multiply(size * 1.2 * (0.3 + 0.7 * open)), 1.0, withAlpha(0xFF5FC4FF.toInt(), 0.35f * open * fx), 0.0)
+            d.disc(VfxLayers.GLOW_ADD, c, right.multiply(size * 1.7), vert.multiply(size * 1.05 * (0.3 + 0.7 * open)), 1.0, withAlpha(0xFF5FC4FF.toInt(), 0.16f * open * fx), 0.0)
             if (open < 0.05f) return
-            // Augapfel: frostblaue Iris, oben/unten von den Lidern begrenzt (Mandelform über die Höhe)
-            val h = size * 0.62 * open
-            d.disc(VfxLayers.GLOW_ADD, c, right.multiply(size), vert.multiply(h), 1.0, withAlpha(0xFFBFF0FF.toInt(), 0.85f * fx), 0.0)
-            d.disc(VfxLayers.GLOW_ADD, c.add(n.multiply(0.02)), right.multiply(size * 0.62), vert.multiply(minOf(h, size * 0.62)), 1.0, withAlpha(0xFF3FA9FF.toInt(), 0.9f * fx), 0.0)
-            // Schlitzpupille, folgt dem Spieler
+            // Als Pixelgrafik aus kleinen, voll beleuchteten Würfeln: Mandelform, Iris, Schlitzpupille, die dem Spieler folgt.
             val p = MinecraftClient.getInstance().player
-            var look = Vec3d.ZERO
+            var lookX = 0.0
+            var lookY = 0.0
             if (p != null) {
                 val to = p.eyePos.subtract(c)
-                look = right.multiply(to.dotProduct(right).coerceIn(-6.0, 6.0) / 6.0 * size * 0.28).add(vert.multiply(to.dotProduct(vert).coerceIn(-6.0, 6.0) / 6.0 * size * 0.12))
+                lookX = to.dotProduct(right).coerceIn(-6.0, 6.0) / 6.0 * 2.2
+                lookY = to.dotProduct(vert).coerceIn(-6.0, 6.0) / 6.0 * 0.8
             }
-            val pc = c.add(n.multiply(0.04)).add(look)
-            d.disc(VfxLayers.SMOKE_ALPHA, pc, right.multiply(size * 0.09), vert.multiply(minOf(h, size * 0.55)), 1.0, withAlpha(0xFF02060C.toInt(), 0.95f), 0.0)
-            d.billboard(VfxLayers.FLARE_ADD, c.add(right.multiply(size * 0.25)).add(vert.multiply(h * 0.3)).add(n.multiply(0.06)), size * 0.12, withAlpha(0xFFFFFFFF.toInt(), 0.8f * open), 0.0)
+            val cell = size * 2.0 / 15.0
+            val mc = MinecraftClient.getInstance()
+            val q = org.joml.Quaternionf().setFromNormalized(
+                org.joml.Matrix3f(
+                    org.joml.Vector3f(right.x.toFloat(), right.y.toFloat(), right.z.toFloat()),
+                    org.joml.Vector3f(vert.x.toFloat(), vert.y.toFloat(), vert.z.toFloat()),
+                    org.joml.Vector3f(-n.x.toFloat(), -n.y.toFloat(), -n.z.toFloat()),
+                ),
+            )
+            for (ix in -7..7) for (iy in -4..4) {
+                val edge = 4.3 * (1.0 - (ix / 7.6) * (ix / 7.6)) * open
+                if (abs(iy) > edge) continue
+                val dx = ix - lookX
+                val dy = iy - lookY
+                val r2 = dx * dx + dy * dy
+                val state = when {
+                    abs(iy) > edge - 0.9 -> Blocks.GRAY_CONCRETE
+                    abs(dx) <= 0.6 && abs(dy) <= 3.2 -> Blocks.BLACK_CONCRETE
+                    ix.toDouble() == floor(lookX) + 2.0 && iy.toDouble() == floor(lookY) + 2.0 -> Blocks.WHITE_CONCRETE
+                    r2 <= 5.0 -> Blocks.WHITE_CONCRETE
+                    r2 <= 14.0 -> Blocks.LIGHT_BLUE_CONCRETE
+                    else -> Blocks.BLUE_CONCRETE
+                }.defaultState
+                val at = c.add(right.multiply(ix * cell)).add(vert.multiply(iy * cell))
+                ms.push()
+                ms.translate(at.x - d.cam.x, at.y - d.cam.y, at.z - d.cam.z)
+                ms.multiply(q)
+                ms.scale(cell.toFloat(), cell.toFloat(), (cell * 0.4).toFloat())
+                ms.translate(-0.5f, -0.5f, -0.5f)
+                mc.blockRenderManager.renderBlockAsEntity(state, ms, d.consumers, 0xF000F0, OverlayTexture.DEFAULT_UV)
+                ms.pop()
+            }
         }
     }
 
