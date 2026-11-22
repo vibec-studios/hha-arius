@@ -79,10 +79,11 @@ object EntrancePath {
     val HEAD_REST = near(3.5, 171.0, 144.0)
 
     private val WAYPOINTS = listOf(
-        HEAD_RAISED, near(0.5, 195.0, 134.0), near(10.0, 182.0, 114.0), near(36.0, 150.0, 92.0), near(56.0, 108.0, 68.0),
-        // Seit 1.12.0 (Crix: „sein Körper geht bei der Landung so weird nach oben“): Der 96 Blöcke lange Leib liegt zur Landung
-        // auf den letzten 96 Blöcken der Bahn. Die laufen darum flach über das Plateau aus, statt steil vom Berg zu kommen.
-        near(66.0, 70.0, 52.0), Vec3d(64.0, 38.0, 36.0), Vec3d(39.0, 24.0, 35.0), Vec3d(14.0, 14.0, 27.0), Vec3d(1.5, 8.0, 13.0), Vec3d(0.5, 5.5, 2.0),
+        HEAD_RAISED, near(0.5, 195.0, 134.0), near(10.0, 182.0, 114.0), near(50.0, 157.0, 100.0),
+        near(94.0, 116.0, 76.0), Vec3d(126.0, 65.0, 88.0), Vec3d(133.0, 33.0, 51.0),
+        // Finish the dive before the final body length; the tail is already low when the shoulders touch down.
+        Vec3d(112.0, 15.0, 34.0), Vec3d(83.0, 11.0, 24.0), Vec3d(54.0, 8.0, 20.0),
+        Vec3d(22.0, 6.5, 18.0), Vec3d(7.0, 5.5, 13.0), Vec3d(0.5, 5.5, 2.0),
     )
 
     /**
@@ -490,7 +491,7 @@ internal object Entrance {
         d.eyeGlow = 70
         val exit = EntrancePath.tangent(EntrancePath.LENGTH)
         val end = f.abs(EntrancePath.entityAt(EntrancePath.LENGTH))
-        val landCamMid = rel(f, -23.0, 11.0, -16.0)
+        val landCamMid = rel(f, -19.0, 10.0, -18.0)
         val landFocusMid = end.add(0.0, 2.8, -1.0)
         fun look(t: Int, back: Double): Vec3d {
             val u = EntrancePath.distance(t.toDouble())
@@ -500,7 +501,7 @@ internal object Entrance {
         for (t in 0..EntrancePath.TICKS) {
             when (t) {
                 0 -> scene.line(near(f, -62.0, 172.0, 116.0), near(f, -66.0, 158.0, 98.0), look(0, 25.0), look(85, 25.0), 85, 66.0, 74.0)
-                85 -> scene.line(near(f, -14.0, 128.0, 98.0), near(f, -22.0, 76.0, 48.0), look(85, 30.0), look(165, 30.0), 80, 76.0, 80.0)
+                85 -> scene.line(rel(f, 30.0, 168.0, 120.0), rel(f, 36.0, 65.0, 61.0), look(85, 30.0), look(165, 30.0), 80, 76.0, 80.0)
                 165 -> {
                     // Die Kamera ist zurück am Plateau: die Körper auch. Exakt 55 Ticks bis zum Übergang in die Landeeinstellung.
                     vantage.restore()

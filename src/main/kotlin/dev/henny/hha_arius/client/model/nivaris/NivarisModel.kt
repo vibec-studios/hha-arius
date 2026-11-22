@@ -1052,7 +1052,7 @@ class NivarisBody {
     /** Hals vom Kopfgelenk (ruhend → aufgerichtet nach [raise]) zur Spitze der Helix, dann die Helix hinab. */
     private fun coilPoly(poly: Poly, o: Vec, raise: Double, now: Float) {
         val axis = o.add(ArenaLayout.SPIRE.x + 0.5, 0.0, ArenaLayout.SPIRE.z + 0.5)
-        val h = o.add(EntrancePathC.HEAD_REST.lerp(EntrancePathC.HEAD_RAISED, raise)).add(0.0, kotlin.math.sin(now * 0.05) * 0.25, 0.0)
+        val h = o.add(EntrancePathC.HEAD_REST.lerp(EntrancePathC.HEAD_RAISED, raise)).add(0.0, kotlin.math.sin(now * 0.05) * 0.25 * (1.0 - raise), 0.0)
         val c1 = o.add(EntrancePathC.coil(1.0))
         val t1 = c1.subtract(o.add(EntrancePathC.coil(0.995))).normalize()
         val d = h.distanceTo(c1).coerceAtLeast(2.0)
@@ -1139,7 +1139,8 @@ class NivarisBody {
             var l = b.crossProduct(u).normalizeOr(orthoFallback(b))
             u = l.crossProduct(b).normalizeOr(u)
             // Grundrollen + explizite Fassrolle (läuft wellenförmig vom Bug zum Schwanz).
-            val waveRoll = bodyRoll * (1.0 - 0.008 * i)
+            // The delay fades to zero at both ends, so every segment completes the full turn.
+            val waveRoll = bodyRoll - kotlin.math.sin(bodyRoll * 0.5) * (0.019 * i)
             val roll = waveRoll + (0.02 + 0.05 * air[i]) * kotlin.math.sin(now * 0.05 - i * 0.2)
             val cr = kotlin.math.cos(roll)
             val sr = kotlin.math.sin(roll)

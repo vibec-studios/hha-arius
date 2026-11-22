@@ -1142,12 +1142,12 @@ class Hunt(private val f: EirholmFight) {
     private fun cutRopes(span: HuntRoute.Span) {
         cutSpans += span.id
         ropeHold.clear()
-        vanilla(SoundEvents.ITEM_SHEARS_SNIP, point(span.i1), 2f, 0.7f)
         val a = f.arius
         if (a != null && !a.isRemoved && aS in span.a0 + 1.0..span.a1 - 1.0) {
             pendingScene = { ropeScene(span) }
             pendingUntil = f.now + 120
         } else {
+            vanilla(SoundEvents.ITEM_SHEARS_SNIP, point(span.i1), 2f, 0.7f)
             dropBridge(span)
         }
     }
@@ -1292,6 +1292,7 @@ class Hunt(private val f: EirholmFight) {
                         f.fx(FxKind.SLASH_ARC, knot, valley.negate(), a = 4.2f, b = 0.2f, life = 10)
                         f.fx(FxKind.CLEAR_WAVE, knot, a = 4.5f, life = 12)
                     }
+                    vanilla(SoundEvents.ITEM_SHEARS_SNIP, knot, 2f, 0.7f)
                     dropped = true
                     dropBridge(span)
                     a.play(AriusPose.STAGGER, catchTicks)
@@ -2144,6 +2145,8 @@ class Hunt(private val f: EirholmFight) {
             a.play(AriusPose.IDLE)
             a.eyeGlow = 60
         }
+        val dragon = f.nivaris
+        dragon?.fadeOut(36)
         val scene = CineScene(f) { place() }
         yieldAll(scene.play(script {
             // 1) Vom Gipfel auf das Tor: der Erste tritt herauf, der Sturm reißt auf.
@@ -2165,6 +2168,15 @@ class Hunt(private val f: EirholmFight) {
                 val yaw = (Math.toDegrees(atan2(center.z - s.z, center.x - s.x)) - 90.0).toFloat()
                 p.teleport(f.world, s.x, s.y, s.z, emptySet(), yaw, 0f, false)
                 p.onLanding()
+            }
+            dragon?.let { d ->
+                d.hideNow()
+                f.place(d, center.add(0.0, 2.0, 6.0))
+                d.mode = NivarisMode.COIL
+                d.uncoil = 0f
+                d.flying = false
+                d.play(NivarisPose.IDLE)
+                d.fadeIn(36)
             }
             val below = point(HuntRoute.stationBefore(HuntRoute.arc(HuntRoute.stations.last()) - 20.0))
             f.place(a, below)

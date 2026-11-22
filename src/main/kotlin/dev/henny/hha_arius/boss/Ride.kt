@@ -161,7 +161,7 @@ object RideSeats {
     }
 
     /** Arius setzt sich auf ihren Kopf: als Mitfahrer, damit er ohne Versatz mit ihr fliegt. */
-    /** Mount and publish the takeoff point before the passenger list changes. */
+    /** Publish the visible takeoff point together with the passenger list. */
     fun pickUp(f: EirholmFight, d: NivarisEntity, p: ServerPlayerEntity) {
         val from = p.entityPos
         if (!p.startRiding(d, true, true)) return
@@ -171,6 +171,18 @@ object RideSeats {
             }
         }
         syncPassengers(f, d)
+    }
+
+    /** Release the rider before sending launch velocity so the client no longer applies passenger movement. */
+    fun landRider(f: EirholmFight, p: ServerPlayerEntity, target: Vec3d, lift: Double) {
+        Hold.drop(p)
+        f.task(script {
+            yield(Unit)
+            if (!p.isAlive || p.entityWorld !== f.world || p.hasVehicle()) return@script
+            Hold.allowLong(p, 80)
+            Hold.launch(p, Ballistic.velocity(p.entityPos, target, lift), 70, fallback = target)
+            p.fallDistance = 0.0
+        })
     }
 
     fun roll(progress: Double): Float {
@@ -796,17 +808,14 @@ class DragonRide(private val f: EirholmFight) {
             released = true
             cue("nivaris.wing", pos, 4.5f, 0.95f)
             for ((j, p) in f.players().withIndex()) {
-                val at = p.entityPos
-                if (p.vehicle === d) p.stopRiding()
+                if (p.vehicle !== d) continue
+                p.stopRiding()
                 p.removeStatusEffect(StatusEffects.SLOW_FALLING)
                 send(0, p)
-                val spot = f.abs(ArenaLayout.VAULT_LANDING[j % ArenaLayout.VAULT_LANDING.size])
-                if (!p.isAlive) continue
-                val up = at
-                Hold.drop(p)
-                Hold.allowLong(p, 110)
-                Hold.launch(p, Ballistic.velocity(up, spot, 0.16), 100, spot, spot)
-                p.fallDistance = 0.0
+                if (p.isAlive) {
+                    val spot = f.abs(ArenaLayout.VAULT_LANDING[j % ArenaLayout.VAULT_LANDING.size])
+                    RideSeats.landRider(f, p, spot, 0.16)
+                }
             }
             RideSeats.clear(f)
         }
@@ -840,6 +849,7 @@ class DragonRide(private val f: EirholmFight) {
             val ariusTarget = vault
             var t = 0
             var settled = 0
+            var landingShot = false
             while (true) {
                 t++
                 speed += ((if (s > length - 34.0) 0.34 else 0.60) - speed).coerceIn(-0.012, 0.012)
@@ -881,6 +891,14 @@ class DragonRide(private val f: EirholmFight) {
                     val c = ariusTarget.add(side.multiply(-7.0)).add(fwd.multiply(-7.0)).add(0.0, 2.8, 0.0)
                     scene.line(c, c.add(fwd.multiply(3.0)), ariusTarget.add(0.0, 1.0, 0.0),
                         ariusTarget.add(0.0, 1.4, 0.0), 50, 58.0, 50.0)
+                }
+                if (!landingShot && length - s <= 21.0) {
+                    landingShot = true
+                    d.play(NivarisPose.LAND, 38)
+                    val end = f.abs(RideRoute.at(length))
+                    val cam = end.add(side.multiply(20.0)).add(fwd.multiply(10.0)).add(0.0, 4.8, 0.0)
+                    scene.line(cam, cam.add(side.multiply(-5.0)).add(0.0, -1.0, 0.0),
+                        pos.add(0.0, 3.0, 0.0), end.add(0.0, 2.0, 0.0), 62, 66.0, 55.0)
                 }
                 if (s >= length && d.flying) {
                     d.flying = false
@@ -972,7 +990,10 @@ object RideHooks {
             val h = NivarisShape.head(d.pose, d.flying)
             return Vec3d(0.0, h.up + 0.5, h.fwd)
         }
-        return serverOffset(seat)
+        val offset = serverOffset(seat)
+        val up = offset.y + EYE - NivarisShape.SPINE_UP
+        val roll = d.bodyRoll.toDouble()
+        return Vec3d(up * sin(roll), NivarisShape.SPINE_UP + up * kotlin.math.cos(roll) - EYE, offset.z)
     }
 
     /** Augenhöhe eines stehenden Spielers (die Entity bleibt „stehend“, nur die Darstellung liegt). */

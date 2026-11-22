@@ -740,7 +740,7 @@ class Scenes(private val f: EirholmFight) {
         var ariusUp = false
         var stormed = false
         var landing = false
-        var released = false
+        var releaseTick = -1
         var dismountAt = -1
         var dismountFrom = Vec3d.ZERO
         while (q0 < len) {
@@ -750,7 +750,7 @@ class Scenes(private val f: EirholmFight) {
             val ahead = DragonRail.at(rail, q0 + 3.0)
             f.place(d, pos)
             if (ahead.squaredDistanceTo(pos) > 0.01) f.face(d, ahead)
-            for (p in f.players()) if (!released && p.uuid in mounted && p.vehicle !== d && p.isAlive) p.startRiding(d, true, true)
+            for (p in f.players()) if (releaseTick < 0 && p.uuid in mounted && p.vehicle !== d && p.isAlive) p.startRiding(d, true, true)
             // Arius springt ab, sobald sie über ihn streicht, und setzt sich auf ihren Kopf.
             if (!ariusUp && jumpAt < 0 && pos.distanceTo(pickup) < 16.0) {
                 jumpAt = tick
@@ -785,22 +785,26 @@ class Scenes(private val f: EirholmFight) {
             if (tick == tArrive / 3) f.farSound("nivaris.roar", pos, 5f, 0.85f)
             if (tick % 22 == 0) cue("nivaris.wing", pos, 4f, 0.75f)
             if (q0 >= dropS - 26.0) d.bodyRoll = RideSeats.roll((q0 - dropS + 26.0) / 68.0)
-            if (!released && q0 >= dropS) {
-                released = true
+            if (releaseTick < 0 && q0 >= dropS) {
+                releaseTick = tick
                 val land = f.abs(ArenaLayout.AERIE_LANDING[0])
                 scene.line(pos.add(4.0, 1.0, 24.0), land.add(11.0, 7.0, 18.0),
                     pos.add(0.0, 2.0, 0.0), land.add(0.0, 1.0, 0.0), 46, 64.0, 54.0)
                 for ((j, p) in f.players().withIndex()) {
                     if (p.vehicle !== d) continue
-                    val from = p.entityPos
                     p.stopRiding()
                     val target = f.abs(ArenaLayout.AERIE_LANDING[j % ArenaLayout.AERIE_LANDING.size])
-                    Hold.drop(p)
-                    Hold.allowLong(p, 75)
-                    Hold.launch(p, Ballistic.velocity(from, target, 0.24), 70, target, target)
+                    RideSeats.landRider(f, p, target, 0.24)
                 }
                 RideSeats.syncPassengers(f, d)
                 cue("nivaris.wing", pos, 4f, 0.9f)
+            }
+            if (releaseTick >= 0 && tick == releaseTick + 42) {
+                val towardLanding = aerie.subtract(pos)
+                val side = Vec3d(-towardLanding.z, 0.0, towardLanding.x).normalize()
+                scene.line(pos.add(side.multiply(27.0)).add(0.0, 14.0, 0.0),
+                    aerie.add(25.0, 8.0, 20.0), pos.add(0.0, 3.0, 0.0), aerie.add(0.0, 4.0, 0.0),
+                    (total - tick).coerceAtLeast(1), 66.0, 58.0, lookAt = d, lookOffset = 2.6)
             }
             if (dismountAt < 0 && len - q0 <= 40.0) {
                 dismountAt = tick

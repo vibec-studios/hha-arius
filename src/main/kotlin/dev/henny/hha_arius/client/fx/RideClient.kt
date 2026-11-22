@@ -504,6 +504,7 @@ object RideClient {
 
     /** Kleine Anzeige oben: mit wie vielen Händen man sich hält. */
     fun renderHud(ctx: DrawContext) {
+        if (dev.henny.hha.client.cine.CinePlayer.active) return
         val player = MinecraftClient.getInstance().player ?: return
         val g = grip(player)
         if (g <= 0) return

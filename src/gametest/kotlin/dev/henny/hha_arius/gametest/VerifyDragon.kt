@@ -38,7 +38,6 @@ class VerifyDragon : FabricClientGameTest {
             bladeScene()
             stopFight()
         }
-        if ("route" in scenes) routeScene()
         if ("pickup" in scenes) {
             startStage(2)
             tick(60)
@@ -47,6 +46,7 @@ class VerifyDragon : FabricClientGameTest {
             film("pickup_contact", 48, 2)
             stopFight()
         }
+        if ("route" in scenes) routeScene()
     }
 
     /** Solvane wird wieder zur Klinge: oben um die Eisspitze wie beim Auftritt. */
