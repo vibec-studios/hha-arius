@@ -95,24 +95,24 @@ class DragonTailFx(private val caster: Entity, private val start: Double, privat
         // 3) Rasiermesserscharfe Frostsichel entlang der überstrichenen Bahn (auf Höhe der Schweifspitze & am Boden)
         val arcSpan = (lead - start).coerceAtMost(2.0 * PI)
         if (arcSpan > 0.04) {
-            val trailStart = maxOf(start, lead - 2.35)
-            val slashPos = c.add(0.0, 0.62 + liftAfter * 0.4, 0.0)
+            val trailStart = maxOf(start, lead - 2.65)
+            val slashPos = c.add(0.0, 0.70 + liftAfter * 0.4, 0.0)
             // Kontraststarker tiefblauer Klingenrücken (auf weißem Schnee extrem sauber lesbar)
-            d.arc(AriusLayers.INK, slashPos, Z, X, radius * 0.66, radius * 1.03, trailStart, lead,
-                withAlpha(NAVY_DEEP, 0f), withAlpha(NAVY_MID, 0.74f * fade), segments = 44)
+            d.arc(AriusLayers.INK, slashPos, Z, X, radius * 0.62, radius * 1.04, trailStart, lead,
+                withAlpha(NAVY_DEEP, 0.08f * fade), withAlpha(NAVY_DEEP, 0.86f * fade), segments = 48)
             // Fließendes eisblaues Schwungband
-            d.arc(AriusLayers.VFX_FLOW, slashPos.add(0.0, 0.02, 0.0), Z, X, radius * 0.48, radius * 1.06, trailStart, lead,
-                withAlpha(ICE_MID, 0f), withAlpha(ICE_BRIGHT, 0.82f * fade), segments = 44, uTile = 2.5f, uOffset = -t * 0.25f)
+            d.arc(AriusLayers.VFX_FLOW, slashPos.add(0.0, 0.03, 0.0), Z, X, radius * 0.46, radius * 1.07, trailStart, lead,
+                withAlpha(ICE_MID, 0f), withAlpha(ICE_BRIGHT, 0.88f * fade), segments = 48, uTile = 2.5f, uOffset = -t * 0.25f)
             // Gleißende frostweiße Außenkante
-            d.arc(AriusLayers.VFX_GLOW, slashPos.add(0.0, 0.04, 0.0), Z, X, radius * 0.89, radius * 1.04, trailStart, lead,
-                withAlpha(ICE_BRIGHT, 0.15f * fade), withAlpha(WHITE, 0.96f * fade), segments = 44)
+            d.arc(AriusLayers.VFX_GLOW, slashPos.add(0.0, 0.06, 0.0), Z, X, radius * 0.86, radius * 1.05, trailStart, lead,
+                withAlpha(ICE_BRIGHT, 0.20f * fade), withAlpha(WHITE, 1.0f * fade), segments = 48)
 
             // Sauberer Boden-Frostring entlang des gesamten überstrichenen Winkels
-            val floorPos = c.add(0.0, 0.08, 0.0)
-            d.arc(AriusLayers.INK, floorPos, Z, X, radius * 0.82, radius * 1.02, start, lead,
-                withAlpha(NAVY_DEEP, 0.12f * fade), withAlpha(ICE_MID, 0.52f * fade), segments = 48)
-            d.arc(AriusLayers.VFX_GLOW, floorPos.add(0.0, 0.02, 0.0), Z, X, radius * 0.94, radius * 1.04, start, lead,
-                withAlpha(ICE_MID, 0.1f * fade), withAlpha(WHITE, 0.72f * fade), segments = 48)
+            val floorPos = c.add(0.0, 0.09, 0.0)
+            d.arc(AriusLayers.INK, floorPos, Z, X, radius * 0.78, radius * 1.02, start, lead,
+                withAlpha(NAVY_DEEP, 0.16f * fade), withAlpha(NAVY_MID, 0.64f * fade), segments = 48)
+            d.arc(AriusLayers.VFX_GLOW, floorPos.add(0.0, 0.02, 0.0), Z, X, radius * 0.92, radius * 1.04, start, lead,
+                withAlpha(ICE_MID, 0.15f * fade), withAlpha(WHITE, 0.82f * fade), segments = 48)
         }
 
         // 4) Scharfe Eiskristalle, die sich tangential von der Schweifspitze lösen
@@ -153,56 +153,64 @@ class DragonTailFx(private val caster: Entity, private val start: Double, privat
     private fun renderTail(d: VfxDraw, matrices: MatrixStack, pts: Array<Vec3d>, t: Float, alpha: Float) {
         if (alpha <= 0.02f) return
         val model = DragonBreathFx.model() ?: return
-        val bodyBuf = d.consumers.getBuffer(RenderLayers.entityTranslucent(DragonBreathFx.TEXTURE))
-        val rimBuf = d.consumers.getBuffer(RenderLayers.eyes(DragonBreathFx.TEXTURE))
         val cam = d.cam
         val first = NivarisShape.SEGMENTS - (pts.size - 1)
 
-        // Durchgehende Frost-Rückenlinie über den gesamten Schweif
+        // Durchgehende Frost-Rückenlinie über den gesamten Schweif (vor den Model-Passes rendern)
         val spine = pts.map { it.add(0.0, 0.24, 0.0) }
         d.ribbon(AriusLayers.VFX_FLOW, spine, { q -> 0.28 * (1.0 - q * 0.55) },
             { q -> withAlpha(lerpColor(ICE_MID, WHITE, q), 0.72f * alpha) }, uScale = 0.35f, uOffset = -t * 0.22f)
 
-        for (k in 0 until pts.size - 1) {
-            val a = pts[k]
-            val b = pts[k + 1]
-            val dir = b.subtract(a)
-            val len = dir.length()
-            if (len < 1e-4) continue
-            val bz = dir.multiply(1.0 / len)
-            val i = first + k
-            // Sanftes Auflösen von Wurzel zur Spitze nach dem Schwung
-            val segFade = if (t <= SWEEP) alpha else {
-                val dissolve = ((t - SWEEP) / (life - SWEEP).coerceAtLeast(1f))
-                val s = k / (pts.size - 1f)
-                (alpha * ((s + 0.35f - dissolve * 0.85f) / 0.35f).coerceIn(0f, 1f))
-            }
-            if (segFade <= 0.02f) continue
+        // Zwei getrennte Durchgänge (erst Körper, dann Lichtsaum), damit Immediate-Buffer nicht vorzeitig schließt
+        for (pass in 0..1) {
+            val buf = d.consumers.getBuffer(
+                if (pass == 0) RenderLayers.entityTranslucent(DragonBreathFx.TEXTURE) else RenderLayers.eyes(DragonBreathFx.TEXTURE)
+            )
+            val segCol = if (pass == 0) GHOST_BODY else GHOST_RIM
+            val segAlpha = if (pass == 0) 0.76f else 0.58f
+            val rimScale = if (pass == 0) 1.0f else 1.06f
 
+            for (k in 0 until pts.size - 1) {
+                val a = pts[k]
+                val b = pts[k + 1]
+                val dir = b.subtract(a)
+                val len = dir.length()
+                if (len < 1e-4) continue
+                val bz = dir.multiply(1.0 / len)
+                val i = first + k
+                // Sanftes Auflösen von Wurzel zur Spitze nach dem Schwung
+                val segFade = if (t <= SWEEP) alpha else {
+                    val dissolve = ((t - SWEEP) / (life - SWEEP).coerceAtLeast(1f))
+                    val s = k / (pts.size - 1f)
+                    (alpha * ((s + 0.35f - dissolve * 0.85f) / 0.35f).coerceIn(0f, 1f))
+                }
+                if (segFade <= 0.02f) continue
+
+                matrices.push()
+                matrices.translate(a.x - cam.x, a.y - cam.y, a.z - cam.z)
+                orient(matrices, bz)
+                val sFrac = k / (pts.size - 1f)
+                val whipTaper = 1.0f - 0.38f * sFrac
+                val g = NivarisShape.SCALE * TK * NivarisShape.taper(i) * whipTaper * rimScale
+                val gz = NivarisShape.SCALE * (len / NivarisShape.SEGMENT).toFloat() * 1.12f
+                matrices.scale(g, g, gz)
+                model.glied(i).render(matrices, buf, LightmapTextureManager.MAX_LIGHT_COORDINATE, OverlayTexture.DEFAULT_UV, withAlpha(segCol, segAlpha * segFade))
+                matrices.pop()
+            }
+
+            // Prominenter Schwanzfächer an der Spitze
+            val tip = pts.last()
+            val bz = tip.subtract(pts[pts.size - 2]).normalize()
             matrices.push()
-            matrices.translate(a.x - cam.x, a.y - cam.y, a.z - cam.z)
+            matrices.translate(tip.x - cam.x, tip.y - cam.y, tip.z - cam.z)
             orient(matrices, bz)
-            val g = NivarisShape.SCALE * TK * NivarisShape.taper(i)
-            val gz = NivarisShape.SCALE * (len / NivarisShape.SEGMENT).toFloat() * 1.12f
-            matrices.scale(g, g, gz)
-            model.glied(i).render(matrices, bodyBuf, LightmapTextureManager.MAX_LIGHT_COORDINATE, OverlayTexture.DEFAULT_UV, withAlpha(GHOST_BODY, 0.76f * segFade))
-            matrices.scale(1.06f, 1.06f, 1.0f)
-            model.glied(i).render(matrices, rimBuf, LightmapTextureManager.MAX_LIGHT_COORDINATE, OverlayTexture.DEFAULT_UV, withAlpha(GHOST_RIM, 0.58f * segFade))
+            val k = NivarisShape.SCALE * TK * 1.38f * rimScale
+            matrices.scale(k, k, k)
+            val fanCol = if (pass == 0) GHOST_BODY else WHITE
+            val fanAlpha = if (pass == 0) 0.80f else 0.65f
+            model.tailFan.render(matrices, buf, LightmapTextureManager.MAX_LIGHT_COORDINATE, OverlayTexture.DEFAULT_UV, withAlpha(fanCol, fanAlpha * alpha))
             matrices.pop()
         }
-
-        // Prominenter Schwanzfächer an der Spitze
-        val tip = pts.last()
-        val bz = tip.subtract(pts[pts.size - 2]).normalize()
-        matrices.push()
-        matrices.translate(tip.x - cam.x, tip.y - cam.y, tip.z - cam.z)
-        orient(matrices, bz)
-        val k = NivarisShape.SCALE * TK * 1.18f
-        matrices.scale(k, k, k)
-        model.tailFan.render(matrices, bodyBuf, LightmapTextureManager.MAX_LIGHT_COORDINATE, OverlayTexture.DEFAULT_UV, withAlpha(GHOST_BODY, 0.80f * alpha))
-        matrices.scale(1.06f, 1.06f, 1.06f)
-        model.tailFan.render(matrices, rimBuf, LightmapTextureManager.MAX_LIGHT_COORDINATE, OverlayTexture.DEFAULT_UV, withAlpha(WHITE, 0.65f * alpha))
-        matrices.pop()
     }
 
     private fun smoothstep(x: Float): Float {
@@ -220,8 +228,8 @@ class DragonTailFx(private val caster: Entity, private val start: Double, privat
 
     companion object {
         const val SWEEP = 12f
-        private const val LAG = 2.15
-        private const val TK = 0.60f
+        private const val LAG = 2.45
+        private const val TK = 0.42f
 
         private const val NAVY_DEEP = 0xFF0E3458.toInt()
         private const val NAVY_MID = 0xFF1A5282.toInt()

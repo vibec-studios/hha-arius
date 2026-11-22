@@ -1,4 +1,5 @@
-"""Generate the Rime Gate stone (four crisp 16x16 masonry variants), the frozen-aurora veil sheet, and panel models."""
+"""Generate the Rime Gate stone (four seamless 16x16 glacial-obsidian variants inspired by vanilla Obsidian & Crying Obsidian),
+the frozen-aurora portal veil sheet, and panel models."""
 import json
 import math
 import random
@@ -19,90 +20,165 @@ def blend(a: tuple[float, float, float], b: tuple[float, float, float], t: float
     return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t)
 
 
+def torus_dist(ax: float, ay: float, bx: float, by: float, size: int) -> tuple[float, float, float]:
+    dx = ax - bx
+    dy = ay - by
+    if dx > size / 2:
+        dx -= size
+    elif dx < -size / 2:
+        dx += size
+    if dy > size / 2:
+        dy -= size
+    elif dy < -size / 2:
+        dy += size
+    return math.hypot(dx, dy), dx, dy
+
+
 def frame_stone(variant: int) -> Image.Image:
-    """Crisp 16x16 glacial sanctuary masonry: hewn deep-slate stone with stepped carved bevels, subtle inlaid frost-ice
-    border seams, quiet gold corner pins, and a refined chiseled central diamond relief."""
+    """Seamless 16x16 Glacial Obsidian inspired directly by vanilla Obsidian & Crying Obsidian:
+    domain-warped angular volcanic-glass shards (zero straight ruler lines, zero stripes, zero borders),
+    deep midnight-navy crevices, crisp cold obsidian catchlights, and recessed glowing glacial-ice fissures
+    tucked organically into fracture junctions (like Crying Obsidian in frost-blue)."""
     size = 16
-    rng = random.Random(7400 + variant * 101)
-    im = Image.new("RGB", (size, size))
+    # Hand-picked seeds that produce balanced chunky obsidian shards and organic fracture junctions
+    seeds = [5204, 5341, 5488, 5619]
+    rng = random.Random(seeds[variant % len(seeds)])
 
-    mortar = (15, 21, 32)
-    slate_shadow = (22, 31, 45)
-    slate_dark = (30, 41, 58)
-    slate_mid = (42, 56, 77)
-    slate_lit = (63, 82, 108)
-    rime_top = (158, 206, 232)
-    ice_seam = (49, 102, 146)
-    ice_mid = (94, 168, 212)
-    ice_bright = (186, 232, 252)
-    gold_dim = (164, 128, 56)
-    gold_bright = (218, 182, 96)
+    # 10 irregular shard centers on a 16x16 periodic torus (chunky 4-6px volcanic glass facets)
+    sites = []
+    for gy in range(3):
+        for gx in range(3):
+            sx = (gx + 0.16 + rng.random() * 0.68) * (size / 3.0)
+            sy = (gy + 0.16 + rng.random() * 0.68) * (size / 3.0)
+            tone = rng.uniform(-1.0, 1.0)
+            sites.append((sx % size, sy % size, tone))
+    sites.append((rng.uniform(0, size), rng.uniform(0, size), rng.uniform(-1.0, 1.0)))
 
-    stone_var = [[rng.uniform(-4.5, 4.5) for _ in range(size)] for _ in range(size)]
-    for y in range(0, size, 2):
-        for x in range(0, size, 2):
-            v = rng.uniform(-3.0, 3.0)
-            for dy in (0, 1):
-                for dx in (0, 1):
-                    stone_var[y + dy][x + dx] += v
+    # Select recessed glowing fissures by variant so a 4x5 portal frame feels monolithic & hand-carved:
+    # variant 0 (hero / item): one clean branching frost fissure
+    # variant 1 (monolithic dark): pure glacial obsidian with only one tiny recessed ice pocket
+    # variant 2 (veined): two connected glacial cracks meeting at a junction
+    # variant 3 (subtle): one short glowing seam tucked into dark obsidian rock
+    hot_site = (variant * 3 + 1) % len(sites)
+    nbrs = sorted(
+        [(torus_dist(sites[hot_site][0], sites[hot_site][1], s[0], s[1], size)[0], idx)
+         for idx, s in enumerate(sites) if idx != hot_site]
+    )
+    glow_pairs: dict[tuple[int, int], float] = {}
+    if variant == 0:
+        glow_pairs[tuple(sorted((hot_site, nbrs[0][1])))] = 1.0
+        glow_pairs[tuple(sorted((hot_site, nbrs[1][1])))] = 0.78
+    elif variant == 1:
+        glow_pairs[tuple(sorted((hot_site, nbrs[0][1])))] = 0.62
+    elif variant == 2:
+        glow_pairs[tuple(sorted((hot_site, nbrs[0][1])))] = 0.95
+        glow_pairs[tuple(sorted((hot_site, nbrs[2][1])))] = 0.80
+    else:
+        glow_pairs[tuple(sorted((hot_site, nbrs[1][1])))] = 0.85
 
-    rime_mask = [rng.uniform(0.0, 1.0) for _ in range(size)]
+    # Volcanic glacial-obsidian palette (deep rich darks like vanilla Obsidian, crisp cool bevels,
+    # saturated glacial-cyan fissures with restrained frost-white hearts)
+    crevice = (6, 9, 16)
+    obs_deep = (11, 16, 28)
+    obs_dark = (16, 23, 39)
+    obs_base = (24, 34, 54)
+    obs_mid = (35, 49, 75)
+    obs_lit = (52, 72, 106)
+    obs_spec = (76, 105, 144)
+
+    ice_halo = (20, 56, 98)
+    ice_vein = (44, 128, 188)
+    ice_core = (116, 200, 240)
+    ice_heart = (212, 244, 255)
+
+    # First pass: compute domain-warped Voronoi facets, recessed seams, and directional obsidian bevels
+    grid_col = [[obs_base] * size for _ in range(size)]
+    vein_strength = [[0.0] * size for _ in range(size)]
+
+    phase_a = variant * 1.7 + 0.4
+    phase_b = variant * 2.3 + 1.1
 
     for y in range(size):
+        v = math.tau * (y + 0.5) / size
         for x in range(size):
-            edge = min(x, y, size - 1 - x, size - 1 - y)
-            cx = abs(x - 7.5)
-            cy = abs(y - 7.5)
-            md = cx + cy
+            u = math.tau * (x + 0.5) / size
+            # Periodic organic domain warp bends Voronoi bisectors into natural conchoidal rock fractures
+            wx = (x + 0.5 + 0.68 * math.sin(v + phase_a) + 0.34 * math.cos(2 * u - v + phase_b)) % size
+            wy = (y + 0.5 + 0.68 * math.cos(u + phase_b) + 0.34 * math.sin(2 * v + u + phase_a)) % size
 
-            if edge == 0:
-                col = mortar
-                if y == 0 and rime_mask[x] > 0.42 + variant * 0.04:
-                    col = blend(mortar, rime_top, 0.36)
-            elif edge == 1:
-                if y == 1 or x == 1:
-                    col = slate_lit
-                    if y == 1 and 2 <= x <= 13 and rime_mask[x] > 0.30:
-                        col = blend(col, rime_top, 0.34 if variant % 2 == 0 else 0.22)
+            dists = []
+            for idx, (sx, sy, tone) in enumerate(sites):
+                d, dx, dy = torus_dist(wx, wy, sx, sy, size)
+                dists.append((d, idx, dx, dy, tone))
+            dists.sort(key=lambda t: t[0])
+            d1, i1, dx1, dy1, tone1 = dists[0]
+            d2, i2, _, _, _ = dists[1]
+            d3 = dists[2][0]
+            edge = d2 - d1  # 0 on fracture boundary between nearest two obsidian shards
+            junction = d3 - d1  # small right at 3-shard crack vertices
+
+            pair = tuple(sorted((i1, i2)))
+            seam_power = glow_pairs.get(pair, 0.0)
+            # Taper glowing fissures naturally toward shard ends so they pool organically around junctions
+            taper = max(0.0, min(1.0, 1.35 - 0.24 * junction))
+            glow_width = 1.05 * seam_power * taper
+
+            inv_d = 1.0 / max(d1, 0.35)
+            lit = (-dx1 * 0.72 - dy1 * 0.72) * inv_d  # top-left directional obsidian bevel
+
+            if seam_power > 0.0 and edge < glow_width:
+                s = max(0.0, 1.0 - edge / max(glow_width, 0.01)) * seam_power
+                vein_strength[y][x] = s
+                if edge < 0.26 and junction < 2.25 and seam_power >= 0.85:
+                    col = ice_heart
+                elif edge < 0.48 and s > 0.48:
+                    col = ice_core
+                elif edge < 0.78:
+                    col = ice_vein
                 else:
-                    col = slate_dark
-            elif edge == 2:
-                # Hewn corner caps wrap the stone; straight inlaid frost seam runs cleanly between corners
-                if (x in (2, 13)) and (y in (2, 13)):
-                    col = slate_lit if (x == 2 or y == 2) else slate_shadow
-                elif (x in (2, 13) and y in (3, 12)) or (y in (2, 13) and x in (3, 12)):
-                    col = gold_bright if (x <= 3 and y <= 3) else gold_dim
-                else:
-                    along = min(abs(x - 7.5), abs(y - 7.5))
-                    t = max(0.0, 1.0 - along / 4.5)
-                    col = blend(ice_seam, ice_mid, 0.25 + 0.75 * t)
-                    if along <= 0.6:
-                        col = blend(col, ice_bright, 0.35)
-            elif edge == 3:
-                # Deep chiseled shadow step into the carved central panel
-                if (x in (3, 12)) and (y in (3, 12)):
-                    col = slate_shadow
-                elif y == 3 or x == 3:
-                    col = mortar
-                else:
-                    col = slate_mid
+                    col = ice_halo
+            elif edge < 0.52:
+                # Deep obsidian fracture crevice
+                col = crevice
+            elif edge < 1.12 and lit > 0.32:
+                # Crisp obsidian chipped edge catching cold light
+                col = obs_spec if (lit > 0.72 and tone1 > -0.15) else obs_lit
+            elif edge < 1.08 and lit < -0.28:
+                # Deeply shadowed underside of a shard
+                col = obs_deep
             else:
-                # Central carved stone panel (4..11 x 4..11) with subtle chiseled bevel & modest frost diamond crest
-                sheen = 0.5 + 0.5 * ((7.5 - x) + (7.5 - y)) / 9.0
-                col = blend(slate_dark, slate_mid, 0.3 + 0.7 * sheen)
-                if md <= 1.1:
-                    col = ice_bright if (x == 7 and y == 7) else ice_mid
-                elif md <= 2.1:
-                    col = ice_seam if (x >= 8 or y >= 8) else blend(ice_seam, ice_mid, 0.55)
-                elif md <= 3.1:
-                    col = slate_shadow
-                elif md <= 4.1:
-                    col = slate_lit if (x < 8 and y < 8) else slate_dark
+                # Chunky interior obsidian glass facet
+                v_tone = 0.46 + 0.30 * lit + 0.24 * tone1 + rng.uniform(-0.07, 0.07)
+                if v_tone < 0.22:
+                    col = obs_deep
+                elif v_tone < 0.42:
+                    col = obs_dark
+                elif v_tone < 0.66:
+                    col = obs_base
+                elif v_tone < 0.84:
+                    col = obs_mid
+                else:
+                    col = obs_lit
 
-            grain_scale = 0.22 if (edge == 2 and not (x in (2, 13) and y in (2, 13))) or (edge >= 4 and md <= 2.1) else 1.0
-            n = stone_var[y][x] * grain_scale
-            im.putpixel((x, y), (clamp(col[0] + n * 0.85), clamp(col[1] + n * 0.95), clamp(col[2] + n * 1.10)))
+            g = rng.uniform(-2.5, 2.5) if vein_strength[y][x] == 0.0 else rng.uniform(-1.2, 1.2)
+            grid_col[y][x] = (col[0] + g * 0.8, col[1] + g * 0.9, col[2] + g * 1.1)
 
+    # Second pass: rich subtle glacial-blue glow bleeding 1px from recessed fissures onto neighboring obsidian
+    im = Image.new("RGB", (size, size))
+    for y in range(size):
+        for x in range(size):
+            col = grid_col[y][x]
+            if vein_strength[y][x] == 0.0:
+                best_nb = 0.0
+                for oy in (-1, 0, 1):
+                    for ox in (-1, 0, 1):
+                        if ox == 0 and oy == 0:
+                            continue
+                        w = 1.0 if (ox == 0 or oy == 0) else 0.45
+                        best_nb = max(best_nb, vein_strength[(y + oy) % size][(x + ox) % size] * w)
+                if best_nb > 0.14:
+                    col = blend(col, ice_halo, min(0.65, best_nb * 0.62))
+            im.putpixel((x, y), (clamp(col[0]), clamp(col[1]), clamp(col[2])))
     return im
 
 
@@ -125,7 +201,6 @@ def veil() -> None:
             v = math.tau * y / size
             for x in range(size):
                 u = math.tau * x / size
-                # All harmonics use integer multipliers on u, v, and t -> guaranteed zero tile seam!
                 su = u + 0.45 * math.sin(v + t) + 0.16 * math.cos(2 * v - t)
                 sv = v + t + 0.24 * math.sin(u - t)
 
@@ -135,7 +210,6 @@ def veil() -> None:
                 sheen = (0.5 + 0.5 * math.sin(su - sv)) ** 2.4
 
                 glow = curtain1 * 0.65 + curtain2 * 0.35
-                # Deep midnight-navy trough -> luminous glacial blue -> crisp frost-white aurora crest
                 r = 6 + 10 * mist + 48 * glow + 102 * (glow ** 2.6) + 16 * sheen
                 g = 18 + 24 * mist + 106 * glow + 108 * (glow ** 2.6) + 28 * sheen
                 bl = 44 + 44 * mist + 132 * glow + 66 * (glow ** 2.6) + 34 * sheen
@@ -176,7 +250,7 @@ def veil() -> None:
 
 
 def panels() -> None:
-    """Two gently separated translucent veil planes with harmonious UVs (no mirrored crossing) for calm glacial depth."""
+    """Two gently separated translucent veil planes with harmonious UVs for calm glacial depth."""
     variants = {}
     for tile in range(5):
         name = "eirholm_gate" if tile == 4 else f"eirholm_gate_{tile}"
@@ -219,7 +293,16 @@ def stones() -> None:
             (ASSETS / f"models/block/{name}.json").write_text(
                 json.dumps({"parent": "minecraft:block/cube_all", "textures": {"all": f"hha_arius:block/{name}"}}, indent=2) + "\n"
             )
-    state = {"variants": {"": [{"model": f"hha_arius:block/{n}"} for n in names]}}
+    # Weighted variants + y-rotations so large frames never show grid repetition
+    entries = []
+    weights = [3, 4, 2, 3]
+    for name, w in zip(names, weights):
+        for rot in (0, 90, 180, 270):
+            entry = {"model": f"hha_arius:block/{name}", "weight": w}
+            if rot:
+                entry["y"] = rot
+            entries.append(entry)
+    state = {"variants": {"": entries}}
     (ASSETS / "blockstates/rime_gate_stone.json").write_text(json.dumps(state, indent=2) + "\n")
 
 

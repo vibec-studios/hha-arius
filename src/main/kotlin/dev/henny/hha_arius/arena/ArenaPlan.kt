@@ -271,40 +271,31 @@ internal object ArenaPlan {
     }
 
     /**
-     * Skulpturale innere Klingen-Stele auf den zehn [TEMPLE_PILLARS]-Plätzen:
-     * Kompakter Sockel (±1), facettierter Quarz-/Eis-Kern mit Kalzitschneiden, schlanke Parierstange und goldener Knauf.
-     * Zerbrechlich über [ArenaBuilder.pillarBlocks] (±4, y 0..14) und schlank genug für freie Wegfindung.
+     * Schlanke, skulpturale Frost-Stele auf den zehn [TEMPLE_PILLARS]-Plätzen:
+     * Kompakter Sockel (±1 auf y=0), schlanker 1×1-Obelisk aus Quarz, blauem Eis und Tiefenschiefer-Mauerwerk,
+     * gekrönt von einer Seelenlaterne. Hält die Sichtachse zum Thron und zur großen Ordensklinge völlig frei,
+     * behält Gold den sakralen Schwerpunkten (Thron & große Klinge) vor und bleibt über [ArenaBuilder.pillarBlocks] zerbrechlich.
      */
     private fun bladeStela(u: Int, v: Int, blade: Int, put: (Int, Byte) -> Unit) {
         val au = abs(u)
         val av = abs(v)
-        // Gestufter Sockel (y = 0)
+        // Flacher, sauber gestufter Sockel (y = 0)
         if (au <= 1 && av <= 1) {
-            put(0, if (au == 1 && av == 1) DTILE_SLAB else if (au == 0 && av == 0) CDEEP else PDEEP)
-        }
-        // Facettierte Klinge (y = 1..blade-1): Kalzitschneiden an ±1, blauer Eiskern mittig, Quarzrippe in v=±1 unten
-        if (av == 0 && au <= 1) {
-            for (y in 1 until blade) {
-                put(y, if (au == 0) (if (y % 3 == 0) BLUE else PACKED) else if (y == 1) QPILLAR else CALCITE)
-            }
-        } else if (av == 1 && au == 0) {
-            for (y in 1 until min(blade - 2, 4)) put(y, DBRICK_WALL)
-        }
-        // Schlanke Parierstange (y = blade)
-        if (av == 0 && au <= 2) {
-            put(blade, when (au) {
-                2 -> GOLD
-                1 -> PDEEP
-                else -> CQUARTZ
+            put(0, when {
+                au == 0 && av == 0 -> CDEEP
+                au + av == 1 -> DTILE_SLAB
+                else -> AIR
             })
-        } else if (av == 1 && au == 0) {
-            put(blade, CDEEP)
         }
-        // Griff und goldener Knauf
+        // Schlanker 1×1-Schaft (y = 1..h): kein massiver 3-Blöcke-Klumpen, volle Sicht zum Altar
+        val h = (blade - 1).coerceIn(4, 6)
         if (au == 0 && av == 0) {
-            put(blade + 1, DBRICK)
-            put(blade + 2, DBRICK_WALL)
-            put(blade + 3, GOLD)
+            put(1, PDEEP)
+            for (y in 2 until h - 1) {
+                put(y, if (y == 3) BLUE else QPILLAR)
+            }
+            put(h - 1, DBRICK_WALL)
+            put(h, SOUL_LAMP)
         }
     }
 

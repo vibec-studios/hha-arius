@@ -46,7 +46,10 @@ class DragonBreathFx(private val caster: Entity, private val range: Double, life
     private fun headJoint(td: Float): Vec3d {
         val f = look(td)
         val eye = caster.getCameraPosVec(td)
-        return eye.add(f.multiply(1.05)).add(0.0, if (firstPerson()) 0.92 else 0.42, 0.0)
+        if (firstPerson()) return eye.add(f.multiply(1.15)).add(0.0, 0.92, 0.0)
+        // Leicht über der rechten Schulter: im Third-Person-View bleibt Sicht auf den Spieler UND den vollen Atemkegel frei!
+        val right = f.crossProduct(UP).let { if (it.lengthSquared() < 1e-4) X else it.normalize() }
+        return eye.add(f.multiply(1.30)).add(right.multiply(0.58)).add(0.0, 1.05, 0.0)
     }
 
     private fun firstPerson(): Boolean {
@@ -117,19 +120,20 @@ class DragonBreathFx(private val caster: Entity, private val range: Double, life
         val z = f.negate()
 
         val emerge = (1f - alpha).toDouble()
-        val recoil = if (jaw > 0.85f) 0.10 * sin(t * 1.45) else 0.0
-        val joint = headJoint(td).subtract(f.multiply(emerge * 1.35 - recoil))
-        val portal = joint.subtract(f.multiply(2.45)).add(hu.multiply(-0.35))
+        val recoil = if (jaw > 0.85f) 0.09 * sin(t * 1.45) else 0.0
+        val joint = headJoint(td).subtract(f.multiply(emerge * 1.05 - recoil))
+        // Siegel schwebt schlank über dem Rücken des Spielers (nie direkt vor der Third-Person-Kamera)
+        val portal = joint.subtract(f.multiply(1.55)).add(hu.multiply(0.32))
         val cam = d.cam
 
-        // Klares, ruhiges Frost-Siegel hinter dem Hals (Tiefblau-Kontrast + scharfer Eisring)
-        val ringR = 1.25 + 0.35 * alpha
-        d.ring(AriusLayers.INK, portal, hl, hu, ringR * 0.84, ringR * 1.04,
-            withAlpha(NAVY_DEEP, 0.55f * alpha), withAlpha(ICE_BRIGHT, 0.75f * alpha), segments = 36)
-        d.ring(AriusLayers.VFX_GLOW, portal, hl, hu, ringR * 0.92, ringR * 1.02,
-            withAlpha(ICE_MID, 0.3f * alpha), withAlpha(WHITE, 0.85f * alpha), segments = 36)
-        d.disc(AriusLayers.VFX_RUNE, portal, hl, hu, ringR * 0.94,
-            withAlpha(ICE_MID, (if (fp) 0.30f else 0.52f) * alpha), t * 0.035)
+        // Klares, schlankes Frost-Siegel am Halsansatz (Tiefblau-Kontrast + scharfer Eisring)
+        val ringR = 0.68 + 0.16 * alpha
+        d.ring(AriusLayers.INK, portal, hl, hu, ringR * 0.80, ringR * 1.04,
+            withAlpha(NAVY_DEEP, 0.48f * alpha), withAlpha(ICE_MID, 0.72f * alpha), segments = 32)
+        d.ring(AriusLayers.VFX_GLOW, portal, hl, hu, ringR * 0.90, ringR * 1.02,
+            withAlpha(ICE_MID, 0.25f * alpha), withAlpha(WHITE, 0.82f * alpha), segments = 32)
+        d.disc(AriusLayers.VFX_RUNE, portal, hl, hu, ringR * 0.90,
+            withAlpha(ICE_MID, (if (fp) 0.24f else 0.42f) * alpha), t * 0.04)
 
         // Geschwungener 5-Glieder-Hals mit durchgehendem Licht-Rückgrat
         renderNeck(d, matrices, joint, portal, f, hu, hl, t, alpha, fp)
@@ -144,14 +148,15 @@ class DragonBreathFx(private val caster: Entity, private val range: Double, life
         model.openJaw(jaw * 0.88f)
 
         val consumers = d.consumers
-        val bodyBuf = consumers.getBuffer(RenderLayers.entityTranslucent(TEXTURE))
-        val rimBuf = consumers.getBuffer(RenderLayers.eyes(TEXTURE))
-        val bodyAlpha = (if (fp) 0.42f else 0.78f) * alpha
-        val rimAlpha = (if (fp) 0.28f else 0.62f) * alpha
+        val bodyAlpha = (if (fp) 0.36f else 0.64f) * alpha
+        val rimAlpha = (if (fp) 0.24f else 0.56f) * alpha
 
         // 1) Tiefblau-silbrige Silhouette (bleibt auf weißem Schnee gestochen scharf)
+        // Jeder RenderLayer muss vor dem nächsten getBuffer()-Aufruf fertig gerendert sein!
+        val bodyBuf = consumers.getBuffer(RenderLayers.entityTranslucent(TEXTURE))
         model.head.render(matrices, bodyBuf, LightmapTextureManager.MAX_LIGHT_COORDINATE, OverlayTexture.DEFAULT_UV, withAlpha(GHOST_BODY, bodyAlpha))
         // 2) Leuchtender Eis-Saum
+        val rimBuf = consumers.getBuffer(RenderLayers.eyes(TEXTURE))
         matrices.push()
         matrices.scale(1.045f, 1.045f, 1.045f)
         model.head.render(matrices, rimBuf, LightmapTextureManager.MAX_LIGHT_COORDINATE, OverlayTexture.DEFAULT_UV, withAlpha(GHOST_RIM, rimAlpha))
@@ -168,8 +173,6 @@ class DragonBreathFx(private val caster: Entity, private val range: Double, life
         fwd: Vec3d, hu: Vec3d, hl: Vec3d, t: Float, alpha: Float, fp: Boolean,
     ) {
         val model = model() ?: return
-        val bodyBuf = d.consumers.getBuffer(RenderLayers.entityTranslucent(TEXTURE))
-        val rimBuf = d.consumers.getBuffer(RenderLayers.eyes(TEXTURE))
         val cam = d.cam
         val n = 5
         val spine = ArrayList<Vec3d>(n + 1)
@@ -180,28 +183,34 @@ class DragonBreathFx(private val caster: Entity, private val range: Double, life
             val sway = sin(t * 0.22 - s * 2.2) * 0.08 * sin(s * PI)
             spine += joint.lerp(portal, s).add(hu.multiply(arch)).add(hl.multiply(sway))
         }
-        for (k in 0 until n) {
-            val a = spine[k]
-            val b = spine[k + 1]
-            val dir = b.subtract(a)
-            val len = dir.length()
-            if (len < 1e-4) continue
-            val bz = dir.multiply(1.0 / len)
-            var u = UP.subtract(bz.multiply(UP.dotProduct(bz)))
-            u = if (u.lengthSquared() < 1e-6) X else u.normalize()
-            val l = bz.crossProduct(u)
-            val fadeSeg = (1f - k / (n + 0.5f)) * alpha
-            matrices.push()
-            matrices.translate(a.x - cam.x, a.y - cam.y, a.z - cam.z)
-            m3.set(l.x.toFloat(), l.y.toFloat(), l.z.toFloat(), (-u.x).toFloat(), (-u.y).toFloat(), (-u.z).toFloat(), bz.x.toFloat(), bz.y.toFloat(), bz.z.toFloat())
-            matrices.multiply(rot.setFromNormalized(m3))
-            val g = NivarisShape.SCALE * HEAD_SCALE * NivarisShape.taper(k) * 0.86f
-            val gz = NivarisShape.SCALE * HEAD_SCALE * (len / NivarisShape.SEGMENT).toFloat() * 1.12f
-            matrices.scale(g, g, gz)
-            model.glied(k).render(matrices, bodyBuf, LightmapTextureManager.MAX_LIGHT_COORDINATE, OverlayTexture.DEFAULT_UV, withAlpha(GHOST_BODY, (if (fp) 0.32f else 0.72f) * fadeSeg))
-            matrices.scale(1.05f, 1.05f, 1.0f)
-            model.glied(k).render(matrices, rimBuf, LightmapTextureManager.MAX_LIGHT_COORDINATE, OverlayTexture.DEFAULT_UV, withAlpha(GHOST_RIM, (if (fp) 0.20f else 0.52f) * fadeSeg))
-            matrices.pop()
+
+        // Zwei getrennte Durchgänge (erst Körper, dann Lichtsaum), damit Immediate-Buffer nicht vorzeitig schließt
+        for (pass in 0..1) {
+            val buf = d.consumers.getBuffer(if (pass == 0) RenderLayers.entityTranslucent(TEXTURE) else RenderLayers.eyes(TEXTURE))
+            val baseCol = if (pass == 0) GHOST_BODY else GHOST_RIM
+            val baseAlpha = if (pass == 0) (if (fp) 0.32f else 0.72f) else (if (fp) 0.20f else 0.52f)
+            val rimScale = if (pass == 0) 1.0f else 1.05f
+            for (k in 0 until n) {
+                val a = spine[k]
+                val b = spine[k + 1]
+                val dir = b.subtract(a)
+                val len = dir.length()
+                if (len < 1e-4) continue
+                val bz = dir.multiply(1.0 / len)
+                var u = UP.subtract(bz.multiply(UP.dotProduct(bz)))
+                u = if (u.lengthSquared() < 1e-6) X else u.normalize()
+                val l = bz.crossProduct(u)
+                val fadeSeg = (1f - k / (n + 0.5f)) * alpha
+                matrices.push()
+                matrices.translate(a.x - cam.x, a.y - cam.y, a.z - cam.z)
+                m3.set(l.x.toFloat(), l.y.toFloat(), l.z.toFloat(), (-u.x).toFloat(), (-u.y).toFloat(), (-u.z).toFloat(), bz.x.toFloat(), bz.y.toFloat(), bz.z.toFloat())
+                matrices.multiply(rot.setFromNormalized(m3))
+                val g = NivarisShape.SCALE * HEAD_SCALE * NivarisShape.taper(k) * 0.86f * rimScale
+                val gz = NivarisShape.SCALE * HEAD_SCALE * (len / NivarisShape.SEGMENT).toFloat() * 1.12f
+                matrices.scale(g, g, gz)
+                model.glied(k).render(matrices, buf, LightmapTextureManager.MAX_LIGHT_COORDINATE, OverlayTexture.DEFAULT_UV, withAlpha(baseCol, baseAlpha * fadeSeg))
+                matrices.pop()
+            }
         }
         // Schimmernde Frostmähne entlang des Halsrückens
         val mane = spine.map { it.add(hu.multiply(0.32)) }
@@ -264,27 +273,27 @@ class DragonBreathFx(private val caster: Entity, private val range: Double, life
         // 1) Tiefblauer Kontrastmantel (hält den Atem auf Schnee und im Sturm gestochen scharf)
         d.ribbon(
             AriusLayers.INK, pts,
-            { q -> 0.24 + q * 1.45 },
+            { q -> 0.34 + q * 1.95 },
             { q ->
                 val edgeFade = sin(q * PI).toFloat().coerceIn(0f, 1f)
-                withAlpha(lerpColor(NAVY_MID, ICE_MID, 1f - q), 0.44f * fade * edgeFade)
+                withAlpha(lerpColor(NAVY_DEEP, ICE_MID, 1f - q), 0.56f * fade * edgeFade)
             },
-            uScale = 0.2f, uOffset = -t * 0.18f,
+            uScale = 0.22f, uOffset = -t * 0.18f,
         )
 
-        // 2) Fließender eisblauer Hauptstrom (VFX_FLOW, zwei gekreuzte Ebenen für echtes 3D-Volumen)
+        // 2) Fließender eisblauer Hauptstrom (VFX_FLOW)
         d.ribbon(
             AriusLayers.VFX_FLOW, pts,
-            { q -> 0.28 + q * 1.75 },
-            { q -> withAlpha(lerpColor(ICE_MID, WHITE, (1f - q * 0.65f).coerceIn(0f, 1f)), 0.78f * fade * (1f - q * 0.55f)) },
+            { q -> 0.38 + q * 2.25 },
+            { q -> withAlpha(lerpColor(ICE_MID, WHITE, (1f - q * 0.65f).coerceIn(0f, 1f)), 0.86f * fade * (1f - q * 0.45f)) },
             uScale = 0.28f, uOffset = -t * 0.24f,
         )
 
         // 3) Gleißender frostweißer Innenkern (verjüngt sich elegant)
         d.ribbon(
             AriusLayers.VFX_GLOW, pts,
-            { q -> 0.14 + q * 0.68 },
-            { q -> withAlpha(lerpColor(ICE_BRIGHT, WHITE, (1f - q).coerceIn(0f, 1f)), 0.92f * fade * (1f - q * 0.45f)) },
+            { q -> 0.18 + q * 0.88 },
+            { q -> withAlpha(lerpColor(ICE_BRIGHT, WHITE, (1f - q).coerceIn(0f, 1f)), 0.95f * fade * (1f - q * 0.40f)) },
             uScale = 0.2f, uOffset = -t * 0.20f,
         )
 
@@ -293,20 +302,20 @@ class DragonBreathFx(private val caster: Entity, private val range: Double, life
             val spiral = ArrayList<Vec3d>(segs + 1)
             for (i in 0..segs) {
                 val q = i / segs.toDouble()
-                val rad = 0.18 + q * range * 0.14
+                val rad = 0.26 + q * range * 0.18
                 val ang = q * 8.5 - t * 0.58 + strand * PI
                 spiral += pts[i].add(sides[i].multiply(cos(ang) * rad)).add(ups[i].multiply(sin(ang) * rad))
             }
             d.ribbon(
                 AriusLayers.VFX_GLOW, spiral,
-                { q -> 0.06 + q * 0.09 },
-                { q -> withAlpha(if (strand == 0) WHITE else ICE_BRIGHT, 0.78f * fade * (1f - q * 0.85f)) },
+                { q -> 0.08 + q * 0.12 },
+                { q -> withAlpha(if (strand == 0) WHITE else ICE_BRIGHT, 0.85f * fade * (1f - q * 0.80f)) },
                 uScale = 1f, uOffset = 0f,
             )
         }
 
-        // 5) Rhythmische Frost-Druckringe, die mit dem Strahl vorwärts rasen (Wucht und Geschwindigkeit)
-        val ringCount = 5
+        // 5) Rhythmische Frost-Druckringe, die mit dem Strahl vorwärts rasen (auch von hinten sofort als Kegel lesbar!)
+        val ringCount = 6
         for (rIdx in 0 until ringCount) {
             val phase = ((activeT * 0.095f + rIdx.toFloat() / ringCount) % 1f)
             if (phase > extend) continue
@@ -314,12 +323,12 @@ class DragonBreathFx(private val caster: Entity, private val range: Double, life
             val i0 = fIdx.toInt()
             val frac = (fIdx - i0).toDouble()
             val pos = pts[i0].lerp(pts[i0 + 1], frac)
-            val rad = 0.35 + phase * (range * 0.17)
+            val rad = 0.44 + phase * (range * 0.21)
             val rf = sin(phase * PI).toFloat() * fade
-            d.ring(AriusLayers.INK, pos, sides[i0], ups[i0], rad * 0.82, rad * 1.04,
-                withAlpha(NAVY_DEEP, 0f), withAlpha(ICE_MID, 0.52f * rf), segments = 24)
-            d.ring(AriusLayers.VFX_GLOW, pos, sides[i0], ups[i0], rad * 0.88, rad * 1.02,
-                withAlpha(ICE_BRIGHT, 0f), withAlpha(WHITE, 0.78f * rf), segments = 24)
+            d.ring(AriusLayers.INK, pos, sides[i0], ups[i0], rad * 0.78, rad * 1.06,
+                withAlpha(NAVY_DEEP, 0f), withAlpha(NAVY_MID, 0.65f * rf), segments = 28)
+            d.ring(AriusLayers.VFX_GLOW, pos, sides[i0], ups[i0], rad * 0.86, rad * 1.04,
+                withAlpha(ICE_BRIGHT, 0f), withAlpha(WHITE, 0.88f * rf), segments = 28)
         }
 
         // 6) Facettierte Eiskristalle entlang der Stromkanten (schlank, in Flugrichtung gestreckt)
@@ -360,7 +369,7 @@ class DragonBreathFx(private val caster: Entity, private val range: Double, life
         private const val APPEAR = 5f
         private const val BREATH_FROM = 6
         private const val BREATH_TAIL = 8
-        private const val HEAD_SCALE = 0.82f
+        private const val HEAD_SCALE = 0.66f
         private val HEAD_LEN = 15.0 / 16.0 * NivarisShape.SCALE * HEAD_SCALE * 0.78
         internal val TEXTURE = HhaArius.id("textures/entity/nivaris.png")
         private val EYES = HhaArius.id("textures/entity/nivaris_glow_eyes.png")
@@ -369,8 +378,8 @@ class DragonBreathFx(private val caster: Entity, private val range: Double, life
         private const val NAVY_MID = 0xFF1A5282.toInt()
         private const val ICE_MID = 0xFF6EC8F5.toInt()
         private const val ICE_BRIGHT = 0xFFC8EEFF.toInt()
-        private const val GHOST_BODY = 0xFF286090.toInt()
-        private const val GHOST_RIM = 0xFFB8ECFF.toInt()
+        private const val GHOST_BODY = 0xFF3474A8.toInt()
+        private const val GHOST_RIM = 0xFFC8F2FF.toInt()
 
         private val m3 = Matrix3f()
         private val rot = Quaternionf()

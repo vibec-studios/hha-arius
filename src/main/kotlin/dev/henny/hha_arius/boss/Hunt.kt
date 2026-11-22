@@ -657,8 +657,13 @@ class Hunt(private val f: EirholmFight) {
                 run.opened = true
                 start { breakPlug(a, run) }
             }
-            // Solvane in der Höhle
-            if (!run.scared && !dragonBusy && f.nivaris != null && !f.dragonDowned) scare(run, players, leaderArc, rearArc)
+            // Solvane in der Höhle: Blick-Hinweis & Blick-Auslöser in der ersten dunklen Höhle laufen unabhängig von
+            // dragonBusy (z. B. während Solvane noch auf die Begleitbahn einschwenkt), da die Augenszene das Drachenmodell
+            // nicht versetzt und queueScene() sauber auf das Ende laufender Aktionen wartet.
+            val darkEye = c.theme == HuntRoute.Theme.DARK && c.i0 <= HuntRoute.size / 2
+            if (!run.scared && f.nivaris != null && !f.dragonDowned && (darkEye || !dragonBusy)) {
+                scare(run, players, leaderArc, rearArc)
+            }
             if (run.fillFront >= 0) tickFill(run, players)
         }
     }
@@ -890,9 +895,10 @@ class Hunt(private val f: EirholmFight) {
      */
     private fun tickEyeLook(run: CaveRun, c: HuntRoute.Cave, w: Double, inCave: List<ServerPlayerEntity>, leaderU: Double) {
         val i = HuntRoute.indexOfArc(c.a0 + w)
-        val slitInner = beside(i, c.theme.lane + 0.35, 2.55)
+        val slitInner = beside(i, c.theme.lane + 0.15, 2.45)
+        val slitMouth = beside(i, c.theme.lane - 0.55, 2.35)
         val slitDeep = beside(i, 6.2, 2.55)
-        val into = beside(i, 0.0, 2.0).subtract(slitInner).normalize()
+        val into = beside(i, 0.0, 2.1).subtract(slitInner).normalize()
 
         // Fallback: Gruppe ist weit am Spalt vorbeigelaufen, ohne hinzuschauen -> nichts blockieren, Hinweis beenden.
         if (leaderU >= w + 8.5 || leaderU >= c.length - 1.5) {
@@ -906,7 +912,7 @@ class Hunt(private val f: EirholmFight) {
 
         // In-World-Hinweis aktivieren und am Leben halten, solange jemand in der Höhle ist.
         if (leaderU >= 0.5) {
-            if (!run.eyeCueActive || f.now % 50L == 0L) {
+            if (!run.eyeCueActive || f.now % 45L == 0L) {
                 run.eyeCueActive = true
                 HuntNet.fx(f.audience(), HuntFx.EYE_CUE, slitInner, into, life = 75)
             }
@@ -922,7 +928,7 @@ class Hunt(private val f: EirholmFight) {
         }
 
         // Echte Blickprüfung: schaut ein Spieler im Bereich um das Fenster gezielt in den Felsspalt?
-        val cosMin = kotlin.math.cos(Math.toRadians(24.0))
+        val cosMin = kotlin.math.cos(Math.toRadians(26.0))
         for (p in inCave) {
             val pu = arcOf(p) - c.a0
             if (pu !in (w - 9.0)..(w + 5.5)) {
@@ -939,7 +945,7 @@ class Hunt(private val f: EirholmFight) {
             val clearLos = if (looking) {
                 val hit = f.world.raycast(
                     net.minecraft.world.RaycastContext(
-                        eyePos, slitInner.add(into.multiply(0.45)),
+                        eyePos, slitMouth,
                         net.minecraft.world.RaycastContext.ShapeType.VISUAL,
                         net.minecraft.world.RaycastContext.FluidHandling.NONE,
                         p,
@@ -951,7 +957,7 @@ class Hunt(private val f: EirholmFight) {
             }
             val held = if (looking && clearLos) (run.eyeGaze[p.uuid] ?: 0) + 1 else maxOf(0, (run.eyeGaze[p.uuid] ?: 0) - 1)
             run.eyeGaze[p.uuid] = held
-            if (held >= 5) {
+            if (held >= 4) {
                 run.scared = true
                 run.eyeGaze.clear()
                 if (run.eyeCueActive) {

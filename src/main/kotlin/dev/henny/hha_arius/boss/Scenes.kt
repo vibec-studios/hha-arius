@@ -338,7 +338,7 @@ class Scenes(private val f: EirholmFight) {
         MusicCue.sting(f, "phase")
         post.line(
             f.abs(Vec3d(x - 18.0, 46.0, -82.0)), f.abs(Vec3d(x - 14.0, 56.0, -56.0)),
-            f.abs(Vec3d(x, 12.0, -4.0)), f.abs(Vec3d(x, 62.0, foot + 64.0)), 26, 68.0, 62.0,
+            f.abs(Vec3d(x, 12.0, -4.0)), f.abs(Vec3d(x, 82.0, foot + 56.0)), 26, 68.0, 62.0,
         )
         shown {
             for (k in 0 until 5) f.fxAll(FxKind.CLEAR_WAVE, seamFrom.lerp(seamTo, 0.3 + k * 0.14), a = 5f, life = 14)
@@ -348,14 +348,15 @@ class Scenes(private val f: EirholmFight) {
         f.farSound("seal.blizzard", f.abs(Vec3d(x, 48.0, foot + 36.0)), 5f, 0.6f)
         wait(6)
         // 3) Weite Totale von Fuß bis Horn: Berg UND Gipfelarena spalten sich sauber vor den Augen der Spieler.
+        // Alle Blickpunkte liegen strikt VOR/ÜBER der Berghaut (freie Sichtlinie), damit HHA-CinePlayer die Kamera nie einzieht.
         val mid = f.abs(Vec3d(x, 90.0, spireZ - 40.0))
         f.farSound("glacier.collapse", mid, 8f, 0.5f)
         f.farSound("cut.split", mid, 8f, 0.7f)
         f.farVanilla(net.minecraft.sound.SoundEvents.ENTITY_GENERIC_EXPLODE.value(), mid, 6f, 0.4f)
         f.farVanilla(net.minecraft.sound.SoundEvents.ENTITY_WARDEN_SONIC_BOOM, mid, 5f, 0.5f)
-        post.line(
+        post.rawLine(
             f.abs(Vec3d(x - 62.0, 128.0, foot - 156.0)), f.abs(Vec3d(x - 48.0, 148.0, foot - 142.0)),
-            f.abs(Vec3d(x, 78.0, spireZ - 32.0)), f.abs(Vec3d(x, 126.0, spireZ - 6.0)), 56, 64.0, 60.0,
+            f.abs(Vec3d(x, 86.0, spireZ - 110.0)), f.abs(Vec3d(x, 178.0, spireZ - 34.0)), 56, 64.0, 60.0,
         )
         // Zuerst alle Blöcke der gesamten Schnitt-Ebene (inkl. Gipfelarena, Mauer, Krone & Horn) sichern und spalten!
         yieldAll(splitFull(animate = true, slices = 24))
@@ -375,7 +376,7 @@ class Scenes(private val f: EirholmFight) {
         }
         // 4) Hoher Blick über die gespaltene Gipfelarena: Arena-Boden, Mauer und Horn sind sichtbar in zwei Hälften geteilt.
         val summitY = FarPlan.SHOULDER_Y
-        post.line(
+        post.rawLine(
             f.abs(Vec3d(x + 42.0, summitY + 34.0, spireZ - 66.0)), f.abs(Vec3d(x + 28.0, summitY + 42.0, spireZ - 54.0)),
             f.abs(Vec3d(x, summitY + 4.0, spireZ - 10.0)), f.abs(Vec3d(x, summitY + 12.0, spireZ + 4.0)), 44, 58.0, 54.0,
         )
@@ -383,9 +384,9 @@ class Scenes(private val f: EirholmFight) {
         for (id in f.cutSurvivors) f.server.playerManager.getPlayer(id)?.let { Advancements.grant(it, "under_the_line") }
         wait(44)
         // 5) Goldene Yang-Wiederherstellung: vom Bergfuß bis zur Gipfelarena steigt goldenes Yang-Licht auf und schließt den Spalt exakt.
-        post.line(
+        post.rawLine(
             f.abs(Vec3d(x - 68.0, 136.0, foot - 166.0)), f.abs(Vec3d(x - 78.0, 154.0, foot - 178.0)),
-            f.abs(Vec3d(x, 86.0, spireZ - 26.0)), f.abs(Vec3d(x, 134.0, spireZ - 4.0)), 80, 64.0, 66.0,
+            f.abs(Vec3d(x, 88.0, spireZ - 110.0)), f.abs(Vec3d(x, 180.0, spireZ - 32.0)), 80, 64.0, 66.0,
         )
         val yangFrom = f.abs(Vec3d(x, 4.0, foot + 8.0))
         val yangTo = f.abs(Vec3d(x, ArenaLayout.SPIRE_TOP.toDouble(), spireZ))
