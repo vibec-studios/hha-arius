@@ -25,7 +25,7 @@ Der Besitzer spielt den Kampf selbst, nimmt Videos auf und schreibt kurzes, dire
 - **Gewünscht sind Wucht und Inszenierung:** Vorbereitung, harter Treffer, klare Folge. Der Maßstab sind große Action-Spiele wie Black Myth: Wukong. Übernimm die Wirkung, baue aber eigene Animationen.
 - **Solvane darf komplett geskriptet sein.** Zitat: „Solvanes part in dem ganzem fight von anfang bis ende kann scripted seien solange er dann nicht mehr buggy ist.“ Saubere, geplante Bahnen sind wichtiger als dynamische KI.
 - **Ehrlichkeit ist Pflicht.** Sag klar, was du gesehen hast und was nicht. Ein ehrliches „nicht fertig“ ist besser als ein falsches „fertig“.
-- **Die Usage-Limits sind knapp.** Arbeite sparsam und starte keine Agentenschwärme. Kein Test-Client darf Fenster oder Ton stören.
+- **Test-Clients laufen still.** Kein Test-Client darf Fenster oder Ton stören.
 
 ### Visuelle Richtung
 
