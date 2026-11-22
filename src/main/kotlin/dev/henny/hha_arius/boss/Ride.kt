@@ -172,6 +172,11 @@ object RideSeats {
     /** Release the rider before sending launch velocity so the client no longer applies passenger movement. */
     fun landRider(f: EirholmFight, p: ServerPlayerEntity, target: Vec3d, lift: Double) {
         Hold.drop(p)
+        if (Cine.muted) {
+            p.teleport(f.world, target.x, target.y, target.z, emptySet(), p.yaw, p.pitch, false)
+            p.onLanding()
+            return
+        }
         f.task(script {
             yield(Unit)
             if (!p.isAlive || p.entityWorld !== f.world || p.hasVehicle()) return@script

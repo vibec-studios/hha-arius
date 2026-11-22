@@ -166,7 +166,8 @@ object RideClient {
             if (v is NivarisEntity) {
                 if (v.isRemoved) {
                     p.stopRiding()
-                    clearEntity(p.id)
+                    seats.remove(p.id)
+                    clearRiderAnimation(p.id)
                 } else if (p.id !in mountAnims) {
                     val prev = lastFreePos[p.id]
                     val startFrom = prev ?: p.entityPos
@@ -180,7 +181,7 @@ object RideClient {
                 lastFreePos[p.id] = p.entityPos
                 // The pickup packet can precede the vanilla passenger list by a tick.
                 val pickup = mountAnims[p.id]
-                if (pickup == null || clientTick - pickup.startTick > 3) clearEntity(p.id)
+                if (pickup == null || clientTick - pickup.startTick > 3) clearRiderAnimation(p.id)
             }
         }
         for (e in world.entities) {
@@ -195,9 +196,8 @@ object RideClient {
         actionAnims.entries.removeIf { clientTick - it.value.startTick > it.value.duration + 4 }
     }
 
-    private fun clearEntity(id: Int) {
+    private fun clearRiderAnimation(id: Int) {
         grips.remove(id)
-        seats.remove(id)
         mountAnims.remove(id)
         actionAnims.remove(id)
     }
