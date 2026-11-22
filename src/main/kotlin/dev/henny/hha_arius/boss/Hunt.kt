@@ -1242,12 +1242,12 @@ class Hunt(private val f: EirholmFight) {
         try {
             val fallFrom = a.entityPos
             val catchTicks = 30
-            val clearance = 8.0
-            val plannedCatch = (12..24 step 4).map { offset ->
-                val q = fallFrom.add(valley.multiply(offset.toDouble()))
-                Vec3d(q.x, maxOf(fallFrom.y - 19.0, terrainTop(q, 8) + clearance), q.z)
-            }.firstOrNull { it.y < fallFrom.y - 11.0 }
-                ?: fallFrom.add(valley.multiply(26.0)).add(0.0, -8.0, 0.0)
+            val plannedCatch = (8..24 step 4).map { offset ->
+                fallFrom.add(valley.multiply(offset.toDouble()))
+            }.plus(fallFrom).map { q ->
+                Vec3d(q.x, maxOf(fallFrom.y - 19.0, terrainTop(q, 4) + 5.0), q.z)
+            }.firstOrNull { it.y < fallFrom.y - 10.0 }
+                ?: fallFrom.add(0.0, -8.0, 0.0)
             val startRaw = plannedCatch.subtract(dir.multiply(42.0)).add(valley.multiply(20.0))
             val diveStart = Vec3d(startRaw.x, maxOf(fallFrom.y + 18.0, terrainTop(startRaw, 8) + 12.0), startRaw.z)
             val pullout = plannedCatch.add(dir.multiply(12.0)).add(valley.multiply(6.0)).add(0.0, 2.0, 0.0)
@@ -1261,7 +1261,15 @@ class Hunt(private val f: EirholmFight) {
             } else emptyList()
             val catchIdx = rawFlight.indices.minByOrNull { rawFlight[it].squaredDistanceTo(plannedCatch) } ?: 0
             val dropIdx = rawFlight.indices.minByOrNull { rawFlight[it].squaredDistanceTo(dropPoint) } ?: 0
-            val flight = DragonRail.clearTerrain(rawFlight, f.origin, f.floorY, clearance)
+            // A height envelope for level flight erases this dive: the rim on either
+            // side of the ravine can be higher than the deck. Guard the local corridor.
+            val flight = rawFlight.mapIndexed { i, q ->
+                if (i == 0) q else {
+                    val p = terrainTop(q, if (i <= catchIdx + 20) 3 else 7)
+                    val margin = if (i <= catchIdx + 20) 3.5 else 8.0
+                    Vec3d(q.x, maxOf(q.y, p + margin), q.z)
+                }
+            }
             val catchS = catchIdx * DragonRail.STEP
             val dropS = dropIdx * DragonRail.STEP
             val catchAt = flight.getOrNull(catchIdx) ?: plannedCatch

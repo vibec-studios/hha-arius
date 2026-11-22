@@ -61,7 +61,7 @@ class VerifyDragon : FabricClientGameTest {
             f.startDirector(emptySequence())
             Cine.end(f.audience())
             f.onSummit = true
-            val c = f.arenaCenter
+            val c = f.abs(f.summitCenterRel)
             val p = player(srv)
             p.teleport(f.world, c.x + 3.0, c.y, c.z + 6.0, emptySet(), 180f, -10f, false)
             f.arius?.let { f.place(it, c) }
@@ -70,7 +70,7 @@ class VerifyDragon : FabricClientGameTest {
         settle(240)
         server { srv ->
             val f = fight() ?: return@server
-            val c = f.arenaCenter
+            val c = f.abs(f.summitCenterRel)
             val p = player(srv)
             if (p.entityPos.squaredDistanceTo(c) > 18.0 * 18.0) {
                 p.teleport(f.world, c.x + 3.0, c.y, c.z + 6.0, emptySet(), 180f, -10f, false)
