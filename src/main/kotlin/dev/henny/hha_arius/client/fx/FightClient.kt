@@ -115,10 +115,13 @@ object FightClient {
  */
 object PunishCam {
     private var on = false
+    private var wasOn = false
     private var focus = -1
     private var until = 0L
     private var k = 0f
     private var prevK = 0f
+    private var inStep = 1f / 15f
+    private var outStep = 1f / 24f
     private var age = 0
     private var side = 1.0
 
@@ -168,7 +171,7 @@ object PunishCam {
         if (on) {
             if (!this.on && k <= 0.01f) {
                 age = 0
-                side = if (Math.random() < 0.5) 1.0 else -1.0
+                inStep = 1f / 15f
                 clearRig()
             }
             this.on = true
@@ -194,27 +197,88 @@ object PunishCam {
         impulseAmp = 0f
     }
 
+    private fun wrapDeg(d: Double): Double {
+        var x = d % 360.0
+        if (x > 180.0) x -= 360.0
+        if (x < -180.0) x += 360.0
+        return x
+    }
+
+    /** Peak derivative of [ease] is 1 / (1 - RAMP) = 1.333, so step <= limit / (1.333 * span) caps per-tick delta cleanly. */
+    private fun blendStep(spanPos: Double, spanYaw: Double, maxPosPerTick: Double, maxYawPerTick: Double, minTicks: Int): Float {
+        val peak = 1.0 / (1.0 - RAMP)
+        val tPos = kotlin.math.ceil(peak * spanPos / maxPosPerTick).toInt()
+        val tYaw = kotlin.math.ceil(peak * spanYaw / maxYawPerTick).toInt()
+        val ticks = maxOf(minTicks, tPos, tYaw).coerceIn(minTicks, 40)
+        return 1f / ticks
+    }
+
     fun tick(client: MinecraftClient) {
         prevK = k
         if (on && (ArtAnims.ticks >= until || client.player?.isAlive != true)) on = false
-        k = if (on) (k + 0.15f).coerceAtMost(1f) else (k - 0.12f).coerceAtLeast(0f)
-        if (k <= 0f) {
-            clearRig()
+        val player = client.player
+        val world = client.world
+        if (player == null || world == null) {
+            if (!on) k = (k - outStep).coerceAtLeast(0f)
+            if (k <= 0f) clearRig()
+            wasOn = on
             return
         }
-        age++
-        val player = client.player ?: return
-        val world = client.world ?: return
+        // When blend-out begins, freeze the rig at its current pose and compute a smooth monotonic exit duration
+        // so exit never exceeds 0.50 blocks/tick or 6.0 deg/tick and never reverses direction.
+        if (wasOn && !on && rigPos != null && rigLook != null) {
+            val rp = rigPos!!
+            val rl = rigLook!!
+            val look = rl.subtract(rp)
+            val rigYaw = Math.toDegrees(atan2(-look.x, look.z))
+            val eye = player.eyePos
+            val yawSpan = kotlin.math.abs(wrapDeg(rigYaw - player.yaw.toDouble()))
+            val posSpan = rp.distanceTo(eye)
+            outStep = blendStep(posSpan, yawSpan, maxPosPerTick = 0.48, maxYawPerTick = 6.0, minTicks = 16)
+            prevRigPos = rp
+            prevRigLook = rl
+        }
+        wasOn = on
+
+        if (!on) {
+            k = (k - outStep).coerceAtLeast(0f)
+            if (k <= 0f) {
+                clearRig()
+            } else {
+                // Keep rig stationary while easing out so the blend path is strictly monotonic with zero reversal.
+                prevRigPos = rigPos
+                prevRigLook = rigLook
+            }
+            return
+        }
+
+        val first = mid == null
         val pp = player.entityPos
         val ep = world.getEntityById(focus)?.entityPos ?: pp.add(player.rotationVector.multiply(2.0))
         val rawAxis = Vec3d(ep.x - pp.x, 0.0, ep.z - pp.z)
         val rawSep = rawAxis.length()
-        val fixed = axis ?: (if (rawSep < 1e-3) Vec3d(0.0, 0.0, 1.0) else rawAxis.multiply(1.0 / rawSep)).also { axis = it }
+        val fixed = axis ?: (if (rawSep < 1e-3) Vec3d(0.0, 0.0, 1.0) else rawAxis.multiply(1.0 / rawSep)).also { f ->
+            axis = f
+            // Pick the side (+1 or -1) closer to the player's view, avoiding immediate pillar obstruction when possible.
+            val candPos = Vec3d(-f.z, 0.0, f.x)
+            val ang0 = Math.toRadians(-25.0)
+            val m0 = pp.lerp(ep, 0.5).add(0.0, 1.45, 0.0)
+            fun score(s: Double): Double {
+                val d = candPos.multiply(s * cos(ang0)).add(f.multiply(sin(ang0)))
+                val yaw = Math.toDegrees(atan2(d.x, -d.z))
+                val off = d.multiply(5.4 + rawSep.coerceAtMost(7.0) * 0.25).add(0.0, 0.85, 0.0)
+                val h = world.raycast(RaycastContext(m0, m0.add(off), RaycastContext.ShapeType.COLLIDER, RaycastContext.FluidHandling.NONE, player))
+                val blockedPenalty = if (h.type == HitResult.Type.BLOCK) 60.0 else 0.0
+                return kotlin.math.abs(wrapDeg(yaw - player.yaw.toDouble())) + blockedPenalty
+            }
+            side = if (score(1.0) <= score(-1.0)) 1.0 else -1.0
+        }
+        // Only sweep the orbit angle once fully blended in so blend-in is monotonic with zero direction reversal.
+        if (k >= 0.999f) age++
         // Zwei Stufen: Tiefpass auf den Mittelpunkt, dann kritisch gedämpfte Feder. So bleiben Stöße des Opfers ein weicher Schub.
         val actors = pp.lerp(ep, 0.5).add(0.0, 1.45, 0.0)
         val wantMid = aim?.lerp(actors, AIM_FILTER) ?: actors
         aim = wantMid
-        val first = mid == null
         var m = mid ?: wantMid
         if (!first) {
             midVel = midVel.add(wantMid.subtract(m).multiply(FOLLOW)).subtract(midVel.multiply(2.0 * sqrt(FOLLOW)))
@@ -231,17 +295,25 @@ object PunishCam {
         val out = offset.multiply(1.0 / full)
         val hit = world.raycast(RaycastContext(m, m.add(out.multiply(full)), RaycastContext.ShapeType.COLLIDER, RaycastContext.FluidHandling.NONE, player))
         val allowed = if (hit.type == HitResult.Type.BLOCK) (hit.pos.distanceTo(m) * 0.85).coerceAtLeast(1.0) else full
-        // Vor einer Wand zügig heran, danach langsam zurück; die Beschleunigung bleibt begrenzt, damit es nie ruckt.
+        // Vor einer Wand zügig heran, danach langsam zurück; Geschwindigkeit und Beschleunigung bleiben begrenzt.
         if (first) {
             dist = allowed
             distVel = 0.0
         } else {
-            val wantVel = (allowed - dist) * (if (allowed < dist) 0.3 else 0.07)
-            val limit = if (allowed < dist) 0.075 else 0.018
-            distVel += (wantVel - distVel).coerceIn(-limit, limit)
+            val wantVel = ((allowed - dist) * (if (allowed < dist) 0.22 else 0.07)).coerceIn(-0.20, 0.14)
+            val limit = if (allowed < dist) 0.045 else 0.018
+            distVel = (distVel + (wantVel - distVel).coerceIn(-limit, limit)).coerceIn(-0.20, 0.14)
             dist = (dist + distVel).coerceAtLeast(0.6)
         }
         val next = m.add(out.multiply(dist))
+        if (first) {
+            val look = m.subtract(next)
+            val rigYaw = Math.toDegrees(atan2(-look.x, look.z))
+            val yawSpan = kotlin.math.abs(wrapDeg(rigYaw - player.yaw.toDouble()))
+            val posSpan = next.distanceTo(player.eyePos)
+            inStep = blendStep(posSpan, yawSpan, maxPosPerTick = 0.48, maxYawPerTick = 6.2, minTicks = 14)
+        }
+        k = (k + inStep).coerceAtMost(1f)
         prevRigPos = rigPos ?: next
         rigPos = next
         prevRigLook = rigLook ?: m
@@ -250,15 +322,29 @@ object PunishCam {
 
     private const val FOLLOW = 0.085
     private const val AIM_FILTER = 0.18
+    private const val RAMP = 0.25
 
     fun reset() {
         on = false
+        wasOn = false
         k = 0f
         prevK = 0f
         clearRig()
     }
 
-    private fun ease(t: Double) = t * t * (3 - 2 * t)
+    /** C1 smooth trapezoidal ease: quadratic ease-in/out over [RAMP] at each end, constant velocity in the middle (peak slope 1.333). */
+    private fun ease(t: Double): Double {
+        val x = t.coerceIn(0.0, 1.0)
+        val norm = 1.0 - RAMP
+        return when {
+            x < RAMP -> (x * x) / (2.0 * RAMP * norm)
+            x > 1.0 - RAMP -> {
+                val u = 1.0 - x
+                1.0 - (u * u) / (2.0 * RAMP * norm)
+            }
+            else -> (x - RAMP * 0.5) / norm
+        }
+    }
 
     private fun lerpAngle(a: Double, b: Double, t: Double): Double {
         var d = (b - a) % 360.0
@@ -279,7 +365,8 @@ object PunishCam {
         val focusAt = l0.lerp(l1, td.toDouble())
         val w = ease(kk)
         val pos = if (w >= 0.9999) target else cam.lerp(target, w)
-        val look = focusAt.subtract(pos)
+        // Compute rig angles from the rig's own position (not the blended pos) so yaw/pitch blend monotonically with zero reversal.
+        val look = focusAt.subtract(target)
         val flat = sqrt(look.x * look.x + look.z * look.z)
         val wantYaw = Math.toDegrees(atan2(-look.x, look.z))
         val wantPitch = -Math.toDegrees(atan2(look.y, flat)) + impulsePitch(td)

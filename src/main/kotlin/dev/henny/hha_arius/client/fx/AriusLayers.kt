@@ -53,6 +53,7 @@ object AriusLayers {
     private val glowPipe = pipeline("moon_glow", BlendFunction.TRANSLUCENT_PREMULTIPLIED_ALPHA, false, 0.5f)
     private val attackGlowPipe = pipeline("attack_glow", BlendFunction.TRANSLUCENT_PREMULTIPLIED_ALPHA, false, 0.85f)
     private val attackFlowPipe = pipeline("attack_flow", BlendFunction.TRANSLUCENT_PREMULTIPLIED_ALPHA, false, 0.85f, flow = true)
+    private val attackAddPipe = pipeline("attack_add", BlendFunction.ADDITIVE, false, 1.0f)
 
     private fun layer(name: String, pipe: RenderPipeline?, tex: Identifier, fallback: () -> RenderLayer): RenderLayer {
         if (pipe == null) return fallback()
@@ -71,6 +72,8 @@ object AriusLayers {
     val MOON_FLARE: RenderLayer by lazy { layer("moon_flare", glowPipe, VfxLayers.FLARE) { VfxLayers.FLARE_ADD } }
     /** Fog-free, full-brightness attack & telegraph layers that stay crisp in blizzards and 1500% fullbright gamma. */
     val VFX_GLOW: RenderLayer by lazy { layer("vfx_glow", attackGlowPipe, VfxLayers.GLOW) { VfxLayers.GLOW_ADD } }
+    val VFX_ADD: RenderLayer by lazy { layer("vfx_add", attackAddPipe, HhaArius.id("textures/fx/white.png")) { VfxLayers.GLOW_ADD } }
+    val VFX_ADD_FLARE: RenderLayer by lazy { layer("vfx_add_flare", attackAddPipe, VfxLayers.FLARE) { VfxLayers.FLARE_ADD } }
     val VFX_FLOW: RenderLayer by lazy { layer("vfx_flow", attackFlowPipe, VfxLayers.NOISE) { VfxLayers.FLOW_ADD } }
     val VFX_FLARE: RenderLayer by lazy { layer("vfx_flare", attackGlowPipe, VfxLayers.FLARE) { VfxLayers.FLARE_ADD } }
     val VFX_RUNE: RenderLayer by lazy { layer("vfx_rune", attackGlowPipe, VfxLayers.RUNE_CIRCLE) { VfxLayers.RUNE_ADD } }
@@ -78,6 +81,6 @@ object AriusLayers {
 
     /** Erzwingt die Registrierung der Pipelines vor dem ersten Shader-Reload. */
     fun init() {
-        snowPipe; moonPipe; glowPipe; attackGlowPipe; attackFlowPipe
+        snowPipe; moonPipe; glowPipe; attackGlowPipe; attackFlowPipe; attackAddPipe
     }
 }

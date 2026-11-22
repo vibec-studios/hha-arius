@@ -185,149 +185,181 @@ class HorizonFx(
 
     private fun renderSlash(d: VfxDraw, t: Float, fx: Float) {
         val progress = (t / life.coerceAtLeast(1)).coerceIn(0f, 1f)
-        val open = (t / 3.5f).coerceIn(0f, 1f).let { 1f - (1f - it) * (1f - it) }
+        // Opens instantaneously across the full view on tick 0 so peak brilliance hits on the exact release frame.
+        val open = ((t + 0.75f) / 1.9f).coerceIn(0f, 1f).let { 1f - (1f - it) * (1f - it) }
 
-        // Smooth sweep across the room/arena, lingering clearly across the view before dissipating.
-        val maxTravel = if (temple) 15.5 else 7.2
-        val travelFrac = (1.0 - kotlin.math.exp(-t * (if (temple) 0.16 else 0.24)))
+        val maxTravel = if (temple) 15.0 else 7.0
+        val travelFrac = 1.0 - kotlin.math.exp(-t * (if (temple) 0.16 else 0.22))
         val travel = maxTravel * travelFrac
         val center = origin.add(forward.multiply(travel))
 
-        // Main slash blade burns bright for ~8 ticks, then fades cleanly over ticks 8..22 while shards linger to `life`.
-        val bladeFade = (1f - ((t - 5f) / (life * 0.58f)).coerceIn(0f, 1f)).let { it * it } * fx
-        val span = width * (0.58 + 0.54 * open)
-        val depth = (if (temple) 3.4 + 1.8 * open else 2.2 + 1.4 * open) * (0.85 + 0.25 * (1f - progress))
-        val bow = (if (temple) 2.2 else 1.55) * (0.65 + 0.35 * open)
+        // Peak brilliance across ticks 0..2, crisp smooth decay across ticks 2..14 while slivers linger.
+        val peakBoost = (1f - (t / 3.8f).coerceIn(0f, 1f)).let { it * it }
+        val bladeFade = (1f - ((t - 2.0f) / 14.0f).coerceIn(0f, 1f)).let { it * it } * fx
+        val span = width * (0.86 + 0.28 * open)
+        val depth = (if (temple) 2.4 + 1.3 * open else 1.7 + 1.1 * open) * (0.85 + 0.25 * (1f - progress))
+        val bow = (if (temple) 2.1 else 1.45) * (0.7 + 0.3 * open)
+
+        // Needle-sharp pointed taper at both tips: sin(u * PI)^1.65 reaches 0 smoothly with zero boxy ends.
+        fun tipTaper(u: Double): Double {
+            val s = sin(u * PI).coerceAtLeast(0.0)
+            return s * sqrt(s)
+        }
 
         fun arcPoint(u: Double, back: Double, yOff: Double = 0.0): Vec3d {
             val arch = sin(u * PI)
+            val taper = tipTaper(u)
             return center
                 .add(across.multiply((2.0 * u - 1.0) * span))
-                .add(forward.multiply(arch * bow - back * depth * (0.45 + 0.55 * arch)))
-                .add(0.0, yOff + 0.14 * sin(back * PI) * arch, 0.0)
+                .add(forward.multiply(arch * bow - back * depth * (0.12 + 0.88 * taper)))
+                .add(0.0, yOff, 0.0)
         }
 
         if (bladeFade > 0.015f) {
-            // 1) Broad Horizontal Swept Crescent (deep-navy contrast backing + bright frost-white core + soft ice-blue wake).
             val inkVc = d.buffer(AriusLayers.INK)
             val glowVc = d.buffer(AriusLayers.VFX_GLOW)
-            val flowVc = d.buffer(AriusLayers.VFX_FLOW)
+            val addVc = d.buffer(AriusLayers.VFX_ADD)
 
-            fun hStrip(vc: net.minecraft.client.render.VertexConsumer, from: Double, to: Double, outer: Int, inner: Int, yShift: Double = 0.0, uScroll: Float = 0f) {
+            fun hStrip(
+                vc: net.minecraft.client.render.VertexConsumer,
+                from: Double, to: Double,
+                outerCol: Int, innerCol: Int,
+                yShift: Double = 0.0,
+            ) {
+                val aOut = (outerCol ushr 24) / 255f
+                val aIn = (innerCol ushr 24) / 255f
                 with(d) {
-                    for (i in 0 until 40) {
-                        val a = i / 40.0
-                        val b = (i + 1) / 40.0
-                        vc.put(arcPoint(a, from, yShift), a.toFloat() * 2f + uScroll, 0f, outer)
-                        vc.put(arcPoint(a, to, yShift), a.toFloat() * 2f + uScroll, 1f, inner)
-                        vc.put(arcPoint(b, to, yShift), b.toFloat() * 2f + uScroll, 1f, inner)
-                        vc.put(arcPoint(b, from, yShift), b.toFloat() * 2f + uScroll, 0f, outer)
+                    for (i in 0 until 44) {
+                        val u0 = i / 44.0
+                        val u1 = (i + 1) / 44.0
+                        val e0 = sin(u0 * PI).toFloat()
+                        val e1 = sin(u1 * PI).toFloat()
+                        val cO0 = withAlpha(outerCol, aOut * e0)
+                        val cI0 = withAlpha(innerCol, aIn * e0)
+                        val cI1 = withAlpha(innerCol, aIn * e1)
+                        val cO1 = withAlpha(outerCol, aOut * e1)
+                        vc.put(arcPoint(u0, from, yShift), 0f, 0f, cO0)
+                        vc.put(arcPoint(u0, to, yShift), 0f, 1f, cI0)
+                        vc.put(arcPoint(u1, to, yShift), 1f, 1f, cI1)
+                        vc.put(arcPoint(u1, from, yShift), 1f, 0f, cO1)
                     }
                 }
             }
 
-            // Deep navy contrast edge & under-backing so the slash pops on pure white snow and in storms.
-            hStrip(inkVc, -0.05, 0.12, withAlpha(NAVY_DARK, 0f), withAlpha(NAVY_DARK, bladeFade * 0.92f), -0.04)
-            hStrip(inkVc, 0.12, 0.62, withAlpha(NAVY_DARK, bladeFade * 0.88f), withAlpha(NAVY_MID, bladeFade * 0.34f), -0.04)
-            hStrip(inkVc, 0.62, 1.08, withAlpha(NAVY_MID, bladeFade * 0.34f), withAlpha(NAVY_DARK, 0f), -0.04)
+            // 1) Horizontal swept crescent: ONLY a thin deep-navy contrast edge right along the leading core,
+            //    followed by a brilliant near-white core and soft luminous ice-blue trailing falloff.
+            hStrip(inkVc, 0.0, 0.14, withAlpha(NAVY_DARK, bladeFade * 0.58f), withAlpha(NAVY_MID, 0f), -0.02)
+            // Soft ice-blue falloff wake
+            hStrip(glowVc, 0.04, 0.34, withAlpha(ICE_LIGHT, bladeFade * 0.88f), withAlpha(ICE_BLUE, bladeFade * 0.55f))
+            hStrip(glowVc, 0.34, 0.95, withAlpha(ICE_BLUE, bladeFade * 0.55f), withAlpha(ICE_BLUE, 0f))
+            // Brilliant additive near-white leading blade core
+            hStrip(addVc, 0.0, 0.16, withAlpha(PURE_WHITE, bladeFade), withAlpha(FROST_WHITE, bladeFade * (0.75f + 0.25f * peakBoost)))
+            hStrip(addVc, 0.16, 0.52, withAlpha(ICE_LIGHT, bladeFade * (0.55f + 0.35f * peakBoost)), withAlpha(ICE_BLUE, 0f))
 
-            // Frost-white core & soft ice-blue falloff across the crescent.
-            hStrip(glowVc, 0.0, 0.10, withAlpha(ICE_LIGHT, bladeFade * 0.65f), withAlpha(PURE_WHITE, bladeFade))
-            hStrip(glowVc, 0.10, 0.28, withAlpha(PURE_WHITE, bladeFade), withAlpha(ICE_LIGHT, bladeFade * 0.92f))
-            hStrip(glowVc, 0.28, 0.72, withAlpha(ICE_LIGHT, bladeFade * 0.85f), withAlpha(ICE_BLUE, bladeFade * 0.38f))
-            hStrip(glowVc, 0.72, 1.05, withAlpha(ICE_BLUE, bladeFade * 0.38f), withAlpha(NAVY_MID, 0f))
+            // 2) Razor-sharp, needle-tapered vertical slash profile across the entire view (1st person, 3rd person, snow/storm).
+            //    Height narrows gracefully after peak ticks so ticks 0..2 are huge & blinding and ticks 3..10 stay razor-crisp.
+            val coreH = (if (temple) 0.26 else 0.22) * (0.55 + 0.45 * (1f - progress * 0.6f)) + 0.10 * peakBoost
+            val falloffH = coreH * 2.55
+            val contrastH = coreH * 1.32
 
-            // Subtle flowing frost sheen along the wake (fog-free, monochrome frost tint).
-            hStrip(flowVc, 0.08, 0.85, withAlpha(FROST_WHITE, bladeFade * 0.42f), withAlpha(ICE_BLUE, 0f), 0.05, uScroll = -t * 0.09f)
-
-            // 2) Sculpted Vertical / Lenticular Slash Wall along the leading arc (makes it HUGE in 1st & 3rd person!).
-            val halfH = (if (temple) 1.08 else 0.88) * (0.7 + 0.3 * open) * (1f - progress * 0.35f)
-            fun vCurtain(vc: net.minecraft.client.render.VertexConsumer, back: Double, h0: Double, h1: Double, c0: Int, c1: Int) {
+            fun vRazor(vc: net.minecraft.client.render.VertexConsumer, back: Double, h0: Double, h1: Double, c0: Int, c1: Int) {
+                val a0 = (c0 ushr 24) / 255f
+                val a1 = (c1 ushr 24) / 255f
                 with(d) {
-                    for (i in 0 until 40) {
-                        val a = i / 40.0
-                        val b = (i + 1) / 40.0
-                        val envA = sin(a * PI).let { sqrt(it.coerceAtLeast(0.0)) }
-                        val envB = sin(b * PI).let { sqrt(it.coerceAtLeast(0.0)) }
-                        val pA0 = arcPoint(a, back, h0 * envA)
-                        val pA1 = arcPoint(a, back, h1 * envA)
-                        val pB1 = arcPoint(b, back, h1 * envB)
-                        val pB0 = arcPoint(b, back, h0 * envB)
-                        vc.put(pA0, 0f, 0f, c0)
-                        vc.put(pA1, 0f, 1f, c1)
-                        vc.put(pB1, 1f, 1f, c1)
-                        vc.put(pB0, 1f, 0f, c0)
+                    for (i in 0 until 44) {
+                        val u0 = i / 44.0
+                        val u1 = (i + 1) / 44.0
+                        val t0 = tipTaper(u0)
+                        val t1 = tipTaper(u1)
+                        val e0 = sin(u0 * PI).toFloat()
+                        val e1 = sin(u1 * PI).toFloat()
+                        val col0 = withAlpha(c0, a0 * e0)
+                        val col1 = withAlpha(c1, a1 * e0)
+                        val col1b = withAlpha(c1, a1 * e1)
+                        val col0b = withAlpha(c0, a0 * e1)
+                        vc.put(arcPoint(u0, back, h0 * t0), 0f, 0f, col0)
+                        vc.put(arcPoint(u0, back, h1 * t0), 0f, 1f, col1)
+                        vc.put(arcPoint(u1, back, h1 * t1), 1f, 1f, col1b)
+                        vc.put(arcPoint(u1, back, h0 * t1), 1f, 0f, col0b)
                     }
                 }
             }
 
-            // Deep navy outer vertical halo (top & bottom) -> guaranteed silhouette against blinding white snow.
-            vCurtain(inkVc, 0.14, 0.0, halfH * 1.15, withAlpha(NAVY_DARK, bladeFade * 0.82f), withAlpha(NAVY_DARK, 0f))
-            vCurtain(inkVc, 0.14, 0.0, -halfH * 1.15, withAlpha(NAVY_DARK, bladeFade * 0.82f), withAlpha(NAVY_DARK, 0f))
-            // Soft ice-blue mid vertical falloff.
-            vCurtain(glowVc, 0.08, 0.0, halfH * 0.72, withAlpha(ICE_LIGHT, bladeFade * 0.90f), withAlpha(ICE_BLUE, 0f))
-            vCurtain(glowVc, 0.08, 0.0, -halfH * 0.72, withAlpha(ICE_LIGHT, bladeFade * 0.90f), withAlpha(ICE_BLUE, 0f))
-            // Razor-bright frost-white core along the horizontal horizon line.
-            vCurtain(glowVc, 0.04, 0.0, halfH * 0.24, withAlpha(PURE_WHITE, bladeFade), withAlpha(FROST_WHITE, bladeFade * 0.35f))
-            vCurtain(glowVc, 0.04, 0.0, -halfH * 0.24, withAlpha(PURE_WHITE, bladeFade), withAlpha(FROST_WHITE, bladeFade * 0.35f))
+            // Thin deep-navy hairline contour hugging the bright core (readable on pure white snow, NEVER a wide dark band).
+            vRazor(inkVc, 0.07, coreH * 0.72, contrastH * 1.08, withAlpha(NAVY_DARK, bladeFade * 0.84f), withAlpha(NAVY_DARK, 0f))
+            vRazor(inkVc, 0.07, -coreH * 0.72, -contrastH * 1.08, withAlpha(NAVY_DARK, bladeFade * 0.84f), withAlpha(NAVY_DARK, 0f))
+
+            // Soft ice-blue falloff halo (alpha-glow in rich ice blue for white-snow readability + additive light bloom)
+            vRazor(glowVc, 0.055, coreH * 0.45, falloffH, withAlpha(ICE_BLUE, bladeFade * 0.82f), withAlpha(ICE_BLUE, 0f))
+            vRazor(glowVc, 0.055, -coreH * 0.45, -falloffH, withAlpha(ICE_BLUE, bladeFade * 0.82f), withAlpha(ICE_BLUE, 0f))
+            vRazor(glowVc, 0.045, 0.0, falloffH * 0.78, withAlpha(ICE_LIGHT, bladeFade * 0.78f), withAlpha(ICE_BLUE, 0f))
+            vRazor(glowVc, 0.045, 0.0, -falloffH * 0.78, withAlpha(ICE_LIGHT, bladeFade * 0.78f), withAlpha(ICE_BLUE, 0f))
+            vRazor(addVc, 0.035, 0.0, falloffH * 0.80, withAlpha(ICE_LIGHT, bladeFade * (0.55f + 0.35f * peakBoost)), withAlpha(ICE_BLUE, 0f))
+            vRazor(addVc, 0.035, 0.0, -falloffH * 0.80, withAlpha(ICE_LIGHT, bladeFade * (0.55f + 0.35f * peakBoost)), withAlpha(ICE_BLUE, 0f))
+
+            // Blinding near-white razor core (double-layered additive + glow so it is the brightest thing on screen!)
+            vRazor(glowVc, 0.02, 0.0, coreH, withAlpha(PURE_WHITE, bladeFade), withAlpha(FROST_WHITE, 0f))
+            vRazor(glowVc, 0.02, 0.0, -coreH, withAlpha(PURE_WHITE, bladeFade), withAlpha(FROST_WHITE, 0f))
+            vRazor(addVc, 0.01, 0.0, coreH * 0.92, withAlpha(PURE_WHITE, bladeFade), withAlpha(FROST_WHITE, bladeFade * 0.25f))
+            vRazor(addVc, 0.01, 0.0, -coreH * 0.92, withAlpha(PURE_WHITE, bladeFade), withAlpha(FROST_WHITE, bladeFade * 0.25f))
+            // Peak central incandescence on ticks 0..4
+            if (peakBoost > 0.02f) {
+                vRazor(addVc, 0.0, 0.0, coreH * 0.52, withAlpha(PURE_WHITE, peakBoost * fx), withAlpha(PURE_WHITE, 0f))
+                vRazor(addVc, 0.0, 0.0, -coreH * 0.52, withAlpha(PURE_WHITE, peakBoost * fx), withAlpha(PURE_WHITE, 0f))
+            }
         }
 
-        // 3) Crisp initial horizon cleave seam across the full view (ticks 0..11).
-        if (t < 11f) {
-            val seamFade = (1f - t / 11f).let { it * it } * fx
-            val seamCenter = origin.add(forward.multiply(travel * 0.55 + 1.2))
-            val seamSpan = width * (0.95 + 0.28 * open)
-            val s0 = seamCenter.subtract(across.multiply(seamSpan))
-            val s1 = seamCenter.add(across.multiply(seamSpan))
-            d.band(AriusLayers.INK, s0, s1, UP, 0.22 * seamFade + 0.06, withAlpha(NAVY_DARK, seamFade * 0.9f), withAlpha(NAVY_DARK, seamFade * 0.9f))
-            d.band(AriusLayers.VFX_GLOW, s0, s1, UP, 0.14 * seamFade + 0.03, withAlpha(PURE_WHITE, seamFade), withAlpha(FROST_WHITE, seamFade))
-            d.billboard(AriusLayers.VFX_FLARE, seamCenter, (3.2 + 2.6 * open) * seamFade, withAlpha(FROST_WHITE, seamFade * 0.85f))
+        // 3) Peak razor horizon flare across the cleaved axis (ticks 0..5): pure white-ice brilliance at the center.
+        if (t < 5.5f) {
+            val flareF = (1f - t / 5.5f).let { it * it } * fx
+            val flareCenter = arcPoint(0.5, 0.02, 0.0)
+            d.billboard(AriusLayers.VFX_ADD_FLARE, flareCenter, (4.8 + 3.2 * open) * flareF, withAlpha(PURE_WHITE, flareF))
+            d.billboard(AriusLayers.VFX_GLOW, flareCenter, (3.6 + 2.4 * open) * flareF, withAlpha(ICE_LIGHT, flareF * 0.72f))
         }
 
-        // 4) Crisp dissipating frost aftermath along the entire swept corridor (origin -> center):
-        //    slender geometric ice splinters + thin fading horizontal frost filaments, zero blocky bricks or particle spam.
-        val wakeIn = ((t - 3.5f) / 4.5f).coerceIn(0f, 1f)
-        val wakeOut = (1f - ((t - 10f) / (life - 10f).coerceAtLeast(1f)).coerceIn(0f, 1f))
-        val wakeA = wakeIn * wakeOut * fx
+        // 4) Crisp dissipating frost aftermath along the swept corridor (ticks 3..life):
+        //    bright ice-white slivers and delicate tapered frost-wake filaments (zero dark rectangles or particle spam).
+        val wakeIn = ((t - 2.5f) / 3.5f).coerceIn(0f, 1f)
+        val wakeOut = (1f - ((t - 8f) / (life - 8f).coerceAtLeast(1f)).coerceIn(0f, 1f))
+        val wakeA = wakeIn * wakeOut * wakeOut * fx
         if (wakeA > 0.015f) {
             val corridorSpan = maxTravel * travelFrac
             fun wakePoint(u: Double, alongFrac: Double, yOff: Double): Vec3d {
                 val arch = sin(u * PI)
                 val zDist = alongFrac * corridorSpan
                 return origin
-                    .add(across.multiply((2.0 * u - 1.0) * span * (0.85 + 0.15 * alongFrac)))
-                    .add(forward.multiply(zDist + arch * bow * 0.5))
+                    .add(across.multiply((2.0 * u - 1.0) * span * (0.82 + 0.18 * alongFrac)))
+                    .add(forward.multiply(zDist + arch * bow * 0.45))
                     .add(0.0, yOff, 0.0)
             }
 
-            // Thin dissipating horizontal frost-wake filaments suspended cleanly in the cleaved air.
-            for (rIdx in 0 until 8) {
-                val frac = (rIdx + 0.5) / 8.0
-                val alongFrac = 0.16 + 0.72 * ((rIdx * 0.37 + 0.15) % 1.0)
-                val yOff = ((rIdx % 4) - 1.5) * 0.24 * (0.5 + 0.7 * progress)
-                val segSpan = width * (0.16 + 0.14 * sin(frac * PI))
+            // Delicate tapered frost-light filaments drifting out of the cleaved air.
+            for (rIdx in 0 until 7) {
+                val frac = (rIdx + 0.5) / 7.0
+                val alongFrac = 0.14 + 0.74 * ((rIdx * 0.37 + 0.12) % 1.0)
+                val yOff = ((rIdx % 4) - 1.5) * 0.22 * (0.4 + 0.7 * progress)
+                val segSpan = width * (0.14 + 0.12 * sin(frac * PI))
                 val mid = wakePoint(0.14 + 0.72 * frac, alongFrac, yOff)
                 val p0 = mid.subtract(across.multiply(segSpan))
                 val p1 = mid.add(across.multiply(segSpan))
-                d.band(AriusLayers.INK, p0, p1, UP, 0.065 * wakeOut + 0.015, withAlpha(NAVY_MID, 0f), withAlpha(NAVY_DARK, wakeA * 0.72f))
-                d.band(AriusLayers.VFX_GLOW, p0, p1, UP, 0.04 * wakeOut + 0.01, withAlpha(ICE_BLUE, 0f), withAlpha(FROST_WHITE, wakeA * 0.88f))
+                d.band(AriusLayers.INK, p0, p1, UP, 0.025 * wakeOut + 0.008, withAlpha(NAVY_MID, 0f), withAlpha(NAVY_DARK, wakeA * 0.38f))
+                d.band(AriusLayers.VFX_ADD, p0, p1, UP, 0.035 * wakeOut + 0.008, withAlpha(ICE_BLUE, 0f), withAlpha(FROST_WHITE, wakeA * 0.85f))
             }
 
-            // Sleek diamond-like frost slivers drifting gently upward/outward along the cleaved air.
+            // Slender diamond-like ice slivers sparkling and dissolving cleanly.
             for (s in shards) {
-                val drift = ((t - 3.5f) / (life - 3.5f).coerceAtLeast(1f)).coerceIn(0f, 1f)
-                val basePos = wakePoint(s.u, s.along, s.yOff * (0.35 + 0.85 * drift))
-                    .add(forward.multiply(s.driftOut * drift * 1.4))
-                    .add(0.0, s.driftUp * drift * 1.15, 0.0)
+                val drift = ((t - 2.5f) / (life - 2.5f).coerceAtLeast(1f)).coerceIn(0f, 1f)
+                val basePos = wakePoint(s.u, s.along, s.yOff * (0.35 + 0.8 * drift))
+                    .add(forward.multiply(s.driftOut * drift * 1.25))
+                    .add(0.0, s.driftUp * drift * 1.05, 0.0)
                 val ang = t * s.spin + s.u * 9.0
-                val sz = s.size * (0.55 + 0.45 * wakeOut)
-                // Elongated razor ice sliver (length 2.8x, slim 0.28x cross-section -> crisp crystal needle, never a brick).
-                val ax = across.multiply(cos(ang) * sz * 2.8).add(forward.multiply(sin(ang) * sz * 1.1))
-                val ay = UP.multiply(sz * 0.34).add(across.multiply(-sin(ang) * sz * 0.18))
-                val az = forward.multiply(cos(ang) * sz * 0.26).add(across.multiply(-sin(ang) * sz * 0.16))
-                val bodyCol = if (s.dark) NAVY_MID else ICE_LIGHT
-                d.box(AriusLayers.VFX_SHARD, basePos, ax, ay, az, withAlpha(bodyCol, wakeA * 0.92f))
-                d.billboard(AriusLayers.VFX_GLOW, basePos, sz * 3.4, withAlpha(FROST_WHITE, wakeA * 0.62f))
+                val sz = s.size * (0.5 + 0.5 * wakeOut)
+                val ax = across.multiply(cos(ang) * sz * 2.6).add(forward.multiply(sin(ang) * sz * 0.95))
+                val ay = UP.multiply(sz * 0.26).add(across.multiply(-sin(ang) * sz * 0.14))
+                val az = forward.multiply(cos(ang) * sz * 0.22).add(across.multiply(-sin(ang) * sz * 0.12))
+                val bodyCol = if (s.dark) ICE_BLUE else FROST_WHITE
+                d.box(AriusLayers.VFX_SHARD, basePos, ax, ay, az, withAlpha(bodyCol, wakeA * 0.88f))
+                d.billboard(AriusLayers.VFX_ADD_FLARE, basePos, sz * 3.8, withAlpha(PURE_WHITE, wakeA * 0.65f))
             }
         }
     }
@@ -343,13 +375,13 @@ class HorizonFx(
 }
 
 /**
- * Brief HUD frost light flash + cool deep-navy world-tint pulse triggered on White Horizon release.
- * Strict frost-white / ice-blue / deep-navy palette; respects [AriusClientConfig.flash] and [AriusClientConfig.fx].
+ * Clean, fast white-blue flash on White Horizon release: brightens the cut beat for 2–3 ticks and falls off fast
+ * with zero muddy grey wash or dark borders. Respects [AriusClientConfig.flash] and [AriusClientConfig.fx].
  */
 object HorizonPulse {
     private var age = -1
     private var peak = 0f
-    private const val TOTAL = 16
+    private const val TOTAL = 6
 
     fun trigger(strength: Float) {
         val fx = AriusClientConfig.fx.coerceIn(0f, 1f)
@@ -375,43 +407,15 @@ object HorizonPulse {
         val client = MinecraftClient.getInstance()
         val td = client.renderTickCounter.getTickProgress(true)
         val t = age + td
+        if (t >= TOTAL) return
         val w = ctx.scaledWindowWidth
         val h = ctx.scaledWindowHeight
 
-        // 1) Brief crisp frost-white light flash (first 3.5 ticks, capped and flash-config aware).
-        if (t < 3.5f) {
-            val f = (1f - t / 3.5f).let { it * it }
-            val flashCap = if (AriusClientConfig.flash) 0.38f else 0.12f
-            ctx.fill(0, 0, w, h, withAlpha(0xFFEAF7FF.toInt(), flashCap * peak * f))
-        }
-
-        // 2) Cool deep-navy / ice-blue world-tint & subtle top/bottom frost framing (fades cleanly over 16 ticks).
-        val env = ((t / 1.5f).coerceIn(0f, 1f)) * (1f - ((t - 2f) / (TOTAL - 2f)).coerceIn(0f, 1f)).let { it * it }
-        if (env > 0.01f) {
-            // Subtle cool frost air tint across view.
-            ctx.fill(0, 0, w, h, withAlpha(0xFF2B6EA8.toInt(), 0.16f * peak * env))
-            // Deep-navy horizon framing at top and bottom so the horizontal cleave reads starkly even on white snow.
-            val bands = 8
-            val edgeH = (h * 0.24f).toInt().coerceAtLeast(8)
-            for (i in 0 until bands) {
-                val frac = 1f - i / bands.toFloat()
-                val a = 0.34f * peak * env * frac * frac
-                val y0 = edgeH * i / bands
-                val y1 = edgeH * (i + 1) / bands
-                val col = withAlpha(0xFF071B36.toInt(), a)
-                ctx.fill(0, y0, w, y1, col)
-                ctx.fill(0, h - y1, w, h - y0, col)
-            }
-        }
-
-        // 3) Brief razor-clean horizontal frost gleam across the horizon (ticks 0..5.5).
-        if (t < 5.5f) {
-            val g = (1f - t / 5.5f).let { it * it } * peak
-            val cy = h / 2
-            val coreH = (1 + (2f * g).toInt())
-            val glowH = (4 + (10f * g).toInt())
-            ctx.fill(0, cy - glowH, w, cy + glowH, withAlpha(0xFF42A8EA.toInt(), 0.22f * g))
-            ctx.fill(0, cy - coreH, w, cy + coreH, withAlpha(0xFFF6FCFF.toInt(), 0.55f * g))
+        // Short, clean white-blue flash that peaks immediately and falls off fast (zero grey wash, zero 2D HUD bar).
+        val f = (1f - t / 4.0f).coerceIn(0f, 1f).let { it * it }
+        if (f > 0.01f) {
+            val cap = if (AriusClientConfig.flash) 0.28f else 0.08f
+            ctx.fill(0, 0, w, h, withAlpha(0xFFEAF8FF.toInt(), cap * peak * f))
         }
     }
 }

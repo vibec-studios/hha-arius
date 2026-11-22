@@ -337,15 +337,36 @@ class VerifyHunt : FabricClientGameTest {
             tick(4)
             t += 4
         }
-        val diffAfterYang = server {
-            val f = fight() ?: return@server -1
+        val (diffAfterCut, splitAfterCut, snapAfterCut) = server { srv ->
+            val f = fight() ?: return@server Triple(-1, false, false)
             val w = f.world
-            sampleBefore.count { (pos, orig) -> w.getBlockState(pos) != orig }
+            val diff = sampleBefore.count { (pos, orig) -> w.getBlockState(pos) != orig }
+            Triple(diff, f.scenes.isSplitActive, dev.henny.hha_arius.boss.SplitRecovery.hasSnapshot(srv, f.slot))
         }
-        log("mountain cut: $i frames, peakFlankCarved=$peakFlankCarved, peakSummitCarved=$peakSummitCarved, diffAfterYang=$diffAfterYang, phase=${phase()}")
+        log("mountain cut: $i frames, peakFlankCarved=$peakFlankCarved, peakSummitCarved=$peakSummitCarved, diffAfterCut=$diffAfterCut, splitActive=$splitAfterCut, snapshot=$snapAfterCut, phase=${phase()}")
         check(peakFlankCarved > 50) { "Mountain flank was not visibly split ($peakFlankCarved)" }
         check(peakSummitCarved > 20) { "Summit arena / spire was not split ($peakSummitCarved)" }
+        check(diffAfterCut > 50 && splitAfterCut && snapAfterCut) {
+            "Mountain split must remain open after theCut() until Yang restoration (diff=$diffAfterCut, active=$splitAfterCut, snap=$snapAfterCut)"
+        }
+
+        // Echte Yang-Wiederherstellung auslösen (wie vor Querung 1 in der Jagd) -> 0 Unterschiede & Snapshot geräumt.
+        server {
+            val f = checkNotNull(fight())
+            f.calls.reset()
+            f.startDirector(f.scenes.restoreWithYang(ticks = 36))
+        }
+        check(waitUntil(120, 2) { server { fight()?.scenes?.isSplitActive == false } }) {
+            "restoreWithYang did not complete"
+        }
+        val (diffAfterYang, snapAfterYang) = server { srv ->
+            val f = fight() ?: return@server -1 to true
+            val w = f.world
+            sampleBefore.count { (pos, orig) -> w.getBlockState(pos) != orig } to dev.henny.hha_arius.boss.SplitRecovery.hasSnapshot(srv, f.slot)
+        }
+        log("mountain cut after Yang: diffAfterYang=$diffAfterYang, snapshot=$snapAfterYang")
         check(diffAfterYang == 0) { "Yang restoration left $diffAfterYang blocks broken!" }
+        check(!snapAfterYang) { "SplitRecovery snapshot was not cleared after Yang restoration!" }
 
         // Absturz-/Neustart-Test: Schnitt-Backup simulieren, Blöcke löschen, SplitRecovery.recoverAll ausführen -> 0 Unterschiede.
         val recovered = server { srv ->

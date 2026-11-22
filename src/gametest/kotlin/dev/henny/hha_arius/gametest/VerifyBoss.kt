@@ -226,12 +226,31 @@ class VerifyBoss : FabricClientGameTest {
         shot("temple_horizon_fade")
     }
 
-    /** White Horizon in third person and in a blizzard storm on white snow (first person). */
+    /** White Horizon peak release + 2 consecutive follow-up ticks in 1st person, 3rd person, and blizzard on white snow. */
     private fun VerifyKit.horizonViews() {
-        // 1) Third-person view during live White Horizon in the temple
-        temple()
-        client { it.options.perspective = net.minecraft.client.option.Perspective.THIRD_PERSON_BACK }
         try {
+            // 1) First-person view during live White Horizon in the temple (SPIN_CUT is 5 ticks before release)
+            client { it.options.perspective = net.minecraft.client.option.Perspective.FIRST_PERSON }
+            temple()
+            server { srv ->
+                val f = checkNotNull(fight())
+                val c = f.abs(dev.henny.hha_arius.arena.ArenaLayout.CUT_STAND)
+                val p = player(srv)
+                p.teleport(f.world, c.x + 4.0, f.floorY, c.z + 10.0, emptySet(), 155f, 0f, false)
+                f.calls.reset()
+                f.startDirector(f.scenes.theCut())
+            }
+            check(waitUntil(150, 1) { server { fight()?.arius?.pose == AriusPose.SPIN_CUT } })
+            tick(5)
+            shot("horizon_1p_peak")
+            shot("horizon_1p_p1")
+            shot("horizon_1p_p2")
+            cmd("hhaarius stop")
+            tick(35)
+
+            // 2) Third-person view during live White Horizon in the temple
+            temple()
+            client { it.options.perspective = net.minecraft.client.option.Perspective.THIRD_PERSON_BACK }
             server { srv ->
                 val f = checkNotNull(fight())
                 val c = f.abs(dev.henny.hha_arius.arena.ArenaLayout.CUT_STAND)
@@ -241,35 +260,46 @@ class VerifyBoss : FabricClientGameTest {
                 f.startDirector(f.scenes.theCut())
             }
             check(waitUntil(150, 1) { server { fight()?.arius?.pose == AriusPose.SPIN_CUT } })
-            shot("horizon_3p_anticipation")
-            tick(7)
-            shot("horizon_3p_release")
-            tick(10)
-            shot("horizon_3p_fade")
+            tick(5)
+            shot("horizon_3p_peak")
+            shot("horizon_3p_p1")
+            shot("horizon_3p_p2")
             cmd("hhaarius stop")
             tick(35)
 
-            // 2) First-person view on white snow inside a blizzard storm (lastHorizon)
+            // 3) First-person view on white snow inside a blizzard storm (lastHorizon: SPIN_CUT is 6 ticks before release)
             client { it.options.perspective = net.minecraft.client.option.Perspective.FIRST_PERSON }
             vault()
+            // Pause the vault AI and let any in-flight tasks/telegraphs settle before starting an isolated lastHorizon.
+            server {
+                val f = checkNotNull(fight())
+                f.startDirector(dev.henny.hha_arius.boss.script { while (true) yield(Unit) })
+                f.calls.reset()
+            }
+            tick(40)
             server { srv ->
                 val f = checkNotNull(fight())
                 val a = checkNotNull(f.arius)
                 val center = f.arenaCenter.let { Vec3d(it.x, f.floorY, it.z) }
                 f.place(a, center.add(0.0, 0.0, -9.0))
                 val p = player(srv)
-                p.teleport(f.world, center.x + 1.5, f.floorY, center.z + 5.0, emptySet(), 172f, 2f, false)
+                p.teleport(f.world, center.x + 1.5, f.floorY, center.z + 7.5, emptySet(), 174f, 1f, false)
                 f.calls.reset()
                 f.atmos(dev.henny.hha_arius.net.AtmosMode.BLIZZARD, 4)
                 f.startDirector(f.scenes.lastHorizon(a))
             }
-            tick(12)
+            // Wait for charge pose first, then SPIN_CUT (6 ticks before horizonImpact).
+            check(waitUntil(40, 1) { server { fight()?.arius?.pose in setOf(AriusPose.FORGE_ICE, AriusPose.CUT_CHARGE) } })
             check(waitUntil(90, 1) { server { fight()?.arius?.pose == AriusPose.SPIN_CUT } })
-            shot("horizon_storm_1p_anticipation")
-            tick(7)
-            shot("horizon_storm_1p_release")
-            tick(10)
-            shot("horizon_storm_1p_fade")
+            tick(6)
+            log("horizon_storm release: " + server {
+                val f = fight()
+                val a = f?.arius
+                "now=${f?.now} pose=${a?.pose} aPos=${a?.entityPos} center=${f?.arenaCenter} floorY=${f?.floorY}"
+            })
+            shot("horizon_storm_peak")
+            shot("horizon_storm_p1")
+            shot("horizon_storm_p2")
         } finally {
             client { it.options.perspective = net.minecraft.client.option.Perspective.FIRST_PERSON }
         }
