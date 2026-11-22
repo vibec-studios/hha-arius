@@ -374,7 +374,7 @@ class Summit(private val f: EirholmFight) {
         f.face(a, t.entityPos)
         val from = a.entityPos
         val dir = flatDir(from, t.entityPos)
-        val end = cutEnd(a, from, dir)
+        val end = cutEnd(a, from, dir, from.distanceTo(t.entityPos) + CUT_PAST)
         val line = f.calls.line(from, end, 1.6f, CUT_WINDUP[k], Telegraph.Pace.HEAVY)
         f.fx(FxKind.EDGE, from.add(0.0, 1.2, 0.0), life = line.ticks, e1 = a)
         f.ambient("iai.glint", from, 3f, 0.7f + k * 0.12f)
@@ -398,9 +398,9 @@ class Summit(private val f: EirholmFight) {
         wait(if (k == CUTS - 1) 6 else CUT_REST)
     }
 
-    /** Ende der Schnittlinie: bis zum Rand der Arena oder kurz vor einem Hindernis. */
-    private fun cutEnd(a: AriusEntity, from: Vec3d, dir: Vec3d): Vec3d {
-        val far = f.clampToArena(from.add(dir.multiply(f.arenaRadius * 2.0)), 1.6)
+    /** Ende der Schnittlinie: kurz hinter dem Ziel, damit er im offenen Fenster erreichbar bleibt; nie durch ein Hindernis. */
+    private fun cutEnd(a: AriusEntity, from: Vec3d, dir: Vec3d, reach: Double): Vec3d {
+        val far = f.clampToArena(from.add(dir.multiply(reach)), 1.6)
         val hit = f.world.raycast(net.minecraft.world.RaycastContext(
             from.add(0.0, 1.0, 0.0), Vec3d(far.x, from.y + 1.0, far.z),
             net.minecraft.world.RaycastContext.ShapeType.COLLIDER, net.minecraft.world.RaycastContext.FluidHandling.NONE, a,
@@ -431,6 +431,7 @@ class Summit(private val f: EirholmFight) {
         const val CUTS = 3
         val CUT_WINDUP = intArrayOf(40, 34, 30)
         const val CUT_DASH = 5
+        const val CUT_PAST = 6.0
         const val CUT_REST = 14
         const val STAND_OPEN = 220
     }
