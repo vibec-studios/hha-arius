@@ -79,7 +79,6 @@ object AriusFxClient {
             CloudSea.render(draw)
             DragonVeil.render(draw)
             client.world?.let {
-                IceBladeAura.render(it, draw)
                 GroundWarnings.render(it, draw)
             }
             if (effects.isEmpty()) return@register

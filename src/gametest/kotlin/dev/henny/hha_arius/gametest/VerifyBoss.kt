@@ -1,5 +1,13 @@
 package dev.henny.hha_arius.gametest
 
+import dev.henny.hha_arius.boss.AriusBlade
+import dev.henny.hha_arius.boss.AriusPose
+import dev.henny.hha_arius.boss.CineScene
+import dev.henny.hha_arius.boss.Hold
+import dev.henny.hha_arius.boss.Scenes
+import dev.henny.hha_arius.boss.Script
+import dev.henny.hha_arius.boss.script
+import dev.henny.hha_arius.client.fx.ParryHud
 import com.mojang.authlib.GameProfile
 import dev.henny.hha_arius.boss.Damage
 import dev.henny.hha_arius.boss.EirholmFight
@@ -35,31 +43,311 @@ import kotlin.math.sqrt
 class VerifyBoss : FabricClientGameTest {
     override fun runTest(context: ClientGameTestContext) = VerifyKit.run(context, "boss") {
         val cases = System.getProperty("arius.verify.case", "punish").split(',').map { it.trim() }
+        val failures = ArrayList<String>()
         for (c in cases) {
             log("=== case $c")
-            when (c) {
-                "stance" -> stance()
-                "punish" -> punish()
-                "parry" -> parry()
-                "exact" -> parryExact()
-                "classic" -> classic()
-                "mace" -> mace()
-                "hole" -> hole(feed = true)
-                "holefail" -> hole(feed = false)
-                "duo" -> duo()
-                "waves" -> waves()
-                "clash", "laststand" -> lastStand()
-                "shield" -> shield()
-                "tele" -> teleGallery()
-                "path" -> pathing()
-                "ice" -> iceBlade()
-                "fx" -> fxGallery()
-                "pace" -> pace()
-                else -> log("unknown case $c")
+            try {
+                when (c) {
+                    "stance" -> stance()
+                    "punish" -> punish()
+                    "parry" -> parry()
+                    "exact" -> parryExact()
+                    "classic" -> classic()
+                    "mace" -> mace()
+                    "macecatch" -> maceCatch()
+                    "parrycue" -> parryCue()
+                    "forge" -> forge()
+                    "templehorizon" -> templeHorizon()
+                    "vaultpace" -> vaultPace()
+                    "fallrecover" -> fallRecovery()
+                    "kickpose" -> kickPose()
+                    "clash", "laststand", "climax" -> climax()
+                    "hole" -> hole(feed = true)
+                    "holefail" -> hole(feed = false)
+                    "duo" -> duo()
+                    "waves" -> waves()
+                    "shield" -> shield()
+                    "tele" -> teleGallery()
+                    "path" -> pathing()
+                    "ice" -> iceBlade()
+                    "fx" -> fxGallery()
+                    "pace" -> pace()
+                    else -> log("unknown case $c")
+                }
+            } catch (e: IllegalStateException) {
+                log("$c failed: ${e.stackTraceToString()}")
+                failures.add(c)
+            } finally {
+                cmd("hhaarius stop")
+                tick(40)
             }
-            cmd("hhaarius stop")
-            tick(40)
         }
+        check(failures.isEmpty()) { "Failed verify cases: $failures" }
+    }
+
+    private fun VerifyKit.parryCue() {
+        temple()
+        faceArius(4.5)
+        server { srv ->
+            val f = checkNotNull(fight())
+            f.calls.reset()
+            f.startDirector(script { while (true) yield(Unit) })
+            f.calls.ring(player(srv).entityPos, 2.8f, 32)
+        }
+        check(waitUntil(18, 1) { client { ParryHud.debugEdges() != null } })
+        shot("parry_closing")
+        check(waitUntil(35, 1) { client { ParryHud.debugEdges()?.let { it.first > 1 && it.second < -1 } == true } })
+        shot("parry_now")
+        log("parry cue: ring and open window reached through Eirholm ground warning")
+    }
+
+    private fun VerifyKit.maceCatch() {
+        temple()
+        server {
+            val f = checkNotNull(fight())
+            f.startDirector(script { while (true) yield(Unit) })
+            f.calls.reset()
+            f.guardUntil = 0
+            f.ariusOpenUntil = 0
+            f.ariusVulnerable = true
+            f.arius!!.play(AriusPose.IDLE)
+        }
+        faceArius(1.45)
+        addBots(1)
+        godMode = false
+        fun smash(bot: Boolean): Boolean = server { srv ->
+            val f = checkNotNull(fight())
+            val p = if (bot) checkNotNull(srv.playerManager.getPlayer(bots.single().id)) else player(srv)
+            val a = f.arius!!
+            val spot = a.entityPos.add(f.facing(a).multiply(1.45))
+            p.teleport(f.world, spot.x, spot.y + 1.35, spot.z, emptySet(), p.yaw, 12f, false)
+            p.setStackInHand(Hand.MAIN_HAND, ItemStack(Items.MACE))
+            p.fallDistance = 6.0
+            p.isOnGround = false
+            fullCharge(p)
+            p.attack(a)
+            Hold.isHeld(p)
+        }
+        try {
+            repeat(2) {
+                check(!smash(bot = false))
+                tick(12)
+            }
+            check(!smash(bot = true))
+            keepBots(2) { srv ->
+                val f = checkNotNull(fight())
+                val bot = srv.playerManager.getPlayer(bots.single().id)!!
+                val pos = f.arius!!.entityPos.add(f.facing(f.arius!!).multiply(7.0))
+                bot.teleport(f.world, pos.x, pos.y, pos.z, emptySet(), bot.yaw, bot.pitch, false)
+            }
+            check(smash(bot = false))
+            tick(9)
+            shot("mace_held")
+            var health = server { player(it).health }
+            var strikes = 0
+            repeat(48) {
+                tick(1)
+                val current = server { player(it).health }
+                if (current < health) {
+                    strikes++
+                    shot("mace_slam_$strikes")
+                }
+                health = current
+            }
+            check(strikes == 3 && health in 1f..<20f)
+            check(server { !Hold.isHeld(player(it)) })
+            log("mace catch: counters stayed per fighter, three impacts, released at health $health")
+        } finally {
+            godMode = true
+            server {
+                player(it).setStackInHand(Hand.MAIN_HAND, ItemStack(dev.henny.hha_arius.gear.GearItems.SOLVANE))
+                releaseBots(it)
+            }
+        }
+    }
+
+    private fun VerifyKit.forge() {
+        vault()
+        server {
+            val f = checkNotNull(fight())
+            val scene = CineScene(f) {}
+            val method = Scenes::class.java.getDeclaredMethod("transformBody", CineScene::class.java).apply { isAccessible = true }
+            @Suppress("UNCHECKED_CAST")
+            val body = method.invoke(f.scenes, scene) as Script
+            f.calls.reset()
+            f.ariusVulnerable = false
+            f.arius!!.bladeState = AriusBlade.NONE
+            f.startDirector(scene.play(body))
+        }
+        check(waitUntil(135, 1) { server { fight()?.arius?.pose == AriusPose.FORGE_ICE } })
+        tick(18)
+        shot("forge_empty_hand")
+        tick(8)
+        shot("forge_forming")
+        check(waitUntil(25, 1) { server { fight()?.arius?.bladeState == AriusBlade.ICE } })
+        tick(10)
+        shot("forge_ice_blade")
+    }
+
+    private fun VerifyKit.kickPose() {
+        temple()
+        server {
+            val f = checkNotNull(fight())
+            val scene = CineScene(f) { }
+            val method = Scenes::class.java.getDeclaredMethod("kick", CineScene::class.java).apply { isAccessible = true }
+            @Suppress("UNCHECKED_CAST")
+            val body = method.invoke(f.scenes, scene) as Script
+            f.calls.reset()
+            f.ariusVulnerable = false
+            f.place(f.arius!!, f.abs(dev.henny.hha_arius.arena.ArenaLayout.CUT_STAND))
+            f.startDirector(scene.play(body))
+        }
+        check(waitUntil(120, 1) { server { Hold.isHeld(player(it)) } })
+        burst("kick_pose", 12, 4)
+    }
+
+    private fun VerifyKit.templeHorizon() {
+        temple()
+        server { srv ->
+            val f = checkNotNull(fight())
+            val c = f.abs(dev.henny.hha_arius.arena.ArenaLayout.CUT_STAND)
+            val p = player(srv)
+            p.teleport(f.world, c.x + 4.0, f.floorY, c.z + 10.0, emptySet(), 155f, 0f, false)
+            f.calls.reset()
+            f.startDirector(f.scenes.theCut())
+        }
+        check(waitUntil(150, 1) { server { fight()?.arius?.pose == AriusPose.SPIN_CUT } })
+        shot("temple_horizon_anticipation")
+        tick(10)
+        shot("temple_horizon_release")
+        tick(9)
+        shot("temple_horizon_fade")
+    }
+
+    private fun VerifyKit.vaultPace() {
+        vault()
+        var moves = 0
+        var active = 0
+        var previous = -1
+        for (t in 0 until 260) {
+            val a = server { fight()?.arius?.let { it.pose to it.entityPos } } ?: break
+            if (a.first != previous && a.first != AriusPose.IDLE) moves++
+            if (a.first != AriusPose.IDLE) active++
+            previous = a.first
+            if (t % 25 == 0) {
+                lookAtArius()
+                shot("vault_activity_%03d".format(t))
+            } else tick(1)
+        }
+        log("vault: $moves non-idle pose changes, $active/260 ticks in non-idle poses")
+    }
+
+    private fun VerifyKit.fallRecovery() {
+        finaleFight()
+        server { srv ->
+            val f = checkNotNull(fight())
+            f.startDirector(script { while (true) yield(Unit) })
+            f.calls.reset()
+            f.onSummit = true
+            val center = f.arenaCenter
+            val p = player(srv)
+            p.teleport(f.world, center.x, f.floorY - 14.0, center.z, emptySet(), 0f, 0f, false)
+        }
+        check(waitUntil(60, 1) {
+            server { srv ->
+                val f = checkNotNull(fight())
+                val p = player(srv)
+                p.y >= f.floorY - 1.0 && p.entityPos.distanceTo(f.arenaCenter) <= f.arenaRadius
+            }
+        })
+        log("summit fall: fighter was returned to the summit arena")
+    }
+
+    private fun VerifyKit.climax() {
+        finaleFight()
+        addBots(3)
+        godMode = false
+        try {
+            server {
+                val f = checkNotNull(fight())
+                f.moves.summit.debugJumpToLastStand()
+            }
+            check(waitUntil(1200, 1) { server { fight()?.moves?.summit?.stage == 2 } })
+            server { srv ->
+                val f = checkNotNull(fight())
+                val a = checkNotNull(f.arius)
+                val c = f.arenaCenter
+                val delta = Vec3d(c.x - a.x, 0.0, c.z - a.z)
+                val axis = if (delta.lengthSquared() > 1e-6) delta.normalize() else Vec3d(0.0, 0.0, 1.0)
+                val offset = Vec3d(-axis.z, 0.0, axis.x).multiply(7.8)
+                val at = Vec3d(c.x, f.floorY, c.z).add(offset).add(axis.multiply(4.5))
+                val yaw = (Math.toDegrees(atan2(c.z - at.z, c.x - at.x)) - 90.0).toFloat()
+                player(srv).teleport(f.world, at.x, at.y, at.z, emptySet(), yaw, 8f, false)
+                for ((i, b) in bots.withIndex()) {
+                    val bot = srv.playerManager.getPlayer(b.id) ?: continue
+                    val spot = f.clampToArena(at.add(offset.multiply(1.0 + i * 0.4)), 1.0)
+                    bot.teleport(f.world, spot.x, spot.y, spot.z, emptySet(), yaw, 0f, false)
+                }
+            }
+            burst("climax_horizon", 12, 6)
+            faceArius(2.8)
+            val answerFrom = Summit::class.java.getDeclaredField("answerFrom").apply { isAccessible = true }
+            val answerUntil = Summit::class.java.getDeclaredField("answerUntil").apply { isAccessible = true }
+            fun ready(): Boolean = server {
+                val f = checkNotNull(fight())
+                val summit = f.moves.summit
+                f.now in answerFrom.getLong(summit)..answerUntil.getLong(summit)
+            }
+            check(waitUntil(170, 1) { ready() })
+            faceArius(2.4)
+            val health = server { player(it).health }
+            shot("climax_retry_window")
+            check(waitUntil(60, 1) { server { player(it).health < health } })
+            log("climax: missed first window, took damage")
+            for ((i, state) in listOf(AriusBlade.ICE_CRACKED, AriusBlade.ICE_BROKEN, AriusBlade.SHEATH_ONLY).withIndex()) {
+                check(waitUntil(170, 1) { ready() })
+                lookAtArius()
+                shot("climax_answer_${i + 1}")
+                server { srv ->
+                    val f = checkNotNull(fight())
+                    val me = player(srv)
+                    val p = if (i == 1) checkNotNull(srv.playerManager.getPlayer(bots[0].id)) else me
+                    val previous = p.entityPos
+                    if (p !== me) {
+                        val at = me.entityPos
+                        p.teleport(f.world, at.x, at.y, at.z, emptySet(), me.yaw, me.pitch, false)
+                    }
+                    fullCharge(p)
+                    p.attack(f.arius!!)
+                    if (p !== me) p.teleport(f.world, previous.x, previous.y, previous.z, emptySet(), p.yaw, p.pitch, false)
+                }
+                check(waitUntil(22, 1) { server { fight()?.arius?.bladeState == state } })
+                tick(5)
+                lookAtArius()
+                shot("climax_blade_${i + 1}")
+            }
+            check(waitUntil(32, 1) { server { fight()?.moves?.summit?.stage == 3 } })
+            tick(18)
+            lookAtArius()
+            shot("climax_kneel")
+            server { srv ->
+                val f = checkNotNull(fight())
+                val p = player(srv)
+                fullCharge(p)
+                p.attack(f.arius!!)
+                check(f.ariusHp <= 0f)
+            }
+            log("climax: all three answers accepted, blade shattered, finishing blow won")
+        } finally {
+            godMode = true
+            server { releaseBots(it) }
+        }
+    }
+
+    private fun releaseBots(srv: net.minecraft.server.MinecraftServer) {
+        for (b in bots) srv.playerManager.getPlayer(b.id)?.networkHandler?.onDisconnected(
+            net.minecraft.network.DisconnectionInfo(net.minecraft.text.Text.literal("verify end")))
+        bots.clear()
     }
 
     // --- Hilfen -----------------------------------------------------------------------------------------------------
@@ -627,57 +915,6 @@ class VerifyBoss : FabricClientGameTest {
                 each(srv)
             }
             tick(1)
-        }
-    }
-
-    private fun VerifyKit.lastStand() {
-        finaleFight()
-        addBots(2)
-        try {
-            server { srv ->
-                val f = checkNotNull(fight())
-                f.fighters[bots[0].id]?.ko = true
-                srv.playerManager.getPlayer(bots[1].id)?.networkHandler?.onDisconnected(
-                    net.minecraft.network.DisconnectionInfo(net.minecraft.text.Text.literal("verify leave")))
-                f.moves.summit.debugJumpToLastStand()
-            }
-            check(waitUntil(1200, 1) { server { fight()?.moves?.summit?.stage == 2 } })
-            server { srv ->
-                val f = checkNotNull(fight())
-                val a = checkNotNull(f.arius)
-                val toward = a.entityPos.subtract(f.arenaCenter).let { Vec3d(it.x, 0.0, it.z) }.let { if (it.lengthSquared() < 1.0) Vec3d(1.0, 0.0, 0.0) else it.normalize() }
-                val at = f.clampToArena(a.entityPos.subtract(toward.multiply(-7.0)), 2.0)
-                player(srv).teleport(f.world, at.x, f.floorY, at.z, emptySet(), 0f, 8f, false)
-            }
-            tick(14)
-            lookAtArius()
-            shot("last_stand_windup")
-            tick(50)
-            lookAtArius()
-            shot("last_stand_cut")
-            check(waitUntil(400, 1) { server { fight()?.moves?.summit?.stage == 3 } })
-            tick(26)
-            lookAtArius()
-            shot("last_stand_open")
-            check(server { srv ->
-                val f = checkNotNull(fight())
-                val a = checkNotNull(f.arius)
-                val before = f.ariusHp
-                a.damage(f.world, f.world.damageSources.playerAttack(player(srv)), 8f)
-                f.ariusHp in 0.01f..<before && a.open
-            })
-            server { srv ->
-                val f = checkNotNull(fight())
-                f.arius!!.damage(f.world, f.world.damageSources.playerAttack(player(srv)), f.ariusMax)
-                check(f.ariusHp <= 0f)
-            }
-            log("storm breaks: three cuts, opening and lethal player hit passed with a knocked-out and disconnected ally")
-        } finally {
-            server { srv ->
-                for (b in bots) srv.playerManager.getPlayer(b.id)?.networkHandler?.onDisconnected(
-                    net.minecraft.network.DisconnectionInfo(net.minecraft.text.Text.literal("verify end")))
-            }
-            bots.clear()
         }
     }
 

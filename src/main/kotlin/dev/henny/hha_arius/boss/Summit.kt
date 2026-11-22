@@ -1,11 +1,13 @@
 package dev.henny.hha_arius.boss
 
-import dev.henny.hha.logic.Fx
 import dev.henny.hha.logic.Vfx
 import dev.henny.hha.logic.boss.Cine
 import dev.henny.hha.logic.boss.Telegraph
 import dev.henny.hha_arius.AriusEntities
 import dev.henny.hha_arius.net.FxKind
+import dev.henny.hha_arius.net.AriusNet
+import dev.henny.hha_arius.net.ClashCueS2C
+import net.minecraft.text.Text
 import net.minecraft.entity.SpawnReason
 import net.minecraft.server.network.ServerPlayerEntity
 import net.minecraft.util.Formatting
@@ -26,10 +28,16 @@ class Summit(private val f: EirholmFight) {
     private val echoes = ArrayList<Echo>()
     private var echoTask = false
 
-    /** Wie oft „Der Sturm bricht“ schon lief, und wann sein offenes Fenster endet. */
-    private var standRound = 0
-    private var standEnds = 0L
-    private var nextCutTarget = 0
+    private var answerFrom = Long.MAX_VALUE
+    private var answerUntil = Long.MIN_VALUE
+    private var answered = false
+
+    fun answer(a: AriusEntity, player: ServerPlayerEntity): Boolean {
+        if (!active || stage != 2 || answered || f.now !in answerFrom..answerUntil ||
+            player.squaredDistanceTo(a) > 5.0 * 5.0 || !player.canSee(a)) return false
+        answered = true
+        return true
+    }
 
     private class Echo(val e: AriusEntity) {
         var hits = 0
@@ -65,10 +73,6 @@ class Summit(private val f: EirholmFight) {
         if (stage == 0 && frac <= 0.75f + 0.001f) {
             stage = 1
             return summonEchoes(2)
-        }
-        if (stage == 3 && f.now >= standEnds && f.ariusHp > 0f) {
-            stage = 2
-            return lastStand()
         }
         if (stage != 1) return null
         val mark = WAVES.getOrNull(wave)
@@ -106,7 +110,7 @@ class Summit(private val f: EirholmFight) {
                 val second = f.players().maxByOrNull { p -> first?.let { p.squaredDistanceTo(it) } ?: 0.0 }
                 if (second != null) yieldAll(f.moves.frozenStar(second))
             }
-            2 -> yieldAll(f.scenes.lastHorizon(a, cross = true))
+            2 -> yieldAll(f.scenes.lastHorizon(a))
             else -> {
                 dismissEchoes()
                 MusicCue.play(f, "white_hole", 20)
@@ -289,124 +293,92 @@ class Summit(private val f: EirholmFight) {
         echoes.clear()
     }
 
-    /**
-     * Der Sturm bricht: Arius zieht den Sturm an sich, sein Stoß drückt alle zurück (kein Schaden). Dann drei Iai-Schnitte
-     * quer über den Gipfel, jeder auf einer festen, angesagten Linie und reihum auf einen anderen Spieler. Wer zur Seite
-     * tritt, bleibt heil. Der dritte Schnitt reißt den Sturm auf: Der Himmel wird klar, goldenes Licht fällt auf den Gipfel,
-     * und Arius kniet erschöpft an seiner Klinge. In diesem Fenster kann man ihn fällen. Steht er wieder auf, beginnt es
-     * von vorn. Niemand muss auf einen ausgefallenen Mitspieler warten.
-     */
+    /** Any live fighter may answer each beat. Misses repeat the current beat with a wider window. */
     private fun lastStand(): Script = script {
         val a = f.arius ?: return@script
         f.calls.reset()
         dismissEchoes()
         f.guardUntil = 0
         a.counterStance = false
-        a.sheathed = false
-        a.eyeGlow = 100
-        val first = standRound++ == 0
-        MusicCue.sting(f, "phase")
-        a.play(AriusPose.CORE_RAISE)
-        if (first) {
-            for (p in f.audience()) Cine.title(listOf(p), "hha_arius.feat.storm_breaks", "hha_arius.feat.storm_breaks.sub", 52)
-            f.say("finale.silence", 60)
-        }
-        f.fxAll(FxKind.REVERSE_WIND, a.entityPos, a = 26f, life = 40)
-        f.ambient("cut.reverse_wind", a.entityPos, 4f, 0.7f)
-        f.ambient("transform.pulse", a.entityPos, 4f, 0.6f)
-        wait(if (first) 34 else 20)
-        f.ambient("arius.stab_ground", a.entityPos, 3f, 0.8f)
-        Vfx.shockwave(f.world, Vfx.Style.HEAVEN, a.entityPos, 11f, 16, 2f)
-        f.fx(FxKind.CLEAR_WAVE, a.entityPos, a = 12f, life = 18)
-        for (p in f.combatTargets()) if (p.squaredDistanceTo(a) < 7.5 * 7.5) {
-            Fx.launchPlayer(p, flatDir(a.entityPos, p.entityPos).multiply(0.85).add(0.0, 0.32, 0.0))
-        }
-        wait(16)
-
-        for (k in 0 until CUTS) {
-            val t = cutTarget() ?: break
-            yieldAll(stormCut(a, t, k))
-        }
-
-        // Der Sturm reißt auf.
-        val at = a.entityPos
-        val sky = Vec3d(f.arenaCenter.x, f.floorY, f.arenaCenter.z)
-        a.sheathed = false
-        a.play(AriusPose.STAB_GROUND, 8)
-        f.ambient("arius.stab_ground", at, 4f, 0.62f)
-        f.ambient("transform.shatter", at, 3f, 0.75f)
-        f.ambient("resonance.chime", at, 4f, 0.6f)
-        f.fxAll(FxKind.FLASH, at, a = 0.32f, life = 8)
-        f.fxAll(FxKind.TIME_SLOW, at, a = 0.6f, life = 16)
-        Vfx.shockwave(f.world, Vfx.Style.GOLD, at, 18f, 26, 2.6f)
-        f.atmos(dev.henny.hha_arius.net.AtmosMode.REVEAL, 30)
-        Vfx.skyMood(f.world, Vfx.Style.GOLD, sky, 0.35f, STAND_OPEN, 70f)
-        Vfx.godRays(f.world, Vfx.Style.GOLD, sky.add(0.0, 46.0, 0.0), 1f, 46f, STAND_OPEN)
-        stage = 3
-        standEnds = f.now + STAND_OPEN
-        f.openArius(STAND_OPEN)
-        wait(8)
-        a.play(AriusPose.KNEEL)
-        a.eyeGlow = 30
-        wait(STAND_OPEN - 8)
-        // Nicht gefällt: Er steht wieder auf, der Sturm zieht zurück, und es geht von vorn los.
-        if (!f.ended && f.ariusHp > 0f) {
-            f.atmos(dev.henny.hha_arius.net.AtmosMode.VAULT, 40)
-            a.eyeGlow = 100
-            a.play(AriusPose.IDLE)
-            wait(14)
-        }
-    }
-
-    /** Reihum der nächste Spieler, den ein Schnitt erreichen kann. */
-    private fun cutTarget(): ServerPlayerEntity? {
-        val pool = f.combatTargets().ifEmpty { f.players() }
-        if (pool.isEmpty()) return null
-        return pool[nextCutTarget++ % pool.size]
-    }
-
-    private fun stormCut(a: AriusEntity, t: ServerPlayerEntity, k: Int): Script = script {
         a.sheathed = true
         a.play(AriusPose.IAI_STANCE)
-        f.face(a, t.entityPos)
-        wait(6)
-        if (!f.canSequence(t)) return@script
-        f.face(a, t.entityPos)
-        val from = a.entityPos
-        val dir = flatDir(from, t.entityPos)
-        val end = cutEnd(a, from, dir, from.distanceTo(t.entityPos) + CUT_PAST)
-        val line = f.calls.line(from, end, 1.6f, CUT_WINDUP[k], Telegraph.Pace.HEAVY)
-        f.fx(FxKind.EDGE, from.add(0.0, 1.2, 0.0), life = line.ticks, e1 = a)
-        f.ambient("iai.glint", from, 3f, 0.7f + k * 0.12f)
-        f.ambient("cut.charge", from, 2.4f, 0.8f + k * 0.1f)
-        a.play(AriusPose.LUNGE, line.ticks)
-        wait(line.ticks)
-        a.sheathed = false
-        f.sound("arius.null_cut", from, 3.4f, 0.9f + k * 0.08f)
-        f.sound("arius.thrust", from, 2.6f, 0.85f)
-        for (p in line.hits(f.combatTargets())) f.hurt(p, if (k == CUTS - 1) 13f else 10f, Damage.Kind.NULL_CUT)
-        for (i in 1..CUT_DASH) {
-            f.place(a, from.lerp(end, i / CUT_DASH.toDouble()))
-            f.face(a, end)
-            yield(Unit)
+        a.eyeGlow = 100
+        for (p in f.audience()) {
+            Cine.title(listOf(p), "hha_arius.feat.storm_breaks", "hha_arius.finale.advance", 60)
         }
-        f.fx(FxKind.DASH_STREAK, from, end, life = 12)
-        f.fx(FxKind.SEAM, from.add(0.0, 0.2, 0.0), end.add(0.0, 0.2, 0.0), a = 3.4f, life = 26)
-        Vfx.crescent(f.world, Vfx.Style.HEAVEN, from.lerp(end, 0.5).add(0.0, 1.1, 0.0), dir, from.distanceTo(end).toFloat() * 0.55f, 1.2f, 10)
-        f.calls.hitShake(end, 2.2f, 26f)
-        a.play(AriusPose.STAB_GROUND, 4)
-        wait(if (k == CUTS - 1) 6 else CUT_REST)
-    }
+        wait(8)
+        a.bladeState = AriusBlade.SHEATH_ONLY
+        a.sheathed = false
+        a.play(AriusPose.FORGE_ICE, 12)
+        f.fxAll(FxKind.BLADE_FORM, a.entityPos, life = 20, e1 = a)
+        f.ambient("core.form", a.entityPos, 2.5f, 1.1f)
+        wait(15)
+        a.bladeState = AriusBlade.FINALE_ICE
+        yieldAll(f.scenes.lastHorizon(a, recovery = 0))
 
-    /** Ende der Schnittlinie: kurz hinter dem Ziel, damit er im offenen Fenster erreichbar bleibt; nie durch ein Hindernis. */
-    private fun cutEnd(a: AriusEntity, from: Vec3d, dir: Vec3d, reach: Double): Vec3d {
-        val far = f.clampToArena(from.add(dir.multiply(reach)), 1.6)
-        val hit = f.world.raycast(net.minecraft.world.RaycastContext(
-            from.add(0.0, 1.0, 0.0), Vec3d(far.x, from.y + 1.0, far.z),
-            net.minecraft.world.RaycastContext.ShapeType.COLLIDER, net.minecraft.world.RaycastContext.FluidHandling.NONE, a,
-        ))
-        val stop = if (hit.type == net.minecraft.util.hit.HitResult.Type.MISS) far else hit.pos.subtract(dir.multiply(1.1))
-        return Vec3d(stop.x, from.y, stop.z)
+        repeat(CUTS) { index ->
+            var misses = 0
+            do {
+                val target = f.combatTargets().minByOrNull { it.squaredDistanceTo(a) }
+                if (target == null) {
+                    wait(10)
+                    continue
+                }
+                a.play(AriusPose.IDLE)
+                var steps = 0
+                while (steps++ < 48 && f.canSequence(target) && target.squaredDistanceTo(a) > 3.3 * 3.3) {
+                    f.stepToward(a, target.entityPos, 0.42)
+                    yield(Unit)
+                }
+                if (!f.canSequence(target)) continue
+                f.face(a, target.entityPos)
+                val dir = flatDir(a.entityPos, target.entityPos)
+                val lead = CUT_WINDUP[index]
+                val window = minOf(lead - 7, 13 - index * 2 + misses * 3)
+                val cone = f.calls.cone(a.entityPos, dir, 5f + index, 100f + index * 12f, lead, Telegraph.Pace.HEAVY)
+                val strike = f.now + cone.ticks
+                answered = false
+                answerFrom = strike - window
+                answerUntil = strike
+                for (p in f.players()) {
+                    p.sendMessage(Text.translatable("hha_arius.finale.answer", index + 1, CUTS).formatted(Formatting.AQUA), true)
+                    AriusNet.send(p, ClashCueS2C(true, cone.ticks, window, 0))
+                }
+                a.play(AriusPose.SPIN_CUT, cone.ticks)
+                f.scenes.horizonCharge(a, dir, cone.ticks)
+                while (!answered && f.now < strike) yield(Unit)
+                answerUntil = Long.MIN_VALUE
+                for (p in f.audience()) AriusNet.send(p, ClashCueS2C(false, 16, 0, 0))
+                if (answered) {
+                    f.calls.reset()
+                    val at = a.entityPos.add(0.0, 1.2, 0.0)
+                    f.fxAll(FxKind.BLADE_SHATTER, at, life = 20, e1 = a)
+                    f.ambient("transform.shatter", at, 2.8f, 1.35f - index * 0.2f)
+                    a.bladeState = when (index) {
+                        0 -> AriusBlade.ICE_CRACKED
+                        1 -> AriusBlade.ICE_BROKEN
+                        else -> AriusBlade.SHEATH_ONLY
+                    }
+                    a.play(AriusPose.STAGGER)
+                    wait(15)
+                } else {
+                    f.scenes.horizonImpact(a.entityPos, dir, 4f + index)
+                    for (p in cone.hits(f.combatTargets())) f.hurt(p, 5f + index, Damage.Kind.NULL_CUT)
+                    misses++
+                    wait(14)
+                }
+            } while (!answered)
+            answered = false
+        }
+
+        a.play(AriusPose.KNEEL)
+        a.eyeGlow = 30
+        f.atmos(dev.henny.hha_arius.net.AtmosMode.REVEAL, 30)
+        stage = 3
+        f.openArius(80)
+        for (p in f.players()) p.sendMessage(Text.translatable("hha_arius.finale.finish").formatted(Formatting.AQUA), true)
+        // Keep the opening until a fighter lands a blow. No timed repeat after the blade is gone.
+        while (f.ariusHp > 0f) yield(Unit)
     }
 
     private fun flatDir(from: Vec3d, to: Vec3d): Vec3d {
@@ -427,12 +399,7 @@ class Summit(private val f: EirholmFight) {
         /** Abstand der Angriffe der Nachbilder. */
         const val ECHO_EVERY = 95L
 
-        /** „Der Sturm bricht“: Schnitte, ihre Ansagezeiten, Dauer des Satzes und Pause, offenes Fenster danach. */
         const val CUTS = 3
-        val CUT_WINDUP = intArrayOf(40, 34, 30)
-        const val CUT_DASH = 5
-        const val CUT_PAST = 6.0
-        const val CUT_REST = 14
-        const val STAND_OPEN = 220
+        val CUT_WINDUP = intArrayOf(40, 34, 29)
     }
 }

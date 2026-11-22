@@ -48,10 +48,7 @@ object BladeAnchors {
     }
 }
 
-/**
- * Continuous crystalline frost glint & cold mist aura on Arius's ice blade whenever Solvane is summoned as a dragon,
- * making the conjured frost crystal sword unmistakably distinct from Solvane.
- */
+/** Occasional loose frost leaves the faceted ice blade visible. */
 object IceBladeAura {
     fun tick(world: ClientWorld) {
         val fx = particlesAllowed()
@@ -62,7 +59,7 @@ object IceBladeAura {
             if (e.bladeState != dev.henny.hha_arius.boss.AriusBlade.ICE || e.sheathed) continue
             val anchor = BladeAnchors.of(e) ?: continue
             if (!nearCamera(anchor.base, 48.0)) continue
-            if (r.nextFloat() < 0.75f * fx) {
+            if (r.nextFloat() < 0.19f * fx) {
                 val p = anchor.base.lerp(anchor.tip, 0.15 + r.nextDouble() * 0.85)
                 val type = if (r.nextInt(3) == 0) ParticleTypes.END_ROD else ParticleTypes.SNOWFLAKE
                 world.addParticleClient(type, p.x + r.nextGaussian() * 0.08, p.y + r.nextGaussian() * 0.08, p.z + r.nextGaussian() * 0.08,
@@ -71,46 +68,7 @@ object IceBladeAura {
         }
     }
 
-    fun render(world: ClientWorld, d: VfxDraw) {
-        val fx = particlesAllowed()
-        if (fx <= 0.01f) return
-        val t = world.time + d.tickDelta
-        for (e in world.entities) {
-            if (e !is dev.henny.hha_arius.boss.AriusEntity) continue
-            if (e.bladeState != dev.henny.hha_arius.boss.AriusBlade.ICE || e.sheathed) continue
-            val anchor = BladeAnchors.of(e) ?: continue
-            if (!nearCamera(anchor.base, 64.0)) continue
-            val axis = anchor.tip.subtract(anchor.base)
-            val len = axis.length()
-            if (len < 0.1) continue
-            val dir = axis.multiply(1.0 / len)
-            var side = d.camForward.crossProduct(dir)
-            if (side.lengthSquared() < 1e-5) side = d.camRight else side = side.normalize()
-            val perp = dir.crossProduct(side).normalize()
-            val pulse = 0.78f + 0.22f * sin(t * 0.24f)
 
-            // Shimmering crystalline frost sheath & pale cyan-white core along the ice blade.
-            d.band(AriusLayers.VFX_FLOW, anchor.base, anchor.tip, side, 0.14,
-                withAlpha(0xFF4CC6FF.toInt(), 0.42f * fx * pulse), withAlpha(0xFFE6FAFF.toInt(), 0.62f * fx * pulse),
-                uScale = 1.6f, uOffset = -t * 0.08f)
-            d.band(AriusLayers.VFX_GLOW, anchor.base.lerp(anchor.tip, 0.12), anchor.tip, side, 0.075,
-                withAlpha(0xFF9CE8FF.toInt(), 0.55f * fx * pulse), withAlpha(0xFFFFFFFF.toInt(), 0.75f * fx * pulse))
-            // Glinting crystalline tip flare + hilt frost mist.
-            d.billboard(AriusLayers.VFX_FLARE, anchor.tip, 0.36 + 0.14 * pulse, withAlpha(0xFFDFF8FF.toInt(), 0.85f * fx * pulse))
-            d.billboard(AriusLayers.VFX_GLOW, anchor.base.lerp(anchor.tip, 0.55), 0.72, withAlpha(0xFF63D0FF.toInt(), 0.28f * fx * pulse))
-            // Orbiting miniature frost crystal splinters drifting along the blade edge.
-            for (i in 0 until 4) {
-                val frac = ((i * 0.25 + t * 0.018) % 1.0)
-                val ang = t * 0.14 + i * PI * 0.5
-                val rad = 0.16 + 0.05 * sin(t * 0.2 + i)
-                val center = anchor.base.lerp(anchor.tip, 0.15 + 0.8 * frac)
-                    .add(side.multiply(cos(ang) * rad)).add(perp.multiply(sin(ang) * rad))
-                val a = sin(frac * PI).toFloat() * 0.82f * fx
-                d.box(AriusLayers.VFX_SHARD, center, dir.multiply(0.09), side.multiply(0.028), perp.multiply(0.028),
-                    withAlpha(if (i % 2 == 0) 0xFFAEEFFF.toInt() else 0xFF42B4F0.toInt(), a))
-            }
-        }
-    }
 }
 
 /** Normalverteilt (Box-Muller); kotlin.random.Random hat keine eigene. */

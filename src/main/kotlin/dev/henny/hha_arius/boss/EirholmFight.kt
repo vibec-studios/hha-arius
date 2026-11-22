@@ -250,6 +250,7 @@ class EirholmFight(
     val brokenPillars = HashSet<BlockPos>()
 
     private var director: Runner? = null
+    private val maceCatch = MaceCatch(this)
     private val tasks = ArrayList<Runner>()
 
     val moves = AriusMoves(this)
@@ -512,7 +513,7 @@ class EirholmFight(
         }
         updateDuelTarget(active)
         if (phase >= Phase.TEMPLE && phase < Phase.END) scaling.tick(active.size)
-        director?.step()
+        if (!maceCatch.step()) director?.step()
         if (ended) return
         // Aus einer Momentaufnahme ausführen: Tasks dürfen neue Tasks anlegen oder den Kampf beenden.
         if (tasks.isNotEmpty()) {
@@ -561,7 +562,12 @@ class EirholmFight(
     }
 
     fun landingSpot(player: ServerPlayerEntity): Vec3d {
-        val list = if (phase >= Phase.VAULT) ArenaLayout.VAULT_LANDING else if (phase >= Phase.GLACIER) ArenaLayout.AERIE_LANDING else listOf(ArenaLayout.ARRIVAL)
+        val list = when {
+            phase == Phase.FINALE && onSummit -> finaleSpots()
+            phase >= Phase.VAULT -> ArenaLayout.VAULT_LANDING
+            phase >= Phase.GLACIER -> ArenaLayout.AERIE_LANDING
+            else -> listOf(ArenaLayout.ARRIVAL)
+        }
         val i = fighters.keys.indexOf(player.uuid).coerceAtLeast(0)
         return abs(list[i % list.size])
     }
@@ -656,6 +662,17 @@ class EirholmFight(
             return 0f
         }
         if (!ariusVulnerable) return 0f
+        if (phase == Phase.FINALE && moves.summit.stage == 2) {
+            if (!projectile && source.source === player && PlayerHit.current != PlayerHit.Kind.ABILITY) moves.summit.answer(a, player)
+            return 0f
+        }
+        if (phase == Phase.FINALE && moves.summit.stage == 3 && amount > 0f) {
+            val remaining = ariusHp
+            ariusHp = 0f
+            record(player, remaining)
+            return remaining
+        }
+        if (maceCatch.onHit(a, player, source)) return 0f
         val f = fighters[player.uuid]
         val front = isInFront(a, source.position ?: player.entityPos)
         // Konterhaltung: Nahkampf wird pariert und mit einer Kombo bestraft (seit 1.9.0, Wukong).
