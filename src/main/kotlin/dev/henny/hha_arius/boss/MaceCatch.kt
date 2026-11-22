@@ -60,6 +60,7 @@ class MaceCatch(private val f: EirholmFight) {
     private fun slam(a: AriusEntity, p: ServerPlayerEntity, start: Vec3d, top: Vec3d, bottom: Vec3d): Script = script {
         f.face(a, p.entityPos)
         a.play(AriusPose.MACE_CATCH, 5)
+        Hold.allowLong(p, 58)
         Hold.freeze(p, 58, start)
         AriusNet.send(p, CineCamS2C(true, a.id, 52, 0))
         f.fxAll(FxKind.MACE_GRIP, start, life = 50, e1 = p)

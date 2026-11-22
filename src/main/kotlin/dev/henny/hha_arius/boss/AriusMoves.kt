@@ -517,7 +517,8 @@ class AriusMoves(private val f: EirholmFight) {
                     nextLotus = now + 400
                     yieldAll(frostLotus(true))
                 }
-                d > 13 && a.canSee(t) -> yieldAll(nullCut(t))
+                d in 13.0..22.0 && a.canSee(t) -> yieldAll(nullCut(t))
+                d > 22 -> approach(t, 12.0, 40, true)
                 d > 6 -> yieldAll(lunge(t, true))
                 else -> yieldAll(combo(true, false))
             }
