@@ -26,7 +26,7 @@ These come from real playtest failures. Breaking one means the work gets rejecte
 ## Visual direction
 
 - **Palette:** frost white, ice blue and deep navy, with gold only for sacred or yang moments. No red danger zones, no rainbow or hue-shifting effects, no pink, no raw RGB noise.
-- **Attack telegraphs** are clean, calm, filled ground shapes with a crisp edge. No lightning, no jagged or wobbling lines, no thin scribbles. They must stay readable on white snow and in a storm.
+- **Attack telegraphs** use the frosted ice look of v1.11.0: broad, soft ice-blue bands and thick rings with chunky ice-shard edges. No lightning, no thin crack lines or scribbles. They must stay readable on white snow and in a storm.
 - **Effects** should look authored: clear silhouette, a beat of anticipation, a strong hit, a clean fade. More particles is not better.
 - **Characters** never teleport, snap, jitter, freeze in mid-air or clip through blocks during a cutscene. Limbs hold what they are supposed to hold.
 - **Cameras** never enter terrain and never cut to an unmotivated angle.
