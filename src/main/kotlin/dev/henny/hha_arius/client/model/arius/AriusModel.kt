@@ -769,7 +769,7 @@ class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
         m.time = now
         val k = 1f - exp(-min(dt, 5f) * 0.3f)
         // Ohne Klinge (Solvane ist der Drache) hält er die Hände wie mit leerer Hand.
-        val emptyHanded = state.sheathed || state.blade == AriusBlade.NONE
+        val emptyHanded = state.sheathed || state.blade == AriusBlade.NONE || state.blade == AriusBlade.SHEATH_ONLY
         m.sheath += ((if (emptyHanded) 1f else 0f) - m.sheath) * k
         m.open += ((if (state.open) 1f else 0f) - m.open) * k
         m.counter += ((if (state.counter) 1f else 0f) - m.counter) * (1f - exp(-min(dt, 5f) * 0.55f))
@@ -830,9 +830,10 @@ class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
         for (p in formAll) p.visible = true
         for (p in formParts[MathHelper.clamp(state.form, 0, 2)]) p.visible = false
         val hand = inHand(pose, t, w, state.sheathed, m)
-        solvane.visible = hand && state.blade != AriusBlade.NONE
-        sheathHilt.visible = !hand && state.blade == AriusBlade.HELD
-        for (part in solvaneTree) part.hidden = state.blade >= AriusBlade.ICE
+        val ice = AriusBlade.hasIce(state.blade)
+        solvane.visible = hand && (state.blade == AriusBlade.HELD || ice)
+        sheathHilt.visible = (!hand && state.blade == AriusBlade.HELD) || AriusBlade.hasSheathedSolvane(state.blade)
+        for (part in solvaneTree) part.hidden = ice
 
         springs(m, v, dt)
         // Hand am Heft der Scheide: die Scheide darf dann nicht schwingen.

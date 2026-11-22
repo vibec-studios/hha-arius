@@ -277,7 +277,7 @@ class VerifyBoss : FabricClientGameTest {
             shot("climax_retry_window")
             check(waitUntil(60, 1) { server { player(it).health < health } })
             log("climax: missed first window, took damage")
-            for ((i, state) in listOf(AriusBlade.ICE_CRACKED, AriusBlade.ICE_BROKEN, AriusBlade.NONE).withIndex()) {
+            for ((i, state) in listOf(AriusBlade.ICE_CRACKED, AriusBlade.ICE_BROKEN, AriusBlade.SHEATH_ONLY).withIndex()) {
                 check(waitUntil(170, 1) { ready() })
                 lookAtArius()
                 shot("climax_answer_${i + 1}")

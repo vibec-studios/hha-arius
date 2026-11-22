@@ -429,7 +429,7 @@ object ParryHud {
 
     private fun holding(client: MinecraftClient): Boolean =
         // In der Konter-Bestrafung und anderen gehaltenen Momenten kann man nicht parieren, also auch keine Anzeige.
-        AriusClientConfig.parryCue && !ClashHud.active && !CounterStance.active && !PunishCam.hidesHands() && !HoldClient.isHeld() &&
+        AriusClientConfig.parryCue && !ClashHud.blocksParryCue() && !CounterStance.active && !PunishCam.hidesHands() && !HoldClient.isHeld() &&
             client.player?.mainHandStack?.isOf(GearItems.SOLVANE) == true
 
     fun onCue(p: ParryCueS2C) {

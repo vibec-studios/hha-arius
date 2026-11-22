@@ -1680,7 +1680,7 @@ class Scenes(private val f: EirholmFight) {
         val to = center.add(side.multiply(reach))
         val belt = f.calls.boss(pace = Telegraph.Pace.ROOM).line(from, to, 3.4f, 50)
         a.sheathed = false
-        a.play(AriusPose.IAI_STANCE)
+        a.play(if (AriusBlade.hasIce(a.bladeState)) AriusPose.FORGE_ICE else AriusPose.CUT_CHARGE)
         for (p in f.audience()) Cine.title(listOf(p), "hha_arius.feat.last_horizon", "hha_arius.feat.last_horizon.sub", 30)
         horizonCharge(a, dir, belt.ticks)
         wait(belt.ticks - 6)
@@ -1856,6 +1856,7 @@ class Scenes(private val f: EirholmFight) {
         MusicCue.play(f, "ending", 20)
         val scene = CineScene(f) {
             a.play(AriusPose.IDLE)
+            a.bladeState = AriusBlade.HELD
             a.sheathed = true
         }
         yieldAll(scene.play(script {
@@ -1879,6 +1880,7 @@ class Scenes(private val f: EirholmFight) {
             scene.line(f.clampToArena(base.add(away.multiply(9.0)).add(3.0, 3.0, 0.0), 2.0), f.clampToArena(base.add(away.multiply(12.0)).add(4.0, 6.5, 0.0), 2.0),
                 focus, focus.add(0.0, 0.5, 0.0), 85, 60.0, 64.0)
             a.play(AriusPose.IDLE)
+            a.bladeState = AriusBlade.HELD
             a.sheathed = true
             shown { f.say("end.take", 80) }
             f.victory()

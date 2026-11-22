@@ -41,7 +41,7 @@ class AriusRenderer(context: EntityRendererFactory.Context) :
     private val darkSeams = RenderLayers.entityTranslucentEmissive(tex("arius_dark_glow"))
     private val redEyes = RenderLayers.entityTranslucentEmissive(tex("arius_eyes"))
     private val items = context.itemModelManager
-    private val iceBlades = (AriusBlade.ICE..AriusBlade.ICE_BROKEN).associateWith(AriusBlade::iceStack)
+    private val iceBlades = (AriusBlade.ICE..AriusBlade.FINALE_ICE).associateWith(AriusBlade::iceStack)
     private var bladeChain: List<ModelPart>? = null
     private var sheathChain: List<ModelPart>? = null
 
@@ -72,7 +72,7 @@ class AriusRenderer(context: EntityRendererFactory.Context) :
                 }
                 // Set the actor's current pose before sampling bones; queue submission itself defers model drawing.
                 contextModel.setAngles(state)
-                if (state.blade >= AriusBlade.ICE && !state.sheathed) renderIceBlade(matrices, queue, state)
+                if (AriusBlade.hasIce(state.blade) && !state.sheathed) renderIceBlade(matrices, queue, state)
                 anchors(matrices, state)
             }
         })

@@ -21,6 +21,7 @@ object ClashHud {
 
     var active = false
         private set
+    private var parryAfter = 0f
     private var start = 0f
     private var strike = 0f
     private var before = 0
@@ -31,6 +32,7 @@ object ClashHud {
     fun handle(p: ClashCueS2C) {
         if (!p.on) {
             active = false
+            parryAfter = now() + p.ticks.coerceIn(0, 40)
             return
         }
         val client = MinecraftClient.getInstance()
@@ -46,7 +48,10 @@ object ClashHud {
 
     fun clear() {
         active = false
+        parryAfter = 0f
     }
+
+    fun blocksParryCue(): Boolean = active || now() < parryAfter
 
     fun render(ctx: DrawContext) {
         if (!active) return

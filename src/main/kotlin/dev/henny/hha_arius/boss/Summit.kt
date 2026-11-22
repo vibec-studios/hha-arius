@@ -300,16 +300,20 @@ class Summit(private val f: EirholmFight) {
         dismissEchoes()
         f.guardUntil = 0
         a.counterStance = false
-        a.sheathed = false
+        a.sheathed = true
+        a.play(AriusPose.IAI_STANCE)
         a.eyeGlow = 100
         for (p in f.audience()) {
             Cine.title(listOf(p), "hha_arius.feat.storm_breaks", "hha_arius.finale.advance", 60)
         }
-        a.play(AriusPose.CORE_RAISE, 12)
+        wait(8)
+        a.bladeState = AriusBlade.SHEATH_ONLY
+        a.sheathed = false
+        a.play(AriusPose.FORGE_ICE, 12)
         f.fxAll(FxKind.BLADE_FORM, a.entityPos, life = 20, e1 = a)
         f.ambient("core.form", a.entityPos, 2.5f, 1.1f)
         wait(15)
-        a.bladeState = AriusBlade.ICE
+        a.bladeState = AriusBlade.FINALE_ICE
         yieldAll(f.scenes.lastHorizon(a, recovery = 0))
 
         repeat(CUTS) { index ->
@@ -344,7 +348,7 @@ class Summit(private val f: EirholmFight) {
                 f.scenes.horizonCharge(a, dir, cone.ticks)
                 while (!answered && f.now < strike) yield(Unit)
                 answerUntil = Long.MIN_VALUE
-                for (p in f.audience()) AriusNet.send(p, ClashCueS2C(false, 0, 0, 0))
+                for (p in f.audience()) AriusNet.send(p, ClashCueS2C(false, 16, 0, 0))
                 if (answered) {
                     f.calls.reset()
                     val at = a.entityPos.add(0.0, 1.2, 0.0)
@@ -353,7 +357,7 @@ class Summit(private val f: EirholmFight) {
                     a.bladeState = when (index) {
                         0 -> AriusBlade.ICE_CRACKED
                         1 -> AriusBlade.ICE_BROKEN
-                        else -> AriusBlade.NONE
+                        else -> AriusBlade.SHEATH_ONLY
                     }
                     a.play(AriusPose.STAGGER)
                     wait(15)
