@@ -52,6 +52,7 @@ class VerifyBoss : FabricClientGameTest {
                 "shield" -> shield()
                 "tele" -> teleGallery()
                 "path" -> pathing()
+                "ice" -> iceBlade()
                 "fx" -> fxGallery()
                 "pace" -> pace()
                 else -> log("unknown case $c")
@@ -641,9 +642,21 @@ class VerifyBoss : FabricClientGameTest {
                 f.moves.summit.debugJumpToLastStand()
             }
             check(waitUntil(1200, 1) { server { fight()?.moves?.summit?.stage == 2 } })
+            server { srv ->
+                val f = checkNotNull(fight())
+                val a = checkNotNull(f.arius)
+                val toward = a.entityPos.subtract(f.arenaCenter).let { Vec3d(it.x, 0.0, it.z) }.let { if (it.lengthSquared() < 1.0) Vec3d(1.0, 0.0, 0.0) else it.normalize() }
+                val at = f.clampToArena(a.entityPos.subtract(toward.multiply(-7.0)), 2.0)
+                player(srv).teleport(f.world, at.x, f.floorY, at.z, emptySet(), 0f, 8f, false)
+            }
+            tick(14)
             lookAtArius()
             shot("last_stand_windup")
+            tick(50)
+            lookAtArius()
+            shot("last_stand_cut")
             check(waitUntil(400, 1) { server { fight()?.moves?.summit?.stage == 3 } })
+            tick(26)
             lookAtArius()
             shot("last_stand_open")
             check(server { srv ->
@@ -760,6 +773,39 @@ class VerifyBoss : FabricClientGameTest {
         }
     }
 
+    /** Die Eisklinge, nah von vorn und von der Seite. */
+    private fun VerifyKit.iceBlade() {
+        vault()
+        server {
+            val f = checkNotNull(fight())
+            f.startDirector(dev.henny.hha_arius.boss.script { while (true) yield(Unit) })
+            f.calls.reset()
+            f.arius?.let { a ->
+                a.bladeState = dev.henny.hha_arius.boss.AriusBlade.ICE
+                a.sheathed = false
+                a.play(dev.henny.hha_arius.boss.AriusPose.IDLE)
+            }
+        }
+        tick(12)
+        client { it.options.hudHidden = true }
+        faceArius(3.6)
+        lookAtArius()
+        tick(6)
+        shot("ice_front")
+        server { srv ->
+            val f = checkNotNull(fight())
+            val a = checkNotNull(f.arius)
+            val d = f.facing(a)
+            val at = a.entityPos.add(-d.z * 3.0, 0.0, d.x * 3.0).add(d.multiply(1.0))
+            player(srv).teleport(f.world, at.x, a.y, at.z, emptySet(), 0f, 4f, false)
+        }
+        tick(3)
+        lookAtArius()
+        tick(4)
+        shot("ice_side")
+        client { it.options.hudHidden = false }
+    }
+
     /** Arius muss um die Säulen des Tempels zum Spieler finden, ohne Festhängen und ohne Laufen auf der Stelle. */
     private fun VerifyKit.pathing() {
         temple()
@@ -832,6 +878,7 @@ class VerifyBoss : FabricClientGameTest {
                 }
             }
             val straight = Math.hypot(from.x - to.x, from.z - to.z)
+            if (!reached) log("path $i nav: " + server { fight()!!.debugNav() })
             if (!reached) failed++ else {
                 totalRatio += walked / straight
                 runs++

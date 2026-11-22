@@ -849,6 +849,9 @@ class EirholmFight(
     private var navigationActor: AriusEntity? = null
     private var groundRoute: AriusNavigation? = null
 
+    /** Für die Sichtprüfung. */
+    fun debugNav(): String = groundRoute?.debugInfo ?: ""
+
     /**
      * Ein Schritt in Richtung [to] auf der Laufhöhe [y] mit [speed] Blöcken je Tick; weicht Säulen seitlich aus.
      * Gibt true zurück, wenn das Ziel erreicht ist.

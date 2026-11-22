@@ -31,6 +31,13 @@ internal class AriusNavigation(private val fight: EirholmFight, private val acto
     private var blocked = 0
     private var directUntil = 0L
 
+    /** Zellen, an denen er gerade hängen blieb: Die nächste Planung geht eine Weile um sie herum. */
+    private val avoid = HashMap<Long, Long>()
+
+    /** Für die Sichtprüfung: Ergebnis der letzten Planung. */
+    var debugInfo = ""
+        private set
+
     fun step(to: Vec3d, speed: Double, faceTarget: Boolean): Boolean {
         val dest = fight.clampToArena(to, 0.6)
         val start = actor.entityPos
@@ -76,7 +83,13 @@ internal class AriusNavigation(private val fight: EirholmFight, private val acto
             }
         }
         // Hängt er an einer gestrafften Ecke, geht er die ungestraffte Route Block für Block.
-        return advance(start, route[next], speed).also { if (blocked >= STUCK) plan(start, dest, pull = false) }
+        return advance(start, route[next], speed).also {
+            if (blocked >= STUCK) {
+                val p = route.getOrNull(next)
+                if (p != null) avoid[key(floor(p.x).toInt(), floor(p.z).toInt())] = now + AVOID
+                plan(start, dest, pull = false)
+            }
+        }
     }
 
     private fun advance(start: Vec3d, toward: Vec3d, speed: Double): Boolean {
@@ -230,6 +243,8 @@ internal class AriusNavigation(private val fight: EirholmFight, private val acto
         val open = PriorityQueue<Node>(64, compareBy { it.f })
         val done = HashSet<Long>()
         val bestG = HashMap<Long, Double>()
+        val tick = fight.now
+        avoid.values.removeIf { it <= tick }
         val first = Node(sx, sz, startTop, 0.0, h(sx, sz), null)
         open.add(first)
         bestG[key(sx, sz)] = 0.0
@@ -255,10 +270,11 @@ internal class AriusNavigation(private val fight: EirholmFight, private val acto
                 val nx = n.x + ox
                 val nz = n.z + oz
                 val nk = key(nx, nz)
-                if (nk in done) continue
+                if (nk in done || nk in avoid) continue
                 val center = Vec3d(nx + 0.5, n.top, nz + 0.5)
                 if (fight.clampToArena(center, 0.8).squaredDistanceTo(center) > 1e-3) continue
                 val top = standAt(nx, nz, n.top) ?: continue
+                if (!bodyFree(nx + 0.5, top, nz + 0.5)) continue
                 if (ox != 0 && oz != 0) {
                     // Keine Ecke schneiden: beide Nachbarn müssen frei sein.
                     if (standAt(n.x + ox, n.z, n.top) == null || standAt(n.x, n.z + oz, n.top) == null) continue
@@ -269,6 +285,7 @@ internal class AriusNavigation(private val fight: EirholmFight, private val acto
                 open.add(Node(nx, nz, top, g, g + h(nx, nz), n))
             }
         }
+        debugInfo = "plan from ($sx,$sz) to ($gx,$gz): found=${found != null} visited=$visited closest=(${closest.x},${closest.z}) goalStand=${standAt(gx, gz, startTop)}"
         val tail = found ?: closest
         if (tail === first) {
             route = emptyList()
@@ -304,6 +321,7 @@ internal class AriusNavigation(private val fight: EirholmFight, private val acto
         const val MAX_NODES = 2600
         const val REPLAN = 12L
         const val STUCK = 6
+        const val AVOID = 100L
         const val TURN = 24f
         val NEIGHBOURS = listOf(1 to 0, -1 to 0, 0 to 1, 0 to -1, 1 to 1, 1 to -1, -1 to 1, -1 to -1)
     }
