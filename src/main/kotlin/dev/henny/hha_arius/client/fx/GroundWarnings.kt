@@ -26,7 +26,8 @@ object GroundWarnings {
     private class Palette(val edge: Int, val resting: Int, val queued: Int)
 
     private val FROST = Palette(0xFF102E50.toInt(), 0xFF285581.toInt(), 0xFF8ED0EC.toInt())
-    private val SAFE = Palette(0xFF153B55.toInt(), 0xFF316E83.toInt(), 0xFFB9F7F7.toInt())
+    // Gold is the ward color called out by the White Hole and duo instructions.
+    private val SAFE = Palette(0xFF4D3211.toInt(), 0xFF9B6C26.toInt(), 0xFFFFDE8D.toInt())
 
     /** Punktfolge auf dem Boden, je Punkt die Normale zur Innenseite (auf Gehrung gestreckt). */
     private class Poly(val pts: Array<Vec3d>, val ns: Array<Vec3d>, val closed: Boolean) {
