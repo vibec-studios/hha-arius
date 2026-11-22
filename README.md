@@ -16,8 +16,8 @@ starts to fall upward, and everyone within 12 blocks is taken into the Sanctum o
 rebuilt from vanilla blocks for every attempt. Nothing in your survival world is ever damaged.
 
 You can also build a **Gate to Eirholm**: a Nether-style frame of **Rime Gate Stone** (4 per craft from 4 polished deepslate,
-4 blue ice and 1 diamond; inside 2–21 wide, 3–21 tall). Light it with the Seal, which is not used up, then stand in it for
-2 seconds to start the encounter. Anyone can use a lit gate.
+4 blue ice and 1 diamond; inside 2–21 wide, 3–21 tall). Light it with the Seal: the gate now holds it. Stand in it for 2 seconds
+to start the encounter. A lost fight relights the gate, a victory spends the Seal, and breaking the frame gives it back.
 
 1. **The Temple of the White Blade**: Arius alone, in three stances (flowing, overhead, sheathed iai). Long combo chains
    with delayed strikes and feints, and a perfect counter: his red stance says *don't strike*. Hit him anyway and he parries, locks you in
@@ -41,8 +41,8 @@ You can also build a **Gate to Eirholm**: a Nether-style frame of **Rime Gate St
    walls, up to the Gate of the Blade.
 7. **The summit**: a last real duel. Blade echoes fight beside him, below half health he draws fully for *The Last
    Horizon*, then he throws everything at you: clones, dragon breath, falling moons, the White Horizon and the white hole.
-   At the very end the storm stops: **Silence**, a black-and-white duel of single draws, and a **Last Clash** in which
-   every player faces their own opponent.
+   At the very end comes **The Storm Breaks**: three announced cuts aimed at the players, then the storm clears and he
+   stands open.
 
 Every attack is announced on the ground through HHA's telegraph system. **Gold always means safe or open.** Vanilla
 movement, shield and bow are enough to win. Dying in the sanctum knocks you out instead: you keep everything and rejoin
@@ -90,6 +90,13 @@ arena).
 Armour, gauntlets and Solvane share one resource, **frost resonance**. It recharges passively (faster out of combat and
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
+
+### New in 1.12.0
+
+- **Combat:** thin frost markers instead of red floors, no rainbow effects, a counter stance you read from Arius alone, one-hit vanilla shields, real pathfinding, a visible ice sword and the new *The Storm Breaks* ending.
+- **Solvane:** slower, cleaner flight clear of walls and ground, a stable reveal, and a coherent pick-up and return to the sword.
+- **Ride:** permanent obstacles, inputs that make sense while hanging on, legs streaming in the wind, an easier one-hand phase and a new drop-off.
+- **World:** real background mountains, a new gate that holds the Seal, a return gate that rises after the win, and reworked mountain-split, kick, eye, cave and bridge scenes.
 
 ### New in 1.11.0
 

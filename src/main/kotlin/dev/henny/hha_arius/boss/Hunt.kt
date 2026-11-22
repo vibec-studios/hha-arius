@@ -1970,6 +1970,8 @@ class Hunt(private val f: EirholmFight) {
             val h = runCatching { FarPlan.top(x + dx, z + dz) }.getOrDefault(Int.MIN_VALUE)
             if (h > top) top = h
         }
+        // Die festen Hindernisse des Ritts stehen nicht in der Höhenkarte.
+        top = maxOf(top, dev.henny.hha_arius.arena.RideLandmarks.topNear(x, z, r))
         return if (top == Int.MIN_VALUE) v.y else f.origin.y + top + 1.0
     }
 

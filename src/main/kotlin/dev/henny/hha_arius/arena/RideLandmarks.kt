@@ -87,6 +87,16 @@ internal object RideLandmarks {
         return out
     }
 
+    /** Sichere Oberkante der Hindernisse nahe (x, z) für Flüge außerhalb des Ritts; sonst [Int.MIN_VALUE]. */
+    fun topNear(x: Int, z: Int, margin: Int): Int {
+        var top = Int.MIN_VALUE
+        for (lm in all) {
+            if (x < lm.minX - margin || x > lm.maxX + margin || z < lm.minZ - margin || z > lm.maxZ + margin) continue
+            top = max(top, ceil(lm.at.y + LINTEL + 10.0).toInt())
+        }
+        return top
+    }
+
     /** Schreibt die Hindernisse in die Spalte (x, z). */
     fun write(x: Int, z: Int, surface: Int, p: ColumnPlan) {
         if (HuntRoute.hit(x, z) >= 0) return
