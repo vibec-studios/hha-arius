@@ -1,29 +1,28 @@
 package dev.henny.hha_arius.client.fx
 
 import dev.henny.hha.client.vfx.VfxDraw
-import dev.henny.hha.client.vfx.VfxLayers
 import dev.henny.hha.client.vfx.withAlpha
 import dev.henny.hha_arius.arena.ArenaDimension
 import dev.henny.hha_arius.boss.AriusEntity
 import dev.henny.hha_arius.boss.AriusForm
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext
 import net.minecraft.client.MinecraftClient
-import net.minecraft.util.math.Vec3d
+import kotlin.math.min
 import kotlin.math.sin
 
-/** Konterhaltung und offenes Trefferfenster direkt an Klinge und Boden. */
+/** Konterhaltung: nur an Arius selbst sichtbar (Klinge, Nähte, Augen), ohne Bodenfläche, Text oder Zeichen. */
 object CounterStance {
 
-    private const val RED = 0xFFFF2A38.toInt()
-    private const val HOT = 0xFFFFD0C8.toInt()
+    private const val ICE = 0xFF6FD6FF.toInt()
+    private const val HOT = 0xFFF6FDFF.toInt()
 
-    /** Deckendes Rot, das auch auf weißem Schnee stehen bleibt. */
-    private const val SOLID = 0xFFD8101E.toInt()
+    /** Deckendes Tiefblau, das auch auf weißem Schnee stehen bleibt. */
+    private const val DEEP = 0xFF14508A.toInt()
     private const val GOLD = 0xFFFFD45A.toInt()
+    private const val GOLD_INK = 0xFF5A3A04.toInt()
 
-    /** Reichweite der Parade auf dem Server (siehe `EirholmFight.hitArius`). */
-    private const val REACH = 5.0
-
+    /** Schwarzes Eis unter der Klinge: Auf weißem Schnee trägt es die Form. */
+    private const val INK = 0xFF061A30.toInt()
 
     private const val RELEASE_TICKS = 16
 
@@ -31,7 +30,7 @@ object CounterStance {
         var age = 0
     }
 
-    private class Release(val pos: Vec3d, val open: Boolean) {
+    private class Release(val id: Int, val open: Boolean) {
         var age = 0
     }
 
@@ -62,7 +61,7 @@ object CounterStance {
         for (id in gone) {
             live.remove(id)
             val e = world.getEntityById(id) as? AriusEntity ?: continue
-            released.add(Release(e.entityPos, e.open))
+            released.add(Release(id, e.open))
         }
         for (r in released) r.age++
         released.removeIf { it.age > RELEASE_TICKS }
@@ -80,59 +79,60 @@ object CounterStance {
                 val e = world.getEntityById(l.id) as? AriusEntity ?: continue
                 drawStance(d, e, l.age + td, td)
             }
-            for (r in released) drawRelease(d, r, r.age + td)
+            for (r in released) drawRelease(d, world, r, r.age + td)
         }
     }
 
+    /**
+     * Die Haltung liest man an ihm selbst: Die Klinge wird von der Wurzel her zu schwarzem Eis, ein weißer Glanz läuft zur Spitze,
+     * Eissplitter lösen sich von der Schneide. Nähte und Augen färbt [dev.henny.hha_arius.client.model.arius.AriusRenderer].
+     */
     private fun drawStance(d: VfxDraw, e: AriusEntity, t: Float, td: Float) {
-        val base = e.getLerpedPos(td)
-        val intro = (t / 4f).coerceIn(0f, 1f)
-        val pulse = 0.72f + 0.28f * sin(t * 0.9f)
-        val a = intro * pulse
-        val ground = base.add(0.0, 0.08, 0.0)
-        val x = Vec3d(1.0, 0.0, 0.0)
-        val z = Vec3d(0.0, 0.0, 1.0)
-
-        // Warnring: seine Reichweite, dazu eine rotierende Rune (nebelfrei für Sturm-Sichtbarkeit).
-        d.disc(AriusLayers.VFX_RUNE, ground, x, z, REACH, withAlpha(RED, 0.62f * a), t * 0.05)
-        d.ring(AriusLayers.INK, ground.add(0.0, 0.008, 0.0), x, z, REACH - 0.30, REACH + 0.08, withAlpha(0xFF42060C.toInt(), 0.94f * intro), withAlpha(0xFF42060C.toInt(), 0.94f * intro), segments = 72)
-        d.ring(AriusLayers.VFX_SHARD, ground.add(0.0, 0.015, 0.0), x, z, REACH - 0.22, REACH + 0.02, withAlpha(SOLID, 0.96f * intro), withAlpha(SOLID, 0.96f * intro), segments = 72)
-        d.ring(AriusLayers.VFX_GLOW, ground, x, z, REACH - 0.55, REACH + 0.22, withAlpha(RED, 0.85f * a), withAlpha(RED, 0.85f * a), segments = 72)
-        d.ring(AriusLayers.VFX_GLOW, ground, x, z, REACH * 0.55, REACH - 0.28, withAlpha(RED, 0f), withAlpha(RED, 0.28f * a), segments = 64)
-
-        // Glühende Klinge (in der Scheide: glühender Griff).
-        val anchor = BladeAnchors.of(e)
-        if (anchor != null && !e.sheathed) {
-            val side = d.camForward.crossProduct(anchor.tip.subtract(anchor.base)).let { if (it.lengthSquared() < 1e-5) d.camRight else it.normalize() }
-            d.band(AriusLayers.VFX_SHARD, anchor.base, anchor.tip, side, 0.14, withAlpha(SOLID, 0.96f * intro), withAlpha(SOLID, 0.88f * intro))
-            d.band(AriusLayers.VFX_GLOW, anchor.base, anchor.tip, side, 0.32, withAlpha(RED, 0.85f * a), withAlpha(RED, 0.6f * a))
-            d.band(AriusLayers.VFX_GLOW, anchor.base, anchor.tip, side, 0.10, withAlpha(HOT, 0.95f * a), withAlpha(HOT, 0.85f * a))
-            d.billboard(AriusLayers.VFX_FLARE, anchor.tip, 0.62 + 0.22 * pulse, withAlpha(RED, 0.95f * a))
-        } else if (anchor != null) {
-            d.billboard(AriusLayers.VFX_GLOW, anchor.sheath, 0.82, withAlpha(RED, 0.9f * a))
-            d.billboard(AriusLayers.VFX_FLARE, anchor.sheath, 0.45, withAlpha(HOT, 0.95f * a))
+        val anchor = BladeAnchors.of(e) ?: return
+        val intro = (t / 5f).coerceIn(0f, 1f)
+        val pulse = 0.78f + 0.22f * sin(t * 0.62f)
+        if (e.sheathed) {
+            d.billboard(AriusLayers.VFX_SHARD, anchor.sheath, 0.3 * intro, withAlpha(INK, 0.9f * intro))
+            d.billboard(AriusLayers.VFX_GLOW, anchor.sheath, 0.46, withAlpha(ICE, 0.75f * intro * pulse))
+            return
         }
-
-        // Zeichen über dem Kopf: durchgestrichene Klinge (nur visuelle Markierung, kein HUD-Text / kein Fadenkreuz).
-        val icon = base.add(0.0, e.height + 0.95, 0.0)
-        val r = d.camRight
-        val u = d.camUp
-        val size = 0.48
-        d.ring(AriusLayers.INK, icon, r, u, size * 0.78, size * 1.06, withAlpha(0xFF3A040A.toInt(), intro), withAlpha(0xFF3A040A.toInt(), intro), segments = 40)
-        d.ring(AriusLayers.VFX_SHARD, icon, r, u, size * 0.83, size, withAlpha(SOLID, intro), withAlpha(SOLID, intro), segments = 40)
-        val bladeA = icon.add(u.multiply(-size * 0.62)).add(r.multiply(-size * 0.62))
-        val bladeB = icon.add(u.multiply(size * 0.62)).add(r.multiply(size * 0.62))
-        d.band(AriusLayers.VFX_GLOW, bladeA, bladeB, r.subtract(u).normalize(), 0.055, withAlpha(HOT, 0.98f * a), withAlpha(HOT, 0.98f * a))
-        val barA = icon.add(u.multiply(size * 0.68)).add(r.multiply(-size * 0.68))
-        val barB = icon.add(u.multiply(-size * 0.68)).add(r.multiply(size * 0.68))
-        d.band(AriusLayers.VFX_SHARD, barA, barB, r.add(u).normalize(), 0.08, withAlpha(SOLID, intro), withAlpha(SOLID, intro))
+        val axis = anchor.tip.subtract(anchor.base)
+        val across = d.camForward.crossProduct(axis).let { if (it.lengthSquared() < 1e-5) d.camRight else it.normalize() }
+        val edge = anchor.base.lerp(anchor.tip, intro.toDouble())
+        d.band(AriusLayers.VFX_SHARD, anchor.base, edge, across, 0.105, withAlpha(INK, 0.92f * intro), withAlpha(INK, 0.86f * intro))
+        d.band(AriusLayers.VFX_SHARD, anchor.base, edge, across, 0.062, withAlpha(DEEP, intro), withAlpha(ICE, intro))
+        d.band(AriusLayers.VFX_GLOW, anchor.base, edge, across, 0.2, withAlpha(ICE, 0.55f * intro * pulse), withAlpha(ICE, 0.3f * intro * pulse))
+        val run = (t * 0.055f) % 1f
+        val glintA = anchor.base.lerp(anchor.tip, (run - 0.09f).coerceAtLeast(0f).toDouble())
+        val glintB = anchor.base.lerp(anchor.tip, (run + 0.09f).coerceAtMost(1f).toDouble())
+        d.band(AriusLayers.VFX_SHARD, glintA, glintB, across, 0.03, withAlpha(HOT, 0.2f * intro), withAlpha(HOT, intro))
+        for (i in 0 until 5) {
+            val k = (t * 0.045f + i * 0.2f) % 1f
+            val at = anchor.base.lerp(anchor.tip, 0.12 + 0.84 * ((i * 0.37f + 0.1f) % 1f)).add(across.multiply(0.09 * sin(k * 7f + i)))
+                .add(0.0, 0.05 + k * 0.42, 0.0)
+            val fade = (min(k, 1f - k) * 5f).coerceIn(0f, 1f) * intro
+            if (fade > 0.03f) d.billboard(AriusLayers.VFX_SHARD, at, 0.045 * (1f - k * 0.5f), withAlpha(DEEP, 0.95f * fade), (t * 3f + i * 40f).toDouble())
+        }
     }
 
-    private fun drawRelease(d: VfxDraw, r: Release, t: Float) {
+    /** Ende der Haltung: Ein goldener Schimmer läuft über die Klinge, jetzt darf man. Ohne Fenster bleibt er weiß und leise. */
+    private fun drawRelease(d: VfxDraw, world: net.minecraft.client.world.ClientWorld, r: Release, t: Float) {
+        val e = world.getEntityById(r.id) as? AriusEntity ?: return
+        val anchor = BladeAnchors.of(e) ?: return
         val k = (t / RELEASE_TICKS).coerceIn(0f, 1f)
+        val a = (1f - k) * (1f - k) * (if (r.open) 1f else 0.45f)
         val col = if (r.open) GOLD else 0xFFFFFFFF.toInt()
-        val radius = REACH * (0.75 + 0.6 * k)
-        val a = (1f - k) * (if (r.open) 0.92f else 0.5f)
-        d.ring(AriusLayers.VFX_GLOW, r.pos.add(0.0, 0.1, 0.0), Vec3d(1.0, 0.0, 0.0), Vec3d(0.0, 0.0, 1.0), radius - 0.35, radius, withAlpha(col, a), withAlpha(col, a), segments = 64)
+        if (e.sheathed) {
+            d.billboard(AriusLayers.VFX_FLARE, anchor.sheath, 0.5, withAlpha(col, a))
+            return
+        }
+        val across = d.camForward.crossProduct(anchor.tip.subtract(anchor.base)).let { if (it.lengthSquared() < 1e-5) d.camRight else it.normalize() }
+        d.band(AriusLayers.VFX_SHARD, anchor.base, anchor.tip, across, 0.085, withAlpha(GOLD_INK, 0.8f * a), withAlpha(GOLD_INK, 0.7f * a))
+        d.band(AriusLayers.VFX_SHARD, anchor.base, anchor.tip, across, 0.05, withAlpha(col, a), withAlpha(col, a))
+        d.billboard(AriusLayers.VFX_FLARE, anchor.tip, 0.5 + 0.5 * k, withAlpha(col, a))
     }
+
+    /** Während der Haltung und der Bestrafung bleibt das Bild ruhig (auch gegenüber dem Kameraschütteln von HHA). */
+    @JvmStatic
+    fun steadyView(): Boolean = active || PunishCam.hidesHands()
 }

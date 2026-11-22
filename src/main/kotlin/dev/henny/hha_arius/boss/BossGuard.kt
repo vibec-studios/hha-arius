@@ -47,7 +47,6 @@ object BossGuard {
                 if (block.disableSound().isEmpty) {
                     world.playSound(null, p.x, p.y, p.z, SoundEvents.ITEM_SHIELD_BREAK, SoundCategory.PLAYERS, 0.9f, 0.85f)
                 }
-                world.sendEntityStatus(p, 30.toByte())
             } else {
                 block.playBlockSound(world, p)
             }

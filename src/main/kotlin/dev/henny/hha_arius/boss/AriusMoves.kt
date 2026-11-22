@@ -536,6 +536,11 @@ class AriusMoves(private val f: EirholmFight) {
      * Ein Zug im Finale (seit 1.9.0 ein echter Kampf statt der drei Austausche): alle drei Haltungen, Iai-Züge aus der
      * Scheide, lange Ketten, Finten, Konter. [desperate] = unter 50 %: schnellere Wechsel, längere Ketten.
      */
+    private var unreachableFor = 0
+
+    /** Für die Sichtprüfung: Beginn jedes Finale-Zugs in Kampfticks. */
+    var debugTurns: ArrayList<Long>? = null
+
     fun turnFinale(desperate: Boolean): Script = script {
         val a = f.arius ?: return@script
         if (countering) return@script waitUntil(220) { !countering }
@@ -548,12 +553,28 @@ class AriusMoves(private val f: EirholmFight) {
             yieldAll(shiftStance(it))
             if (desperate) stanceUntil -= 80
         }
-        var t = f.target() ?: return@script wait(12)
-        if (flatDist(a, t) > 11.0 || !a.canSee(t)) {
-            approach(t, 7.5, 30, false)
-            t = f.target() ?: return@script wait(12)
-            if (flatDist(a, t) > 13.0 || !a.canSee(t)) return@script wait(8)
+        val reachable = f.target()
+        if (reachable == null) {
+            // Niemand ist am Boden erreichbar (schwebt, hängt am Rand): Nach drei Sekunden holt ihn ein Fernschnitt.
+            unreachableFor += 12
+            val far = if (unreachableFor >= 60) f.players().filter { a.canSee(it) }.minByOrNull { flatDist(a, it) } else null
+            if (far != null) {
+                unreachableFor = 0
+                yieldAll(nullCut(far))
+                yieldAll(script { footwork(24, false) })
+            } else {
+                wait(12)
+            }
+            return@script
         }
+        var t: ServerPlayerEntity = reachable
+        unreachableFor = 0
+        if (flatDist(a, t) > 11.0 || !a.canSee(t)) {
+            approach(t, 7.5, 40, false)
+            t = f.target() ?: return@script wait(12)
+            if (flatDist(a, t) > 13.0 || !a.canSee(t)) return@script wait(10)
+        }
+        debugTurns?.add(f.now)
         val d = flatDist(a, t)
         val now = f.now
         acting = true
@@ -1541,7 +1562,6 @@ class AriusMoves(private val f: EirholmFight) {
         f.sound("solvane.parry", a.entityPos, 2f, 0.9f)
         Vfx.flare(f.world, Vfx.Style.STORM, a.entityPos.add(0.0, 1.3, 0.0).add(f.facing(a).multiply(0.8)), 1.8f, 8)
         f.fx(FxKind.SLASH_ARC, a.entityPos.add(0.0, 1.3, 0.0), flatDir(a.entityPos, player.entityPos), a = 2.2f, b = 0.9f, life = 8)
-        player.sendMessage(Text.translatable("hha_arius.msg.parried").formatted(Formatting.RED), true)
         countering = true
         a.play(AriusPose.GUARD)
         f.task(punish(player, white))

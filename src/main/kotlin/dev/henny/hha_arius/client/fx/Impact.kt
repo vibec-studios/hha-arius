@@ -92,7 +92,7 @@ object CameraKick {
 
     /** [strength] in Grad (Ausschlag nach oben), [side] −1..1 seitlicher Anteil. */
     fun kick(strength: Float, side: Float = 0f) {
-        if (!enabled() || PunishCam.hidesHands()) return
+        if (!enabled() || CounterStance.steadyView()) return
         val now = ArtAnims.ticks.toFloat()
         // Ein stärkerer Stoß ersetzt einen schwächeren, der noch läuft.
         if (now - start < RISE + DECAY && strength < pitchAmp * envelope(now - start)) return
@@ -111,7 +111,7 @@ object CameraKick {
     /** Ausschlag (Grad) als (Gieren, Nicken), oder null. */
     @JvmStatic
     fun offset(tickDelta: Float): FloatArray? {
-        if (PunishCam.hidesHands()) return null
+        if (CounterStance.steadyView()) return null
         if (CinePlayer.active) return cineSway(tickDelta)
         val t = ArtAnims.ticks + tickDelta - start
         val e = envelope(t)

@@ -30,7 +30,7 @@ object AriusLayers {
         null
     }
 
-    private fun pipeline(name: String, blend: BlendFunction, depth: Boolean, glow: Float?): RenderPipeline? {
+    private fun pipeline(name: String, blend: BlendFunction, depth: Boolean, glow: Float?, flow: Boolean = false): RenderPipeline? {
         val b = base ?: return null
         return try {
             var builder = RenderPipeline.builder(b)
@@ -39,6 +39,8 @@ object AriusLayers {
                 .withDepthWrite(depth)
                 .withShaderDefine("VFX_NO_FOG")
             if (glow != null) builder = builder.withShaderDefine("VFX_GLOW", glow)
+            // Ohne VFX_FLOW zeigt der Shader die drei Rauschkanäle der Textur direkt als Farbe: ein Regenbogen.
+            if (flow) builder = builder.withShaderDefine("VFX_FLOW")
             RenderPipelines.register(builder.build())
         } catch (t: Throwable) {
             HhaArius.LOGGER.warn("Pipeline {} nicht angelegt: {}", name, t.toString())
@@ -50,6 +52,7 @@ object AriusLayers {
     private val moonPipe = pipeline("moon", BlendFunction.TRANSLUCENT, true, null)
     private val glowPipe = pipeline("moon_glow", BlendFunction.TRANSLUCENT_PREMULTIPLIED_ALPHA, false, 0.5f)
     private val attackGlowPipe = pipeline("attack_glow", BlendFunction.TRANSLUCENT_PREMULTIPLIED_ALPHA, false, 0.85f)
+    private val attackFlowPipe = pipeline("attack_flow", BlendFunction.TRANSLUCENT_PREMULTIPLIED_ALPHA, false, 0.85f, flow = true)
 
     private fun layer(name: String, pipe: RenderPipeline?, tex: Identifier, fallback: () -> RenderLayer): RenderLayer {
         if (pipe == null) return fallback()
@@ -68,13 +71,13 @@ object AriusLayers {
     val MOON_FLARE: RenderLayer by lazy { layer("moon_flare", glowPipe, VfxLayers.FLARE) { VfxLayers.FLARE_ADD } }
     /** Fog-free, full-brightness attack & telegraph layers that stay crisp in blizzards and 1500% fullbright gamma. */
     val VFX_GLOW: RenderLayer by lazy { layer("vfx_glow", attackGlowPipe, VfxLayers.GLOW) { VfxLayers.GLOW_ADD } }
-    val VFX_FLOW: RenderLayer by lazy { layer("vfx_flow", attackGlowPipe, VfxLayers.NOISE) { VfxLayers.FLOW_ADD } }
+    val VFX_FLOW: RenderLayer by lazy { layer("vfx_flow", attackFlowPipe, VfxLayers.NOISE) { VfxLayers.FLOW_ADD } }
     val VFX_FLARE: RenderLayer by lazy { layer("vfx_flare", attackGlowPipe, VfxLayers.FLARE) { VfxLayers.FLARE_ADD } }
     val VFX_RUNE: RenderLayer by lazy { layer("vfx_rune", attackGlowPipe, VfxLayers.RUNE_CIRCLE) { VfxLayers.RUNE_ADD } }
     val VFX_SHARD: RenderLayer by lazy { layer("vfx_shard", snowPipe, VfxLayers.SHARD) { VfxLayers.SHARD_ALPHA } }
 
     /** Erzwingt die Registrierung der Pipelines vor dem ersten Shader-Reload. */
     fun init() {
-        snowPipe; moonPipe; glowPipe; attackGlowPipe
+        snowPipe; moonPipe; glowPipe; attackGlowPipe; attackFlowPipe
     }
 }

@@ -50,6 +50,11 @@ class VerifyBoss : FabricClientGameTest {
                 "waves" -> waves()
                 "clash", "laststand" -> lastStand()
                 "shield" -> shield()
+                "tele" -> teleGallery()
+                "path" -> pathing()
+                "ice" -> iceBlade()
+                "fx" -> fxGallery()
+                "pace" -> pace()
                 else -> log("unknown case $c")
             }
             cmd("hhaarius stop")
@@ -637,9 +642,21 @@ class VerifyBoss : FabricClientGameTest {
                 f.moves.summit.debugJumpToLastStand()
             }
             check(waitUntil(1200, 1) { server { fight()?.moves?.summit?.stage == 2 } })
+            server { srv ->
+                val f = checkNotNull(fight())
+                val a = checkNotNull(f.arius)
+                val toward = a.entityPos.subtract(f.arenaCenter).let { Vec3d(it.x, 0.0, it.z) }.let { if (it.lengthSquared() < 1.0) Vec3d(1.0, 0.0, 0.0) else it.normalize() }
+                val at = f.clampToArena(a.entityPos.subtract(toward.multiply(-7.0)), 2.0)
+                player(srv).teleport(f.world, at.x, f.floorY, at.z, emptySet(), 0f, 8f, false)
+            }
+            tick(14)
             lookAtArius()
             shot("last_stand_windup")
-            check(waitUntil(180, 1) { server { fight()?.moves?.summit?.stage == 3 } })
+            tick(50)
+            lookAtArius()
+            shot("last_stand_cut")
+            check(waitUntil(400, 1) { server { fight()?.moves?.summit?.stage == 3 } })
+            tick(26)
             lookAtArius()
             shot("last_stand_open")
             check(server { srv ->
@@ -654,7 +671,7 @@ class VerifyBoss : FabricClientGameTest {
                 f.arius!!.damage(f.world, f.world.damageSources.playerAttack(player(srv)), f.ariusMax)
                 check(f.ariusHp <= 0f)
             }
-            log("last stand: tracked thrust, opening and lethal player hit passed with a knocked-out and disconnected ally")
+            log("storm breaks: three cuts, opening and lethal player hit passed with a knocked-out and disconnected ally")
         } finally {
             server { srv ->
                 for (b in bots) srv.playerManager.getPlayer(b.id)?.networkHandler?.onDisconnected(
@@ -662,6 +679,245 @@ class VerifyBoss : FabricClientGameTest {
             }
             bots.clear()
         }
+    }
+
+    /** Alle Markerformen im echten Sturm auf dem Gipfel, aus Spielerhöhe: früh, mitten im Laden, kurz vor dem Treffer, Treffer. */
+    private fun VerifyKit.teleGallery() {
+        finaleFight()
+        server { srv ->
+            val f = checkNotNull(fight())
+            f.startDirector(dev.henny.hha_arius.boss.script { while (true) yield(Unit) })
+            f.calls.reset()
+            f.atmos(dev.henny.hha_arius.net.AtmosMode.BLIZZARD, 1)
+            val c = f.arenaCenter
+            f.arius?.let { a -> f.place(a, Vec3d(c.x + 3.0, f.floorY, c.z + 26.0)) }
+            player(srv).teleport(f.world, c.x, f.floorY, c.z - 8.0, emptySet(), 0f, 24f, false)
+        }
+        tick(70)
+        for (round in 0 until 2) {
+            val ticks = 60
+            server { srv ->
+                val f = checkNotNull(fight())
+                val c = Vec3d(f.arenaCenter.x, f.floorY + 0.05, f.arenaCenter.z - 8.0)
+                val pace = dev.henny.hha.logic.boss.Telegraph.Pace.HEAVY
+                f.calls.ring(c.add(0.0, 0.0, 11.0), 4.5f, ticks, pace = pace)
+                f.calls.ring(c.add(-9.0, 0.0, 7.0), 3f, ticks, pace = pace, style = dev.henny.hha.logic.Vfx.Style.GOLD)
+                f.calls.line(c.add(5.0, 0.0, 3.0), c.add(10.0, 0.0, 18.0), 1.4f, ticks, pace)
+                f.calls.cone(c.add(-3.0, 0.0, 2.0), Vec3d(-0.3, 0.0, 1.0).normalize(), 7f, 40f, ticks, pace)
+            }
+            for (t in 0 until ticks) {
+                if (t == 10 || t == 34 || t == 56) shot("tele${round}_%02d".format(t))
+                tick(1)
+            }
+            server { srv ->
+                val f = checkNotNull(fight())
+                val c = Vec3d(f.arenaCenter.x, f.floorY + 0.05, f.arenaCenter.z - 8.0)
+                dev.henny.hha.logic.Vfx.shockwave(f.world, dev.henny.hha.logic.Vfx.Style.HEAVEN, c.add(0.0, 0.0, 11.0), 4.5f, 12, 1.2f)
+                dev.henny.hha.logic.Vfx.crescent(f.world, dev.henny.hha.logic.Vfx.Style.HEAVEN, c.add(-3.0, 1.1, 2.0), Vec3d(-0.3, 0.0, 1.0).normalize(), 7f, 1f, 10)
+                f.fx(dev.henny.hha_arius.net.FxKind.SLASH_ARC, c.add(5.0, 1.1, 3.0), Vec3d(0.3, 0.0, 1.0).normalize(), a = 6f, b = 0.2f, life = 12)
+            }
+            tick(3)
+            shot("tele${round}_hit")
+            tick(30)
+        }
+    }
+
+    /** Jeder Angriffseffekt einzeln auf dem Gipfel, mit Vergleichsbild ohne Effekt (für die Farbprüfung). */
+    private fun VerifyKit.fxGallery() {
+        finaleFight()
+        server { srv ->
+            val f = checkNotNull(fight())
+            f.startDirector(dev.henny.hha_arius.boss.script { while (true) yield(Unit) })
+            f.calls.reset()
+            val c = f.arenaCenter
+            f.arius?.let { a -> f.place(a, Vec3d(c.x + 3.5, f.floorY, c.z + 9.0)); f.face(a, Vec3d(c.x, f.floorY, c.z - 8.0)) }
+            player(srv).teleport(f.world, c.x, f.floorY, c.z - 8.0, emptySet(), 0f, 16f, false)
+        }
+        tick(60)
+        shot("fx_base")
+        val V = dev.henny.hha.logic.Vfx
+        val H = dev.henny.hha.logic.Vfx.Style.HEAVEN
+        val St = dev.henny.hha.logic.Vfx.Style.STORM
+        val So = dev.henny.hha.logic.Vfx.Style.SOUL
+        val G = dev.henny.hha.logic.Vfx.Style.GOLD
+        val K = dev.henny.hha_arius.net.FxKind.entries
+        fun kind(n: String) = K.first { it.name == n }
+        val fwd = Vec3d(0.0, 0.0, 1.0)
+        val list: List<Pair<String, (EirholmFight, Vec3d, dev.henny.hha_arius.boss.AriusEntity) -> Unit>> = listOf(
+            "crescent_h" to { f, p, _ -> V.crescent(f.world, H, p.add(0.0, 1.1, 0.0), fwd, 7f, 2.6f, 10) },
+            "crescent_s" to { f, p, _ -> V.crescent(f.world, St, p.add(0.0, 1.3, 0.0), fwd, 8f, 1.1f, 10) },
+            "wave_h" to { f, p, _ -> V.shockwave(f.world, H, p, 6f, 14, 1.4f) },
+            "wave_so" to { f, p, _ -> V.shockwave(f.world, So, p, 6f, 14, 1.4f) },
+            "wave_g" to { f, p, _ -> V.shockwave(f.world, G, p, 6f, 14, 1.4f) },
+            "nova" to { f, p, _ -> V.nova(f.world, H, p.add(0.0, 1.2, 0.0), 3f, 12) },
+            "flare" to { f, p, _ -> V.flare(f.world, St, p.add(0.0, 1.3, 0.0), 2f, 10) },
+            "beam" to { f, p, _ -> V.beam(f.world, H, p, p.add(0.0, 8.0, 0.0), 1f, 12) },
+            "slash" to { f, p, _ -> f.fx(kind("SLASH_ARC"), p.add(0.0, 1.1, 0.0), fwd, a = 5f, b = 0.3f, life = 14) },
+            "dash" to { f, p, _ -> f.fx(kind("DASH_STREAK"), p.add(-5.0, 0.0, 0.0), p.add(5.0, 0.0, 0.0), life = 12) },
+            "clear" to { f, p, _ -> f.fx(kind("CLEAR_WAVE"), p, a = 7f, life = 16) },
+            "seam" to { f, p, _ -> f.fx(kind("SEAM"), p.add(-6.0, 0.2, 0.0), p.add(6.0, 0.2, 0.0), a = 3f, life = 18) },
+            "cut" to { f, p, _ -> f.fx(kind("CUT_PLANE"), p.add(-5.0, 1.0, 0.0), Vec3d(10.0, 0.0, 0.0), a = 2f, b = 1f, life = 14) },
+            "breath" to { f, p, a -> f.fx(kind("DRAGON_BREATH"), a.entityPos, a = 10f, life = 18, e1 = a) },
+            "blade" to { f, p, a -> f.fxAll(kind("GIANT_BLADE"), a.entityPos, a = 14f, b = 8f, life = 24, e1 = a) },
+            "shatter" to { f, p, a -> f.fx(kind("BLADE_SHATTER"), a.entityPos.add(0.0, 1.0, 0.0), life = 18, e1 = a) },
+            "debris" to { f, p, _ -> f.fx(kind("DEBRIS_CLOUD"), p, a = 4f, life = 18) },
+        )
+        for ((name, fire) in list) {
+            server {
+                val f = checkNotNull(fight())
+                fire(f, Vec3d(f.arenaCenter.x, f.floorY + 0.05, f.arenaCenter.z - 1.0), f.arius!!)
+            }
+            tick(3)
+            shot("fx_$name")
+            tick(30)
+        }
+    }
+
+    /** Die Eisklinge, nah von vorn und von der Seite. */
+    private fun VerifyKit.iceBlade() {
+        vault()
+        server {
+            val f = checkNotNull(fight())
+            f.startDirector(dev.henny.hha_arius.boss.script { while (true) yield(Unit) })
+            f.calls.reset()
+            f.arius?.let { a ->
+                a.bladeState = dev.henny.hha_arius.boss.AriusBlade.ICE
+                a.sheathed = false
+                a.play(dev.henny.hha_arius.boss.AriusPose.IDLE)
+            }
+        }
+        tick(12)
+        client { it.options.hudHidden = true }
+        faceArius(3.6)
+        lookAtArius()
+        tick(6)
+        shot("ice_front")
+        server { srv ->
+            val f = checkNotNull(fight())
+            val a = checkNotNull(f.arius)
+            val d = f.facing(a)
+            val at = a.entityPos.add(-d.z * 3.0, 0.0, d.x * 3.0).add(d.multiply(1.0))
+            player(srv).teleport(f.world, at.x, a.y, at.z, emptySet(), 0f, 4f, false)
+        }
+        tick(3)
+        lookAtArius()
+        tick(4)
+        shot("ice_side")
+        client { it.options.hudHidden = false }
+    }
+
+    /** Arius muss um die Säulen des Tempels zum Spieler finden, ohne Festhängen und ohne Laufen auf der Stelle. */
+    private fun VerifyKit.pathing() {
+        temple()
+        server { fight()?.let { f -> f.startDirector(dev.henny.hha_arius.boss.script { while (true) yield(Unit) }) } }
+        tick(5)
+        val c = server { fight()!!.arenaCenter.let { Vec3d(it.x, fight()!!.floorY, it.z) } }
+        val r = server { fight()!!.arenaRadius }
+        server {
+            val f = fight()!!
+            val y = f.floorY
+            val sb = StringBuilder("floor map (center ${c.x},${c.z} r=$r)\n")
+            for (z in (c.z - r).toInt()..(c.z + r).toInt()) {
+                for (x in (c.x - r).toInt()..(c.x + r).toInt()) {
+                    val v = Vec3d(x + 0.5, y, z + 0.5)
+                    val inside = Math.hypot(v.x - c.x, v.z - c.z) <= r - 0.6
+                    val under = !f.world.getBlockState(net.minecraft.util.math.BlockPos.ofFloored(v).down()).isAir
+                    sb.append(if (!inside) ' ' else if (f.passable(v) && under) '.' else '#')
+                }
+                sb.append('\n')
+            }
+            log(sb.toString())
+        }
+        val rnd = java.util.Random(7)
+        var worst = 0
+        var failed = 0
+        var totalRatio = 0.0
+        var runs = 0
+        for (i in 0 until 14) {
+            fun free(): Vec3d {
+                repeat(200) {
+                    val ang = rnd.nextDouble() * Math.PI * 2
+                    val rr = (r - 3.0) * Math.sqrt(rnd.nextDouble())
+                    val p = c.add(Math.cos(ang) * rr, 0.0, Math.sin(ang) * rr)
+                    if (server { fight()!!.passable(p) && !fight()!!.world.getBlockState(net.minecraft.util.math.BlockPos.ofFloored(p).down()).isAir }) return p
+                }
+                return c
+            }
+            val from = free()
+            val to = free()
+            if (from.distanceTo(to) < 10.0) continue
+            server { srv ->
+                val f = fight()!!
+                f.place(f.arius!!, from)
+                player(srv).teleport(f.world, to.x, to.y, to.z, emptySet(), 0f, 0f, false)
+            }
+            tick(2)
+            var stuck = 0
+            var maxStuck = 0
+            var walked = 0.0
+            var last = from
+            var t = 0
+            var reached = false
+            while (t < 260) {
+                val now = server { srv ->
+                    val f = fight()!!
+                    val a = f.arius!!
+                    f.stepToward(a, player(srv).entityPos, 0.3)
+                    a.entityPos
+                }
+                val step = now.distanceTo(last)
+                walked += step
+                if (step < 0.02) stuck++ else stuck = 0
+                maxStuck = maxOf(maxStuck, stuck)
+                last = now
+                tick(1)
+                t++
+                if (Math.hypot(now.x - to.x, now.z - to.z) < 1.2) {
+                    reached = true
+                    break
+                }
+            }
+            val straight = Math.hypot(from.x - to.x, from.z - to.z)
+            if (!reached) log("path $i nav: " + server { fight()!!.debugNav() })
+            if (!reached) failed++ else {
+                totalRatio += walked / straight
+                runs++
+            }
+            worst = maxOf(worst, maxStuck)
+            log("path %d: straight %.1f walked %.1f ticks %d reached=%s longest stall %d, ends %.1f from goal, from=%s to=%s".format(i, straight, walked, t, reached, maxStuck, Math.hypot(last.x - to.x, last.z - to.z), from, to))
+        }
+        log("path: failed=$failed, longest stall=$worst ticks, average detour x%.2f over $runs runs".format(if (runs > 0) totalRatio / runs else 0.0))
+    }
+
+    /** Abstände der Züge in der letzten Phase, mit einem Spieler, der ausweicht. */
+    private fun VerifyKit.pace() {
+        finaleFight()
+        val log = ArrayList<Long>()
+        server { srv ->
+            val f = fight()!!
+            f.moves.debugTurns = log
+            f.ariusHp = f.ariusMax * 0.62f
+            val a = f.arius!!
+            val at = a.entityPos.add(6.0, 0.0, 0.0)
+            player(srv).teleport(f.world, at.x, at.y, at.z, emptySet(), 90f, 0f, false)
+        }
+        val rnd = java.util.Random(11)
+        for (t in 0 until 1500) {
+            if (t % 25 == 0) server { srv ->
+                val f = fight() ?: return@server
+                val p = player(srv)
+                val a = f.arius ?: return@server
+                val ang = rnd.nextDouble() * Math.PI * 2
+                val rr = 5.0 + rnd.nextDouble() * 6.0
+                val at = f.clampToArena(a.entityPos.add(Math.cos(ang) * rr, 0.0, Math.sin(ang) * rr), 2.0)
+                if (f.passable(Vec3d(at.x, f.floorY, at.z))) p.teleport(f.world, at.x, f.floorY, at.z, emptySet(), p.yaw, p.pitch, false)
+                f.ariusHp = maxOf(f.ariusHp, f.ariusMax * 0.55f)
+            }
+            tick(1)
+        }
+        val gaps = log.zipWithNext { x, y -> y - x }
+        log("pace: ${log.size} turns in 1500 ticks, gaps min=${gaps.minOrNull()} median=${gaps.sorted().getOrNull(gaps.size / 2)} max=${gaps.maxOrNull()}")
+        server { fight()?.moves?.debugTurns = null }
     }
 
     private fun VerifyKit.shield() {
@@ -683,6 +939,7 @@ class VerifyBoss : FabricClientGameTest {
             check(p.isBlocking)
             Damage.hit(p, a, Damage.Kind.SOLVANE, 3f, 1f)
             check(p.health == before && p.itemCooldownManager.isCoolingDown(shield) && !p.isBlocking)
+            log("shield: cooldown after one block = ${p.itemCooldownManager.getCooldownProgress(shield, 0f)}")
             Damage.hit(p, a, Damage.Kind.SOLVANE, 3f, 1f)
             check(p.health < before)
         }
