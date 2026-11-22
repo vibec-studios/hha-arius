@@ -3,6 +3,7 @@ package dev.henny.hha_arius.boss
 import dev.henny.hha.logic.Fx
 import dev.henny.hha_arius.net.AriusNet
 import dev.henny.hha_arius.net.HoldS2C
+import net.minecraft.network.packet.s2c.play.PositionFlag
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.network.ServerPlayerEntity
 import net.minecraft.server.world.ServerWorld
@@ -24,7 +25,10 @@ object Hold {
     private class State(
         val world: ServerWorld, val mode: Mode, val start: Long, val end: Long,
         var anchor: Vec3d?, val landing: Vec3d?, val fallback: Vec3d?, val deadline: Long,
+        val hadNoGravity: Boolean,
     )
+
+    private val KEEP_ROT = setOf(PositionFlag.X_ROT, PositionFlag.Y_ROT)
 
     private val held = HashMap<UUID, State>()
 
@@ -77,10 +81,18 @@ object Hold {
     private fun begin(player: ServerPlayerEntity, mode: Mode, ticks: Int, anchor: Vec3d?, landing: Vec3d?, fallback: Vec3d?) {
         val world = player.entityWorld as? ServerWorld ?: return
         val now = world.time
+        val prev = held[player.uuid]
+        val hadNoGravity = prev?.hadNoGravity ?: player.hasNoGravity()
         // Läuft schon eine Sequenz, gilt deren Obergrenze weiter; sonst beginnt eine neue mit HOLD_MAX.
-        val deadline = held[player.uuid]?.deadline ?: (now + (nextLimit.remove(player.uuid) ?: AriusTimings.HOLD_MAX))
+        val deadline = prev?.deadline ?: (now + (nextLimit.remove(player.uuid) ?: AriusTimings.HOLD_MAX))
         val end = minOf(now + ticks.coerceAtLeast(1), deadline)
-        held[player.uuid] = State(world, mode, now, end, anchor, landing, fallback, deadline)
+        held[player.uuid] = State(world, mode, now, end, anchor, landing, fallback, deadline, hadNoGravity)
+        player.setNoGravity(if (mode == Mode.FREEZE) true else hadNoGravity)
+        if (mode == Mode.FREEZE) {
+            player.fallDistance = 0.0
+            player.velocity = Vec3d.ZERO
+            player.velocityDirty = true
+        }
         AriusNet.send(player, HoldS2C(true, ((end - now).toInt() + 5).coerceAtMost(80)))
         player.stopUsingItem()
     }
@@ -98,7 +110,10 @@ object Hold {
         val state = held[player.uuid] ?: return
         if (state.mode != Mode.FREEZE) return
         state.anchor = to
-        player.teleport(state.world, to.x, to.y, to.z, emptySet(), player.yaw, player.pitch, false)
+        player.fallDistance = 0.0
+        player.velocity = Vec3d.ZERO
+        player.velocityDirty = true
+        player.teleport(state.world, to.x, to.y, to.z, KEEP_ROT, 0f, 0f, false)
     }
 
     /** Verlängert die laufende Haltung (innerhalb ihrer Obergrenze) und schickt die neue Dauer an den Client. */
@@ -107,7 +122,7 @@ object Hold {
         val now = state.world.time
         val end = minOf(now + ticks.coerceAtLeast(1), state.deadline)
         if (end <= state.end) return
-        held[player.uuid] = State(state.world, state.mode, state.start, end, state.anchor, state.landing, state.fallback, state.deadline)
+        held[player.uuid] = State(state.world, state.mode, state.start, end, state.anchor, state.landing, state.fallback, state.deadline, state.hadNoGravity)
         AriusNet.send(player, HoldS2C(true, ((end - now).toInt() + 5).coerceAtMost(80)))
     }
 
@@ -119,6 +134,7 @@ object Hold {
 
     fun release(player: ServerPlayerEntity, grace: Int = AriusTimings.HOLD_GRACE) {
         val state = held.remove(player.uuid) ?: return
+        player.setNoGravity(state.hadNoGravity)
         val now = state.world.time
         graceUntil[player.uuid] = now + grace
         lockoutUntil[player.uuid] = now + AriusTimings.HOLD_LOCKOUT
@@ -127,7 +143,9 @@ object Hold {
 
     /** Sofort und ohne Schonfrist lösen (Tod, Disconnect, Kampfende). */
     fun drop(player: ServerPlayerEntity) {
-        if (held.remove(player.uuid) != null) AriusNet.send(player, HoldS2C(false, 0))
+        val state = held.remove(player.uuid) ?: return
+        player.setNoGravity(state.hadNoGravity)
+        AriusNet.send(player, HoldS2C(false, 0))
     }
 
     fun forget(id: UUID) {
@@ -143,17 +161,25 @@ object Hold {
             val player = server.playerManager.getPlayer(id)
             if (player == null || player.isRemoved || !player.isAlive || player.entityWorld !== state.world) {
                 held.remove(id)
-                player?.let { AriusNet.send(it, HoldS2C(false, 0)) }
+                player?.let {
+                    it.setNoGravity(state.hadNoGravity)
+                    AriusNet.send(it, HoldS2C(false, 0))
+                }
                 continue
             }
             val now = state.world.time
             when (state.mode) {
                 Mode.FREEZE -> {
                     val anchor = state.anchor ?: player.entityPos
+                    player.fallDistance = 0.0
                     if (player.entityPos.squaredDistanceTo(anchor) > 0.09) {
-                        player.teleport(state.world, anchor.x, anchor.y, anchor.z, emptySet(), player.yaw, player.pitch, false)
+                        player.teleport(state.world, anchor.x, anchor.y, anchor.z, KEEP_ROT, 0f, 0f, false)
                     }
-                    if (player.velocity.lengthSquared() > 1e-4) Fx.launchPlayer(player, Vec3d.ZERO)
+                    if (player.velocity.lengthSquared() > 1e-4) {
+                        player.velocity = Vec3d.ZERO
+                        player.velocityDirty = true
+                        Fx.launchPlayer(player, Vec3d.ZERO)
+                    }
                     if (now >= state.end) release(player)
                 }
                 Mode.FLIGHT -> {

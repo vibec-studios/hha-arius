@@ -1736,7 +1736,7 @@ class AriusMoves(private val f: EirholmFight) {
                 yield(Unit)
             }
             // 7) Abschluss: Klinge neben ihm in den Boden, die Druckwelle schleudert ihn weg.
-            if (!beat(player, AriusPose.STAB_GROUND, 10, 4.5f, Damage.Kind.IMPACT, Vec3d.ZERO, 0.0, "arius.stab_ground", 0.85f, healthy, heavy = true)) return@script
+            if (!beat(player, AriusPose.STAB_GROUND, 10, 4.5f, Damage.Kind.IMPACT, Vec3d.ZERO, 0.0, "arius.stab_ground", 0.85f, healthy, heavy = true, finisher = true)) return@script
             Vfx.shockwave(f.world, style, a.entityPos, 4.5f, 12, 1.6f)
             f.fx(FxKind.CLEAR_WAVE, a.entityPos, a = 5f, life = 14)
             if (f.canSequence(player) && Hold.isHeld(player)) {
@@ -1777,7 +1777,7 @@ class AriusMoves(private val f: EirholmFight) {
     /** Ein Schlag der Bestrafung: Pose mit genau [w] Ticks bis zum Treffer, dann Treffer, Wucht, Rückstoß. */
     private suspend fun SequenceScope<Unit>.beat(
         v: ServerPlayerEntity, pose: Int, w: Int, base: Float, kind: Damage.Kind, push: Vec3d, lift: Double,
-        sound: String, pitch: Float, healthy: Boolean, heavy: Boolean = false,
+        sound: String, pitch: Float, healthy: Boolean, heavy: Boolean = false, finisher: Boolean = false,
     ): Boolean {
         val a = f.arius ?: return false
         Hold.extend(v, w + 24)
@@ -1788,7 +1788,7 @@ class AriusMoves(private val f: EirholmFight) {
             f.face(a, v.entityPos)
             yield(Unit)
         }
-        if (!impact(v, base, kind, sound, pitch, healthy, heavy)) return false
+        if (!impact(v, base, kind, sound, pitch, healthy, heavy, finisher)) return false
         if (push.lengthSquared() > 1e-4 || lift > 0.0) {
             val goal = v.entityPos.add(push).add(0.0, lift, 0.0)
             drive(v, goal, if (lift > 0.0) 6 else 3)
@@ -1798,7 +1798,7 @@ class AriusMoves(private val f: EirholmFight) {
     }
 
     /** Treffer selbst (Schaden über die Sequenz, aus vollem Leben gedeckelt), Funken, Trefferpause, Impact-Frame. */
-    private fun impact(v: ServerPlayerEntity, base: Float, kind: Damage.Kind, sound: String, pitch: Float, healthy: Boolean, heavy: Boolean): Boolean {
+    private fun impact(v: ServerPlayerEntity, base: Float, kind: Damage.Kind, sound: String, pitch: Float, healthy: Boolean, heavy: Boolean, finisher: Boolean = false): Boolean {
         val a = f.arius ?: return false
         if (!punishOn(v)) return false
         var b = base
@@ -1806,7 +1806,12 @@ class AriusMoves(private val f: EirholmFight) {
             val room = (v.health + v.absorptionAmount - 2f) / BossConfig.damageFor(f.scaling.count)
             b = minOf(b, room.coerceAtLeast(0f))
         }
-        if (b > 0.05f) f.hurtHeld(v, b, kind)
+        if (b > 0.05f) {
+            f.hurtHeld(v, b, kind)
+            // Cancel vanilla damage knockback immediately so it never fights the frozen anchor.
+            v.velocity = Vec3d.ZERO
+            v.velocityDirty = true
+        }
         val contact = v.entityPos.add(0.0, 1.1, 0.0)
         f.ambient(sound, contact, 2.4f, pitch)
         if (heavy) f.ambient("hold.impact", contact, 2.2f, 0.7f)
@@ -1814,10 +1819,11 @@ class AriusMoves(private val f: EirholmFight) {
         if (kind == Damage.Kind.SOLVANE) f.fx(FxKind.SLASH_ARC, a.entityPos.add(0.0, 1.1, 0.0), flatDir(a.entityPos, v.entityPos), a = 2.6f, b = 0.4f, life = 9)
         f.world.spawnParticles(net.minecraft.particle.ParticleTypes.SNOWFLAKE, contact.x, contact.y, contact.z, 10, 0.25, 0.3, 0.25, 0.12)
         val stop = if (heavy) 3.2f else 2.2f
+        val kick = if (finisher) 0.55f else 0f
         for (p in f.audience()) {
             if (p.squaredDistanceTo(contact) > 64.0 * 64.0) continue
             dev.henny.hha_arius.net.AriusNet.send(p, dev.henny.hha_arius.net.BeatS2C(a.id, contact.x, contact.y, contact.z, stop,
-                0f, 0f))
+                kick, 0f))
         }
         return true
     }

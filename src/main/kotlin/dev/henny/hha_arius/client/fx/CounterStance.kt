@@ -132,7 +132,7 @@ object CounterStance {
         d.billboard(AriusLayers.VFX_FLARE, anchor.tip, 0.5 + 0.5 * k, withAlpha(col, a))
     }
 
-    /** Während der Haltung und der Bestrafung bleibt das Bild ruhig (auch gegenüber dem Kameraschütteln von HHA). */
+    /** Während der Haltung, der Bestrafung und gehaltener Griffe bleibt das Bild ruhig (auch gegenüber dem Kameraschütteln von HHA). */
     @JvmStatic
-    fun steadyView(): Boolean = active || PunishCam.hidesHands()
+    fun steadyView(): Boolean = active || PunishCam.hidesHands() || HoldClient.isHeld()
 }

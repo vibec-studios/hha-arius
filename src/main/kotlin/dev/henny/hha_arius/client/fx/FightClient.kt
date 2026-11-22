@@ -90,7 +90,10 @@ object FightClient {
     private fun beat(p: BeatS2C, client: MinecraftClient) {
         val world = client.world ?: return
         if (p.attacker >= 0) HitStop.stop(p.attacker, ArtAnims.ticks.toFloat(), p.stop.coerceIn(0f, 8f))
-        if (p.kick > 0f) CameraKick.kick(p.kick, if (world.random.nextBoolean()) 0.6f else -0.6f)
+        if (p.kick > 0f) {
+            if (PunishCam.hidesHands()) PunishCam.impulse(p.kick)
+            else CameraKick.kick(p.kick, if (world.random.nextBoolean()) 0.6f else -0.6f)
+        }
         if (p.frame > 0f && AriusClientConfig.flash) ImpactFrame.trigger(p.frame)
         val fx = AriusClientConfig.fx.coerceIn(0f, 1f)
         repeat((14 * fx).toInt()) {
@@ -130,6 +133,25 @@ object PunishCam {
     private var prevRigPos: Vec3d? = null
     private var rigLook: Vec3d? = null
     private var prevRigLook: Vec3d? = null
+    private var impulseStart = -100f
+    private var impulseAmp = 0f
+
+    /** One short, soft vertical beat on a heavy finisher; never stacks or oscillates. */
+    fun impulse(strength: Float) {
+        if (!CameraKick.enabled()) return
+        val now = ArtAnims.ticks.toFloat()
+        if (now - impulseStart < 6f) return
+        impulseStart = now
+        impulseAmp = strength.coerceIn(0f, 0.8f)
+    }
+
+    private fun impulsePitch(td: Float): Double {
+        if (impulseAmp <= 0.001f) return 0.0
+        val t = ArtAnims.ticks + td - impulseStart
+        if (t < 0f || t >= 4.5f) return 0.0
+        val env = if (t < 0.8f) t / 0.8f else (1f - (t - 0.8f) / 3.7f).let { it * it }
+        return (impulseAmp * env).toDouble()
+    }
 
     /** Für die Sichtprüfung: Kameraort und Blickziel des letzten Ticks. */
     fun debugRig(): Pair<Vec3d, Vec3d>? {
@@ -168,13 +190,14 @@ object PunishCam {
         prevRigPos = null
         rigLook = null
         prevRigLook = null
+        impulseStart = -100f
+        impulseAmp = 0f
     }
 
     fun tick(client: MinecraftClient) {
         prevK = k
         if (on && (ArtAnims.ticks >= until || client.player?.isAlive != true)) on = false
-        val want = if (on) 1f else 0f
-        k = if (want > k) (k + 0.2f).coerceAtMost(1f) else (k - 0.14f).coerceAtLeast(0f)
+        k = if (on) (k + 0.15f).coerceAtMost(1f) else (k - 0.12f).coerceAtLeast(0f)
         if (k <= 0f) {
             clearRig()
             return
@@ -255,12 +278,14 @@ object PunishCam {
         val target = p0.lerp(p1, td.toDouble())
         val focusAt = l0.lerp(l1, td.toDouble())
         val w = ease(kk)
-        val pos = cam.lerp(target, w)
+        val pos = if (w >= 0.9999) target else cam.lerp(target, w)
         val look = focusAt.subtract(pos)
         val flat = sqrt(look.x * look.x + look.z * look.z)
         val wantYaw = Math.toDegrees(atan2(-look.x, look.z))
-        val wantPitch = -Math.toDegrees(atan2(look.y, flat))
-        return doubleArrayOf(pos.x, pos.y, pos.z, lerpAngle(yaw.toDouble(), wantYaw, w), pitch + (wantPitch - pitch) * w)
+        val wantPitch = -Math.toDegrees(atan2(look.y, flat)) + impulsePitch(td)
+        val outYaw = if (w >= 0.9999) wantYaw else lerpAngle(yaw.toDouble(), wantYaw, w)
+        val outPitch = if (w >= 0.9999) wantPitch else pitch + (wantPitch - pitch) * w
+        return doubleArrayOf(pos.x, pos.y, pos.z, outYaw, outPitch)
     }
 }
 

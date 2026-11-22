@@ -94,10 +94,14 @@ class MaceCatch(private val f: EirholmFight) {
                 move(top, bottom, 4, down = true)
                 // Preserve at least half a heart even with damage scaling or repeated strikes.
                 val damage = (p.health - 1f).coerceIn(0f, 3f)
-                if (f.canSequence(p) && Hold.isHeld(p)) Hold.hitting { Damage.hit(p, a, Damage.Kind.IMPACT, damage, 1f) }
+                if (f.canSequence(p) && Hold.isHeld(p)) {
+                    Hold.hitting { Damage.hit(p, a, Damage.Kind.IMPACT, damage, 1f) }
+                    p.velocity = Vec3d.ZERO
+                    p.velocityDirty = true
+                }
                 f.ambient("hold.impact", bottom, 2.4f, 1.08f - strike * 0.12f)
                 f.fx(FxKind.CLEAR_WAVE, bottom, a = 2.8f + strike, life = 10)
-                f.calls.hitShake(bottom, 1.7f, 14f)
+                if (strike == 2) f.calls.hitShake(bottom, 1.2f, 14f)
                 wait(4)
             }
         } finally {

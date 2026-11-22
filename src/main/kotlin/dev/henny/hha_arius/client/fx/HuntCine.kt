@@ -225,7 +225,7 @@ object HuntCine {
     /** Kamera-Kippen in Grad (Dutch Tilt + Hängebrücke). */
     @JvmStatic
     fun roll(tickDelta: Float): Float {
-        if (!CameraKick.enabled() || !inEirholm()) return 0f
+        if (!CameraKick.enabled() || !inEirholm() || CounterStance.steadyView()) return 0f
         val t = ticks + tickDelta
         val shake = if (tremor > 0.01f) (sin(t * 2.7f) * 0.7f + sin(t * 4.1f + 1.3f) * 0.4f) * tremor else 0f
         return rollAng + shake + RopeBridges.localRoll(tickDelta)
@@ -234,7 +234,7 @@ object HuntCine {
     /** Zittern (Gieren, Nicken) in Grad. */
     @JvmStatic
     fun jitter(tickDelta: Float): FloatArray? {
-        if (tremor < 0.01f || !CameraKick.enabled() || !inEirholm()) return null
+        if (tremor < 0.01f || !CameraKick.enabled() || !inEirholm() || CounterStance.steadyView()) return null
         val t = ticks + tickDelta
         return floatArrayOf(sin(t * 3.3f) * 0.35f * tremor, sin(t * 2.9f + 0.7f) * 0.45f * tremor)
     }
