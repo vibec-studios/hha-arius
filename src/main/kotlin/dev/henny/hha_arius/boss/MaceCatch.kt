@@ -50,6 +50,8 @@ class MaceCatch(private val f: EirholmFight) {
         val grip = a.entityPos.add(dir.multiply(1.16)).add(left.multiply(0.25))
         val top = Vec3d(grip.x, ground.y + 1.2, grip.z)
         val bottom = Vec3d(grip.x, ground.y + 0.06, grip.z)
+        val floorProbe = p.boundingBox.offset(bottom.subtract(start).add(0.0, -0.18, 0.0))
+        if (!f.world.getBlockCollisions(p, floorProbe).iterator().hasNext()) return false
         fun clear(from: Vec3d, to: Vec3d) = (0..8).all { i ->
             val sample = from.lerp(to, i / 8.0)
             f.world.isSpaceEmpty(p, p.boundingBox.offset(sample.subtract(start)))
@@ -65,6 +67,7 @@ class MaceCatch(private val f: EirholmFight) {
     private fun slam(a: AriusEntity, p: ServerPlayerEntity, start: Vec3d, top: Vec3d, bottom: Vec3d): Script = script {
         f.face(a, p.entityPos)
         a.play(AriusPose.MACE_CATCH, 5)
+        p.sendMessage(Text.empty(), true)
         Hold.allowLong(p, 58)
         Hold.freeze(p, 58, start)
         AriusNet.send(p, CineCamS2C(true, a.id, 52, 0))

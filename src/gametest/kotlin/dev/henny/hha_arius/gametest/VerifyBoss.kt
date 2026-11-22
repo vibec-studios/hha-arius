@@ -251,7 +251,8 @@ class VerifyBoss : FabricClientGameTest {
                 val f = checkNotNull(fight())
                 val a = checkNotNull(f.arius)
                 val c = f.arenaCenter
-                val axis = Vec3d(c.x - a.x, 0.0, c.z - a.z).normalize()
+                val delta = Vec3d(c.x - a.x, 0.0, c.z - a.z)
+                val axis = if (delta.lengthSquared() > 1e-6) delta.normalize() else Vec3d(0.0, 0.0, 1.0)
                 val offset = Vec3d(-axis.z, 0.0, axis.x).multiply(7.8)
                 val at = Vec3d(c.x, f.floorY, c.z).add(offset).add(axis.multiply(4.5))
                 val yaw = (Math.toDegrees(atan2(c.z - at.z, c.x - at.x)) - 90.0).toFloat()
