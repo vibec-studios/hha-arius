@@ -141,8 +141,17 @@ object GroundWarnings {
             Vfx.Kind.TELEGRAPH_LINE -> {
                 val flat = Vec3d(vector.x - origin.x, 0.0, vector.z - origin.z)
                 if (flat.lengthSquared() < 1e-6) return true
-                val side = Vec3d(-flat.z, 0.0, flat.x).normalize().multiply(radius)
-                rims += polygon(listOf(origin.add(side), vector.add(side), vector.subtract(side), origin.subtract(side)), ground)
+                val angle = atan2(flat.z, flat.x)
+                val segments = ceil(radius * PI / 0.55).toInt().coerceIn(12, 90)
+                val corners = buildList {
+                    for ((center, start) in listOf(vector to angle - PI / 2.0, origin to angle + PI / 2.0)) {
+                        for (i in 0..segments) {
+                            val a = start + PI * i / segments
+                            add(center.add(radius * cos(a), 0.0, radius * sin(a)))
+                        }
+                    }
+                }
+                rims += polygon(corners, ground)
             }
             else -> {
                 val heading = atan2(vector.z, vector.x)
@@ -263,13 +272,17 @@ object GroundWarnings {
         val hole = if (ring) inner.coerceIn(0.0, radius) else 0.0
         val length = if (line) axis.length() else radius - hole
         val width = if (line) radius * 2.0 else radius * half * 2.0
-        val rows = ceil(length / 0.85).toInt().coerceIn(1, 100)
-        val cols = ceil(width / 0.85).toInt().coerceIn(if (line) 1 else 12, 180)
+        val rows = ceil((length + if (line) radius * 2.0 else 0.0) / 0.85).toInt().coerceIn(1, 100)
+        val cols = ceil(width / 0.85).toInt().coerceIn(12, 180)
         fun point(i: Int, j: Int): Vec3d {
             val u = i.toDouble() / rows
             val v = j.toDouble() / cols
-            val pos = if (line) origin.add(axis.multiply(u)).add(side.multiply((v * 2.0 - 1.0) * radius))
-            else {
+            val pos = if (line) {
+                val across = (v * 2.0 - 1.0) * radius
+                val cap = sqrt((radius * radius - across * across).coerceAtLeast(0.0))
+                val along = (length + 2.0 * cap) * u - cap
+                origin.add(axis.multiply(along / length)).add(side.multiply(across))
+            } else {
                 val r = if (ring) radius - length * u else length * u
                 val a = heading + (v * 2.0 - 1.0) * half
                 origin.add(r * cos(a), 0.0, r * sin(a))

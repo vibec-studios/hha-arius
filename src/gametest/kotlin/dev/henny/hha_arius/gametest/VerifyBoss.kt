@@ -8,7 +8,6 @@ import dev.henny.hha_arius.boss.Scenes
 import dev.henny.hha_arius.boss.Script
 import dev.henny.hha_arius.boss.script
 import dev.henny.hha_arius.client.fx.ParryHud
-import net.minecraft.client.option.Perspective
 import com.mojang.authlib.GameProfile
 import dev.henny.hha_arius.boss.Damage
 import dev.henny.hha_arius.boss.EirholmFight
@@ -44,35 +43,45 @@ import kotlin.math.sqrt
 class VerifyBoss : FabricClientGameTest {
     override fun runTest(context: ClientGameTestContext) = VerifyKit.run(context, "boss") {
         val cases = System.getProperty("arius.verify.case", "punish").split(',').map { it.trim() }
+        val failures = ArrayList<String>()
         for (c in cases) {
             log("=== case $c")
-            when (c) {
-                "stance" -> stance()
-                "punish" -> punish()
-                "parry" -> parry()
-                "exact" -> parryExact()
-                "classic" -> classic()
-                "mace" -> mace()
-                "macecatch" -> maceCatch()
-                "parrycue" -> parryCue()
-                "forge" -> forge()
-                "kickpose" -> kickPose()
-                "clash", "laststand", "climax" -> climax()
-                "hole" -> hole(feed = true)
-                "holefail" -> hole(feed = false)
-                "duo" -> duo()
-                "waves" -> waves()
-                "shield" -> shield()
-                "tele" -> teleGallery()
-                "path" -> pathing()
-                "ice" -> iceBlade()
-                "fx" -> fxGallery()
-                "pace" -> pace()
-                else -> log("unknown case $c")
+            try {
+                when (c) {
+                    "stance" -> stance()
+                    "punish" -> punish()
+                    "parry" -> parry()
+                    "exact" -> parryExact()
+                    "classic" -> classic()
+                    "mace" -> mace()
+                    "macecatch" -> maceCatch()
+                    "parrycue" -> parryCue()
+                    "forge" -> forge()
+                    "templehorizon" -> templeHorizon()
+                    "vaultpace" -> vaultPace()
+                    "kickpose" -> kickPose()
+                    "clash", "laststand", "climax" -> climax()
+                    "hole" -> hole(feed = true)
+                    "holefail" -> hole(feed = false)
+                    "duo" -> duo()
+                    "waves" -> waves()
+                    "shield" -> shield()
+                    "tele" -> teleGallery()
+                    "path" -> pathing()
+                    "ice" -> iceBlade()
+                    "fx" -> fxGallery()
+                    "pace" -> pace()
+                    else -> log("unknown case $c")
+                }
+            } catch (e: IllegalStateException) {
+                log("$c failed: ${e.stackTraceToString()}")
+                failures.add(c)
+            } finally {
+                cmd("hhaarius stop")
+                tick(40)
             }
-            cmd("hhaarius stop")
-            tick(40)
         }
+        check(failures.isEmpty()) { "Failed verify cases: $failures" }
     }
 
     private fun VerifyKit.parryCue() {
@@ -103,7 +112,6 @@ class VerifyBoss : FabricClientGameTest {
             f.arius!!.play(AriusPose.IDLE)
         }
         faceArius(1.45)
-        client { it.options.perspective = Perspective.THIRD_PERSON_BACK }
         godMode = false
         try {
             repeat(3) { index ->
@@ -135,7 +143,6 @@ class VerifyBoss : FabricClientGameTest {
             log("mace catch: first two attacks accepted, third held, three impacts, released at health $health")
         } finally {
             godMode = true
-            client { it.options.perspective = Perspective.FIRST_PERSON }
             server { player(it).setStackInHand(Hand.MAIN_HAND, ItemStack(dev.henny.hha_arius.gear.GearItems.SOLVANE)) }
         }
     }
@@ -177,6 +184,38 @@ class VerifyBoss : FabricClientGameTest {
         }
         check(waitUntil(120, 1) { server { Hold.isHeld(player(it)) } })
         burst("kick_pose", 12, 4)
+    }
+
+    private fun VerifyKit.templeHorizon() {
+        temple()
+        server { srv ->
+            val f = checkNotNull(fight())
+            val c = f.abs(dev.henny.hha_arius.arena.ArenaLayout.CUT_STAND)
+            val p = player(srv)
+            p.teleport(f.world, c.x + 4.0, f.floorY, c.z + 10.0, emptySet(), 155f, 0f, false)
+            f.calls.reset()
+            f.startDirector(f.scenes.theCut())
+        }
+        check(waitUntil(150, 1) { server { fight()?.arius?.pose == AriusPose.SPIN_CUT } })
+        burst("temple_horizon", 7, 2)
+    }
+
+    private fun VerifyKit.vaultPace() {
+        vault()
+        var moves = 0
+        var active = 0
+        var previous = -1
+        for (t in 0 until 260) {
+            val a = server { fight()?.arius?.let { it.pose to it.entityPos } } ?: break
+            if (a.first != previous && a.first != AriusPose.IDLE) moves++
+            if (a.first != AriusPose.IDLE) active++
+            previous = a.first
+            if (t % 25 == 0) {
+                lookAtArius()
+                shot("vault_activity_%03d".format(t))
+            } else tick(1)
+        }
+        log("vault: $moves non-idle pose changes, $active/260 ticks in non-idle poses")
     }
 
     private fun VerifyKit.climax() {

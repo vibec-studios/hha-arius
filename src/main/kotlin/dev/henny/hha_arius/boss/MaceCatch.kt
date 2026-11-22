@@ -1,5 +1,7 @@
 package dev.henny.hha_arius.boss
 
+import dev.henny.hha_arius.net.AriusNet
+import dev.henny.hha_arius.net.CineCamS2C
 import dev.henny.hha_arius.net.FxKind
 import net.minecraft.entity.damage.DamageSource
 import net.minecraft.entity.damage.DamageTypes
@@ -56,10 +58,10 @@ class MaceCatch(private val f: EirholmFight) {
     }
 
     private fun slam(a: AriusEntity, p: ServerPlayerEntity, start: Vec3d, top: Vec3d, bottom: Vec3d): Script = script {
-        val sheathed = a.sheathed
         f.face(a, p.entityPos)
         a.play(AriusPose.MACE_CATCH, 5)
         Hold.freeze(p, 58, start)
+        AriusNet.send(p, CineCamS2C(true, a.id, 52, 0))
         f.fxAll(FxKind.MACE_GRIP, start, life = 50, e1 = p)
         f.ambient("arius.parry", start, 2.8f, 0.8f)
         suspend fun SequenceScope<Unit>.move(from: Vec3d, to: Vec3d, ticks: Int, down: Boolean = false) {
@@ -92,7 +94,7 @@ class MaceCatch(private val f: EirholmFight) {
         } finally {
             if (f.canSequence(p)) p.onLanding()
             Hold.release(p)
-            a.sheathed = sheathed
+            AriusNet.send(p, CineCamS2C(false, a.id, 0, 0))
             a.play(AriusPose.IDLE)
         }
     }

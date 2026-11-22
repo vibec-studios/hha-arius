@@ -1691,7 +1691,7 @@ class Scenes(private val f: EirholmFight) {
         for (i in 0..6) {
             for (p in belt.hits(f.players())) {
                 val along = p.entityPos.subtract(center).dotProduct(dir)
-                if (along <= i - 3 && hit.add(p.uuid)) f.hurt(p, 11f, Damage.Kind.NULL_CUT)
+                if (kotlin.math.abs(along - (i - 2.7)) <= 1.0 && hit.add(p.uuid)) f.hurt(p, 11f, Damage.Kind.NULL_CUT)
             }
             yield(Unit)
         }
