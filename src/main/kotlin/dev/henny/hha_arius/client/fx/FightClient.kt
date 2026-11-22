@@ -453,12 +453,6 @@ object ParryHud {
         fromTelegraphs.clear()
         if (!holding(client)) return
         val player = client.player ?: return
-        client.world?.let { world ->
-            val delay = rtt(client) + PRESS_DELAY
-            GroundWarnings.parryWindows(world, player.entityPos) { origin, left ->
-                fromTelegraphs.add(Cue(-1, origin.add(0.0, 1.6, 0.0), t + left - delay, GOLD, lead))
-            }
-        }
         scanTelegraphs(client, player.entityPos)
         announce(client)
     }

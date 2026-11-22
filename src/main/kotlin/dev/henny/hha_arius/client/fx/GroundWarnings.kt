@@ -7,72 +7,17 @@ import dev.henny.hha.net.VfxPayload
 import dev.henny.hha_arius.arena.ArenaDimension
 import net.minecraft.client.render.VertexConsumer
 import net.minecraft.client.world.ClientWorld
-import net.minecraft.util.math.BlockPos
-import net.minecraft.util.math.Direction
 import net.minecraft.util.math.Vec3d
 import kotlin.math.PI
-import kotlin.math.abs
-import kotlin.math.atan2
 import kotlin.math.ceil
 import kotlin.math.cos
-import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
-import kotlin.math.sqrt
 
-/** Eirholm attack footprints. The pale fill reaches the end at the same tick as the strike. */
+/** Tracks nearby HHA warnings so the blizzard leaves their original frost surface visible. */
 object GroundWarnings {
-    private class Palette(val edge: Int, val resting: Int, val queued: Int)
-
-    private val FROST = Palette(0xFF102E50.toInt(), 0xFF285581.toInt(), 0xFF8ED0EC.toInt())
-    // Gold is the ward color called out by the White Hole and duo instructions.
-    private val SAFE = Palette(0xFF4D3211.toInt(), 0xFF9B6C26.toInt(), 0xFFFFDE8D.toInt())
-
-    /** Punktfolge auf dem Boden, je Punkt die Normale zur Innenseite (auf Gehrung gestreckt). */
-    private class Poly(val pts: Array<Vec3d>, val ns: Array<Vec3d>, val closed: Boolean) {
-        val spans: Int get() = if (closed) pts.size else pts.size - 1
-    }
-
-    private class Mark(
-        val kind: Vfx.Kind,
-        val origin: Vec3d,
-        val vector: Vec3d,
-        val radius: Double,
-        val inner: Double,
-        val safe: Boolean,
-        val born: Long,
-        val life: Int,
-        val rims: List<Poly>,
-        val fill: List<Cell>,
-    )
-
-    private class Cell(val a: Vec3d, val b: Vec3d, val c: Vec3d, val d: Vec3d, val from: Double, val until: Double)
-
-    /** The same received geometry and deadline drive both the ground and Solvane's parry cue. */
-    fun parryWindows(world: ClientWorld, at: Vec3d, add: (Vec3d, Int) -> Unit) {
-        if (world !== level) return
-        for (mark in marks) {
-            val left = mark.life - (world.time - mark.born)
-            if (!mark.safe && left in 0..60 && contains(mark, at)) add(mark.origin, left.toInt())
-        }
-    }
-
-    private fun contains(m: Mark, at: Vec3d): Boolean {
-        if (abs(at.y - m.origin.y) > 4.0) return false
-        val delta = Vec3d(at.x - m.origin.x, 0.0, at.z - m.origin.z)
-        val length = delta.length()
-        return when (m.kind) {
-            Vfx.Kind.TELEGRAPH_LINE -> {
-                val axis = Vec3d(m.vector.x - m.origin.x, 0.0, m.vector.z - m.origin.z)
-                val along = (delta.dotProduct(axis) / axis.lengthSquared()).coerceIn(0.0, 1.0)
-                delta.subtract(axis.multiply(along)).length() <= m.radius
-            }
-            Vfx.Kind.TELEGRAPH_RING -> length <= m.radius && length >= m.inner
-            else -> length <= m.radius && (length < 1e-6 ||
-                delta.normalize().dotProduct(Vec3d(m.vector.x, 0.0, m.vector.z).normalize()) >= cos(Math.toRadians(m.inner)))
-        }
-    }
+    private class Mark(val origin: Vec3d, val end: Vec3d, val radius: Double, val expires: Long)
 
     private class Burst(
         val kind: Vfx.Kind,
@@ -102,206 +47,38 @@ object GroundWarnings {
         bursts.clear()
     }
 
-    /** @return true, wenn dieser Marker den Marker von HHA ersetzt (dann zeichnet HHA ihn nicht zusätzlich). */
+    /** HHA still handles this packet. A true result selects its original telegraph palette. */
     @JvmStatic
-    fun receive(p: VfxPayload, world: ClientWorld): Boolean {
+    fun observe(p: VfxPayload, world: ClientWorld): Boolean {
         if (world.registryKey != ArenaDimension.WORLD) return false
         if (world !== level) {
             reset()
             level = world
         }
         val kind = Vfx.Kind.entries.getOrNull(p.kind) ?: return false
+        val origin = Vec3d(p.x, p.y, p.z)
+        val vector = Vec3d(p.dx, p.dy, p.dz)
         if (kind.name == "TELEGRAPH_CLEAR") {
-            val origin = Vec3d(p.x, p.y, p.z)
             marks.removeIf { it.origin.squaredDistanceTo(origin) < 1e-4 }
             return false
         }
         if (kind == Vfx.Kind.CRESCENT || kind == Vfx.Kind.SHOCKWAVE || kind == Vfx.Kind.NOVA) {
             if (bursts.size >= 32) bursts.removeAt(0)
-            bursts += Burst(
-                kind, p.style, Vec3d(p.x, p.y, p.z), Vec3d(p.dx, p.dy, p.dz),
-                p.a.toDouble().coerceIn(0.4, 48.0), p.b.toDouble().coerceIn(0.2, 16.0), world.time, p.life.coerceIn(5, 26),
-            )
+            bursts += Burst(kind, p.style, origin, vector,
+                p.a.toDouble().coerceIn(0.4, 48.0), p.b.toDouble().coerceIn(0.2, 16.0),
+                world.time, p.life.coerceIn(5, 26))
             return false
         }
-        if (kind != Vfx.Kind.TELEGRAPH_LINE && kind != Vfx.Kind.TELEGRAPH_RING && kind != Vfx.Kind.TELEGRAPH_CONE) return false
-        val origin = Vec3d(p.x, p.y, p.z)
-        val vector = Vec3d(p.dx, p.dy, p.dz)
-        val radius = p.a.toDouble().coerceIn(0.05, 256.0)
-        val inner = p.b.toDouble()
-        val safe = kind != Vfx.Kind.TELEGRAPH_CONE && p.style == Vfx.Style.GOLD.ordinal
-        val heights = HashMap<Long, Double>()
-        val ground = { x: Double, z: Double -> Vec3d(x, heightAt(world, heights, x, origin.y, z), z) }
-        val rims = ArrayList<Poly>(2)
         when (kind) {
-            Vfx.Kind.TELEGRAPH_RING -> {
-                rims += circle(origin, radius, ground)
-                val hole = if (inner > 0.05 && inner < radius - 0.05) inner else 0.0
-                if (hole > 0.0) rims += circle(origin, hole, ground, invert = true)
+            Vfx.Kind.TELEGRAPH_LINE, Vfx.Kind.TELEGRAPH_RING, Vfx.Kind.TELEGRAPH_CONE -> {
+                if (marks.size >= 96) marks.removeAt(0)
+                val end = if (kind == Vfx.Kind.TELEGRAPH_LINE) vector else origin
+                marks += Mark(origin, end, p.a.toDouble().coerceAtLeast(0.0), world.time + p.life)
+                return true
             }
-            Vfx.Kind.TELEGRAPH_LINE -> {
-                val flat = Vec3d(vector.x - origin.x, 0.0, vector.z - origin.z)
-                if (flat.lengthSquared() < 1e-6) return true
-                val angle = atan2(flat.z, flat.x)
-                val segments = ceil(radius * PI / 0.55).toInt().coerceIn(12, 90)
-                val corners = buildList {
-                    for ((center, start) in listOf(vector to angle - PI / 2.0, origin to angle + PI / 2.0)) {
-                        for (i in 0..segments) {
-                            val a = start + PI * i / segments
-                            add(center.add(radius * cos(a), 0.0, radius * sin(a)))
-                        }
-                    }
-                }
-                rims += polygon(corners, ground)
-            }
-            else -> {
-                val heading = atan2(vector.z, vector.x)
-                val half = Math.toRadians(inner.coerceIn(1.0, 180.0))
-                if (half >= PI - 0.01) {
-                    rims += circle(origin, radius, ground)
-                } else {
-                    val n = ceil(half * 2 * radius / 0.8).toInt().coerceIn(8, 160)
-                    val corners = ArrayList<Vec3d>(n + 2)
-                    corners += origin
-                    for (i in 0..n) {
-                        val a = heading - half + 2 * half * i / n
-                        corners += origin.add(radius * cos(a), 0.0, radius * sin(a))
-                    }
-                    rims += polygon(corners, ground)
-                }
-            }
-        }
-        if (marks.size >= 96) marks.removeAt(0)
-        marks += Mark(kind, origin, vector, radius, inner, safe, world.time, p.life.coerceAtLeast(1), rims, mesh(kind, origin, vector, radius, inner, ground))
-        return true
-    }
-
-    // --- Geometrie -----------------------------------------------------------------------------------------------------
-
-    /** Höhe der begehbaren Fläche nahe [refY] (Schneeschichten, Brücken), je Blocksäule gemerkt. */
-    private fun heightAt(world: ClientWorld, cache: HashMap<Long, Double>, x: Double, refY: Double, z: Double): Double {
-        val bx = floor(x).toInt()
-        val bz = floor(z).toInt()
-        val key = (bx.toLong() shl 32) xor (bz.toLong() and 0xFFFFFFFFL)
-        return cache.getOrPut(key) {
-            val base = BlockPos.ofFloored(x, refY, z)
-            var best = 3.5
-            var top = refY
-            for (dy in -3..2) {
-                val pos = base.up(dy)
-                val shape = world.getBlockState(pos).getCollisionShape(world, pos)
-                if (shape.isEmpty) continue
-                val y = pos.y + shape.getMax(Direction.Axis.Y)
-                val off = abs(y - refY)
-                if (off < best) {
-                    best = off
-                    top = y
-                }
-            }
-            top + 0.07
+            else -> return false
         }
     }
-
-    private fun circle(c: Vec3d, r: Double, ground: (Double, Double) -> Vec3d, invert: Boolean = false): Poly {
-        val n = ceil(2 * PI * r / 0.6).toInt().coerceIn(32, 240)
-        val pts = Array(n) { i ->
-            val a = 2 * PI * i / n
-            ground(c.x + r * cos(a), c.z + r * sin(a))
-        }
-        val sign = if (invert) -1.0 else 1.0
-        val ns = Array(n) { i ->
-            val a = 2 * PI * i / n
-            Vec3d(-cos(a) * sign, 0.0, -sin(a) * sign)
-        }
-        return Poly(pts, ns, true)
-    }
-
-    /** Geschlossene Figur aus [corners], fein auf den Boden gelegt; die Normalen zeigen nach innen. */
-    private fun polygon(corners: List<Vec3d>, ground: (Double, Double) -> Vec3d): Poly {
-        val pts = ArrayList<Vec3d>()
-        for (i in corners.indices) {
-            val a = corners[i]
-            val b = corners[(i + 1) % corners.size]
-            val n = ceil(sqrt((b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z)) / 0.7).toInt().coerceIn(1, 220)
-            for (k in 0 until n) {
-                val s = k.toDouble() / n
-                pts += ground(a.x + (b.x - a.x) * s, a.z + (b.z - a.z) * s)
-            }
-        }
-        var area = 0.0
-        for (i in pts.indices) {
-            val a = pts[i]
-            val b = pts[(i + 1) % pts.size]
-            area += a.x * b.z - b.x * a.z
-        }
-        return Poly(pts.toTypedArray(), miter(pts, true, if (area > 0) 1.0 else -1.0), true)
-    }
-
-    /** Normalen einer Punktfolge, an Ecken auf Gehrung gestreckt. [turn] wählt die Seite. */
-    private fun miter(pts: List<Vec3d>, closed: Boolean, turn: Double): Array<Vec3d> {
-        val n = pts.size
-        fun edge(i: Int): Vec3d {
-            val a = pts[i]
-            val b = pts[(i + 1) % n]
-            val dx = b.x - a.x
-            val dz = b.z - a.z
-            val len = sqrt(dx * dx + dz * dz)
-            return if (len < 1e-6) Vec3d(0.0, 0.0, 0.0) else Vec3d(-dz / len * turn, 0.0, dx / len * turn)
-        }
-        return Array(n) { i ->
-            val before = if (closed) edge((i - 1 + n) % n) else edge(max(i - 1, 0))
-            val after = if (closed) edge(i) else edge(min(i, n - 2))
-            val sum = before.add(after)
-            val len = sum.length()
-            if (len < 1e-4) {
-                after
-            } else {
-                val m = sum.multiply(1.0 / len)
-                m.multiply(1.0 / max(m.dotProduct(after), 0.42))
-            }
-        }
-    }
-
-    private fun mesh(kind: Vfx.Kind, origin: Vec3d, end: Vec3d, radius: Double, inner: Double,
-                     ground: (Double, Double) -> Vec3d): List<Cell> {
-        val line = kind == Vfx.Kind.TELEGRAPH_LINE
-        val ring = kind == Vfx.Kind.TELEGRAPH_RING
-        val axis = if (line) Vec3d(end.x - origin.x, 0.0, end.z - origin.z) else end
-        val side = Vec3d(-axis.z, 0.0, axis.x).normalize()
-        val heading = atan2(axis.z, axis.x)
-        val half = if (ring) PI else Math.toRadians(inner.coerceIn(1.0, 180.0))
-        val hole = if (ring) inner.coerceIn(0.0, radius) else 0.0
-        val length = if (line) axis.length() else radius - hole
-        val width = if (line) radius * 2.0 else radius * half * 2.0
-        val rows = ceil((length + if (line) radius * 2.0 else 0.0) / 0.85).toInt().coerceIn(1, 100)
-        val cols = ceil(width / 0.85).toInt().coerceIn(12, 180)
-        fun point(i: Int, j: Int): Vec3d {
-            val u = i.toDouble() / rows
-            val v = j.toDouble() / cols
-            val pos = if (line) {
-                val across = (v * 2.0 - 1.0) * radius
-                val cap = sqrt((radius * radius - across * across).coerceAtLeast(0.0))
-                val along = (length + 2.0 * cap) * u - cap
-                origin.add(axis.multiply(along / length)).add(side.multiply(across))
-            } else {
-                val r = if (ring) radius - length * u else length * u
-                val a = heading + (v * 2.0 - 1.0) * half
-                origin.add(r * cos(a), 0.0, r * sin(a))
-            }
-            return ground(pos.x, pos.z)
-        }
-        var first = Array(cols + 1) { point(0, it) }
-        return buildList {
-            for (i in 0 until rows) {
-                val next = Array(cols + 1) { point(i + 1, it) }
-                for (j in 0 until cols) add(Cell(first[j], first[j + 1], next[j + 1], next[j],
-                    i.toDouble() / rows, (i + 1.0) / rows))
-                first = next
-            }
-        }
-    }
-
-    // --- Zeichnen ------------------------------------------------------------------------------------------------------
 
     fun render(world: ClientWorld, draw: VfxDraw) {
         if (level !== world) {
@@ -309,87 +86,15 @@ object GroundWarnings {
             return
         }
         val time = world.time
-        marks.removeIf { time - it.born >= it.life }
+        marks.removeIf { time >= it.expires }
         bursts.removeIf { time - it.born >= it.life }
-        nearWarning = marks.any { distanceTo(it, draw.cam) < it.radius + 30.0 }
-        if (marks.isNotEmpty()) {
-            // Alles in einem Puffer: Ein zweiter Ebenen-Puffer würde den ersten vorzeitig abschließen.
-            val vc = draw.buffer(AriusLayers.INK)
-            for (m in marks) {
-                if (distanceTo(m, draw.cam) > m.radius + 110.0) continue
-                drawMark(draw, vc, m, time)
-            }
+        nearWarning = marks.any {
+            val offset = draw.cam.subtract(it.origin)
+            val axis = it.end.subtract(it.origin)
+            val at = (offset.dotProduct(axis) / axis.lengthSquared().coerceAtLeast(1e-6)).coerceIn(0.0, 1.0)
+            offset.subtract(axis.multiply(at)).length() < it.radius + 30.0
         }
         if (bursts.isNotEmpty() && AriusClientConfig.fx > 0.01f) renderBursts(draw, time)
-    }
-
-    private fun distanceTo(m: Mark, p: Vec3d): Double {
-        if (m.kind != Vfx.Kind.TELEGRAPH_LINE) return p.distanceTo(m.origin)
-        val delta = m.vector.subtract(m.origin)
-        val u = (p.subtract(m.origin).dotProduct(delta) / delta.lengthSquared()).coerceIn(0.0, 1.0)
-        return p.distanceTo(m.origin.add(delta.multiply(u)))
-    }
-
-    private fun drawMark(d: VfxDraw, vc: VertexConsumer, m: Mark, time: Long) {
-        val t = time - m.born + d.tickDelta
-        val progress = (t / m.life).toDouble().coerceIn(0.0, 1.0)
-        val appear = (t / 3f).coerceIn(0f, 1f)
-        val storm = SnowStorm.whiteout.coerceIn(0f, 1f)
-        val pal = if (m.safe) SAFE else FROST
-        val rest = withAlpha(pal.resting, (0.53f + 0.18f * storm) * appear)
-        val fill = withAlpha(pal.queued, (0.72f + 0.13f * storm) * appear)
-        fun quad(a: Vec3d, b: Vec3d, c: Vec3d, e: Vec3d, color: Int) {
-            with(d) {
-                vc.put(a, 0f, 0f, color)
-                vc.put(b, 0f, 1f, color)
-                vc.put(c, 1f, 1f, color)
-                vc.put(e, 1f, 0f, color)
-            }
-        }
-        for (cell in m.fill) {
-            when {
-                progress >= cell.until -> quad(cell.a, cell.b, cell.c, cell.d, fill)
-                progress <= cell.from -> quad(cell.a, cell.b, cell.c, cell.d, rest)
-                else -> {
-                    val u = (progress - cell.from) / (cell.until - cell.from)
-                    val left = cell.a.lerp(cell.d, u)
-                    val right = cell.b.lerp(cell.c, u)
-                    quad(cell.a, cell.b, right, left, fill)
-                    quad(left, right, cell.c, cell.d, rest)
-                }
-            }
-        }
-        val edge = withAlpha(pal.edge, 0.96f * appear)
-        for (rim in m.rims) band(d, vc, rim, -0.045, 0.085, 0.018, edge, edge)
-    }
-
-    /** Ein Streifen entlang [poly] zwischen den Versätzen [from] und [to] (nach innen positiv). */
-    private fun band(d: VfxDraw, vc: VertexConsumer, poly: Poly, from: Double, to: Double, lift: Double, cFrom: Int, cTo: Int) {
-        val pts = poly.pts
-        val ns = poly.ns
-        val size = pts.size
-        with(d) {
-            for (i in 0 until poly.spans) {
-                val j = (i + 1) % size
-                val a = pts[i]
-                val b = pts[j]
-                val sa = widen(a, d.cam)
-                val sb = widen(b, d.cam)
-                val na = ns[i]
-                val nb = ns[j]
-                vc.put(a.x + na.x * from * sa, a.y + lift, a.z + na.z * from * sa, 0f, 0f, cFrom)
-                vc.put(a.x + na.x * to * sa, a.y + lift, a.z + na.z * to * sa, 1f, 0f, cTo)
-                vc.put(b.x + nb.x * to * sb, b.y + lift, b.z + nb.z * to * sb, 1f, 1f, cTo)
-                vc.put(b.x + nb.x * from * sb, b.y + lift, b.z + nb.z * from * sb, 0f, 1f, cFrom)
-            }
-        }
-    }
-
-    private fun widen(p: Vec3d, cam: Vec3d): Double {
-        val dx = p.x - cam.x
-        val dy = p.y - cam.y
-        val dz = p.z - cam.z
-        return (sqrt(dx * dx + dy * dy + dz * dz) / 9.0).coerceIn(0.42, 3.2)
     }
 
     // --- Trefferbilder ---------------------------------------------------------------------------------------------------
