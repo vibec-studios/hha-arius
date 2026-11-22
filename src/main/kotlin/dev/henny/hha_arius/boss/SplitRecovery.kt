@@ -239,5 +239,28 @@ object SplitRecovery {
     /** Hilfsfunktion für die Schnittbreite: V-förmig, unten ~3 Blöcke, oben bis ~10 Blöcke breit über die Gipfelarena. */
     fun cutHalfWidth(relY: Int): Double = 1.65 + relY / 46.0
 
-    fun inCutPlane(relX: Int, relY: Int): Boolean = abs(relX + 0.5 - ArenaLayout.CUT_X) <= cutHalfWidth(relY)
+    /**
+     * Gehört der Block zum Schnitt? Massiv, Gipfelarena, Mauer und Krone werden im breiten V gespalten. Das schmale Eishorn
+     * über der Schulter bleibt dagegen stehen und bekommt nur eine 1 Block breite Naht: Sonst wäre es oberhalb von
+     * y ≈ 195 ganz verschwunden, und Solvane hätte sich im Auftritt um nichts gewunden.
+     */
+    fun inCutPlane(relX: Int, relY: Int, relZ: Int): Boolean {
+        val offset = abs(relX + 0.5 - ArenaLayout.CUT_X)
+        if (offset > cutHalfWidth(relY)) return false
+        return if (inHorn(relX, relY, relZ)) offset <= HORN_SEAM_HALF else true
+    }
+
+    /** Halbe Breite der Naht im Horn: genau eine Blockspalte. */
+    private const val HORN_SEAM_HALF = 0.5
+
+    /** Ab hier (Blöcke unter der Schulter) trägt ein kurzer Sockel das Horn über dem offenen Spalt. */
+    private const val HORN_PLUG = 6
+
+    /** Spalte des Horns, die über die Gipfelschulter ragt, ab kurz unter der Schulter bis knapp über die Hornspitze. */
+    private fun inHorn(relX: Int, relY: Int, relZ: Int): Boolean {
+        val plug = dev.henny.hha_arius.arena.FarPlan.SHOULDER_Y.toInt() - HORN_PLUG
+        if (relY < plug) return false
+        val top = dev.henny.hha_arius.arena.FarPlan.spireTop(relX, relZ)
+        return top != Int.MIN_VALUE && top >= plug && relY <= top + 4
+    }
 }

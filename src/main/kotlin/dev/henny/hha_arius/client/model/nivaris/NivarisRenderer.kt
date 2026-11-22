@@ -75,6 +75,7 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
         state.resonance = entity.resonance
         state.mode = entity.mode
         state.wingTuck = entity.wingTuckAt(tickDelta)
+        state.shade = entity.shadeAt(tickDelta)
         // Flug-Überblendung: etwa 10 Ticks von Boden zu Luft und zurück.
         val now = entity.age + tickDelta
         val blend = flyBlend.getOrPut(entity) { floatArrayOf(if (entity.flying) 1f else 0f, now) }
@@ -103,7 +104,7 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
         val overlay = getOverlay(state, 0f)
         model.openJaw(state.p[NivarisModel.JAW])
         model.animateChildren(state)
-        draw(queue, matrices, state, model.getLayer(texture), overlay, -1, ALL, true)
+        draw(queue, matrices, state, model.getLayer(texture), overlay, shadeColor(state.shade), ALL, state.shade < 0.5f)
         val batch = queue.getBatchingQueue(1)
         // Augen: Grundglimmen, eyeGlow hebt; führt sie den Takt, leuchten sie heller und pulsieren ruhig.
         var eyes = 0.3f + state.eyeGlow / 100f * 0.7f
@@ -115,6 +116,17 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
         if (state.resonance) glow(batch, matrices, state, resonanceLayer, 0.8f + 0.2f * sin(state.age * 0.25f), ALL)
         // Leuchtüberzug der Teile, die gerade zerfallen oder entstehen (Farbe je Teil aus state.sheen).
         if (state.veil > 0f) draw(batch, matrices, state, sheenLayer, net.minecraft.client.render.OverlayTexture.DEFAULT_UV, SHEEN, ALL, false)
+    }
+
+    /**
+     * Farbe des Körpers: weiß (unverändert) bis tiefes Marineblau für die Sturm-Silhouette. Voll silhouettiert ohne
+     * Weltlicht, damit die Form überall gleich dunkel steht und nur Nebel und Schneesturm sie aufhellen.
+     */
+    private fun shadeColor(shade: Float): Int {
+        if (shade <= 0.001f) return -1
+        val k = MathHelper.clamp(shade, 0f, 1f)
+        fun ch(target: Int) = MathHelper.lerp(k, 255f, target.toFloat()).toInt().coerceIn(0, 255)
+        return (0xFF shl 24) or (ch(SHADE_R) shl 16) or (ch(SHADE_G) shl 8) or ch(SHADE_B)
     }
 
     private fun glow(q: RenderCommandQueue, matrices: MatrixStack, state: NivarisRenderState, layer: RenderLayer, alpha: Float, which: Int) {
@@ -283,5 +295,10 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
         /** Marker-Farbe für den Leuchtüberzug in [draw] (Farbe kommt dann je Teil aus state.sheen). */
         const val SHEEN = 0x00E6F6FF
         const val SHEEN_RGB = 0xE6F6FF
+
+        /** Tiefes Marineblau der Sturm-Silhouette (multipliziert mit der hellen Körpertextur). */
+        const val SHADE_R = 0x22
+        const val SHADE_G = 0x33
+        const val SHADE_B = 0x52
     }
 }

@@ -161,7 +161,14 @@ object EntrancePath {
     }
 
     /** Dauer des Lösens in Ticks. */
-    const val TICKS = 220
+    const val TICKS = 260
+
+    /** Schnitte der drei Kamerafahrten im Lösen (anteilig zu [TICKS]). */
+    const val CUT_1 = TICKS * 85 / 220
+    const val CUT_2 = TICKS * 165 / 220
+
+    /** Tick [t] eines früheren 220-Tick-Ablaufs auf die heutige Dauer umgerechnet. */
+    fun scaled(t: Int): Int = t * TICKS / 220
 
     /** Abstand der Tabellenpunkte. */
     private const val STEP = 0.5
@@ -273,6 +280,7 @@ internal object Entrance {
         d.mode = NivarisMode.NORMAL
         d.uncoil = 0f
         d.flying = false
+        d.shade = 0f
         d.showNow()
         f.place(d, spot)
         f.face(d, spot.add(0.0, 0.0, -10.0))
@@ -300,7 +308,13 @@ internal object Entrance {
      * Ticks, in denen der Körper nach der Ankunft des Stroms Glied für Glied vom Kopf aus entsteht ([NivarisEntity.fadeIn]);
      * an der Nadel bis kurz nach dem Ende der Sturm-Einstellung, ohne Nadel bis vor die Landung.
      */
-    private const val FORM_TICKS = 60
+    private const val FORM_TICKS = 16
+
+    /** Länge der Sturm-Einstellung: Ankunft des Stroms, kurzes Verdichten, dann fast 2 Sekunden Silhouette. */
+    private const val STORM_TICKS = 64
+
+    /** Nahe Einstellung der Vorderklauen an der Nadel. */
+    private const val CLAW_TICKS = 40
     private const val FORM_TICKS_SHORT = 30
 
     /** Zeitpunkt des Loslassens in [release]. */
@@ -395,6 +409,8 @@ internal object Entrance {
             d.flying = false
             d.eyeGlow = 8
             d.throatGlow = 0
+            // Entsteht schon als Sturm-Silhouette (siehe [full]); erst wenn der Sturm aufreißt, kommt ihre Farbe.
+            d.shade = 1f
             d.hideNow()
             d.play(NivarisPose.LIE_DOWN)
         }
@@ -435,32 +451,37 @@ internal object Entrance {
         val summitTop = f.abs(Vec3d(ArenaLayout.SPIRE.x - 20.0, dev.henny.hha_arius.arena.FarPlan.SHOULDER_Y + 1.0, ArenaLayout.SPIRE.z - 14.0))
         vantage.move(summitTop)
 
-        // 2) Sturm-Silhouette (76 Ticks): BLIZZARD steht bereits bei 100 %, bevor Solvane entsteht. Kamera auf echte
-        //    Nadel-Höhe im optimalen Silhouetten-Abstand (~17 Blöcke im 30-Block-Whiteout-Nebel), damit sie klar als Silhouette erscheint.
+        // 2) Sturm-Silhouette (STORM_TICKS): BLIZZARD steht bereits, bevor Solvane entsteht. Der Lichtstrom kommt an, der
+        //    Körper verdichtet sich in wenigen Ticks und steht dann fast 2 Sekunden als große dunkle Drachenform im Sturm.
+        //    Die Kamera zieht dabei seitlich an der Windung vorbei, so gleiten Leib, Schwingen und Kamm durchs Bild. Die
+        //    Silhouette kommt vom Körper selbst ([NivarisEntity.shade]) und hängt nicht am Nebel, sie steht also auch mit NoFog.
         val axis = f.abs(Vec3d(ArenaLayout.SPIRE.x + 0.5, 0.0, ArenaLayout.SPIRE.z + 0.5))
-        val stormFrom = axis.add(-11.0, 209.0, -17.5)
-        val stormTo = axis.add(-9.5, 213.0, -15.0)
-        scene.rawLine(stormFrom, stormTo, arrival, f.abs(EntrancePath.HEAD_RAISED).add(0.0, -2.5, 0.0), 76, 62.0, 56.0)
-        sound(f, "seal.blizzard", stormTo, 2.5f, 0.7f)
-        fxAll(f, FxKind.BLIZZARD, arrival, 12f, 70)
-        // Warten, bis der Lichtstrom im vollen Schneesturm ankommt, dann erst erscheint sie als Silhouette.
-        wait(RELEASE_ARRIVAL - RELEASE_TICKS)
-        sound(f, "nivaris.inhale", arrival, 2.2f, 0.45f)
-        var proxy = if (!Cine.muted) Vantage.ground(f, summitTop).add(0.0, 4.0, 0.0) else f.abs(EntrancePath.PROXY)
-        val d = coil(f, proxy) ?: return@script
-        d.eyeGlow = 40
-        // Sie entsteht Glied für Glied im bereits dichten Whiteout — erster Eindruck ist immer die Silhouette im Sturm.
-        d.fadeIn(44)
-        wait(76 - (RELEASE_ARRIVAL - RELEASE_TICKS))
-
-        // 3) Der Sturm lichtet sich langsam an der Windung: Kamera steigt dicht außerhalb der eng greifenden Windung auf (56 Ticks).
         fun outside(s: Double, out: Double, up: Double): Vec3d {
             val c = coilAt(f, s)
             val radial = EntrancePath.coilOutward(c.subtract(f.origin.x.toDouble(), f.origin.y.toDouble(), f.origin.z.toDouble()))
             return c.add(radial.multiply(out)).add(0.0, up, 0.0)
         }
+        // Nah an der Windung (gut 6 Blöcke vor dem Leib): Im 30-Block-Sturm wäre sie weiter weg nur noch Nebel.
+        val stormTo = outside(0.845, 6.8, 3.4)
+        // Der Blick gleitet am Leib entlang hinauf zu Hals und Kopf, damit die Form unverkennbar ein Drache ist.
+        scene.rawLine(outside(0.80, 6.5, 2.6), stormTo, coilAt(f, 0.80), f.abs(EntrancePath.HEAD_REST).add(0.0, -0.5, 0.0), STORM_TICKS, 68.0, 64.0)
+        sound(f, "seal.blizzard", stormTo, 2.5f, 0.7f)
+        fxAll(f, FxKind.BLIZZARD, arrival, 12f, STORM_TICKS)
+        // Warten, bis der Lichtstrom im vollen Schneesturm ankommt, dann erst erscheint sie, gleich als Silhouette.
+        wait(RELEASE_ARRIVAL - RELEASE_TICKS)
+        sound(f, "nivaris.inhale", arrival, 2.2f, 0.45f)
+        var proxy = if (!Cine.muted) Vantage.ground(f, summitTop).add(0.0, 4.0, 0.0) else f.abs(EntrancePath.PROXY)
+        val d = coil(f, proxy) ?: return@script
+        d.eyeGlow = 40
+        d.shade = 1f
+        d.fadeIn(FORM_TICKS)
+        wait(STORM_TICKS - (RELEASE_ARRIVAL - RELEASE_TICKS))
+
+        // 3) Der Sturm lichtet sich an der Windung, ihre Farbe kommt zurück: Kamera steigt außerhalb der Windung auf (56 Ticks).
+        //    Nur ein kurzer Bogen um die Nadel, damit die Fahrt nie durch das Horn schneidet.
         f.atmos(AtmosMode.SNOW, 26)
-        scene.rawLine(outside(0.62, 16.0, 4.5), outside(0.80, 15.0, 5.5), coilAt(f, 0.64), coilAt(f, 0.82), 56, 54.0, 50.0)
+        d.shade = 0f
+        scene.rawLine(outside(0.66, 15.0, 5.0), outside(0.715, 15.0, 6.0), coilAt(f, 0.67), coilAt(f, 0.74), 56, 54.0, 50.0)
         sound(f, "seal.blizzard", coilAt(f, 0.70), 2.5f, 0.55f)
         fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.70), 8f, 52)
         d.eyeGlow = 55
@@ -470,6 +491,21 @@ internal object Entrance {
         scene.rawLine(axis.add(-20.0, 207.5, -16.5), axis.add(-16.0, 213.5, -16.5), coilAt(f, 0.90), arrival.add(0.0, 1.5, 0.0), 52, 52.0, 48.0)
         sound(f, "nivaris.wing", coilAt(f, 0.92), 2f, 0.45f)
         wait(52)
+
+        // 4b) Nah an den Vorderklauen (CLAW_TICKS): sie umfassen sichtbar das Eis der Nadel. Die Kamera steht seitlich vor der
+        //     Schulter, außerhalb von Hals, angelegten Schwingen und Windung, und schiebt sich langsam heran.
+        val shoulder = coilAt(f, 1.0)
+        val shoulderOut = EntrancePath.coilOutward(shoulder.subtract(f.origin.x.toDouble(), f.origin.y.toDouble(), f.origin.z.toDouble()))
+        val clawFront = coilAt(f, 0.97).subtract(shoulder).let { Vec3d(-it.x, 0.0, -it.z) }.let { if (it.lengthSquared() < 1e-6) Vec3d(0.0, 0.0, -1.0) else it.normalize() }
+        val grip = shoulder.subtract(shoulderOut.multiply(1.6)).add(0.0, -0.9, 0.0)
+        // Von schräg unten außen: der Blick geht unter dem Leib hindurch auf die Stelle, an der die Läufe das Eis fassen.
+        scene.rawLine(
+            shoulder.add(shoulderOut.multiply(6.5)).add(clawFront.multiply(2.5)).add(0.0, -4.2, 0.0),
+            shoulder.add(shoulderOut.multiply(5.6)).add(clawFront.multiply(1.6)).add(0.0, -3.6, 0.0),
+            grip.add(0.0, -0.3, 0.0), grip, CLAW_TICKS, 56.0, 52.0,
+        )
+        sound(f, "glacier.crack", grip, 1.6f, 1.4f)
+        wait(CLAW_TICKS)
 
         // 5) Die Wolken reißen auf: freie weite Einstellung hoch über der Gipfelarena (104 Ticks) auf Nadel, Windungen und Kopf.
         f.atmos(AtmosMode.REVEAL, 32)
@@ -513,24 +549,26 @@ internal object Entrance {
             return f.abs(EntrancePath.at(u).multiply(0.7).add(EntrancePath.at(u - back).multiply(0.3)))
         }
         var plateauView = false
+        val cut1 = EntrancePath.CUT_1
+        val cut2 = EntrancePath.CUT_2
         for (t in 0..EntrancePath.TICKS) {
             when (t) {
-                0 -> scene.rawLine(axis.add(-48.0, 218.0, -34.0), axis.add(-64.0, 198.0, -56.0), look(0, 22.0), look(85, 22.0), 85, 64.0, 70.0)
-                85 -> scene.rawLine(rel(f, -78.0, 158.0, 150.0), rel(f, -62.0, 86.0, 84.0), look(85, 28.0), look(165, 28.0), 80, 72.0, 74.0)
-                165 -> {
+                0 -> scene.rawLine(axis.add(-48.0, 218.0, -34.0), axis.add(-64.0, 198.0, -56.0), look(0, 22.0), look(cut1, 22.0), cut1, 64.0, 70.0)
+                cut1 -> scene.rawLine(rel(f, -78.0, 158.0, 150.0), rel(f, -62.0, 86.0, 84.0), look(cut1, 28.0), look(cut2, 28.0), cut2 - cut1, 72.0, 74.0)
+                cut2 -> {
                     // Die Kamera ist zurück am Plateau (freier Westblick): Körper ebenfalls zurück. Exakt 55 Ticks bis zur Landung.
                     vantage.restore()
                     plateauView = true
                     proxy = f.abs(EntrancePath.PROXY)
-                    scene.line(rel(f, -24.0, 10.5, -18.0), landCamMid, look(165, 20.0), landFocusMid, EntrancePath.TICKS - 165, 68.0, 60.0)
+                    scene.line(rel(f, -24.0, 10.5, -18.0), landCamMid, look(cut2, 20.0), landFocusMid, EntrancePath.TICKS - cut2, 68.0, 60.0)
                 }
             }
             when (t) {
-                4 -> sound(f, "nivaris.wing", head, 6f, 0.5f)
-                40 -> sound(f, "nivaris.wing", axis.add(-48.0, 208.0, -40.0), 3f, 0.6f)
-                100 -> sound(f, "nivaris.wing", rel(f, -50.0, 110.0, 125.0), 3f, 0.65f)
-                150 -> sound(f, "seal.blizzard", rel(f, -35.0, 50.0, 80.0), 2f, 1.2f)
-                180 -> sound(f, "nivaris.wing", rel(f, -18.0, 8.0, -14.0), 3f, 0.7f)
+                EntrancePath.scaled(4) -> sound(f, "nivaris.wing", head, 6f, 0.5f)
+                EntrancePath.scaled(40) -> sound(f, "nivaris.wing", axis.add(-48.0, 208.0, -40.0), 3f, 0.6f)
+                EntrancePath.scaled(100) -> sound(f, "nivaris.wing", rel(f, -50.0, 110.0, 125.0), 3f, 0.65f)
+                EntrancePath.scaled(150) -> sound(f, "seal.blizzard", rel(f, -35.0, 50.0, 80.0), 2f, 1.2f)
+                EntrancePath.scaled(180) -> sound(f, "nivaris.wing", rel(f, -18.0, 8.0, -14.0), 3f, 0.7f)
             }
             val u = EntrancePath.distance(t.toDouble())
             d.uncoil = (u / EntrancePath.LENGTH).toFloat()

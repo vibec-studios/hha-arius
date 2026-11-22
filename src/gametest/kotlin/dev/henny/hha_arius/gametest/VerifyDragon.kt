@@ -508,6 +508,11 @@ class VerifyDragon : FabricClientGameTest {
         var camSolidLogged = 0
         var playerBodyTicks = 0
         var playerBodyLogged = 0
+        var playerSolidTicks = 0
+        var playerSolidLogged = 0
+        var camBodyTicks = 0
+        var camWingTicks = 0
+        var camBodyLogged = 0
         var maxFootSlide = 0.0
         var maxFootInfo = "none"
 
@@ -522,6 +527,19 @@ class VerifyDragon : FabricClientGameTest {
 
         var inCarry = false
         var carryStartTick = -1
+        var carryFlyTick = -1
+        var carryGlideTick = -1
+        val jumpLog = ArrayList<Pair<Double, String>>()
+        val landLog = ArrayList<String>()
+        val carryLog = ArrayList<String>()
+        var landTicks = 0
+        var prevDPos: Vec3d? = null
+        var prevTime = -1L
+        var prevSrvU = 0f
+        var prevCliU = 0f
+        var maxSegMovePerGameTick = 0.0
+        var maxSegPerGameTickInfo = "none"
+        var multiTickSamples = 0
         var rollStartTick = -1
         var dismountSeenTick = -1
         var aerieNearTick = -1
@@ -568,6 +586,8 @@ class VerifyDragon : FabricClientGameTest {
                 val pMounted: Boolean,
                 val pInvis: Boolean,
                 val aMounted: Boolean,
+                val time: Long,
+                val srvUncoil: Float,
             )
             val s = server { srv ->
                 val f = fight() ?: return@server null
@@ -587,6 +607,8 @@ class VerifyDragon : FabricClientGameTest {
                     d != null && p.vehicle === d,
                     p.hasStatusEffect(net.minecraft.entity.effect.StatusEffects.INVISIBILITY),
                     d != null && a?.vehicle === d,
+                    f.world.time,
+                    d?.uncoil ?: 0f,
                 )
             } ?: break
 
@@ -594,6 +616,11 @@ class VerifyDragon : FabricClientGameTest {
             if (!inCarry && landIdx >= 1 && (s.dPose == dev.henny.hha_arius.boss.NivarisPose.TAKEOFF || s.dFlying)) {
                 inCarry = true
                 carryStartTick = seqTick
+            }
+            if (inCarry && carryFlyTick < 0 && s.dFlying) carryFlyTick = seqTick
+            if (inCarry && carryGlideTick < 0 && s.dPose == dev.henny.hha_arius.boss.NivarisPose.GLIDE) carryGlideTick = seqTick
+            if (inCarry && carryStartTick >= 0 && seqTick - carryStartTick in 16..90 && s.dPos != null && (seqTick - carryStartTick) % 2 == 0) {
+                carryLog.add(String.format(java.util.Locale.ROOT, "ct=%d rel=(%.1f,%.1f,%.1f)", seqTick - carryStartTick, s.dPos.x - s.origin.x, s.dPos.y - s.origin.y, s.dPos.z - s.origin.z))
             }
             if (inCarry && rollStartTick < 0 && kotlin.math.abs(s.dRoll) > 0.08f) rollStartTick = seqTick
             if (inCarry && wasAriusPerched && !s.aMounted && dismountSeenTick < 0) dismountSeenTick = seqTick
@@ -646,6 +673,7 @@ class VerifyDragon : FabricClientGameTest {
 
             // Jetzt Client-Daten (Kamera + gerenderte Körperglieder aus DragonHits) auslesen und prüfen.
             val camPos = client { c -> c.gameRenderer.camera.cameraPos }
+            val cliUNow = client { c -> (c.world?.getEntityById(s.dId) as? dev.henny.hha_arius.boss.NivarisEntity)?.uncoilAt(1f) ?: 0f }
             val bodyData = client { _ ->
                 if (s.dId < 0) null else {
                     val pts = dev.henny.hha_arius.client.fx.DragonHits.points(s.dId)?.map { it }?.toTypedArray()
@@ -666,10 +694,40 @@ class VerifyDragon : FabricClientGameTest {
                     }
                 }
 
+                // (4b) Spieler in festen Blöcken (Füße knapp über der Sohle, Brust, Kopf), solange er nicht reitet.
+                if (!s.pMounted && !s.pInvis) {
+                    val hit = arrayOf(0.15, 0.9, 1.6).map { isSolid(w, s.pPos.add(0.0, it, 0.0)) }.firstOrNull { it.first }
+                    if (hit != null) {
+                        playerSolidTicks++
+                        if (playerSolidLogged++ < 20) log("[$tag] PLAYER_SOLID t=$seqTick p=${fmt(s.pPos.subtract(s.origin.x.toDouble(), s.origin.y.toDouble(), s.origin.z.toDouble()))} blk=${hit.second}")
+                    }
+                }
+
                 if (bodyData != null) {
                     val (pts, rad) = bodyData
                     // (1) Größte Tick-Bewegung jedes Glieds 0..40 (Kopf bis Schwanzspitze) bei gleichem Drachen.
                     if (prevPts != null && prevRadii != null && prevDragonId == s.dId) {
+                        // Diagnose: ganzes Bewegungsprofil Kopf bis Schwanz in Ticks mit einem Sprung > 3 Blöcke.
+                        val moves = pts.indices.map { pts[it].distanceTo(prevPts!![it]) }
+                        // Der Test-Client ist langsam; holt der Server Ticks nach, liegen zwischen zwei Proben mehrere Spielticks.
+                        val gameTicks = if (prevTime >= 0) (s.time - prevTime).coerceAtLeast(1L) else 1L
+                        if (gameTicks > 1) multiTickSamples++
+                        val perTick = moves.max() / gameTicks
+                        if (perTick > maxSegMovePerGameTick) {
+                            maxSegMovePerGameTick = perTick
+                            maxSegPerGameTickInfo = "t=$seqTick gameTicks=$gameTicks raw=%.2f mode=${s.dMode} pose=${s.dPose}".format(moves.max())
+                        }
+                        if (moves.max() > 2.5) {
+                            val ent = if (s.dPos != null && prevDPos != null) s.dPos.distanceTo(prevDPos) else -1.0
+                            val ct = if (carryStartTick >= 0) seqTick - carryStartTick else -1
+                            val cliU = cliUNow
+                            val uInfo = if (s.dMode == dev.henny.hha_arius.boss.NivarisMode.UNCOIL) String.format(java.util.Locale.ROOT,
+                                " dU(srv)=%.2f dU(cli)=%.2f blocks", (s.srvUncoil - prevSrvU) * EntrancePath.LENGTH, (cliU - prevCliU) * EntrancePath.LENGTH) else ""
+                            val segInfo = intArrayOf(16, 18, 20, 24, 32, 40).joinToString(" ") { i -> "s$i:${fmt(prevPts!![i])}->${fmt(pts[i])}" }
+                            jumpLog.add(moves.max() to ("t=$seqTick ct=$ct gameTicks=$gameTicks$uInfo [$segInfo] mode=${s.dMode} pose=${s.dPose} fly=${s.dFlying} max=" +
+                                String.format(java.util.Locale.ROOT, "%.2f entityMove=%.2f moves=", moves.max(), ent) +
+                                moves.joinToString(" ") { String.format(java.util.Locale.ROOT, "%.1f", it) }))
+                        }
                         for (i in pts.indices) {
                             val seg = i.coerceAtMost(rad.lastIndex)
                             if (rad[seg] <= 0.0 || prevRadii!![seg] <= 0.0) continue
@@ -728,6 +786,25 @@ class VerifyDragon : FabricClientGameTest {
                         }
                     }
 
+                    // (3b) Kamera im Körper oder in den Schwingen (Blockkollision allein sieht das nicht).
+                    if (s.dMode >= 0) {
+                        var inBody = ""
+                        for (i in 0 until NivarisShape.SEGMENTS) {
+                            if (rad[i] <= 0.0) continue
+                            val bodyR = NivarisShape.taper(i) * 6.0 * NivarisShape.SCALE / 16.0
+                            val dist = distPointToSeg(camPos, pts[i], pts[i + 1])
+                            if (dist < bodyR + 0.35) { inBody = "seg=$i dist=%.2f".format(dist); break }
+                        }
+                        // Schwingen sitzen an Glied 2 und reichen angelegt etwa 5 Blöcke, gespannt deutlich weiter.
+                        val wingRoot = pts[NivarisShape.WING_GLIED]
+                        val nearWing = rad[NivarisShape.WING_GLIED] > 0.0 && camPos.distanceTo(wingRoot) < 5.0
+                        if (inBody.isNotEmpty()) camBodyTicks++
+                        if (nearWing) camWingTicks++
+                        if ((inBody.isNotEmpty() || nearWing) && camBodyLogged++ < 20) {
+                            log("[$tag] CAM_BODY t=$seqTick mode=${s.dMode} $inBody wingDist=%.2f".format(camPos.distanceTo(wingRoot)))
+                        }
+                    }
+
                     // (5) Größtes Fußrutschen nach dem Aufsetzen (vorn = FORE_GLIED, hinten = HIND_GLIED).
                     val grounded = s.dMode == dev.henny.hha_arius.boss.NivarisMode.NORMAL && !s.dFlying && rad[NivarisShape.FORE_GLIED] > 0.0
                     if (grounded) {
@@ -742,6 +819,7 @@ class VerifyDragon : FabricClientGameTest {
                             val fs = hypot(fPos.x - foreAnchor!!.x, fPos.z - foreAnchor!!.z)
                             val hs = hypot(hPos.x - hindAnchor!!.x, hPos.z - hindAnchor!!.z)
                             val m = maxOf(fs, hs)
+                            if (landTicks++ < 40 && landTicks % 2 == 1) landLog.add(String.format(java.util.Locale.ROOT, "land#%d t=%d hind=(%.2f,%.2f) fore=%.2f tip=%.2f", landIdx, seqTick, hPos.x - hindAnchor!!.x, hPos.z - hindAnchor!!.z, fs, pts[NivarisShape.SEGMENTS].distanceTo(prevPts?.get(NivarisShape.SEGMENTS) ?: pts[NivarisShape.SEGMENTS])))
                             if (m > maxFootSlide) {
                                 maxFootSlide = m
                                 maxFootInfo = "land#$landIdx t=$seqTick fore=%.3f hind=%.3f pose=${s.dPose}".format(fs, hs)
@@ -749,9 +827,14 @@ class VerifyDragon : FabricClientGameTest {
                         }
                     } else {
                         planted = false
+                        landTicks = 0
                     }
 
                     prevPts = pts
+                    prevDPos = s.dPos
+                    prevTime = s.time
+                    prevSrvU = s.srvUncoil
+                    prevCliU = cliUNow
                     prevRadii = rad
                     prevDragonId = s.dId
                     prevMode = s.dMode
@@ -763,14 +846,27 @@ class VerifyDragon : FabricClientGameTest {
         val summary = buildString {
             appendLine("=== CONTINUITY REPORT (split=$tag, ticks=$seqTick) ===")
             appendLine("1. max_segment_move_per_tick = %.3f blocks (%s)".format(maxSegMove, maxSegInfo))
+            appendLine("1b. max_segment_move_per_game_tick = %.3f blocks (%s); samples spanning >1 game tick: $multiTickSamples".format(maxSegMovePerGameTick, maxSegPerGameTickInfo))
             appendLine("2. segment_samples_in_solid = $segSolidSamples")
             appendLine("3. camera_ticks_in_solid = $camSolidTicks")
+            appendLine("3b. camera_ticks_in_body = $camBodyTicks, camera_ticks_at_wing_root(<5) = $camWingTicks")
             appendLine("4. player_ticks_intersecting_body = $playerBodyTicks")
+            appendLine("4b. player_ticks_in_solid = $playerSolidTicks")
             appendLine("5. max_foot_slide_planted = %.3f blocks (%s)".format(maxFootSlide, maxFootInfo))
             if (topMoves.isNotEmpty()) {
                 appendLine("Top moves > 2.2 blocks:")
                 topMoves.sortedByDescending { it.first }.take(10).forEach { appendLine("  ${it.second}") }
             }
+            appendLine("Carry: start=$carryStartTick fly=$carryFlyTick glide=$carryGlideTick roll=$rollStartTick dismount=$dismountSeenTick aerieNear=$aerieNearTick aerieLanded=$aerieLandedTick")
+            if (jumpLog.isNotEmpty()) {
+                appendLine("Ticks over 2.5 blocks: ${jumpLog.size}; worst profiles (segment moves 0..40):")
+                jumpLog.sortedByDescending { it.first }.take(8).forEach { appendLine("  ${it.second}") }
+                appendLine("  first over 2.5: " + jumpLog.minByOrNull { it.second.substringAfter("t=").substringBefore(' ').toInt() }?.second?.substringBefore(" moves="))
+                appendLine("  last over 2.5: " + jumpLog.maxByOrNull { it.second.substringAfter("t=").substringBefore(' ').toInt() }?.second?.substringBefore(" moves="))
+            }
+            appendLine("Landing hind offsets (first 40 grounded ticks of each landing):")
+            landLog.forEach { appendLine("  $it") }
+            appendLine("Carry entity path: " + carryLog.joinToString(" "))
             appendLine("Frames captured: $shotsTaken")
         }
         log(summary)

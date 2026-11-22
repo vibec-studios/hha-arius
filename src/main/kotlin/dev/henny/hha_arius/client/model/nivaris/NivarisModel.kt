@@ -48,6 +48,9 @@ class NivarisRenderState : LivingEntityRenderState() {
     /** Flügel angelegt 0..1 (Ritt durch enge Felsen). */
     var wingTuck = 0f
 
+    /** Sturm-Silhouette 0..1: Körper als dunkle marineblaue Form (Auftritt im Schneesturm). */
+    var shade = 0f
+
     /** Posen-Kanäle, siehe [NivarisModel.FWD] … */
     val p = FloatArray(NivarisModel.COUNT)
 
@@ -576,6 +579,7 @@ class NivarisBody {
     private var speed = 0.0
     private var wasFlying = false
     private var takeoffOdo = -100.0
+    private var smSlope = Double.NaN
 
     /** Aktueller Bodenhub je Punkt (siehe [normal]). */
     private val lift = DoubleArray(POINTS)
@@ -659,8 +663,10 @@ class NivarisBody {
                 } else {
                     // Kopf folgt knickfrei der Halsrichtung und blickt über die Arena im Norden.
                     val neckDir = pts[0].subtract(pts[1]).normalizeOr(Vec(0.0, 0.0, -1.0))
-                    val arenaLook = yawPitch(Math.PI.toFloat() + p[NivarisModel.YAW], (p[NivarisModel.PITCH] * 0.55f + 0.18f * (1f - r)).coerceIn(-0.45f, 0.35f))
-                    neckDir.lerp(arenaLook, 0.65).normalizeOr(arenaLook)
+                    // Aufgerichtet (Brüllen über dem Gipfel) zählt fast nur der Blick über die Arena: Der steil aufsteigende Hals
+                    // kippte den Kopf sonst weit in den Nacken.
+                    val arenaLook = yawPitch(Math.PI.toFloat() + p[NivarisModel.YAW], (p[NivarisModel.PITCH] * 0.55f + 0.18f * (1f - r)).coerceIn(-0.45f, 0.28f))
+                    neckDir.lerp(arenaLook, 0.65 + 0.3 * r).normalizeOr(arenaLook)
                 }
                 smYaw = s.bodyYaw
                 for (i in 0 until POINTS) air[i] = if (mode == NivarisModeC.UNCOIL && i * NivarisShape.SEGMENT < u) {
@@ -764,10 +770,14 @@ class NivarisBody {
         val spine = base.add(0.0, NivarisShape.SPINE_UP + p[NivarisModel.REAR] * 0.5, 0.0)
         // Follow the slope of the same trail that drives the shoulders.
         val previous = trail.firstOrNull { it.p.squaredDistanceTo(spine) >= 4.0 }?.p
-        val flightSlope = if (e.flying && previous != null) {
+        val wantSlope = if (e.flying && previous != null) {
             val delta = spine.subtract(previous)
             kotlin.math.atan2(delta.y, kotlin.math.hypot(delta.x, delta.z)).coerceIn(-0.48, 0.48) * (1.0 - ground.coerceAtLeast(0f))
         } else 0.0
+        // Begrenzte Änderung je Tick: Der Kopf sitzt ~7 Blöcke vor der Rumpfmitte, ein Sprung der Spurneigung (Knick in der
+        // Bahn, Spurpunkt wechselt) warf ihn sonst in einem Tick um bis zu 5 Blöcke herum.
+        smSlope = if (smSlope.isNaN()) wantSlope else smSlope + (wantSlope - smSlope).coerceIn(-0.035 * dt, 0.035 * dt)
+        val flightSlope = smSlope
         val neckWave = (1.0 - ground.coerceIn(0f, 1f)) * kotlin.math.sin(odo * WAVE_LAT + 0.6)
         val forward = p[NivarisModel.FWD].toDouble()
         val h = base.add(f.multiply(forward * kotlin.math.cos(flightSlope)))
@@ -895,6 +905,13 @@ class NivarisBody {
         pts[NECK] = spine
         var carry = 0.0
         var prevYaw = backYaw
+        // Nach dem Aufsetzen stehen Vorder- und Hinterläufe genau dort, wo sie den Boden berührt haben, bis sie sich wieder
+        // bewegt: der Leib bis zu den Hinterläufen bleibt waagerecht auf dem gelandeten Verlauf, nur die Höhe senkt sich.
+        // Läuft sie wieder los (oder hebt ab), löst sich der Halt weich über 10 Ticks statt in einem Bild umzuspringen.
+        val holdOk = landedPts != null && !e.flying && speed < 0.55 && landedSpine?.let { (it.x - spine.x) * (it.x - spine.x) + (it.z - spine.z) * (it.z - spine.z) < 0.36 } == true
+        holdW = approach(holdW, if (holdOk) 1f else 0f, dt / 10f)
+        if (!holdOk && holdW <= 0f) landedPts = null
+        val held = landedPts?.takeIf { holdW > 0f }
         for (k in 0 until BODY) {
             val i = NECK + 1 + k
             // Durchgehend abgewickelt, damit benachbarte Glieder nie in verschiedene Richtungen überblenden.
@@ -915,8 +932,18 @@ class NivarisBody {
             yaw = if (k == 0) backYaw + wrapRad(yaw - backYaw).coerceIn(-neckClamp, neckClamp)
             else prevYaw + wrapRad(yaw - prevYaw).coerceIn(-maxJoint, maxJoint)
             prevYaw = yaw
-            val cp = kotlin.math.cos(pitch)
-            q = q.add(Vec(kotlin.math.cos(yaw) * cp, kotlin.math.sin(pitch), kotlin.math.sin(yaw) * cp).multiply(NivarisShape.SEGMENT))
+            // Waagerecht: im Flug die Länge aus der Neigung, am Boden die beim Aufsetzen gemessene (kein Strecken beim Abflachen).
+            val flat = MathHelper.lerp(w, NivarisShape.SEGMENT * kotlin.math.cos(pitch), restFlat[k])
+            q = q.add(Vec(kotlin.math.cos(yaw) * flat, kotlin.math.sin(pitch) * NivarisShape.SEGMENT, kotlin.math.sin(yaw) * flat))
+            if (held != null && i <= NivarisShape.HIND_GLIED) {
+                val l = held[i]
+                val hw = holdW.toDouble()
+                q = q.lerp(Vec(l.x, MathHelper.lerp(w, l.y, q.y), l.z), hw)
+                prevYaw += wrapRad(kotlin.math.atan2(l.z - held[i - 1].z, l.x - held[i - 1].x) - prevYaw) * hw
+                pts[i] = q.lerp(tmpP[k + 1], (1.0 - w) * (1.0 - idle * 0.65) * (1.0 - hw))
+                ups[i] = UP_V
+                continue
+            }
             // In flight stay on the sampled rail. Rebuilding the centerline from
             // clamped angles cuts across bends and swings the long tail through rock.
             val railWeight = (1.0 - w) * (1.0 - idle * 0.65)
@@ -990,6 +1017,14 @@ class NivarisBody {
     /** Aktuelle Bodenform: Gier je Glied, gleitet zu [restTarget]. */
     private val restYaw = DoubleArray(BODY)
     private val restTarget = DoubleArray(BODY)
+    /** Waagerechte Länge je Glied am Boden (beim Aufsetzen aus dem sichtbaren Körper, sonst volle Gliedlänge). */
+    private val restFlat = DoubleArray(BODY) { NivarisShape.SEGMENT }
+    /** Gier je Glied im Moment des Aufsetzens. */
+    private val landedYaw = DoubleArray(BODY)
+    /** Sichtbarer Körper im Moment des Aufsetzens und die Rumpfmitte dazu (Läufe bleiben dort stehen). */
+    private var landedPts: Array<Vec>? = null
+    private var landedSpine: Vec? = null
+    private var holdW = 0f
     private var restLive = false
     private var restAnchor: Vec? = null
     private var restBase = 0.0
@@ -1006,30 +1041,66 @@ class NivarisBody {
             // In der Luft folgt die Bodenform immer dem echten Anflug, damit die Landung ohne Seitwärtssprung ansetzt.
             System.arraycopy(fYaw, 0, restYaw, 0, BODY)
             System.arraycopy(fYaw, 0, restTarget, 0, BODY)
+            restFlat.fill(NivarisShape.SEGMENT)
             restLive = false
             restAnchor = null
             return
         }
         if (!restLive) {
             System.arraycopy(fYaw, 0, restYaw, 0, BODY)
-            System.arraycopy(fYaw, 0, restTarget, 0, BODY)
-            restBase = fYaw[0]
+            restFlat.fill(NivarisShape.SEGMENT)
+            // Beim Aufsetzen genau den sichtbaren Körper übernehmen: Gier und waagerechte Länge je Glied aus dem letzten
+            // Bild. Vorher wurde die Bodenform aus der Flugspur gebaut und beim Abflachen auf volle Gliedlänge gestreckt,
+            // dadurch rutschten die Hinterläufe nach dem Aufsetzen fast 3 Blöcke nach hinten.
+            last?.takeIf { it.size == POINTS }?.let { l ->
+                for (k in 0 until BODY) {
+                    val a = l[NECK + k]
+                    val b = l[NECK + 1 + k]
+                    val dx = b.x - a.x
+                    val dz = b.z - a.z
+                    val flat = kotlin.math.sqrt(dx * dx + dz * dz)
+                    if (flat > 0.2) {
+                        restYaw[k] = kotlin.math.atan2(dz, dx)
+                        restFlat[k] = flat.coerceAtMost(NivarisShape.SEGMENT)
+                    }
+                }
+            }
+            System.arraycopy(restYaw, 0, restTarget, 0, BODY)
+            System.arraycopy(restYaw, 0, landedYaw, 0, BODY)
+            landedPts = last?.takeIf { it.size == POINTS }?.copyOf()
+            landedSpine = spine
+            holdW = if (landedPts != null) 1f else 0f
+            restBase = restYaw[0]
             restLive = true
             // Prüfen, ob die gelandete Lage bereits ganz auf freiem Boden liegt: dann fest verankern (0 Fußrutschen!).
             var bad = 0
             var x = spine.x
             var z = spine.z
             for (k in 0 until BODY) {
-                x += kotlin.math.cos(fYaw[k]) * NivarisShape.SEGMENT
-                z += kotlin.math.sin(fYaw[k]) * NivarisShape.SEGMENT
+                x += kotlin.math.cos(restYaw[k]) * restFlat[k]
+                z += kotlin.math.sin(restYaw[k]) * restFlat[k]
                 val top = world.getTopY(net.minecraft.world.Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, MathHelper.floor(x), MathHelper.floor(z)).toDouble()
                 if (top > groundY + 3.5 || top < groundY - 6.0) bad++
             }
-            restAnchor = if (bad == 0) spine else null
+            restAnchor = spine
+            if (bad > 0) {
+                // Liegt der Schwanz auf Fels oder über einer Kante, legt sich nur der Teil hinter den Hinterläufen neu.
+                // Vorder- und Hinterläufe bleiben genau dort stehen, wo sie aufgesetzt haben.
+                val back = kotlin.math.atan2(-f.z, -f.x)
+                restCoiled = false
+                restBase = back + wrapRad(restYaw[0] - back).coerceIn(-0.45, 0.45)
+                pickRest(world, spine, back, false)
+                for (k in 0 until BODY) {
+                    val shape = restBase + restHeading(restKind, (k + 0.5) * NivarisShape.SEGMENT) * restSign
+                    val hold = 1.0 - smooth(MathHelper.clamp((k - LANDED_HOLD) / 5f, 0f, 1f)).toDouble()
+                    restTarget[k] = shape + wrapRad(landedYaw[k] - shape) * hold
+                }
+            }
         }
         val moving = speed > 0.55
         if (moving) {
             System.arraycopy(fYaw, 0, restTarget, 0, BODY)
+            for (k in 0 until BODY) restFlat[k] += (NivarisShape.SEGMENT - restFlat[k]) * (1.0 - kotlin.math.exp(-dt * 0.2))
             restAnchor = null
         } else {
             val coiled = false
@@ -1051,7 +1122,9 @@ class NivarisBody {
             }
         }
         val rate = 1.0 - kotlin.math.exp(-dt * (if (moving) 0.4 else 0.11))
-        for (k in 0 until BODY) restYaw[k] += wrapRad(restTarget[k] - restYaw[k]) * rate
+        // Im Stand höchstens 0,03 rad je Glied und Tick: Der Schwanz legt sich ruhig um (Schwanzspitze < 2 Blöcke je Tick).
+        val maxTurn = if (moving) 1.0 else 0.03 * dt
+        for (k in 0 until BODY) restYaw[k] += (wrapRad(restTarget[k] - restYaw[k]) * rate).coerceIn(-maxTurn, maxTurn)
         for (k in 1 until BODY) restYaw[k] = restYaw[k - 1] + wrapRad(restYaw[k] - restYaw[k - 1]).coerceIn(-MAX_BEND_GROUND, MAX_BEND_GROUND)
     }
 
@@ -1321,6 +1394,10 @@ class NivarisBody {
         /** Größter Knick je Gelenk (Bogenmaß): in der Luft Radius 18 Blöcke, am Boden Radius 11 (keine Selbstkreuzung). */
         const val MAX_BEND = NivarisShape.SEGMENT / 18.0
         const val MAX_BEND_GROUND = NivarisShape.SEGMENT / 11.0
+
+        /** Glieder ab der Rumpfmitte, die nach dem Aufsetzen genau liegen bleiben (bis knapp hinter die Hinterläufe). */
+        const val LANDED_HOLD = NivarisShape.HIND_GLIED - NECK
+
         const val MAX_PITCH = 0.58
 
         /** Vorgegebene Bodenformen. */

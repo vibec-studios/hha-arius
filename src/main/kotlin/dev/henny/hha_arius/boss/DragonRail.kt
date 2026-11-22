@@ -142,7 +142,7 @@ object DragonRail {
      */
     fun clearTerrain(
         pts: List<Vec3d>, origin: BlockPos, floorY: Double, clearance: Double = 5.0, landingTail: Int = 0,
-        structures: Boolean = false, takeoffHead: Int = 0,
+        structures: Boolean = false, takeoffHead: Int = 0, structureClearance: Double = clearance,
     ): List<Vec3d> {
         if (pts.size < 2) return pts
         val startFrom = takeoffHead.coerceIn(0, pts.size - 2)
@@ -154,6 +154,8 @@ object DragonRail {
             val rx = floor(q.x).toInt() - origin.x
             val rz = floor(q.z).toInt() - origin.z
             var maxTop = Int.MIN_VALUE
+            // Bauwerke (Laternen, Tempel, Eisspitzen …) getrennt vom Gelände, mit eigenem Abstand [structureClearance].
+            var structTop = Int.MIN_VALUE
             if (rx in (FarPlan.X_MIN + 10)..(FarPlan.X_MAX - 10) && rz in (FarPlan.Z_MIN + 10)..(FarPlan.Z_MAX - 10)) {
                 // Im Höhlengang der Jagd ist der Fels darüber die Decke: nicht darüber heben (sonst fliegt sie durch den Berg).
                 if (tunnel(rx, rz)) {
@@ -165,16 +167,16 @@ object DragonRail {
                 }
                 if (structures) {
                     val lmTop = RideLandmarks.topNear(rx, rz, 6)
-                    if (lmTop > maxTop) maxTop = lmTop
+                    if (lmTop > structTop) structTop = lmTop
                     for (dx in intArrayOf(-5, 0, 5)) for (dz in intArrayOf(-5, 0, 5)) {
                         val sx = rx + dx
                         val sz = rz + dz
-                        FarPlan.iceSpike(sx, sz)?.let { sp -> if (sp[0] > maxTop) maxTop = sp[0] }
+                        FarPlan.iceSpike(sx, sz)?.let { sp -> if (sp[0] > structTop) structTop = sp[0] }
                         if (col != null && FarPlan.inCore(sx, sz)) {
                             ArenaPlan.column(sx, sz, col)
                             for (y in ArenaPlan.Y_MAX downTo 0) {
                                 if (col[y - ArenaPlan.Y_MIN] != ArenaPlan.AIR) {
-                                    if (y > maxTop) maxTop = y
+                                    if (y > structTop) structTop = y
                                     break
                                 }
                             }
@@ -187,12 +189,13 @@ object DragonRail {
                                 Highland.TOWER -> lm.base + 18
                                 else -> lm.base + 8
                             }
-                            if (h > maxTop) maxTop = h
+                            if (h > structTop) structTop = h
                         }
                     }
                 }
             }
-            val terrainMin = if (maxTop > Int.MIN_VALUE) origin.y + maxTop + 1.0 + clearance else floorY + 2.5
+            var terrainMin = if (maxTop > Int.MIN_VALUE) origin.y + maxTop + 1.0 + clearance else floorY + 2.5
+            if (structTop > Int.MIN_VALUE) terrainMin = max(terrainMin, origin.y + structTop + 1.0 + structureClearance)
             minYs[i] = max(pts[i].y, max(floorY + 2.5, terrainMin))
             if (overPillar(rx, rz)) minYs[i] = max(minYs[i], floorY + PILLAR_TOP)
         }
@@ -282,6 +285,31 @@ object DragonRail {
             }
             acc += len
         }
+        return out
+    }
+
+    /**
+     * Gleiche Bogenlänge zwischen allen Punkten ([STEP] im Raum, nicht nur waagerecht). [clearTerrain] hebt Punkte nur an:
+     * Ein steiler Anstieg über Bauwerke lag danach auf wenigen Punkten, und weil [at] nach Punktnummer läuft, schoss sie
+     * dort mit 3 bis 4 Blöcken pro Tick hoch. Nach dem Umrechnen fliegt sie überall genau mit dem gewollten Tempo.
+     */
+    fun evenSpacing(pts: List<Vec3d>): List<Vec3d> {
+        if (pts.size < 2) return pts
+        val out = ArrayList<Vec3d>(pts.size + 16)
+        out += pts[0]
+        var acc = 0.0
+        var next = STEP
+        for (i in 1 until pts.size) {
+            val a = pts[i - 1]
+            val b = pts[i]
+            val len = a.distanceTo(b)
+            while (acc + len >= next && len > 1e-9) {
+                out += a.lerp(b, (next - acc) / len)
+                next += STEP
+            }
+            acc += len
+        }
+        if (out.last().squaredDistanceTo(pts.last()) > 1e-6) out += pts.last()
         return out
     }
 

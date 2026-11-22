@@ -276,7 +276,23 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
         builder.add(VEIL, 0f)
         builder.add(BODY_ROLL, 0f)
         builder.add(WING_TUCK, 0f)
+        builder.add(SHADE, 0f)
     }
+
+    /**
+     * Sturm-Silhouette 0..1 (Auftritt): Der Körper wird zu einer dunklen, marineblauen Form, die im Schneesturm als
+     * Schatten steht, auch ohne Nebel (NoFog). Der Client blendet weich dorthin ([shadeAt]).
+     */
+    var shade: Float
+        get() = dataTracker.get(SHADE)
+        set(value) = dataTracker.set(SHADE, value.coerceIn(0f, 1f))
+
+    private var lastShade = 0f
+    private var seenShade = 0f
+    private var shadeSeen = false
+
+    /** Silhouette zwischen den Ticks (Client). */
+    fun shadeAt(tickDelta: Float): Float = lastShade + (seenShade - lastShade) * tickDelta
 
     /** Zusätzliche Längsrolle des Körpers in Bogenmaß (Fassrolle beim Abwurf der Reiter). */
     var bodyRoll: Float
@@ -370,10 +386,23 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
     /** Client: Lösen-Fortschritt aus dem Bewegungspuffer ([MotionSync]) für diesen Tick. */
     fun smoothUncoil(value: Float) {
         lastUncoil = seenUncoil
-        seenUncoil = value
-        if (kotlin.math.abs(seenUncoil - lastUncoil) > 0.05f) lastUncoil = seenUncoil
+        // Gleichmäßiger Vorschub: Der Abspielpuffer gleicht schwankende Paketzeiten mit bis zu ±30 % Tempo aus. Beim Sturz
+        // über die Schlucht (fast 3 Blöcke je Tick) ruckte der ganze Leib dadurch abwechselnd vor und zurück. Ein kritisch
+        // geglättetes Tempo (Mittel der Schritte) plus sanftes Nachführen auf den echten Wert glättet das ohne Verzug.
+        if (rawUncoil.isNaN()) rawUncoil = value
+        uncoilVel += ((value - rawUncoil) - uncoilVel) * 0.3f
+        rawUncoil = value
+        seenUncoil = (seenUncoil + uncoilVel + (value - seenUncoil) * 0.2f).coerceIn(0f, 1f)
+        if (kotlin.math.abs(value - seenUncoil) > 0.05f) {
+            seenUncoil = value
+            lastUncoil = value
+            uncoilVel = 0f
+        }
         smoothedUncoil = true
     }
+
+    private var uncoilVel = 0f
+    private var rawUncoil = Float.NaN
 
     private var smoothedUncoil = false
 
@@ -403,6 +432,13 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
             if (kotlin.math.abs(seenRoll - lastRoll) > 1.2f) lastRoll = seenRoll
             lastTuck = seenTuck
             seenTuck += (wingTuck - seenTuck).coerceIn(-0.09f, 0.09f)
+            if (!shadeSeen) {
+                // Frisch geladen: gleich den Wert des Servers, nicht erst hineinblenden.
+                shadeSeen = true
+                seenShade = shade
+            }
+            lastShade = seenShade
+            seenShade += (shade - seenShade).coerceIn(-0.045f, 0.08f)
         } else {
             syncRiders()
             if (veilRate != 0f) {
@@ -452,6 +488,7 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
         private val VEIL: TrackedData<Float> = DataTracker.registerData(NivarisEntity::class.java, TrackedDataHandlerRegistry.FLOAT)
         private val BODY_ROLL: TrackedData<Float> = DataTracker.registerData(NivarisEntity::class.java, TrackedDataHandlerRegistry.FLOAT)
         private val WING_TUCK: TrackedData<Float> = DataTracker.registerData(NivarisEntity::class.java, TrackedDataHandlerRegistry.FLOAT)
+        private val SHADE: TrackedData<Float> = DataTracker.registerData(NivarisEntity::class.java, TrackedDataHandlerRegistry.FLOAT)
 
         /**
          * Trefferbox 4,5 × 3,6: der Rumpf vorn (Glieder 2–4). Der 96 Blöcke lange Körper ist nur Darstellung und
