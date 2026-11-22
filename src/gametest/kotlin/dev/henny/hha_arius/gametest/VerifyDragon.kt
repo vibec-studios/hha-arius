@@ -281,6 +281,7 @@ class VerifyDragon : FabricClientGameTest {
         // Ritt in den Horst: Tick für Tick bis zum Abwurf, dann dichte Bilder und die Lagen im Protokoll.
         var guard = 0
         while (guard++ < 1200 && client { c -> c.player?.hasVehicle() == true }) {
+            if (guard <= 34 && guard % 3 == 1) shot("carry_pickup_%02d".format(guard / 3))
             if (guard % 20 == 1) shot("carry_%03d".format(guard / 20))
             tick()
         }
