@@ -187,7 +187,8 @@ object DragonRail {
                 }
             }
         }
-        return List(pts.size) { i -> Vec3d(pts[i].x, smooth[i], pts[i].z) }
+        // Auch im Landeanflug nie unter die Lauffläche (eine steile Einflugrichtung schoss sonst bis zu 3 Blöcke in den Boden).
+        return List(pts.size) { i -> Vec3d(pts[i].x, max(smooth[i], floorY), pts[i].z) }
     }
 
     /**
