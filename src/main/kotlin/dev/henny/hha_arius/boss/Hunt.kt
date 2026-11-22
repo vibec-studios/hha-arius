@@ -1241,23 +1241,31 @@ class Hunt(private val f: EirholmFight) {
         if (d != null) dragonBusy = true
         try {
             val fallFrom = a.entityPos
-            val valleyFloor = terrainTop(fallFrom.add(valley.multiply(8.0)), 1)
             val catchTicks = 30
-            val out = valley.multiply(9.0)
-            val dropDepth = (fallFrom.y - valleyFloor - 5.0).coerceIn(5.0, 18.0)
-            val caught = fallFrom.add(out).add(0.0, -dropDepth, 0.0)
-            val catchAt = caught.add(0.0, -NivarisShape.SPINE_UP - 0.5, 0.0)
-            val startRaw = catchAt.subtract(dir.multiply(37.0)).add(valley.multiply(27.0))
-            val diveStart = Vec3d(startRaw.x, maxOf(fallFrom.y + 17.0, terrainTop(startRaw, 7) + 10.0), startRaw.z)
-            val exit = landing.add(dir.multiply(24.0)).add(valley.multiply(29.0)).add(0.0, 23.0, 0.0)
-            val dropPoint = landing.add(valley.multiply(5.0)).add(0.0, 10.5, 0.0)
-            val flight = if (d != null) {
-                yieldAll(DragonRail.fly(f, d, listOf(diveStart), speed = 2.3))
-                val dive = d.entityPos.lerp(catchAt, 0.62).add(valley.multiply(3.0)).add(0.0, 2.0, 0.0)
-                DragonRail.spline(listOf(d.entityPos, dive, catchAt, dropPoint, exit))
+            val clearance = 8.0
+            val plannedCatch = (12..24 step 4).map { offset ->
+                val q = fallFrom.add(valley.multiply(offset.toDouble()))
+                Vec3d(q.x, maxOf(fallFrom.y - 19.0, terrainTop(q, 8) + clearance), q.z)
+            }.firstOrNull { it.y < fallFrom.y - 11.0 }
+                ?: fallFrom.add(valley.multiply(26.0)).add(0.0, -8.0, 0.0)
+            val startRaw = plannedCatch.subtract(dir.multiply(42.0)).add(valley.multiply(20.0))
+            val diveStart = Vec3d(startRaw.x, maxOf(fallFrom.y + 18.0, terrainTop(startRaw, 8) + 12.0), startRaw.z)
+            val pullout = plannedCatch.add(dir.multiply(12.0)).add(valley.multiply(6.0)).add(0.0, 2.0, 0.0)
+            val dropPoint = landing.add(valley.multiply(17.0)).add(0.0, 14.0, 0.0)
+            val exit = dropPoint.add(dir.multiply(30.0)).add(valley.multiply(15.0)).add(0.0, 12.0, 0.0)
+            val rawFlight = if (d != null) {
+                val approach = diveStart.subtract(dir.multiply(52.0)).add(valley.multiply(7.0))
+                yieldAll(DragonRail.fly(f, d, listOf(approach, diveStart), speed = 2.3))
+                val dive = d.entityPos.lerp(plannedCatch, 0.56).add(0.0, 1.0, 0.0)
+                DragonRail.spline(listOf(d.entityPos, dive, plannedCatch, pullout, dropPoint, exit))
             } else emptyList()
-            val catchS = flight.indices.minByOrNull { flight[it].squaredDistanceTo(catchAt) }?.times(DragonRail.STEP) ?: 0.0
-            val dropS = flight.indices.minByOrNull { flight[it].squaredDistanceTo(dropPoint) }?.times(DragonRail.STEP) ?: 0.0
+            val catchIdx = rawFlight.indices.minByOrNull { rawFlight[it].squaredDistanceTo(plannedCatch) } ?: 0
+            val dropIdx = rawFlight.indices.minByOrNull { rawFlight[it].squaredDistanceTo(dropPoint) } ?: 0
+            val flight = DragonRail.clearTerrain(rawFlight, f.origin, f.floorY, clearance)
+            val catchS = catchIdx * DragonRail.STEP
+            val dropS = dropIdx * DragonRail.STEP
+            val catchAt = flight.getOrNull(catchIdx) ?: plannedCatch
+            val caught = catchAt.add(0.0, NivarisShape.SPINE_UP + 0.5, 0.0)
             fun flyAt(s: Double): Vec3d {
                 val p = DragonRail.at(flight, s)
                 val motion = DragonRail.at(flight, s + 3.0).subtract(DragonRail.at(flight, s - 2.0))
@@ -1305,8 +1313,11 @@ class Hunt(private val f: EirholmFight) {
                     for (n in 1..catchTicks) {
                         val k = n / catchTicks.toDouble()
                         val fall = fallFrom.lerp(caught, k)
-                        f.place(a, Vec3d(fall.x, fallFrom.y - dropDepth * k * k, fall.z))
-                        if (d != null) flyAt(catchS * (0.55 * k + 0.45 * k * k))
+                        f.place(a, Vec3d(fall.x, fallFrom.y + (caught.y - fallFrom.y) * k * k, fall.z))
+                        if (d != null) {
+                            d.wingTuck = (n / 14f).coerceAtMost(0.84f)
+                            flyAt(catchS * (0.55 * k + 0.45 * k * k))
+                        }
                         if (n == 12) cue("nivaris.roar", catchAt, 5f, 0.85f)
                         if (n == 22) cue("nivaris.wing", catchAt, 4f, 0.7f)
                         yield(Unit)
@@ -1348,8 +1359,9 @@ class Hunt(private val f: EirholmFight) {
                         cue("arius.wind_step", rel, 3f, 0.85f)
                         for (n in 1..leapTicks) {
                             val k = n / leapTicks.toDouble()
-                            f.place(a, rel.lerp(landing, k).add(0.0, sin(k * PI) * 1.4, 0.0))
+                            f.place(a, rel.lerp(landing, k).add(0.0, sin(k * PI) * 3.0, 0.0))
                             f.face(a, landing.add(dir))
+                            d.wingTuck = (1f - k.toFloat()) * 0.84f
                             flyAt(dropS + (DragonRail.length(flight) - dropS) * k)
                             yield(Unit)
                         }
@@ -1379,6 +1391,7 @@ class Hunt(private val f: EirholmFight) {
         } finally {
             f.atmos(HUNT_ATMOS, 16)
             if (d != null) {
+                d.wingTuck = 0f
                 f.task(script {
                     try { yieldAll(whileChasing(rejoinRail(d))) } finally { dragonBusy = false }
                 })
