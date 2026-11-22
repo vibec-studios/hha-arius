@@ -85,6 +85,9 @@ enum class HuntFx {
 
     /** Seit 1.11.0: Fortschritt beim Kappen der Seile (a = 0..1), life = Anzeigedauer. */
     ROPE_PROGRESS,
+
+    /** Seit 1.13.0: Deutlicher Hinweis am Felsspalt in der dunklen Höhle (pos = Spalt, dir = in den Gang, life = Dauer). */
+    EYE_CUE,
 }
 
 /** Paket zu [HuntFx]. Ursprung der Instanz ergibt der Client aus der Position (wie die Landschaftseffekte). */

@@ -29,6 +29,14 @@ class VerifyHunt : FabricClientGameTest {
             far()
             if (parts.size == 1) return@run
         }
+        if ("temple" in parts) {
+            templeShowcase()
+            if (parts.size == 1) return@run
+        }
+        if ("armor" in parts) {
+            armorAbilities()
+            if (parts.size == 1) return@run
+        }
         if ("moon" in parts) {
             moon()
             if (parts.size == 1) return@run
@@ -135,19 +143,223 @@ class VerifyHunt : FabricClientGameTest {
         tick(60)
     }
 
-    /** Bergschnitt und Tritt aus dem Tempel, ein Bild je 8 Ticks. */
+    /** Neugestaltetes Heiligtum (Paket C): prüft alle Gameplay-Anker und filmt fünf Blickwinkel. */
+    private fun VerifyKit.templeShowcase() {
+        waitUntil(900, 2) {
+            server { srv -> Cine.requestSkip(player(srv)) }
+            !client { dev.henny.hha.client.cine.CinePlayer.active }
+        }
+        tick(20)
+        // Alle Ankerpunkte im Tempel auf Boden + 2 Blöcke Kopffreiheit prüfen.
+        server {
+            val f = checkNotNull(fight())
+            val w = f.world
+            fun checkSpot(name: String, rel: Vec3d) {
+                val p = f.abs(rel)
+                val feet = BlockPos.ofFloored(p.x, p.y + 0.05, p.z)
+                val below = w.getBlockState(feet.down())
+                check(!below.getCollisionShape(w, feet.down()).isEmpty) { "Anchor $name has no floor below $feet ($below)" }
+                val fShape = w.getBlockState(feet).getCollisionShape(w, feet)
+                check(fShape.isEmpty || fShape.getMax(net.minecraft.util.math.Direction.Axis.Y) <= 0.25) { "Anchor $name blocked at feet $feet (${w.getBlockState(feet)})" }
+                check(w.getBlockState(feet.up()).getCollisionShape(w, feet.up()).isEmpty) { "Anchor $name blocked at head ${feet.up()} (${w.getBlockState(feet.up())})" }
+            }
+            val L = dev.henny.hha_arius.arena.ArenaLayout
+            checkSpot("SEAT", L.SEAT)
+            checkSpot("CUT_STAND", L.CUT_STAND)
+            checkSpot("WATCH_SEAT", L.WATCH_SEAT)
+            checkSpot("DAIS_FRONT", L.DAIS_FRONT)
+            checkSpot("ARRIVAL", L.ARRIVAL)
+            checkSpot("WATCH_UPPER", L.WATCH_UPPER)
+            for ((i, s) in L.LANDING.withIndex()) checkSpot("LANDING_$i", s)
+            for (gx in -L.GATE_HALF_WIDTH..L.GATE_HALF_WIDTH) for (gz in -33..-28) for (gy in 0 until L.GATE_HEIGHT) {
+                val gp = f.abs(BlockPos(gx, gy, gz))
+                check(w.getBlockState(gp).isAir) { "South gate obstructed at rel ($gx,$gy,$gz)" }
+            }
+        }
+        log("temple anchors & gate clearance: ALL OK")
+        cmd("gamemode creative @p")
+        cmd("time set 6000")
+        val shots = listOf(
+            Triple("temple_gate", Vec3d(0.5, 4.5, -13.0), Vec3d(0.5, 7.5, -35.0)),
+            Triple("temple_aisle", Vec3d(0.5, 3.0, -34.0), Vec3d(0.5, 7.0, -67.0)),
+            Triple("temple_throne", Vec3d(-5.0, 4.2, -52.0), Vec3d(0.5, 6.5, -67.0)),
+            Triple("temple_colonnade", Vec3d(11.5, 5.0, -39.0), Vec3d(-11.0, 5.5, -56.0)),
+            Triple("temple_aerial", Vec3d(-24.0, 26.0, -14.0), Vec3d(0.5, 5.0, -54.0)),
+        )
+        for ((name, rel, look) in shots) {
+            server { srv ->
+                val p = player(srv)
+                val f = fight() ?: return@server
+                p.abilities.flying = true
+                p.sendAbilitiesUpdate()
+                val at = f.abs(rel)
+                val d = f.abs(look).subtract(at)
+                val yaw = (Math.toDegrees(atan2(d.z, d.x)) - 90.0).toFloat()
+                val pitch = (-Math.toDegrees(atan2(d.y, sqrt(d.x * d.x + d.z * d.z)))).toFloat()
+                p.teleport(p.entityWorld as ServerWorld, at.x, at.y, at.z, emptySet(), yaw, pitch, false)
+                p.velocity = Vec3d.ZERO
+            }
+            tick(18)
+            settle(200)
+            shot(name)
+        }
+        cmd("gamemode survival @p")
+    }
+
+    /** Aktive Drachen-Fähigkeiten der Rüstung (Atem & Schweif, Paket C): filmt Vorlauf, Höhepunkt und Ausklang auf Schnee. */
+    private fun VerifyKit.armorAbilities() {
+        waitUntil(900, 2) {
+            server { srv -> Cine.requestSkip(player(srv)) }
+            !client { dev.henny.hha.client.cine.CinePlayer.active }
+        }
+        tick(16)
+        server { srv ->
+            val f = checkNotNull(fight())
+            f.arius?.isAiDisabled = true
+            f.calls.reset()
+            f.atmos(dev.henny.hha_arius.net.AtmosMode.CLEAR, 1)
+            val p = player(srv)
+            val spot = f.abs(Vec3d(0.5, 0.0, -8.0))
+            p.teleport(f.world, spot.x, spot.y, spot.z, emptySet(), 0f, 5f, false)
+            p.velocity = Vec3d.ZERO
+        }
+        client { c -> c.options.perspective = net.minecraft.client.option.Perspective.THIRD_PERSON_BACK }
+        tick(10)
+        // 1) Drachenatem (Brustplatte): erst Spielersicht (Third-Person-Back), dann Seiten-/3/4-Heldenansicht über Dummy-Ständer
+        server { srv ->
+            val p = player(srv)
+            dev.henny.hha_arius.gear.art.ArtFx.send(p.entityWorld as ServerWorld, dev.henny.hha_arius.net.FxKind.DRAGON_BREATH, p.entityPos, a = 14f, life = 34, e1 = p.id)
+        }
+        tick(4); shot("armor_breath_back_04")
+        tick(10); shot("armor_breath_back_14")
+        tick(24)
+        // 3/4-Heldenansicht für Drachenatem + Drachenschweif auf freier Schneefläche (zeigt volle Silhouette)
+        cmd("gamemode creative @p")
+        val dummyId = server { srv ->
+            val f = checkNotNull(fight())
+            val stand = net.minecraft.entity.decoration.ArmorStandEntity(f.world, f.abs(Vec3d(0.5, 0.0, -8.0)).x, f.abs(Vec3d(0.5, 0.0, -8.0)).y, f.abs(Vec3d(0.5, 0.0, -8.0)).z)
+            stand.yaw = 0f; stand.headYaw = 0f; stand.bodyYaw = 0f; stand.pitch = 0f
+            stand.isInvulnerable = true
+            f.world.spawnEntity(stand)
+            val p = player(srv)
+            p.abilities.flying = true; p.sendAbilitiesUpdate()
+            val cam = f.abs(Vec3d(-8.5, 4.2, -1.5))
+            val look = f.abs(Vec3d(0.5, 1.8, -3.5)).subtract(cam)
+            val yaw = (Math.toDegrees(atan2(look.z, look.x)) - 90.0).toFloat()
+            val pitch = (-Math.toDegrees(atan2(look.y, sqrt(look.x * look.x + look.z * look.z)))).toFloat()
+            p.teleport(f.world, cam.x, cam.y, cam.z, emptySet(), yaw, pitch, false)
+            p.velocity = Vec3d.ZERO
+            stand.id
+        }
+        client { c -> c.options.perspective = net.minecraft.client.option.Perspective.FIRST_PERSON }
+        tick(6)
+        server {
+            val f = checkNotNull(fight())
+            val stand = f.world.getEntityById(dummyId) ?: return@server
+            dev.henny.hha_arius.gear.art.ArtFx.send(f.world, dev.henny.hha_arius.net.FxKind.DRAGON_BREATH, stand.entityPos, a = 14f, life = 34, e1 = stand.id)
+        }
+        tick(5); shot("armor_breath_hero_05")
+        tick(10); shot("armor_breath_hero_15")
+        tick(24)
+        // 2) Drachenschweif (Beinschienen) aus 3/4-Heldenansicht
+        server {
+            val f = checkNotNull(fight())
+            val stand = f.world.getEntityById(dummyId) ?: return@server
+            dev.henny.hha_arius.gear.art.ArtFx.send(f.world, dev.henny.hha_arius.net.FxKind.DRAGON_TAIL, stand.entityPos, a = 6.5f, b = 0.0f, life = 22, e1 = stand.id)
+        }
+        var tTail = 0
+        for (dt in listOf(3, 3, 4, 4)) {
+            tick(dt)
+            tTail += dt
+            shot("armor_tail_%02d".format(tTail))
+        }
+        tick(14)
+        server {
+            val f = checkNotNull(fight())
+            f.world.getEntityById(dummyId)?.discard()
+            f.arius?.isAiDisabled = false
+        }
+        cmd("gamemode survival @p")
+    }
+
+    /** Bergschnitt, Gipfelarena-Spaltung, goldene Yang-Wiederherstellung und Absturz-Sicherheit (Paket C). */
     private fun VerifyKit.mountainCut() {
+        // Spieler neben der Schnittlinie absetzen (CUT_X = 0), damit der Null-Schnitt den Spieler nicht im Test tötet!
+        server { srv ->
+            val f = checkNotNull(fight())
+            val p = player(srv)
+            val safe = f.abs(Vec3d(-12.0, 0.0, -8.0))
+            p.teleport(f.world, safe.x, safe.y, safe.z, emptySet(), 0f, 0f, false)
+            p.velocity = Vec3d.ZERO
+            p.health = p.maxHealth
+        }
+        val sampleBefore = server {
+            val f = checkNotNull(fight())
+            val w = f.world
+            val out = HashMap<BlockPos, net.minecraft.block.BlockState>()
+            val cutX = kotlin.math.floor(dev.henny.hha_arius.arena.ArenaLayout.CUT_X).toInt()
+            val sz = dev.henny.hha_arius.arena.ArenaLayout.SPIRE.z
+            val sy = f.summitCenterRel.y.toInt() - 1
+            // Stichprobe: Bergflanke (y 20..90) + Gipfelarena-Boden & Mauer & Horn (y sy..sy+30)
+            for (z in (sz - 120)..(sz + 40) step 2) for (dx in -4..4) {
+                val x = cutX + dx
+                for (y in intArrayOf(30, 60, 100, sy, sy + 1, sy + 2, sy + 10, sy + 24)) {
+                    val p = f.origin.add(x, y, z)
+                    out[p] = w.getBlockState(p)
+                }
+            }
+            out
+        }
+        val sy = server { checkNotNull(fight()).summitCenterRel.y.toInt() - 1 }
         server { fight()?.let { f -> f.startDirector(f.scenes.theCut()) } }
         var i = 0
         var t = 0
-        while (t < 840 && phase() < dev.henny.hha_arius.boss.EirholmFight.Phase.GLACIER) {
-            shot("mtn_%03d".format(i++))
-            // Der Tritt selbst dichter: Treffer, Salto, Aufprall, Aufstehen.
-            val step = if (t in 350..520) 3 else 8
-            tick(step)
-            t += step
+        var peakFlankCarved = 0
+        var peakSummitCarved = 0
+        while (t < 640 && phase() < dev.henny.hha_arius.boss.EirholmFight.Phase.GLACIER) {
+            if (t % 8 == 0) shot("mtn_%03d".format(i++))
+            if (t % 12 == 0) {
+                val (fc, sc) = server {
+                    val f = fight() ?: return@server 0 to 0
+                    val w = f.world
+                    var fl = 0; var su = 0
+                    for ((pos, orig) in sampleBefore) {
+                        if (orig.isAir) continue
+                        if (w.getBlockState(pos).isAir) {
+                            if (pos.y - f.origin.y >= sy) su++ else fl++
+                        }
+                    }
+                    fl to su
+                }
+                peakFlankCarved = maxOf(peakFlankCarved, fc)
+                peakSummitCarved = maxOf(peakSummitCarved, sc)
+            }
+            tick(4)
+            t += 4
         }
-        log("mountain cut: $i frames, phase ${phase()}")
+        val diffAfterYang = server {
+            val f = fight() ?: return@server -1
+            val w = f.world
+            sampleBefore.count { (pos, orig) -> w.getBlockState(pos) != orig }
+        }
+        log("mountain cut: $i frames, peakFlankCarved=$peakFlankCarved, peakSummitCarved=$peakSummitCarved, diffAfterYang=$diffAfterYang, phase=${phase()}")
+        check(peakFlankCarved > 50) { "Mountain flank was not visibly split ($peakFlankCarved)" }
+        check(peakSummitCarved > 20) { "Summit arena / spire was not split ($peakSummitCarved)" }
+        check(diffAfterYang == 0) { "Yang restoration left $diffAfterYang blocks broken!" }
+
+        // Absturz-/Neustart-Test: Schnitt-Backup simulieren, Blöcke löschen, SplitRecovery.recoverAll ausführen -> 0 Unterschiede.
+        val recovered = server { srv ->
+            val f = checkNotNull(fight())
+            val w = f.world
+            val victim = sampleBefore.entries.filter { !it.value.isAir }.take(250).map { it.key to it.value }
+            dev.henny.hha_arius.boss.SplitRecovery.saveSnapshot(w, f.slot, 80, 320, victim)
+            for ((p, _) in victim) w.setBlockState(p, Blocks.AIR.defaultState, dev.henny.hha_arius.boss.ArenaEdits.FLAGS)
+            val n = dev.henny.hha_arius.boss.SplitRecovery.recoverAll(srv)
+            val left = victim.count { (p, orig) -> w.getBlockState(p) != orig }
+            n to left
+        }
+        log("split crash-recovery test: restored=${recovered.first}, remainingDiff=${recovered.second}")
+        check(recovered.first >= 250 && recovered.second == 0) { "SplitRecovery failed: $recovered" }
     }
 
     /** Mittlere Zeit eines echten Bildes (ohne Tick-Warten). */
@@ -258,9 +470,21 @@ class VerifyHunt : FabricClientGameTest {
     }
 
     private fun VerifyKit.eyeAndSeal(h: Hunt, a0: Double) {
-        tp(h, a0 + 12.0, settleTicks = 2)
-        val eye = waitScene(h)
-        log("Augenszene gestartet: $eye")
+        // 1) Geradeaus den Gang entlang schauen (NICHT in den Spalt): darf die Szene NICHT auslösen, zeigt aber den Hinweis!
+        tp(h, a0 + 8.0, settleTicks = 18)
+        val premature = server { h.debugInScene() || h.debugPending() }
+        log("Auge ohne Hinschauen ausgelöst: $premature (erwartet: false)")
+        check(!premature) { "Eye scene triggered without looking at the slit!" }
+        // Seitlich Richtung Gang & Spalt schauen (noch vor dem Blick-Auslöser), um den Hinweis im freien Gang zu filmen:
+        val slit = checkNotNull(server { h.debugEyeSlit() }) { "No DARK cave eye slit found" }
+        val nearSlit = slit.lerp(server { h.debugPoint(a0 + 13.0).add(0.0, 1.5, 0.0) }, 0.55)
+        tp(h, a0 + 8.6, lookAt = nearSlit, settleTicks = 14)
+        shot("eye_cue")
+        // 2) Jetzt wirklich direkt in den Felsspalt schauen -> Szene muss zuverlässig auslösen!
+        tp(h, a0 + 10.5, lookAt = slit, settleTicks = 2)
+        val eye = waitScene(h, 80)
+        log("Augenszene nach echtem Hinschauen gestartet: $eye")
+        check(eye) { "Eye scene did not trigger when looking directly at the slit!" }
         tick(18)
         shot("eye_0")
         tick(16)

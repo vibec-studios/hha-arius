@@ -286,6 +286,9 @@ enum class FxKind {
     KICK_FLING,
     HORIZON,
     MACE_GRIP,
+
+    /** Goldene Yang-Wiederherstellung entlang der Bergspalte (pos = Fuß, dir = Gipfel, a = Breite, life = Dauer). */
+    YANG_RESTORE,
 }
 
 /**

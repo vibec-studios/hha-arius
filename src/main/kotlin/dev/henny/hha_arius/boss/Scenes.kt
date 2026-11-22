@@ -242,37 +242,63 @@ class Scenes(private val f: EirholmFight) {
         }
         val vantage = Vantage(f)
         val post = CineScene(f) {
+            restoreSplitInstant()
             vantage.restore()
         }
         yieldAll(post.play(script { yieldAll(cutAftermath(post, vantage, a, stand)) }))
+        restoreSplitInstant()
         vantage.restore()
         f.atmos(dev.henny.hha_arius.net.AtmosMode.CLEAR, 30)
         yieldAll(arrival())
     }
 
+    /** Gespaltene Blöcke der laufenden Szene, nach Höhe sortiert für die aufsteigende Yang-Wiederherstellung. */
+    private var activeSplit: List<Pair<BlockPos, net.minecraft.block.BlockState>> = emptyList()
+    private var splitActive = false
+
+    /** Stellt alle noch gespaltenen Blöcke sofort exakt wieder her (Abbruch, Überspringen oder Sicherheitspfad). */
+    fun restoreSplitInstant() {
+        if (!splitActive && activeSplit.isEmpty()) return
+        val list = activeSplit
+        activeSplit = emptyList()
+        splitActive = false
+        if (list.isNotEmpty()) {
+            f.edits.revert(list.map { it.first })
+            for ((pos, state) in list) {
+                if (f.world.getBlockState(pos) != state) {
+                    f.world.setBlockState(pos, state, ArenaEdits.FLAGS)
+                    dev.henny.hha_arius.arena.HighlandView.changed(f.world, pos.x, pos.z)
+                }
+            }
+        }
+        SplitRecovery.clearSnapshot(f.server, f.slot)
+    }
+
     /**
-     * Der Weiße Horizont nach dem Schlag:
+     * Der Weiße Horizont nach dem Schlag (1.13.0):
      * 1. **Totale**: Arius holt aus, die horizontale Schneide zieht einmal über den Tempel und verblasst.
-     * 2. **Hoch über dem Tempel**: Blick nach Süden die Naht entlang, die aufs Massiv zurast.
-     * 3. **Wolkenverhüllung (Totale von hoch außen)**: dichte, wirbelnde Schneewolken hüllen die gesamte Schnittlinie am
-     *    Berg ein (ohne schwebende Block-Trümmer!), während dahinter das Massiv sauber gespalten wird.
-     * 4. **Enthüllung durch die teilenden Wolken**: hohe, kollisionsfreie Fahrt von Nordosten — eine Druckwelle reißt
-     *    die Schneewolken auseinander und gibt den Blick auf die tiefe Kluft frei.
-     * 5. **Weite Panorama-Totale**: der gespaltene Berg unter offenem Himmel; dann rollt der Whiteout heran ([kick]).
+     * 2. **Hoch über dem Tempel**: Blick die Naht entlang in das Massiv; schlanke, feine Frostschleier (nie fette
+     *    Wolken) zeichnen die Schnittkante nach.
+     * 3. **Spaltung von Berg UND Gipfelarena**: weite Totale von Fuß bis Horn — der Schnitt teilt Massiv, Weg,
+     *    Gipfelarena, Ringmauer, Eiskrone und Horn sauber in zwei Hälften.
+     * 4. **Nahblick auf die gespaltene Gipfelarena**: unmissverständlicher Blick über die geteilte Arena.
+     * 5. **Goldene Yang-Wiederherstellung**: eine leuchtende goldene Yang-Welle steigt vom Fuß bis zum Gipfel auf und
+     *    fügt jeden einzelnen Block exakt in seinen Originalzustand zurück; nichts bleibt zerstört (auch bei Absturz).
+     * 6. **Whiteout** zurück in den Tempel → [kick].
      */
     private fun cutAftermath(post: CineScene, vantage: Vantage, a: AriusEntity, stand: Vec3d): Script = script {
         val foot = ArenaLayout.SPIRE.z - FarPlan.MASSIF_R
         val lookout = f.abs(Vec3d(ArenaLayout.CUT_X - 38.0, 0.0, foot - 34.0))
         val x = ArenaLayout.CUT_X
-        val flankEnd = minOf(ArenaLayout.SPIRE.z - FarPlan.SHOULDER_R - 10.0, foot + 92.0)
-        fun shroudClouds(life: Int) {
+        val spireZ = ArenaLayout.SPIRE.z.toDouble()
+        fun seamMist(life: Int) {
             shown {
-                val steps = 11
+                val steps = 8
                 for (k in 0..steps) {
-                    val z = foot - 4.0 + (flankEnd - (foot - 4.0)) * (k / steps.toDouble())
+                    val z = foot + 4.0 + (spireZ + 20.0 - (foot + 4.0)) * (k / steps.toDouble())
                     val top = runCatching { FarPlan.top(x.toInt(), z.toInt()) }.getOrDefault(0).coerceAtLeast(0)
-                    val radius = (30f + (k % 3) * 7f).coerceAtMost(54f)
-                    val at = f.abs(Vec3d(x + ((k % 3) - 1) * 4.0, top + 6.0, z))
+                    val radius = (10f + (k % 3) * 2.5f).coerceAtMost(15f)
+                    val at = f.abs(Vec3d(x, top + 3.0, z))
                     f.fxAll(FxKind.DEBRIS_CLOUD, at, a = radius, b = 1f, life = life)
                 }
             }
@@ -303,122 +329,178 @@ class Scenes(private val f: EirholmFight) {
         shown { f.fxAll(FxKind.FLASH, stand, a = 0.3f, life = 6) }
         f.farSound("cut.split", seamTo, 5f, 1.2f)
         MusicCue.sting(f, "phase")
-        post.line(f.abs(Vec3d(x - 18.0, 42.0, -86.0)), f.abs(Vec3d(x - 14.0, 50.0, -60.0)),
-            f.abs(Vec3d(x, 4.0, -10.0)), f.abs(Vec3d(x, 34.0, foot + 34.0)), 30, 70.0, 64.0)
+        post.line(
+            f.abs(Vec3d(x - 18.0, 46.0, -82.0)), f.abs(Vec3d(x - 14.0, 56.0, -56.0)),
+            f.abs(Vec3d(x, 12.0, -4.0)), f.abs(Vec3d(x, 82.0, foot + 56.0)), 26, 68.0, 62.0,
+        )
         shown {
-            for (k in 0 until 6) f.fxAll(FxKind.CLEAR_WAVE, seamFrom.lerp(seamTo, 0.3 + k * 0.12), a = 5f, life = 14)
+            for (k in 0 until 5) f.fxAll(FxKind.CLEAR_WAVE, seamFrom.lerp(seamTo, 0.3 + k * 0.14), a = 5f, life = 14)
         }
-        wait(22)
-        // Noch bevor der Schnitt den Berg teilt, quellen dichte Schneewolken entlang der gesamten Bergflanke auf.
-        shroudClouds(life = 112)
-        f.farSound("seal.blizzard", f.abs(Vec3d(x, 36.0, foot + 24.0)), 6f, 0.55f)
-        wait(8)
-        // 3) Verhüllung in Schneewolken (Totale hoch von Nordwesten, weit außerhalb des Massivs): hinter der Wolkenwand spaltet der Berg.
-        val mid = f.abs(Vec3d(x, 36.0, foot + 36.0))
+        wait(20)
+        seamMist(life = 48)
+        f.farSound("seal.blizzard", f.abs(Vec3d(x, 48.0, foot + 36.0)), 5f, 0.6f)
+        wait(6)
+        // 3) Weite Totale von Fuß bis Horn: Berg UND Gipfelarena spalten sich sauber vor den Augen der Spieler.
+        // Alle Blickpunkte liegen strikt VOR/ÜBER der Berghaut (freie Sichtlinie), damit HHA-CinePlayer die Kamera nie einzieht.
+        val mid = f.abs(Vec3d(x, 90.0, spireZ - 40.0))
         f.farSound("glacier.collapse", mid, 8f, 0.5f)
         f.farSound("cut.split", mid, 8f, 0.7f)
         f.farVanilla(net.minecraft.sound.SoundEvents.ENTITY_GENERIC_EXPLODE.value(), mid, 6f, 0.4f)
         f.farVanilla(net.minecraft.sound.SoundEvents.ENTITY_WARDEN_SONIC_BOOM, mid, 5f, 0.5f)
-        post.line(f.abs(Vec3d(x - 42.0, 86.0, foot - 134.0)), f.abs(Vec3d(x - 34.0, 96.0, foot - 118.0)),
-            f.abs(Vec3d(x, 34.0, foot + 34.0)), f.abs(Vec3d(x, 68.0, foot + 72.0)), 64, 58.0, 54.0)
-        wait(16)
-        // Jetzt, vollständig von der dichten Wolkenwand verdeckt, wird die Kluft sauber ausgehoben (keine schwebenden Blöcke!).
-        split()
-        for (i in 16 until 64) {
-            if (i % 14 == 0) f.calls.roomShake(lookout, 5.5f - i / 22f, 200f)
-            if (i == 26) {
-                shroudClouds(life = 78)
+        post.rawLine(
+            f.abs(Vec3d(x - 62.0, 128.0, foot - 156.0)), f.abs(Vec3d(x - 48.0, 148.0, foot - 142.0)),
+            f.abs(Vec3d(x, 86.0, spireZ - 110.0)), f.abs(Vec3d(x, 178.0, spireZ - 34.0)), 56, 64.0, 60.0,
+        )
+        // Zuerst alle Blöcke der gesamten Schnitt-Ebene (inkl. Gipfelarena, Mauer, Krone & Horn) sichern und spalten!
+        yieldAll(splitFull(animate = true, slices = 24))
+        for (i in 24 until 56) {
+            if (i % 14 == 0) f.calls.roomShake(lookout, 4.5f - i / 24f, 200f)
+            if (i == 30) {
+                shown {
+                    for (k in 0 until 5) {
+                        val z = foot + 18.0 + k * 34.0
+                        val top = runCatching { FarPlan.top(x.toInt(), z.toInt()) }.getOrDefault(0).coerceAtLeast(0)
+                        f.fxAll(FxKind.CLEAR_WAVE, f.abs(Vec3d(x, top + 4.0, z)), a = 18f, life = 24)
+                    }
+                }
                 f.farVanilla(net.minecraft.sound.SoundEvents.BLOCK_GLASS_BREAK, mid, 5f, 0.5f)
             }
-            if (i == 42) f.farSound("glacier.collapse", mid, 7f, 0.45f)
             yield(Unit)
         }
-        // 4) Enthüllung: hohe, weite Kamerafahrt von Nordosten – die Schneewolken teilen sich und zeigen den sauberen Spalt.
-        post.line(f.abs(Vec3d(x + 76.0, 108.0, foot - 108.0)), f.abs(Vec3d(x + 58.0, 118.0, foot - 92.0)),
-            f.abs(Vec3d(x, 42.0, foot + 36.0)), f.abs(Vec3d(x, 66.0, foot + 68.0)), 58, 60.0, 56.0)
-        shown {
-            for (k in 0 until 6) {
-                val z = foot + 6.0 + k * 14.0
-                val top = runCatching { FarPlan.top(x.toInt(), z.toInt()) }.getOrDefault(0).coerceAtLeast(0)
-                val at = f.abs(Vec3d(x, top + 2.0, z))
-                f.fxAll(FxKind.CLEAR_WAVE, at, a = 22f, life = 28)
-            }
-        }
-        f.farSound("cut.reverse_wind", mid, 5f, 0.65f)
-        wait(58)
-        // 5) Ganz weit und hoch: der gespaltene Berg klar unter dem Himmel.
-        post.line(f.abs(Vec3d(x - 78.0, 134.0, foot - 158.0)), f.abs(Vec3d(x - 90.0, 148.0, foot - 174.0)),
-            f.abs(Vec3d(x, 52.0, foot + 48.0)), f.abs(Vec3d(x, 72.0, foot + 64.0)), 54, 66.0, 70.0)
-        shown {
-            for (k in 0 until 5) {
-                val z = foot + 8.0 + k * 16.0
-                val top = runCatching { FarPlan.top(x.toInt(), z.toInt()) }.getOrDefault(0).coerceAtLeast(0)
-                val at = f.abs(Vec3d(x, top.toDouble(), z))
-                Vfx.shockwave(f.world, Vfx.Style.HEAVEN, at, 16f, 22, 2.2f)
-            }
-            f.sceneText("cut_after")
-        }
+        // 4) Hoher Blick über die gespaltene Gipfelarena: Arena-Boden, Mauer und Horn sind sichtbar in zwei Hälften geteilt.
+        val summitY = FarPlan.SHOULDER_Y
+        post.rawLine(
+            f.abs(Vec3d(x + 42.0, summitY + 34.0, spireZ - 66.0)), f.abs(Vec3d(x + 28.0, summitY + 42.0, spireZ - 54.0)),
+            f.abs(Vec3d(x, summitY + 4.0, spireZ - 10.0)), f.abs(Vec3d(x, summitY + 12.0, spireZ + 4.0)), 44, 58.0, 54.0,
+        )
+        shown { f.sceneText("cut_after") }
         for (id in f.cutSurvivors) f.server.playerManager.getPlayer(id)?.let { Advancements.grant(it, "under_the_line") }
-        wait(38)
-        // 6) Whiteout: die Schneewolke rollt heran.
+        wait(44)
+        // 5) Goldene Yang-Wiederherstellung: vom Bergfuß bis zur Gipfelarena steigt goldenes Yang-Licht auf und schließt den Spalt exakt.
+        post.rawLine(
+            f.abs(Vec3d(x - 68.0, 136.0, foot - 166.0)), f.abs(Vec3d(x - 78.0, 154.0, foot - 178.0)),
+            f.abs(Vec3d(x, 88.0, spireZ - 110.0)), f.abs(Vec3d(x, 180.0, spireZ - 32.0)), 80, 64.0, 66.0,
+        )
+        val yangFrom = f.abs(Vec3d(x, 4.0, foot + 8.0))
+        val yangTo = f.abs(Vec3d(x, ArenaLayout.SPIRE_TOP.toDouble(), spireZ))
+        shown {
+            f.fxAll(FxKind.YANG_RESTORE, yangFrom, yangTo, a = 10f, life = 74)
+            f.fxAll(FxKind.FLASH, mid, a = 0.22f, life = 10)
+            Vfx.shockwave(f.world, Vfx.Style.GOLD, yangFrom, 28f, 26, 2.5f)
+        }
+        f.farSound("resonance.chime", mid, 6f, 0.7f)
+        f.farSound("transform.pulse", mid, 5f, 0.85f)
+        f.farVanilla(net.minecraft.sound.SoundEvents.BLOCK_BEACON_ACTIVATE, mid, 6f, 0.9f)
+        yieldAll(restoreWithYang(ticks = 52))
+        // Nach dem Schließen: kurzer goldener Nachhall über dem wieder unversehrten Berg & der ganzen Gipfelarena.
+        shown {
+            Vfx.shockwave(f.world, Vfx.Style.GOLD, f.abs(Vec3d(x, summitY + 2.0, spireZ)), 32f, 24, 2.4f)
+            f.fxAll(FxKind.FLASH, mid, a = 0.18f, life = 8)
+        }
+        f.farSound("resonance.chime", f.abs(Vec3d(x, summitY + 4.0, spireZ)), 6f, 1.15f)
+        wait(28)
+        // 6) Whiteout: zurück in den Tempel.
         f.farSound("seal.blizzard", lookout, 4f, 0.6f)
         f.atmos(dev.henny.hha_arius.net.AtmosMode.BLIZZARD, 16)
         post.once { Cine.fade(it, 0xF2F6FA, 0.0, 1.0, 16) }
         wait(20)
-        // Im Weiß: zurück in den Tempel.
         vantage.restore()
         wait(4)
         yieldAll(kick(post))
     }
 
     /**
-     * Seit 1.5.1 (Crix: „den Tempel in zwei Hälften spalten macht keinen Sinn – wenn, dann wird ein Berg geteilt“): Der
-     * Schnitt spaltet das Massiv im Süden der Länge nach. Entlang der Schnittebene (x ≈ [ArenaLayout.CUT_X]) entsteht
-     * eine Kluft, oben breiter als unten, quer durch Berg und Horn; sichtbare Brocken stürzen hinein. Gebaut wird in
-     * Scheiben über mehrere Ticks; am Kampfende stellt [ArenaEdits] alles wieder her.
+     * Sammelt alle Nicht-Luft-Blöcke entlang der gesamten Schnittebene (x ≈ [ArenaLayout.CUT_X], von Bergfuß bis über
+     * Gipfelarena, Ringmauer, Eiskrone und Horn), sichert sie absturzsicher über [SplitRecovery] und spaltet sie in
+     * [slices] sauberen Scheiben von Norden nach Süden.
      */
-    fun split(animate: Boolean = true) {
-        val z0 = (ArenaLayout.SPIRE.z - dev.henny.hha_arius.arena.FarPlan.MASSIF_R - 6).toInt()
-        val z1 = (ArenaLayout.SPIRE.z + dev.henny.hha_arius.arena.FarPlan.MASSIF_R + 6).toInt()
-        if (animate) {
-            val from = f.abs(Vec3d(ArenaLayout.CUT_X, 0.2, ArenaLayout.CUT_TO.z))
-            f.fx(FxKind.SEAM, from, f.abs(Vec3d(ArenaLayout.CUT_X, 0.2, z1.toDouble())), a = 220f, life = AriusTimings.CUT_SLIDE + 40)
-            f.ambient("cut.split", f.abs(Vec3d(ArenaLayout.CUT_X, 40.0, ArenaLayout.SPIRE.z.toDouble())), 8f)
-            f.ambient("glacier.collapse", from, 6f, 0.6f)
-            f.calls.roomShake(from, 8f, 90f)
-        }
-        var z = z0
-        f.task(script {
-            while (z <= z1) {
-                carve(z, minOf(z1, z + 5), animate)
-                z += 6
-                yield(Unit)
-            }
-        })
-    }
-
-    /** Kluft für die Scheibe z0..z1 (relativ): V-förmig, unten 3, oben bis 9 Blöcke breit (ohne schwebende Block-Trümmer). */
-    private fun carve(z0: Int, z1: Int, @Suppress("UNUSED_PARAMETER") animate: Boolean) {
+    fun splitFull(animate: Boolean = true, slices: Int = 24): Script = script {
+        val z0 = (ArenaLayout.SPIRE.z - FarPlan.MASSIF_R - 6).toInt()
+        val z1 = (ArenaLayout.SPIRE.z + FarPlan.MASSIF_R + 6).toInt()
+        val cutX = kotlin.math.floor(ArenaLayout.CUT_X).toInt()
+        val maxY = ArenaLayout.SPIRE_TOP + 38
+        val collected = ArrayList<Pair<BlockPos, net.minecraft.block.BlockState>>(48_000)
         val pos = BlockPos.Mutable()
         for (z in z0..z1) {
-            for (dx in -6..6) {
-                val x = kotlin.math.floor(ArenaLayout.CUT_X).toInt() + dx
-                val top = dev.henny.hha_arius.arena.FarPlan.top(x, z)
-                if (top < 0) continue
-                val pathY = dev.henny.hha_arius.arena.FarPlan.pathAt(x, z)
-                val dAxis = kotlin.math.hypot(x + 0.5 - (ArenaLayout.SPIRE.x + 0.5), z + 0.5 - (ArenaLayout.SPIRE.z + 0.5))
-                for (y in 0..top + 1) {
-                    // Seit 1.7.0: Der Weg überspannt die Kluft als Felsbrücke, und der Gipfel bleibt heil (Finale oben).
-                    if (!pathY.isNaN() && y >= pathY - 6) continue
-                    if (dAxis <= dev.henny.hha_arius.arena.FarPlan.SHOULDER_R + 8.0 && y >= dev.henny.hha_arius.arena.FarPlan.SHOULDER_Y - 14) continue
-                    val hw = 1.5 + y / 50.0
-                    if (kotlin.math.abs(x + 0.5 - ArenaLayout.CUT_X) > hw) continue
+            for (dx in -8..8) {
+                val x = cutX + dx
+                if (FarPlan.inCore(x, z)) continue
+                for (y in 0..maxY) {
+                    if (!SplitRecovery.inCutPlane(x, y)) continue
                     pos.set(f.origin.x + x, f.origin.y + y, f.origin.z + z)
-                    if (f.world.getBlockState(pos).isAir) continue
-                    f.edits.clear(pos)
+                    val st = f.world.getBlockState(pos)
+                    if (!st.isAir) collected.add(pos.toImmutable() to st)
                 }
             }
         }
+        if (collected.isEmpty()) return@script
+        // Zuerst dauerhaft auf Platte sichern (Absturzsicherheit mitten in der Szene!).
+        SplitRecovery.saveSnapshot(f.world, f.slot, z0, z1, collected)
+        activeSplit = collected
+        splitActive = true
+        if (animate) {
+            val from = f.abs(Vec3d(ArenaLayout.CUT_X, 0.2, ArenaLayout.CUT_TO.z))
+            f.fxAll(FxKind.SEAM, from, f.abs(Vec3d(ArenaLayout.CUT_X, ArenaLayout.SPIRE_TOP.toDouble(), ArenaLayout.SPIRE.z.toDouble())), a = 24f, life = slices + 34)
+            f.ambient("cut.split", f.abs(Vec3d(ArenaLayout.CUT_X, 90.0, ArenaLayout.SPIRE.z.toDouble())), 8f)
+            f.ambient("glacier.collapse", from, 6f, 0.6f)
+            f.calls.roomShake(from, 8f, 90f)
+        }
+        val byZ = collected.sortedBy { it.first.z }
+        val step = maxOf(1, (byZ.size + slices - 1) / slices)
+        var idx = 0
+        while (idx < byZ.size) {
+            val end = minOf(byZ.size, idx + step)
+            for (k in idx until end) f.edits.clear(byZ[k].first)
+            idx = end
+            if (slices > 1) yield(Unit)
+        }
+    }
+
+    /**
+     * Goldene Yang-Wiederherstellung: setzt alle in [activeSplit] gesicherten Originalblöcke über [ticks] Ticks von
+     * unten nach oben exakt in ihren Ausgangszustand zurück und räumt das Absturz-Backup ab.
+     */
+    private fun restoreWithYang(ticks: Int): Script = script {
+        val list = activeSplit
+        if (list.isEmpty()) {
+            splitActive = false
+            SplitRecovery.clearSnapshot(f.server, f.slot)
+            return@script
+        }
+        val byY = list.sortedBy { it.first.y }
+        val step = maxOf(1, (byY.size + ticks - 1) / ticks)
+        var idx = 0
+        var t = 0
+        while (idx < byY.size) {
+            val end = minOf(byY.size, idx + step)
+            val batch = ArrayList<BlockPos>(end - idx)
+            for (k in idx until end) batch.add(byY[k].first)
+            f.edits.revert(batch)
+            for (k in idx until end) {
+                val (p, st) = byY[k]
+                if (f.world.getBlockState(p) != st) {
+                    f.world.setBlockState(p, st, ArenaEdits.FLAGS)
+                    dev.henny.hha_arius.arena.HighlandView.changed(f.world, p.x, p.z)
+                }
+            }
+            if (t % 12 == 0) {
+                val sample = byY[(idx + end) / 2].first
+                val at = Vec3d.ofCenter(sample)
+                shown { Vfx.shockwave(f.world, Vfx.Style.GOLD, at, 16f, 18, 2.0f) }
+                f.farSound("resonance.chime", at, 4f, 0.8f + (t / ticks.toFloat()) * 0.45f)
+            }
+            idx = end
+            t++
+            yield(Unit)
+        }
+        activeSplit = emptyList()
+        splitActive = false
+        SplitRecovery.clearSnapshot(f.server, f.slot)
+    }
+
+    /** Kompatibilitäts-Helfer für Einzeltests (spaltet sofort ohne Animation). */
+    fun split(animate: Boolean = true) {
+        f.task(splitFull(animate = animate, slices = if (animate) 24 else 1))
     }
 
     /**
@@ -1885,7 +1967,6 @@ class Scenes(private val f: EirholmFight) {
     // --- Training ------------------------------------------------------------------------------------------------------
 
     fun trainingGlacier(): Script = script {
-        split(animate = false)
         yieldAll(waitForFar())
         val a = f.arius ?: return@script
         f.place(a, f.abs(ArenaLayout.AERIE_SEAT))
@@ -1904,7 +1985,6 @@ class Scenes(private val f: EirholmFight) {
     }
 
     private fun prepareVault() {
-        split(animate = false)
         val a = f.arius ?: return
         f.setPhase(P.VAULT)
         val vault = f.abs(Vec3d.of(ArenaLayout.VAULT)).add(0.5, 0.0, 0.5)

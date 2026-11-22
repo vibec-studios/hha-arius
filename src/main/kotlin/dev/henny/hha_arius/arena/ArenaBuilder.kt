@@ -118,6 +118,14 @@ object ArenaBuilder {
             Blocks.LIGHT_BLUE_STAINED_GLASS.defaultState,
             Blocks.SMOOTH_QUARTZ.defaultState,
             Blocks.STONE.defaultState,
+            Blocks.DEEPSLATE_BRICK_WALL.defaultState,
+            Blocks.DEEPSLATE_TILE_WALL.defaultState,
+            Blocks.SOUL_LANTERN.defaultState,
+            Blocks.SOUL_LANTERN.defaultState.with(net.minecraft.block.LanternBlock.HANGING, true),
+            Blocks.IRON_CHAIN.defaultState,
+            Blocks.DEEPSLATE_TILE_SLAB.defaultState,
+            Blocks.QUARTZ_SLAB.defaultState,
+            Blocks.LIGHT_BLUE_CONCRETE.defaultState,
         )
     }
 
