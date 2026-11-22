@@ -112,38 +112,56 @@ class VerifyBoss : FabricClientGameTest {
             f.arius!!.play(AriusPose.IDLE)
         }
         faceArius(1.45)
+        addBots(1)
         godMode = false
+        fun smash(bot: Boolean): Boolean = server { srv ->
+            val f = checkNotNull(fight())
+            val p = if (bot) checkNotNull(srv.playerManager.getPlayer(bots.single().id)) else player(srv)
+            val a = f.arius!!
+            val spot = a.entityPos.add(f.facing(a).multiply(1.45))
+            p.teleport(f.world, spot.x, spot.y + 1.35, spot.z, emptySet(), p.yaw, 12f, false)
+            p.setStackInHand(Hand.MAIN_HAND, ItemStack(Items.MACE))
+            p.fallDistance = 6.0
+            p.isOnGround = false
+            fullCharge(p)
+            p.attack(a)
+            Hold.isHeld(p)
+        }
         try {
-            repeat(3) { index ->
-                val held = server { srv ->
-                    val f = checkNotNull(fight())
-                    val p = player(srv)
-                    val a = f.arius!!
-                    val spot = a.entityPos.add(f.facing(a).multiply(1.45))
-                    p.teleport(f.world, spot.x, spot.y + 1.35, spot.z, emptySet(), p.yaw, 12f, false)
-                    p.setStackInHand(Hand.MAIN_HAND, ItemStack(Items.MACE))
-                    p.fallDistance = 6.0
-                    p.isOnGround = false
-                    fullCharge(p)
-                    p.attack(a)
-                    Hold.isHeld(p)
-                }
-                check(held == (index == 2))
-                if (!held) tick(12)
+            repeat(2) {
+                check(!smash(bot = false))
+                tick(12)
             }
-            tick(8)
+            check(!smash(bot = true))
+            keepBots(2) { srv ->
+                val f = checkNotNull(fight())
+                val bot = srv.playerManager.getPlayer(bots.single().id)!!
+                val pos = f.arius!!.entityPos.add(f.facing(f.arius!!).multiply(7.0))
+                bot.teleport(f.world, pos.x, pos.y, pos.z, emptySet(), bot.yaw, bot.pitch, false)
+            }
+            check(smash(bot = false))
+            tick(9)
             shot("mace_held")
-            for (i in 1..3) {
-                tick(if (i == 1) 12 else 13)
-                shot("mace_slam_$i")
+            var health = server { player(it).health }
+            var strikes = 0
+            repeat(48) {
+                tick(1)
+                val current = server { player(it).health }
+                if (current < health) {
+                    strikes++
+                    shot("mace_slam_$strikes")
+                }
+                health = current
             }
-            check(waitUntil(20, 1) { server { !Hold.isHeld(player(it)) } })
-            val health = server { player(it).health }
-            check(health in 1f..<20f)
-            log("mace catch: first two attacks accepted, third held, three impacts, released at health $health")
+            check(strikes == 3 && health in 1f..<20f)
+            check(server { !Hold.isHeld(player(it)) })
+            log("mace catch: counters stayed per fighter, three impacts, released at health $health")
         } finally {
             godMode = true
-            server { player(it).setStackInHand(Hand.MAIN_HAND, ItemStack(dev.henny.hha_arius.gear.GearItems.SOLVANE)) }
+            server {
+                player(it).setStackInHand(Hand.MAIN_HAND, ItemStack(dev.henny.hha_arius.gear.GearItems.SOLVANE))
+                releaseBots(it)
+            }
         }
     }
 
@@ -239,6 +257,7 @@ class VerifyBoss : FabricClientGameTest {
                 f.now in answerFrom.getLong(summit)..answerUntil.getLong(summit)
             }
             check(waitUntil(170, 1) { ready() })
+            faceArius(2.4)
             val health = server { player(it).health }
             shot("climax_retry_window")
             check(waitUntil(60, 1) { server { player(it).health < health } })
@@ -248,7 +267,12 @@ class VerifyBoss : FabricClientGameTest {
                 shot("climax_answer_${i + 1}")
                 server { srv ->
                     val f = checkNotNull(fight())
-                    val p = player(srv)
+                    val me = player(srv)
+                    val p = if (i == 1) checkNotNull(srv.playerManager.getPlayer(bots[0].id)) else me
+                    if (p !== me) {
+                        val at = me.entityPos
+                        p.teleport(f.world, at.x, at.y, at.z, emptySet(), me.yaw, me.pitch, false)
+                    }
                     fullCharge(p)
                     p.attack(f.arius!!)
                 }
@@ -269,12 +293,14 @@ class VerifyBoss : FabricClientGameTest {
             log("climax: all three answers accepted, blade shattered, finishing blow won")
         } finally {
             godMode = true
-            server { srv ->
-                for (b in bots) srv.playerManager.getPlayer(b.id)?.networkHandler?.onDisconnected(
-                    net.minecraft.network.DisconnectionInfo(net.minecraft.text.Text.literal("verify end")))
-            }
-            bots.clear()
+            server { releaseBots(it) }
         }
+    }
+
+    private fun releaseBots(srv: net.minecraft.server.MinecraftServer) {
+        for (b in bots) srv.playerManager.getPlayer(b.id)?.networkHandler?.onDisconnected(
+            net.minecraft.network.DisconnectionInfo(net.minecraft.text.Text.literal("verify end")))
+        bots.clear()
     }
 
     // --- Hilfen -----------------------------------------------------------------------------------------------------
