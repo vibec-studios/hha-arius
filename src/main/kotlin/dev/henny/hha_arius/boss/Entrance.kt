@@ -39,7 +39,7 @@ import kotlin.math.sqrt
  * Plateau, und wo er ankommt, gleitet sie heran (ohne Nadel). Im Training erscheint sie sofort gelandet.
  */
 fun entrance(f: EirholmFight): Script = script {
-    val spot = f.abs(Vec3d(0.5, 0.0, -4.5))
+    val spot = f.abs(Vec3d(0.5, 0.0, 2.0))
     if (f.training != 0) {
         Entrance.landed(f, spot)
         return@script
@@ -55,16 +55,17 @@ fun entrance(f: EirholmFight): Script = script {
 /**
  * Flugbahn des **Kopfgelenks** beim Lösen von der Nadel, relativ zum Instanz-Ursprung. Server (Entity, Kamera) und
  * Client (Körper in [NivarisMode.UNCOIL]) rechnen mit derselben Tabelle. Start: aufgerichtet über dem Gipfel, Blick
- * nach Norden; Sturz nach Nordosten über die Schlucht, weiter Bogen, über den Südwall auf das Plateau; die letzten
- * 18 Blöcke gerade und waagerecht nach Norden (dort übernimmt der normale Flug ohne Sprung).
+ * nach Norden; Sturz westlich des Schnitts über die freien Hochland-Schneefelder (weit über Krone, Massiv,
+ * Ritt-Hindernissen und Eisspitzen); die letzten Blöcke gerade nach Norden in die Landung.
  */
 object EntrancePath {
-    /**
-     * Die Koordinaten des Auftritts sind für eine Nadel bei z = [DESIGN_SPIRE_Z] gezeichnet. [near] hängt sie an die
-     * echte [ArenaLayout.SPIRE]: Punkte im Bereich der Nadel und der Schlucht (z ≥ 92) liegen fest relativ zur Nadel,
-     * Punkte über dem Plateau (z ≤ 20, Landung) bleiben, dazwischen wird anteilig verschoben (die Bahn staucht sich).
-     */
     private const val DESIGN_SPIRE_Z = 150.0
+    private val AXIS = Vec3d(ArenaLayout.SPIRE.x + 0.5, 0.0, ArenaLayout.SPIRE.z + 0.5)
+    private const val COIL_TOP = 211.0
+    private const val COIL_DESCENT_PER_TURN = 11.0
+    private const val COIL_STEPS_PER_TURN = 240
+    /** Startwinkel an der Westflanke der Nadel: die Vorwärts-Tangente zeigt direkt nach Norden (−z) und leicht aufwärts. */
+    private const val COIL_START = -PI / 2.0
 
     fun near(x: Double, y: Double, z: Double): Vec3d {
         val k = ((z - 20.0) / 72.0).coerceIn(0.0, 1.0)
@@ -72,64 +73,91 @@ object EntrancePath {
         return Vec3d(x, y + (ArenaLayout.SPIRE_TOP - 185.0) * k, z + (ArenaLayout.SPIRE.z - DESIGN_SPIRE_Z) * k)
     }
 
-    /** Kopfgelenk in der Windung, aufgerichtet über dem Gipfel ([ArenaLayout.SPIRE_TOP] = 185). */
-    val HEAD_RAISED = near(0.5, 192.0, 146.5)
+    /** Kopfgelenk in der Windung, aufgerichtet über dem Gipfel, Blick nach Norden zur Arena. */
+    val HEAD_RAISED: Vec3d = Vec3d(AXIS.x - 0.2, 223.5, AXIS.z - 7.8)
 
-    /** Kopfgelenk in der Windung, ruhend auf der obersten Windung (vor der Enthüllung). */
-    val HEAD_REST = near(3.5, 171.0, 144.0)
+    /** Kopfgelenk in der Windung, ruhend vor der Schulter auf der Westflanke (fließt knickfrei aus dem Hals). */
+    val HEAD_REST: Vec3d = Vec3d(AXIS.x - 1.6, 214.2, AXIS.z - 6.8)
 
     private val WAYPOINTS = listOf(
-        HEAD_RAISED, near(0.5, 195.0, 134.0), near(10.0, 182.0, 114.0), near(50.0, 157.0, 100.0),
-        near(94.0, 116.0, 76.0), Vec3d(126.0, 65.0, 88.0), Vec3d(133.0, 33.0, 51.0),
-        // Finish the dive before the final body length; the tail is already low when the shoulders touch down.
-        Vec3d(112.0, 15.0, 34.0), Vec3d(83.0, 11.0, 24.0), Vec3d(54.0, 8.0, 20.0),
-        Vec3d(22.0, 6.5, 18.0), Vec3d(7.0, 5.5, 13.0), Vec3d(0.5, 5.5, 2.0),
+        HEAD_RAISED,
+        Vec3d(-6.0, 223.0, 222.0),     // sicher über der Gipfelkrone (y <= 206)
+        Vec3d(-22.0, 206.0, 196.0),    // weit über Nordwestflanke des Massivs (auch mit offenem Schnitt)
+        Vec3d(-34.0, 162.0, 164.0),    // über dem Hang, westlich der Kluft
+        Vec3d(-38.0, 114.0, 126.0),    // über der Ritt-Route und ihren Bögen/Nadeln
+        Vec3d(-44.0, 62.0, 92.0),      // im freien Hochland-Korridor (r < 112)
+        Vec3d(-50.0, 24.0, 62.0),      // außerhalb des Massivfußes (d = 195 > 170) auf flachem Schnee
+        Vec3d(-44.0, 10.5, 36.0),      // im obeliskfreien Südkorridor (|Winkel| = 51° < 55°)
+        Vec3d(-24.0, 6.2, 21.0),       // weiter Bogen auf die Nordachse (Schwanz bleibt komplett auf z <= 64)
+        Vec3d(-8.0, 5.0, 13.5),        // Eindrehen nach Norden
+        Vec3d(0.5, 4.6, 8.5),          // gerade nach Norden ausgerichtet
+        Vec3d(0.5, 4.4, 5.5),          // nahtlos vor der Landung bei (0.5, 0, 2.0)
     )
 
-    /**
-     * Radius, den die Windung je Höhe mindestens braucht (seit 1.11.0): Die gebaute Eisnadel ist dicker als die Formel der
-     * Windung, ihr Körper lag dadurch unsichtbar **im** Fels, und die Kamera filmte nur die leere Nadel. Einmal aus der
-     * Höhenformel der Landschaft abgetastet und über die Höhe geglättet.
-     */
-    private val clearRadius: DoubleArray by lazy {
-        val ax = ArenaLayout.SPIRE.x + 0.5
-        val az = ArenaLayout.SPIRE.z + 0.5
-        val raw = DoubleArray(COIL_Y_SPAN) { k ->
-            val y = COIL_Y0 + k
-            var best = 0.0
-            for (a in 0 until 16) {
-                val ang = a / 16.0 * 2.0 * PI
-                var r = 64.0
-                while (r > 2.0) {
-                    val top = runCatching { dev.henny.hha_arius.arena.FarPlan.top(kotlin.math.floor(ax + sin(ang) * r).toInt(), kotlin.math.floor(az + cos(ang) * r).toInt()) }.getOrDefault(-1)
-                    if (top >= y - 2) break
-                    r -= 1.0
-                }
-                if (r > 2.0) best = max(best, r)
+    private fun spireSurface(angle: Double, y: Double): Double {
+        var best = 0.0
+        for (da in doubleArrayOf(-0.07, 0.0, 0.07)) {
+            val a = angle + da
+            val dx = sin(a)
+            val dz = cos(a)
+            var r = 20.0
+            while (r > best) {
+                val qx = AXIS.x + dx * r
+                val qz = AXIS.z + dz * r
+                val top = runCatching { dev.henny.hha_arius.arena.FarPlan.spireTop(kotlin.math.floor(qx).toInt(), kotlin.math.floor(qz).toInt()) }.getOrDefault(Int.MIN_VALUE)
+                if (top + 1 >= y - 0.8) { best = r; break }
+                r -= 0.125
             }
-            if (best > 0.0) best + 3.2 else 0.0
         }
-        DoubleArray(COIL_Y_SPAN) { k ->
-            var m = 0.0
-            for (j in maxOf(0, k - 3)..minOf(COIL_Y_SPAN - 1, k + 3)) m = max(m, raw[j])
-            m
-        }
+        return best
     }
 
-    private const val COIL_Y0 = 170
-    private const val COIL_Y_SPAN = 50
+    /**
+     * Enge, am echten Eishorn anliegende Helix (Index 0 = Schulter oben bei s = 1, letzter Punkt = Schwanz unten bei s = 0).
+     * Tastet wie [ReturnCoil] direkt [dev.henny.hha_arius.arena.FarPlan.spireTop] ab, damit der Bauch bündig am Eis liegt
+     * und die Klauen die Nadel greifen — ob der Berg gespalten ist oder nicht.
+     */
+    private val coilPoints: List<Vec3d> by lazy {
+        val minY = dev.henny.hha_arius.arena.FarPlan.SHOULDER_Y + 3.8
+        val lastStep = ((COIL_TOP - minY) / COIL_DESCENT_PER_TURN * COIL_STEPS_PER_TURN).toInt().coerceAtLeast(COIL_STEPS_PER_TURN)
+        val angles = DoubleArray(lastStep + 1) { COIL_START + 2.0 * PI * it / COIL_STEPS_PER_TURN }
+        val stepY = COIL_DESCENT_PER_TURN / COIL_STEPS_PER_TURN
+        val radii = DoubleArray(angles.size) { i -> spireSurface(angles[i], COIL_TOP - stepY * i) }
+        fun onSpire(i: Int, distance: Double): Vec3d {
+            val span = (i - 8).coerceAtLeast(0)..(i + 8).coerceAtMost(angles.lastIndex)
+            val rim = max(span.maxOf { radii[it] }, radii[i])
+            val segment = (distance / NivarisShape.SEGMENT).toInt().coerceAtMost(NivarisShape.SEGMENTS - 1)
+            val clearance = 1.2 * NivarisShape.taper(segment) + 0.90
+            return Vec3d(AXIS.x + sin(angles[i]) * (rim + clearance), COIL_TOP - stepY * i, AXIS.z + cos(angles[i]) * (rim + clearance))
+        }
+        val out = ArrayList<Vec3d>(angles.size)
+        var arc = 7.5
+        out.add(onSpire(0, arc))
+        val required = NivarisShape.SEGMENTS * NivarisShape.SEGMENT + 10.0
+        for (i in 1..angles.lastIndex) {
+            val pt = onSpire(i, arc)
+            arc += out.last().distanceTo(pt)
+            out.add(pt)
+            if (arc >= required) break
+        }
+        out
+    }
 
-    /** Punkt der Windung bei [s] (relativ), wie [ArenaLayout.coil], aber immer außen am gebauten Fels. */
+    /** Punkt der Windung bei [s] ∈ [0, 1] (0 = Schwanz unten, 1 = Schulter oben), relativ zum Ursprung. */
     fun coil(s: Double): Vec3d {
-        val b = ArenaLayout.coil(s)
-        val ax = ArenaLayout.SPIRE.x + 0.5
-        val az = ArenaLayout.SPIRE.z + 0.5
-        val r0 = sqrt((b.x - ax) * (b.x - ax) + (b.z - az) * (b.z - az)).coerceAtLeast(1e-3)
-        val yk = (b.y - COIL_Y0).coerceIn(0.0, COIL_Y_SPAN - 1.001)
-        val i = yk.toInt()
-        val need = clearRadius[i] + (clearRadius[i + 1] - clearRadius[i]) * (yk - i)
-        val r = max(r0, need)
-        return Vec3d(ax + (b.x - ax) / r0 * r, b.y, az + (b.z - az) / r0 * r)
+        val pts = coilPoints
+        val k = ((1.0 - s.coerceIn(0.0, 1.0)) * (pts.size - 1))
+        val i = k.toInt().coerceIn(0, pts.size - 2)
+        return pts[i].lerp(pts[i + 1], k - i)
+    }
+
+    /** Alle Stützpunkte der Windung von Schulter bis Schwanz (für [dev.henny.hha_arius.client.model.nivaris.NivarisBody]). */
+    fun coilSpine(): List<Vec3d> = coilPoints
+
+    /** Waagerechte Außenrichtung weg von der Nadelachse (Rücken nach außen, Bauch zur Nadel). */
+    fun coilOutward(p: Vec3d): Vec3d {
+        val v = Vec3d(p.x - AXIS.x, 0.0, p.z - AXIS.z)
+        return if (v.lengthSquared() < 1e-6) Vec3d(-1.0, 0.0, 0.0) else v.normalize()
     }
 
     /** Dauer des Lösens in Ticks. */
@@ -220,7 +248,7 @@ object EntrancePath {
     val PROXY = Vec3d(0.5, 24.0, 40.0)
 
     /** Darf die Entity dem Weg selbst folgen (nah genug an den Spielern, in geladenen Chunks)? */
-    fun followable(rel: Vec3d): Boolean = kotlin.math.abs(rel.x) <= 50.0 && rel.z in -40.0..50.0 && rel.y <= 70.0
+    fun followable(rel: Vec3d): Boolean = kotlin.math.abs(rel.x) <= 70.0 && rel.z in -40.0..100.0 && rel.y <= 90.0
 }
 
 /** Drehbuch des Auftritts. */
@@ -284,7 +312,7 @@ internal object Entrance {
      * aufsteigt und in weitem Bogen zu [target] zieht (Ankunft nach [RELEASE_ARRIVAL] Ticks). Er senkt den Arm und setzt
      * sich ohne Schwert. Endzustand: [AriusBlade.NONE], SEATED. Kein Schaden, nur Darstellung.
      */
-    fun release(f: EirholmFight, scene: CineScene, target: Vec3d): Script = script {
+    fun release(f: EirholmFight, scene: CineScene, target: Vec3d, stormAhead: Boolean = false): Script = script {
         val a = f.arius ?: return@script
         val seat = f.abs(ArenaLayout.WATCH_SEAT)
         if (a.entityPos.squaredDistanceTo(seat) > 4.0) f.place(a, seat)
@@ -320,7 +348,10 @@ internal object Entrance {
         wait(14)
         // Er senkt den Arm und setzt sich.
         a.play(AriusPose.SEATED)
-        wait(RELEASE_TICKS - RELEASE_AT - 14)
+        wait(10)
+        // Schneesturm-Whiteout früh aufbauen, damit er VOR Solvanes erstem Erscheinen voll steht.
+        if (stormAhead) f.atmos(AtmosMode.BLIZZARD, 22)
+        wait(RELEASE_TICKS - RELEASE_AT - 24)
     }
 
     /** Zuschauer-Klang: laut genug, dass er die Spieler (am Plateau) erreicht, gehört wird er an der Kamera. */
@@ -356,19 +387,18 @@ internal object Entrance {
     /** Punkt auf der Helix (absolut), siehe [ArenaLayout.coil]. */
     private fun coilAt(f: EirholmFight, s: Double): Vec3d = f.abs(EntrancePath.coil(s))
 
-    /** Bring die Entity an die Nadel (Stellvertreterpunkt), gewunden, Kopf ruhend. */
-    private fun coil(f: EirholmFight): NivarisEntity? {
-        val proxy = f.abs(EntrancePath.PROXY)
-        f.spawnNivaris(proxy, 180f)
-        val d = f.nivaris ?: return null
-        d.mode = NivarisMode.COIL
-        d.uncoil = 0f
-        d.flying = false
-        d.eyeGlow = 8
-        d.throatGlow = 0
-        d.hideNow()
-        d.play(NivarisPose.LIE_DOWN)
-        return d
+    /** Bring die Entity an die Nadel (Stellvertreterpunkt), bereits im COIL-Modus und verborgen vor dem ersten Spawn-Paket. */
+    private fun coil(f: EirholmFight, spawnPos: Vec3d = f.abs(EntrancePath.PROXY)): NivarisEntity? {
+        f.spawnNivaris(spawnPos, 180f) { d ->
+            d.mode = NivarisMode.COIL
+            d.uncoil = 0f
+            d.flying = false
+            d.eyeGlow = 8
+            d.throatGlow = 0
+            d.hideNow()
+            d.play(NivarisPose.LIE_DOWN)
+        }
+        return f.nivaris
     }
 
     /** Aussichtspunkt für den Auftritt: auf halbem Weg zwischen den Landeplätzen und der Nadel, westlich der Kluft. */
@@ -398,92 +428,77 @@ internal object Entrance {
         if (!Cine.muted) f.say("dragon.wake", 64)
         wait(36)
 
-        // 1b) Er lässt Solvane los: der Lichtstrom zieht zur Nadel (84 Ticks, Ankunft 10 Ticks danach).
+        // 1b) Er lässt Solvane los: der Lichtstrom zieht zur Nadel; der Schneesturm baut sich schon im Abflug voll auf.
         val arrival = f.abs(EntrancePath.HEAD_REST)
-        yieldAll(release(f, scene, arrival))
-        // Ab hier filmt die Kamera am Berg: Körper an den Aussichtspunkt (im Sturm lädt das Gelände nach).
-        vantage.move(lookout(f))
+        yieldAll(release(f, scene, arrival, stormAhead = true))
+        // Zuschauer sofort auf die Gipfelschulter (westlich des Schnitts), damit Nadel und Drache von Tick 0 an voll geladen sind.
+        val summitTop = f.abs(Vec3d(ArenaLayout.SPIRE.x - 20.0, dev.henny.hha_arius.arena.FarPlan.SHOULDER_Y + 1.0, ArenaLayout.SPIRE.z - 14.0))
+        vantage.move(summitTop)
 
-        // 2) Sturm: Blick vom Südrand des Plateaus in das Weiß, langsame Fahrt nach vorn (70 Ticks). Der Strom kommt an,
-        //    erst dann verdichtet sich der Sturm, und im Weiß legen sich die Windungen um die Nadel.
-        // Seit 1.6.3 höher und auf den Gipfel gerichtet (vorher füllte die Bergflanke das ganze Bild, es wirkte wie im Berg).
-        val stormFrom = spire(f, -55.0, 174.0, -70.0)
-        val stormTo = spire(f, -46.0, 183.0, -56.0)
-        scene.rawLine(stormFrom, stormTo, arrival, f.abs(EntrancePath.HEAD_RAISED), 70, 68.0, 60.0)
-        wait(RELEASE_ARRIVAL - RELEASE_TICKS)
-        f.atmos(AtmosMode.BLIZZARD, 36)
+        // 2) Sturm-Silhouette (76 Ticks): BLIZZARD steht bereits bei 100 %, bevor Solvane entsteht. Kamera auf echte
+        //    Nadel-Höhe im optimalen Silhouetten-Abstand (~17 Blöcke im 30-Block-Whiteout-Nebel), damit sie klar als Silhouette erscheint.
+        val axis = f.abs(Vec3d(ArenaLayout.SPIRE.x + 0.5, 0.0, ArenaLayout.SPIRE.z + 0.5))
+        val stormFrom = axis.add(-11.0, 209.0, -17.5)
+        val stormTo = axis.add(-9.5, 213.0, -15.0)
+        scene.rawLine(stormFrom, stormTo, arrival, f.abs(EntrancePath.HEAD_RAISED).add(0.0, -2.5, 0.0), 76, 62.0, 56.0)
         sound(f, "seal.blizzard", stormTo, 2.5f, 0.7f)
-        sound(f, "nivaris.inhale", arrival, 2f, 0.45f)
-        fx(f, FxKind.BLIZZARD, stormTo, 10f, 60)
-        fxAll(f, FxKind.BLIZZARD, arrival, 14f, 60)
-        // Im Ankunftsblitz des Stroms legt sie sich um die Nadel, zunächst unsichtbar (Schleier 1).
-        wait(2)
-        val d = coil(f) ?: return@script
-        // Sie entsteht vom Ankunftspunkt (Kopf) aus entlang der Windung, Glied für Glied aus Licht und Eis.
-        d.fadeIn(FORM_TICKS)
-        wait(70 - 2 - (RELEASE_ARRIVAL - RELEASE_TICKS))
+        fxAll(f, FxKind.BLIZZARD, arrival, 12f, 70)
+        // Warten, bis der Lichtstrom im vollen Schneesturm ankommt, dann erst erscheint sie als Silhouette.
+        wait(RELEASE_ARRIVAL - RELEASE_TICKS)
+        sound(f, "nivaris.inhale", arrival, 2.2f, 0.45f)
+        var proxy = if (!Cine.muted) Vantage.ground(f, summitTop).add(0.0, 4.0, 0.0) else f.abs(EntrancePath.PROXY)
+        val d = coil(f, proxy) ?: return@script
+        d.eyeGlow = 40
+        // Sie entsteht Glied für Glied im bereits dichten Whiteout — erster Eindruck ist immer die Silhouette im Sturm.
+        d.fadeIn(44)
+        wait(76 - (RELEASE_ARRIVAL - RELEASE_TICKS))
 
-        // 3) Im Sturm vor der Nadel: Die Kamera steht seit 1.11.0 deutlich außerhalb der Windung und schaut auf sie (vorher
-        //    kreiste sie zwischen Windung und Fels, das Bild war nur Felswand). Eine Windung gleitet vorbei (60 Ticks).
-        // Der Client zeichnet eine Entity nur, wenn ihr eigener Abschnitt in Sichtweite der **Kamera** liegt. Der
-        // Stellvertreter auf dem Plateau war von hier zu weit weg, die ganze Windung fehlte im Bild. Darum gehen Zuschauer
-        // und Stellvertreter auf die Gipfelschulter (das lädt zugleich den echten Fels um die Kamera).
-        var proxy = f.abs(EntrancePath.PROXY)
-        if (!Cine.muted) {
-            val top = spire(f, -24.0, 0.0, -16.0)
-            vantage.move(top)
-            proxy = Vantage.ground(f, top).add(0.0, 4.0, 0.0)
-            f.place(d, proxy)
-        }
-        val axis = f.abs(Vec3d.of(ArenaLayout.SPIRE)).add(0.5, 0.0, 0.5)
+        // 3) Der Sturm lichtet sich langsam an der Windung: Kamera steigt dicht außerhalb der eng greifenden Windung auf (56 Ticks).
         fun outside(s: Double, out: Double, up: Double): Vec3d {
             val c = coilAt(f, s)
-            val radial = Vec3d(c.x - axis.x, 0.0, c.z - axis.z).normalize()
+            val radial = EntrancePath.coilOutward(c.subtract(f.origin.x.toDouble(), f.origin.y.toDouble(), f.origin.z.toDouble()))
             return c.add(radial.multiply(out)).add(0.0, up, 0.0)
         }
-        // Der Sturm reißt so weit auf, dass man die Windung erkennt (im vollen Blizzard endet die Sicht nach 30 Blöcken).
-        // 3) Von unten nach oben entlang der Windung: die Kamera steigt mit dem Leib die Nadel hinauf (56 Ticks).
-        f.atmos(AtmosMode.SNOW, 22)
-        scene.rawLine(outside(0.60, 24.0, 8.0), outside(0.68, 24.0, 10.0), coilAt(f, 0.62), coilAt(f, 0.72), 56, 56.0, 52.0)
-        sound(f, "seal.blizzard", coilAt(f, 0.66), 3f, 0.55f)
-        fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.66), 9f, 56)
-        d.eyeGlow = 14
+        f.atmos(AtmosMode.SNOW, 26)
+        scene.rawLine(outside(0.62, 16.0, 4.5), outside(0.80, 15.0, 5.5), coilAt(f, 0.64), coilAt(f, 0.82), 56, 54.0, 50.0)
+        sound(f, "seal.blizzard", coilAt(f, 0.70), 2.5f, 0.55f)
+        fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.70), 8f, 52)
+        d.eyeGlow = 55
         wait(56)
 
-        // 4) Weiter oben am Kristallkamm: kontinuierlicher Aufstieg bis unter den Gipfel (52 Ticks).
-        scene.rawLine(outside(0.76, 23.0, 9.0), outside(0.84, 22.0, 11.0), coilAt(f, 0.78), coilAt(f, 0.88), 52, 54.0, 48.0)
-        sound(f, "nivaris.wing", coilAt(f, 0.82), 2f, 0.45f)
-        fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.82), 8f, 52)
+        // 4) Weiter oben an Schultern, gefalteten Flügeln und Klauen an der Eisspitze (52 Ticks, sicher frei vom Eis).
+        scene.rawLine(axis.add(-20.0, 207.5, -16.5), axis.add(-16.0, 213.5, -16.5), coilAt(f, 0.90), arrival.add(0.0, 1.5, 0.0), 52, 52.0, 48.0)
+        sound(f, "nivaris.wing", coilAt(f, 0.92), 2f, 0.45f)
         wait(52)
 
-        // 5) Die Wolken reißen auf: weite Einstellung von Nordwesten (104 Ticks) auf Nadel, Windungen und Kopf.
+        // 5) Die Wolken reißen auf: freie weite Einstellung hoch über der Gipfelarena (104 Ticks) auf Nadel, Windungen und Kopf.
         f.atmos(AtmosMode.REVEAL, 32)
-        val revealFrom = spire(f, -68.0, 172.0, -148.0)
-        val revealTo = spire(f, -80.0, 178.0, -158.0)
-        scene.line(
-            revealFrom, revealTo, spire(f, 0.0, 130.0, 0.0), spire(f, 0.0, 152.0, 0.0), 104, 58.0, 54.0,
+        val revealFrom = axis.add(-46.0, 216.0, -56.0)
+        val revealTo = axis.add(-54.0, 224.0, -64.0)
+        scene.rawLine(
+            revealFrom, revealTo, axis.add(0.0, 200.0, 0.0), axis.add(0.0, 214.0, 0.0), 104, 58.0, 54.0,
         )
-        sound(f, "glacier.crack", near(f, -10.0, 40.0, 80.0), 3f, 0.5f)
+        sound(f, "glacier.crack", axis.add(-10.0, 180.0, -40.0), 3f, 0.5f)
         wait(28)
         d.play(NivarisPose.IDLE)
-        d.eyeGlow = 40
+        d.eyeGlow = 70
         sound(f, "nivaris.inhale", revealTo, 2f, 0.55f)
         wait(76)
 
-        // 6) Nah am Kopf über dem Gipfel (gleiche Nordwest-Achse wie Einstellung 5): Brüllen, Augen glühen, Name (60 Ticks).
+        // 6) Nah am Kopf über dem Gipfel (Nordwest-Achse, Blick nach Norden auf die Arena): Brüllen, Augen glühen, Name (60 Ticks).
         val head = f.abs(EntrancePath.HEAD_RAISED)
-        scene.line(
-            near(f, -15.0, 181.0, 127.0), near(f, -11.0, 184.5, 131.0), head.add(0.0, -1.5, -2.0), head.add(0.0, 0.5, -1.5), 60, 62.0, 54.0,
+        scene.rawLine(
+            head.add(-13.5, -2.5, -15.5), head.add(-10.5, 0.5, -12.5), head.add(0.0, -1.0, -1.5), head.add(0.0, 0.5, -1.5), 60, 56.0, 48.0,
         )
         d.play(NivarisPose.ROAR)
         wait(AriusTimings.NIVARIS_WINDUP[NivarisPose.ROAR])
         d.eyeGlow = 100
-        sound(f, "nivaris.roar", near(f, -11.0, 184.5, 131.0), 4f, 0.8f)
+        sound(f, "nivaris.roar", head.add(-10.5, 0.5, -12.5), 4f, 0.8f)
         scene.once { Cine.title(it, "entity.hha_arius.nivaris", "hha_arius.cine.nivaris", 70) }
         MusicCue.sting(f, "reveal")
         wait(60 - AriusTimings.NIVARIS_WINDUP[NivarisPose.ROAR])
 
-        // 7) Sie löst sich vom Fels und gleitet über die Schlucht (220 Ticks, drei kontinuierliche Einstellungen).
+        // 7) Sie löst sich vom Fels und gleitet über den freien Westkorridor zum Plateau (220 Ticks, drei freie Kamerafahrten).
         f.atmos(AtmosMode.REVEAL, 20)
         d.mode = NivarisMode.UNCOIL
         d.flying = true
@@ -491,8 +506,8 @@ internal object Entrance {
         d.eyeGlow = 70
         val exit = EntrancePath.tangent(EntrancePath.LENGTH)
         val end = f.abs(EntrancePath.entityAt(EntrancePath.LENGTH))
-        val landCamMid = rel(f, -19.0, 10.0, -18.0)
-        val landFocusMid = end.add(0.0, 2.8, -1.0)
+        val landCamMid = rel(f, -20.0, 9.5, -14.0)
+        val landFocusMid = end.add(0.0, 2.5, -1.5)
         fun look(t: Int, back: Double): Vec3d {
             val u = EntrancePath.distance(t.toDouble())
             return f.abs(EntrancePath.at(u).multiply(0.7).add(EntrancePath.at(u - back).multiply(0.3)))
@@ -500,22 +515,22 @@ internal object Entrance {
         var plateauView = false
         for (t in 0..EntrancePath.TICKS) {
             when (t) {
-                0 -> scene.line(near(f, -62.0, 172.0, 116.0), near(f, -66.0, 158.0, 98.0), look(0, 25.0), look(85, 25.0), 85, 66.0, 74.0)
-                85 -> scene.line(rel(f, 30.0, 168.0, 120.0), rel(f, 36.0, 65.0, 61.0), look(85, 30.0), look(165, 30.0), 80, 76.0, 80.0)
+                0 -> scene.rawLine(axis.add(-48.0, 218.0, -34.0), axis.add(-64.0, 198.0, -56.0), look(0, 22.0), look(85, 22.0), 85, 64.0, 70.0)
+                85 -> scene.rawLine(rel(f, -78.0, 158.0, 150.0), rel(f, -62.0, 86.0, 84.0), look(85, 28.0), look(165, 28.0), 80, 72.0, 74.0)
                 165 -> {
-                    // Die Kamera ist zurück am Plateau: die Körper auch. Exakt 55 Ticks bis zum Übergang in die Landeeinstellung.
+                    // Die Kamera ist zurück am Plateau (freier Westblick): Körper ebenfalls zurück. Exakt 55 Ticks bis zur Landung.
                     vantage.restore()
                     plateauView = true
                     proxy = f.abs(EntrancePath.PROXY)
-                    scene.line(rel(f, -21.0, 10.0, -21.0), landCamMid, look(165, 22.0), landFocusMid, EntrancePath.TICKS - 165, 70.0, 62.0)
+                    scene.line(rel(f, -24.0, 10.5, -18.0), landCamMid, look(165, 20.0), landFocusMid, EntrancePath.TICKS - 165, 68.0, 60.0)
                 }
             }
             when (t) {
                 4 -> sound(f, "nivaris.wing", head, 6f, 0.5f)
-                40 -> sound(f, "nivaris.wing", near(f, -62.0, 168.0, 110.0), 3f, 0.6f)
-                100 -> sound(f, "nivaris.wing", near(f, -16.0, 110.0, 84.0), 3f, 0.65f)
-                150 -> sound(f, "seal.blizzard", near(f, -22.0, 80.0, 52.0), 2f, 1.2f)
-                180 -> sound(f, "nivaris.wing", rel(f, -16.0, 8.0, -18.0), 3f, 0.7f)
+                40 -> sound(f, "nivaris.wing", axis.add(-48.0, 208.0, -40.0), 3f, 0.6f)
+                100 -> sound(f, "nivaris.wing", rel(f, -50.0, 110.0, 125.0), 3f, 0.65f)
+                150 -> sound(f, "seal.blizzard", rel(f, -35.0, 50.0, 80.0), 2f, 1.2f)
+                180 -> sound(f, "nivaris.wing", rel(f, -18.0, 8.0, -14.0), 3f, 0.7f)
             }
             val u = EntrancePath.distance(t.toDouble())
             d.uncoil = (u / EntrancePath.LENGTH).toFloat()
@@ -524,19 +539,17 @@ internal object Entrance {
             yield(Unit)
         }
 
-        // 8) Nahtlose Landeeinstellung im 3/4-Profil: schließt direkt an landCamMid/landFocusMid an und zeigt das Ablegen der Windungen.
+        // 8) Nahtlose Landeeinstellung im 3/4-Profil: direkte Fortsetzung aus UNCOIL, Bremsen mit Schwingen, festes Aufsetzen ohne Rutschen.
         f.place(d, end)
         f.face(d, end.add(exit))
         d.mode = NivarisMode.NORMAL
+        scene.line(landCamMid, rel(f, -16.5, 5.0, -9.5), landFocusMid, spot.add(0.0, 3.2, -1.5), 54, 60.0, 54.0)
+        yieldAll(glideAndLand(f, d, end, spot, 36))
+        // Fest aufgesetzt kurz stehen lassen, während die Flügel sich anlegen (0 Rutschen).
+        wait(18)
         d.uncoil = 0f
-        scene.line(landCamMid, rel(f, -15.5, 4.8, -11.5), landFocusMid, spot.add(0.0, 3.6, -1.5), 42, 62.0, 56.0)
-        yieldAll(glideAndLand(f, d, end, spot, 30))
-        // Aufprallbild kurz stehen lassen, während die Windungen in den Schnee sinken.
-        wait(12)
-        // Endzustand (auch nach Überspringen, das das Drehbuch in einem Tick vorspult): ganz da.
         d.showNow()
         f.atmos(AtmosMode.SNOW, 80)
-        // Rückweg zur Spielerkamera: von der Landung (laufende Einstellung) in die Augen der Spieler.
         scene.home(18)
         wait(18)
     }
@@ -570,11 +583,13 @@ internal object Entrance {
         d.play(NivarisPose.LAND, ticks)
         for (i in 1..ticks) {
             val k = i / ticks.toDouble()
-            // Erst gleiten, zuletzt steil herab (Gewicht).
-            val xz = from.lerp(spot, 1 - (1 - k) * (1 - k))
-            val y = from.y + (spot.y - from.y) * (k * k * (3 - 2 * k))
+            // Gleichmäßig auf 0 abbremsen (Anfangstempo schließt nahtlos an UNCOIL an, am Aufsetzpunkt Geschwindigkeit = 0).
+            val xzFrac = 1.0 - (1.0 - k) * (1.0 - k)
+            val xz = from.lerp(spot, xzFrac)
+            val y = from.y + (spot.y - from.y) * (k * k * (3.0 - 2.0 * k))
             f.place(d, Vec3d(xz.x, y, xz.z))
             f.face(d, spot.add(0.0, 0.0, -10.0))
+            if (i == ticks / 2) sound(f, "nivaris.wing", Vec3d(xz.x, y, xz.z), 3.5f, 0.65f)
             yield(Unit)
         }
         f.place(d, spot)

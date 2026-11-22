@@ -183,7 +183,8 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
     ) {
         val p = s.p
         val m = model
-        val clinging = s.mode == NivarisMode.RETURN_COIL
+        val returnCling = s.mode == NivarisMode.RETURN_COIL
+        val spireCoil = s.mode == NivarisMode.COIL
         when (i) {
             NivarisShape.WING_GLIED -> {
                 // Haltungen aus docs/NIVARIS_SERPENT.md (Grad, für wing_r; wing_l mit umgekehrtem yaw und roll):
@@ -199,38 +200,53 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
                 val foldYaw = (84f - 4f * tight) * deg
                 val foldRoll = (-45f - 25f * tight) * deg
                 for (sgn in intArrayOf(1, -1)) {
-                    val fold = Quaternionf().rotationZYX(sgn * foldRoll, sgn * foldYaw, 180f * deg)
+                    val fold = if (spireCoil) Quaternionf().rotationZYX(0f, sgn * 88f * deg, 168f * deg)
+                        else Quaternionf().rotationZYX(sgn * foldRoll, sgn * foldYaw, 180f * deg)
                     val spread = Quaternionf().rotationZYX(sgn * flapRoll, sgn * flapYaw, 0f)
-                    val r = if (clinging) Quaternionf().rotationZYX(0f, sgn * 90f * deg, 165f * deg)
+                    val r = if (returnCling) Quaternionf().rotationZYX(0f, sgn * 90f * deg, 165f * deg)
                         else fold.slerp(spread, w)
-                    limb(q, matrices, if (sgn > 0) m.wingR else m.wingL, -6f * sgn, -6f, 4f, r, girth, stretch, layer, light, overlay, color, foldedMembrane = clinging)
+                    val memFold = if (returnCling) 1f else if (spireCoil) (1f - w).coerceIn(0f, 1f) else 0f
+                    limb(q, matrices, if (sgn > 0) m.wingR else m.wingL, -6f * sgn, -6f, 4f, r, girth, stretch, layer, light, overlay, color, foldAmount = memFold)
                 }
             }
             NivarisShape.FORE_GLIED -> {
-                val fore = if (clinging) 1.48f else p[NivarisModel.FORE]
-                val swipe = if (clinging) 0f else p[NivarisModel.SWIPE]
-                limb(q, matrices, m.foreR, -7f, 3f, 8f, Quaternionf().rotationZYX(-0.6f * swipe, 0.3f * swipe, fore - 0.9f * swipe), girth, stretch, layer, light, overlay, color)
-                limb(q, matrices, m.foreL, 7f, 3f, 8f, Quaternionf().rotationZYX(0f, 0f, fore), girth, stretch, layer, light, overlay, color)
+                if (spireCoil) {
+                    // Beide Vorderklauen umfassen sichtbar die Eisnadel (leicht abgespreizt in Roll, stabil ohne Zucken).
+                    limb(q, matrices, m.foreR, -7f, 3f, 8f, Quaternionf().rotationZYX(0.32f, 0.12f, 0.22f), girth, stretch, layer, light, overlay, color)
+                    limb(q, matrices, m.foreL, 7f, 3f, 8f, Quaternionf().rotationZYX(-0.32f, -0.12f, 0.22f), girth, stretch, layer, light, overlay, color)
+                } else {
+                    val fore = if (returnCling) 1.48f else p[NivarisModel.FORE]
+                    val swipe = if (returnCling) 0f else p[NivarisModel.SWIPE]
+                    limb(q, matrices, m.foreR, -7f, 3f, 8f, Quaternionf().rotationZYX(-0.6f * swipe, 0.3f * swipe, fore - 0.9f * swipe), girth, stretch, layer, light, overlay, color)
+                    limb(q, matrices, m.foreL, 7f, 3f, 8f, Quaternionf().rotationZYX(0f, 0f, fore), girth, stretch, layer, light, overlay, color)
+                }
             }
             NivarisShape.HIND_GLIED -> {
-                val hind = if (clinging) 1.48f else p[NivarisModel.HIND]
-                limb(q, matrices, m.hindR, -6f, 3f, 8f, Quaternionf().rotationZYX(0f, 0f, hind), girth, stretch, layer, light, overlay, color)
-                limb(q, matrices, m.hindL, 6f, 3f, 8f, Quaternionf().rotationZYX(0f, 0f, hind), girth, stretch, layer, light, overlay, color)
+                if (spireCoil) {
+                    limb(q, matrices, m.hindR, -6f, 3f, 8f, Quaternionf().rotationZYX(0.30f, 0.10f, 0.28f), girth, stretch, layer, light, overlay, color)
+                    limb(q, matrices, m.hindL, 6f, 3f, 8f, Quaternionf().rotationZYX(-0.30f, -0.10f, 0.28f), girth, stretch, layer, light, overlay, color)
+                } else {
+                    val hind = if (returnCling) 1.48f else p[NivarisModel.HIND]
+                    limb(q, matrices, m.hindR, -6f, 3f, 8f, Quaternionf().rotationZYX(0f, 0f, hind), girth, stretch, layer, light, overlay, color)
+                    limb(q, matrices, m.hindL, 6f, 3f, 8f, Quaternionf().rotationZYX(0f, 0f, hind), girth, stretch, layer, light, overlay, color)
+                }
             }
         }
     }
 
     private fun limb(
         q: RenderCommandQueue, matrices: MatrixStack, part: ModelPart, x: Float, y: Float, z: Float, r: Quaternionf, girth: Float, stretch: Float,
-        layer: RenderLayer, light: Int, overlay: Int, color: Int, foldedMembrane: Boolean = false,
+        layer: RenderLayer, light: Int, overlay: Int, color: Int, foldAmount: Float = 0f,
     ) {
         matrices.push()
         // Ansatzpunkt im verjüngten Gliedraum, das Teil selbst unverjüngt und ohne die Längsdehnung des Glieds.
         matrices.translate(x / 16f, y / 16f, z / 16f)
         matrices.scale(1f / girth, 1f / girth, 1f / (stretch * 1.03f))
         matrices.multiply(r)
-        // In the perch the membrane is pleated against the trailing bones.
-        if (foldedMembrane) matrices.scale(0.8f, 1f, 0.35f)
+        // In the perch the membrane is pleated against the trailing bones and smoothly unfurls on roar/launch.
+        if (foldAmount > 0.01f) {
+            matrices.scale(1f - 0.2f * foldAmount, 1f, 1f - 0.65f * foldAmount)
+        }
         q.submitModelPart(part, matrices, layer, light, overlay, null, color, null)
         matrices.pop()
     }

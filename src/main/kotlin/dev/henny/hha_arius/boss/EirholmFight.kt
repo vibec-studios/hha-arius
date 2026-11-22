@@ -409,13 +409,14 @@ class EirholmFight(
         arius = e
     }
 
-    fun spawnNivaris(pos: Vec3d, yaw: Float) {
+    fun spawnNivaris(pos: Vec3d, yaw: Float, configure: (NivarisEntity) -> Unit = {}) {
         nivaris?.discard()
         val e = AriusEntities.NIVARIS.create(world, SpawnReason.EVENT) ?: return
         e.refreshPositionAndAngles(pos.x, pos.y, pos.z, yaw, 0f)
         e.headYaw = yaw
         e.bodyYaw = yaw
         e.damageHandler = BossDamageHandler { boss, source, amount -> onBossDamaged(boss, source, amount) }
+        configure(e)
         world.spawnEntity(e)
         nivaris = e
         nivarisHead?.discard()

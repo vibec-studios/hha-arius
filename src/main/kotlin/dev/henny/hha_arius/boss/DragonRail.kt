@@ -1,8 +1,11 @@
 package dev.henny.hha_arius.boss
 
 import dev.henny.hha_arius.arena.ArenaLayout
+import dev.henny.hha_arius.arena.ArenaPlan
 import dev.henny.hha_arius.arena.FarPlan
+import dev.henny.hha_arius.arena.Highland
 import dev.henny.hha_arius.arena.HuntRoute
+import dev.henny.hha_arius.arena.RideLandmarks
 import net.minecraft.util.math.BlockPos
 import net.minecraft.util.math.Vec3d
 import kotlin.math.acos
@@ -139,11 +142,14 @@ object DragonRail {
      */
     fun clearTerrain(
         pts: List<Vec3d>, origin: BlockPos, floorY: Double, clearance: Double = 5.0, landingTail: Int = 0,
+        structures: Boolean = false, takeoffHead: Int = 0,
     ): List<Vec3d> {
         if (pts.size < 2) return pts
-        val landFrom = (pts.size - landingTail.coerceAtLeast(0)).coerceAtLeast(1)
+        val startFrom = takeoffHead.coerceIn(0, pts.size - 2)
+        val landFrom = (pts.size - landingTail.coerceAtLeast(0)).coerceAtLeast(startFrom + 1)
         val minYs = DoubleArray(pts.size) { pts[it].y }
-        for (i in 0 until landFrom) {
+        val col = if (structures) ByteArray(ArenaPlan.NY) else null
+        for (i in startFrom until landFrom) {
             val q = pts[i]
             val rx = floor(q.x).toInt() - origin.x
             val rz = floor(q.z).toInt() - origin.z
@@ -157,6 +163,34 @@ object DragonRail {
                 for (dx in intArrayOf(-8, 0, 8)) for (dz in intArrayOf(-8, 0, 8)) {
                     if (!tunnel(rx + dx, rz + dz)) maxTop = max(maxTop, FarPlan.top(rx + dx, rz + dz))
                 }
+                if (structures) {
+                    val lmTop = RideLandmarks.topNear(rx, rz, 6)
+                    if (lmTop > maxTop) maxTop = lmTop
+                    for (dx in intArrayOf(-5, 0, 5)) for (dz in intArrayOf(-5, 0, 5)) {
+                        val sx = rx + dx
+                        val sz = rz + dz
+                        FarPlan.iceSpike(sx, sz)?.let { sp -> if (sp[0] > maxTop) maxTop = sp[0] }
+                        if (col != null && FarPlan.inCore(sx, sz)) {
+                            ArenaPlan.column(sx, sz, col)
+                            for (y in ArenaPlan.Y_MAX downTo 0) {
+                                if (col[y - ArenaPlan.Y_MIN] != ArenaPlan.AIR) {
+                                    if (y > maxTop) maxTop = y
+                                    break
+                                }
+                            }
+                        }
+                    }
+                    for (lm in Highland.landmarks) {
+                        if (kotlin.math.hypot((rx - lm.x).toDouble(), (rz - lm.z).toDouble()) <= lm.r + 6.0) {
+                            val h = when (lm.type) {
+                                Highland.BLADE -> lm.base + 27
+                                Highland.TOWER -> lm.base + 18
+                                else -> lm.base + 8
+                            }
+                            if (h > maxTop) maxTop = h
+                        }
+                    }
+                }
             }
             val terrainMin = if (maxTop > Int.MIN_VALUE) origin.y + maxTop + 1.0 + clearance else floorY + 2.5
             minYs[i] = max(pts[i].y, max(floorY + 2.5, terrainMin))
@@ -165,15 +199,27 @@ object DragonRail {
         // Sanfte Steigungsbegrenzung (vorwärts & rückwärts), damit Aufstiege über Klippen weich beginnen.
         val maxStepY = STEP * 0.30
         val ys = minYs.copyOf()
-        for (i in 1 until landFrom) ys[i] = max(ys[i], ys[i - 1] - maxStepY)
-        for (i in landFrom - 2 downTo 0) ys[i] = max(ys[i], ys[i + 1] - maxStepY)
+        for (i in startFrom + 1 until landFrom) ys[i] = max(ys[i], ys[i - 1] - maxStepY)
+        for (i in landFrom - 2 downTo startFrom) ys[i] = max(ys[i], ys[i + 1] - maxStepY)
         // Gleitender Mittelwert (nie unter das Gelände-Minimum fallen).
         val smooth = DoubleArray(pts.size) { ys[it] }
-        for (i in 0 until landFrom) {
+        for (i in startFrom until landFrom) {
             var acc = 0.0
             var cnt = 0
-            for (k in max(0, i - 18)..min(landFrom - 1, i + 18)) { acc += ys[k]; cnt++ }
+            for (k in max(startFrom, i - 18)..min(landFrom - 1, i + 18)) { acc += ys[k]; cnt++ }
             smooth[i] = max(minYs[i], acc / cnt)
+        }
+        // Weicher Übergang aus der Startstrecke.
+        if (startFrom > 0) {
+            val blend = min(14, startFrom)
+            val lift = smooth[startFrom] - pts[startFrom].y
+            if (lift > 0.05) {
+                for (j in 0 until blend) {
+                    val u = 1.0 - (j + 1.0) / (blend + 1.0)
+                    val s = u * u * (3.0 - 2.0 * u)
+                    smooth[startFrom - 1 - j] = pts[startFrom - 1 - j].y + lift * s
+                }
+            }
         }
         // Weicher Übergang in den Landeanflug.
         if (landFrom < pts.size) {

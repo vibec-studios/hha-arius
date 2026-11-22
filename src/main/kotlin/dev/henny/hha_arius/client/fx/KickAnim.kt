@@ -58,6 +58,24 @@ object KickAnim {
         tracks[entityId] = Track(duration, keys(h, fl, duration - h - fl))
     }
 
+    /** Hochgeschleudert vom Kopfstoß Solvanes: Rückstoß → Überschlag hoch in der Luft → verzweifeltes Greifen im Fall. */
+    fun ramLaunch(entityId: Int, flight: Float, total: Int) {
+        if (entityId < 0 || total <= 0) return
+        val fl = flight.coerceAtLeast(10f)
+        val dur = total.toFloat().coerceAtLeast(fl + 4f)
+        tracks[entityId] = Track(dur, listOf(
+            Key(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f),
+            // Harter Stoß: Körper reißt nach hinten hoch, Arme fliegen auf.
+            Key(fl * 0.14f, 52f, -14f, 0.05f, -0.55f, -0.95f, 0.85f, -0.85f, -0.85f, -0.85f, 0.25f, 0.55f, -0.25f),
+            // Überschlag über den Scheitel hoch über ihrem Rücken.
+            Key(fl * 0.45f, 175f, 10f, 0.08f, 0.35f, -1.6f, 0.65f, -1.4f, -0.65f, -1.4f, 0.28f, -1.1f, -0.28f),
+            // Fall nach vorn gekippt: Kopf nach unten, beide Arme greifen verzweifelt nach dem Eisdorn.
+            Key(fl * 0.76f, 295f, -6f, 0.04f, -0.75f, -2.85f, 0.18f, -2.85f, -0.18f, 0.45f, 0.15f, 0.65f, -0.15f),
+            Key(fl, 310f, 0f, 0f, -0.95f, -3.1f, 0.12f, -3.1f, -0.12f, 0.55f, 0.08f, 0.45f, -0.08f),
+            Key(dur, 360f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f),
+        ))
+    }
+
     fun catchMace(id: Int, duration: Int) {
         if (id < 0) return
         val high = Key(5f, -18f, -5f, 0f, 0.25f, -0.71f, 0.09f, 0.25f, -0.6f, -0.36f, 0.16f, 0.35f, -0.12f)
