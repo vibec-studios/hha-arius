@@ -63,9 +63,13 @@ object SplitRecovery {
     }
 
     private val GSON = Gson()
-    private val CODEC: Codec<State> = Codec.STRING.xmap(
-        { State(runCatching { GSON.fromJson(it, Data::class.java) }.getOrNull() ?: Data()) },
-        { GSON.toJson(it.data) },
+
+    /** NBT strings are limited to 65,535 encoded bytes, while a full mountain snapshot needs several hundred KB. */
+    private const val NBT_CHUNK = 32_000
+
+    private val CODEC: Codec<State> = Codec.STRING.listOf().xmap(
+        { parts -> State(runCatching { GSON.fromJson(parts.joinToString(""), Data::class.java) }.getOrNull() ?: Data()) },
+        { state -> GSON.toJson(state.data).chunked(NBT_CHUNK) },
     )
     private val TYPE = PersistentStateType("hha_arius_split_recovery", { State() }, CODEC, DataFixTypes.SAVED_DATA_COMMAND_STORAGE)
 
