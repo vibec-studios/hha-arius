@@ -44,6 +44,9 @@ class NivarisRenderState : LivingEntityRenderState() {
     /** [dev.henny.hha_arius.boss.NivarisMode]. */
     var mode = 0
 
+    /** Flügel angelegt 0..1 (Ritt durch enge Felsen). */
+    var wingTuck = 0f
+
     /** Posen-Kanäle, siehe [NivarisModel.FWD] … */
     val p = FloatArray(NivarisModel.COUNT)
 
@@ -548,6 +551,9 @@ class NivarisBody {
     private var smYaw = Float.NaN
     private var speed = 0.0
 
+    /** Aktueller Bodenhub je Punkt (siehe [normal]). */
+    private val lift = DoubleArray(POINTS)
+
     fun update(e: dev.henny.hha_arius.boss.NivarisEntity, s: NivarisRenderState, tickDelta: Float) {
         val now = s.age
         val dt = if (lastAge.isNaN()) 1f else MathHelper.clamp(now - lastAge, 0f, 5f)
@@ -864,16 +870,35 @@ class NivarisBody {
             val h0 = pts[i].y - (floors[i] + radius(i))
             air[i] = MathHelper.clamp((h0 / 2.5).toFloat(), 0f, 1f) * (1f - ground * 0.6f) + (1f - ground) * 0.4f
         }
-        for (i in NECK until POINTS) {
+        // Seit 1.12.0 (Crix: „kleiner Knick beim Hochziehen knapp über dem Boden“): Vorher wurde jedes Glied einzeln auf
+        // die Bodenhöhe geschoben, das ergab eine Stufe an jeder Berührstelle. Jetzt eine weiche Hülle: Der nötige Hub läuft
+        // mit begrenzter Steigung zu den Nachbarn aus, wird geglättet (nie unter den nötigen Wert) und ändert sich je Tick
+        // nur begrenzt.
+        val need = DoubleArray(POINTS)
+        for (i in NECK + 1 until POINTS) {
             var floor = floors[i] + radius(i) * 0.9
             if (air[i] > 0.35f) {
                 // Im Flug auch echtes Gelände unter dem langen Leib respektieren (Überhänge/Bögen > 8 Blöcke drüber ignorieren).
                 val realTop = world.getTopY(net.minecraft.world.Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, MathHelper.floor(pts[i].x), MathHelper.floor(pts[i].z)).toDouble()
-                if (realTop > world.bottomY + 1 && realTop <= pts[i].y + 8.0) {
-                    floor = maxOf(floor, realTop + radius(i) + 0.5)
-                }
+                if (realTop > world.bottomY + 1 && realTop <= pts[i].y + 8.0) floor = maxOf(floor, realTop + radius(i) + 0.5)
             }
-            if (pts[i].y < floor) pts[i] = Vec(pts[i].x, floor, pts[i].z)
+            need[i] = max(0.0, floor - pts[i].y)
+        }
+        val raw = need.copyOf()
+        for (i in NECK + 2 until POINTS) need[i] = max(need[i], need[i - 1] - LIFT_SLOPE)
+        for (i in POINTS - 2 downTo NECK + 1) need[i] = max(need[i], need[i + 1] - LIFT_SLOPE)
+        repeat(3) {
+            val c = need.copyOf()
+            for (k in NECK + 1 until POINTS - 1) need[k] = max(raw[k], c[k] * 0.5 + (c[k - 1] + c[k + 1]) * 0.25)
+        }
+        for (i in NECK + 1 until POINTS) {
+            val rate = if (need[i] > lift[i]) LIFT_UP else LIFT_DOWN
+            lift[i] += (need[i] - lift[i]).coerceIn(-rate * dt, rate * dt)
+            // Nie mehr als einen halben Block im Boden, auch wenn die Begrenzung noch nachzieht.
+            lift[i] = max(lift[i], raw[i] - 0.5)
+            // Am Hals eingeblendet, damit die Rumpfmitte (Entity) keinen Absatz bekommt.
+            val fade = smooth(MathHelper.clamp((i - NECK) / 4f, 0f, 1f)).toDouble()
+            pts[i] = Vec(pts[i].x, pts[i].y + lift[i] * fade, pts[i].z)
         }
         return headFwd
     }
@@ -915,7 +940,8 @@ class NivarisBody {
             System.arraycopy(fYaw, 0, restTarget, 0, BODY)
             restAnchor = null
         } else {
-            val coiled = e.pose == dev.henny.hha_arius.boss.NivarisPose.LIE_DOWN
+            // Seit 1.12.0 rollt sie sich nie mehr ein (Crix: „nicht so geil, wie er sich einrollt“): liegend eine ruhige Linie.
+            val coiled = false
             val back = kotlin.math.atan2(-f.z, -f.x)
             val anchor = restAnchor
             if (anchor == null || anchor.squaredDistanceTo(spine) > 12.0 * 12.0 || coiled != restCoiled) {
@@ -1165,6 +1191,11 @@ class NivarisBody {
 
     private companion object {
         const val POINTS = NivarisRenderState.POINTS
+
+        /** Bodenhub: höchste Steigung je Glied (Blöcke) und Änderung je Tick nach oben/unten. */
+        const val LIFT_SLOPE = 0.42
+        const val LIFT_UP = 0.55
+        const val LIFT_DOWN = 0.22
 
         /** Glieder des Halses (0..NECK-1) zwischen Kopfgelenk und Rumpfmitte; Punkt NECK = Rumpfmitte. */
         const val NECK = 3

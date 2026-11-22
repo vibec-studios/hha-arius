@@ -1,0 +1,15 @@
+{
+  "hha_arius.qte.how.left": "Press %s (swing left)",
+  "hha_arius.qte.how.right": "Press %s (swing right)",
+  "hha_arius.qte.r_arch": "A rock arch right above her back: press yourself flat!",
+  "hha_arius.qte.r_arch_ice": "Icicles at head height: press yourself flat!",
+  "hha_arius.qte.r_fangs": "Ice fangs at leg height: pull your legs up!",
+  "hha_arius.qte.r_needle_right": "Rock needle on the right: swing your legs left!",
+  "hha_arius.qte.r_needle_left": "Rock needle on the left: swing your legs right!",
+  "hha_arius.qte.r_ice": "The spray is freezing your hands: hack the ice off!",
+  "hha_arius.qte.r_regrip": "You're hanging by one hand: grab back on!",
+  "hha_arius.msg.ride_hit_arch": "The rock tears you off her back, you're down to one hand!",
+  "hha_arius.msg.ride_hit_fangs": "The ice fangs catch your legs, one hand slips!",
+  "hha_arius.msg.ride_hit_needle": "The needle slams you aside, one hand slips!",
+  "hha_arius.msg.ride_hit_ice": "The ice bursts your grip, you're down to one hand!"
+}

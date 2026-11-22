@@ -74,6 +74,7 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
         state.lead = entity.lead
         state.resonance = entity.resonance
         state.mode = entity.mode
+        state.wingTuck = entity.wingTuckAt(tickDelta)
         // Flug-Überblendung: etwa 10 Ticks von Boden zu Luft und zurück.
         val now = entity.age + tickDelta
         val blend = flyBlend.getOrPut(entity) { floatArrayOf(if (entity.flying) 1f else 0f, now) }
@@ -187,9 +188,10 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
                 // Haltungen aus docs/NIVARIS_SERPENT.md (Grad, für wing_r; wing_l mit umgekehrtem yaw und roll):
                 // gespannt (0,0,0), Schlag oben (0,6,40) / unten (0,4,−34), angelegt (180,84,−45), eng (180,80,−70).
                 // Zwischen angelegt und gespannt per slerp, damit sich die Schwinge um den Knochen dreht.
-                val w = MathHelper.clamp(p[NivarisModel.WING], 0f, 1f)
-                val flap = MathHelper.clamp(p[NivarisModel.FLAP], -1.2f, 1.2f)
-                val tight = MathHelper.clamp(p[NivarisModel.TIGHT], 0f, 1f)
+                // Seit 1.12.0: Im Ritt legt sie die Flügel an, um zwischen den festen Felsen hindurchzuschießen.
+                val w = MathHelper.clamp(p[NivarisModel.WING], 0f, 1f) * (1f - s.wingTuck)
+                val flap = MathHelper.clamp(p[NivarisModel.FLAP], -1.2f, 1.2f) * (1f - s.wingTuck)
+                val tight = maxOf(MathHelper.clamp(p[NivarisModel.TIGHT], 0f, 1f), s.wingTuck)
                 val deg = MathHelper.RADIANS_PER_DEGREE
                 val flapYaw = (if (flap > 0f) 6f * flap else -4f * flap) * deg
                 val flapRoll = (if (flap > 0f) 40f * flap else 34f * flap) * deg
@@ -242,6 +244,13 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
     override fun shouldRender(entity: NivarisEntity, frustum: Frustum, x: Double, y: Double, z: Double): Boolean = true
 
     override fun canBeCulled(entity: NivarisEntity): Boolean = false
+
+    /**
+     * Seit 1.12.0 (Crix: „Solvane ist am Ende des Shots einfach verschwunden“): EntityCulling prüft nur diese Box per
+     * Sichtstrahl. Die echte Trefferbox steht in Szenen oft als Stellvertreter hinter Fels, der 96 Blöcke lange Körper ist
+     * trotzdem im Bild. Eine Box über dem Limit der Mod (50 Blöcke) wird nie verdeckt-gecullt, auch nicht im Tick-Culling.
+     */
+    override fun getBoundingBox(entity: NivarisEntity): net.minecraft.util.math.Box = entity.boundingBox.expand(64.0)
 
     override fun hasLabel(entity: NivarisEntity, squaredDistance: Double): Boolean = false
 

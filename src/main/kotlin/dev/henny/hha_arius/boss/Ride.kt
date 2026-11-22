@@ -1,10 +1,9 @@
 package dev.henny.hha_arius.boss
 
-import dev.henny.hha.logic.Fx
 import dev.henny.hha.logic.Vfx
+import dev.henny.hha.logic.boss.Cine
 import dev.henny.hha_arius.HhaArius
 import dev.henny.hha_arius.arena.ArenaLayout
-import dev.henny.hha_arius.arena.FarPlan
 import dev.henny.hha_arius.arena.RideLandmarks
 import dev.henny.hha_arius.net.FxKind
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry
@@ -24,8 +23,7 @@ import net.minecraft.util.Formatting
 import net.minecraft.util.math.Vec3d
 import java.util.UUID
 import kotlin.math.PI
-import kotlin.math.atan2
-import kotlin.math.cos
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
@@ -37,6 +35,13 @@ object RideAction {
     const val VAULT = 2
     const val BRACE = 3
     const val TUG = 4
+
+    /** Vom Hindernis getroffen: Der Körper wird zurückgerissen. */
+    const val HIT = 5
+
+    /** Beine und Körper zur linken bzw. rechten Seite geschwungen (an einer Felsnadel vorbei). */
+    const val SWING_L = 6
+    const val SWING_R = 7
 }
 
 /**
@@ -105,6 +110,10 @@ object RideSeats {
 
     private val seats = HashMap<UUID, Int>()
 
+    /** Nur Sichtprüfung (src/gametest): erster vergebener Dorn, um hintere Plätze mit einem Spieler zu prüfen. */
+    @JvmField
+    var testSeat: Int? = null
+
     /** Vergibt freie Plätze in Beitrittsreihenfolge und meldet alle Plätze an alle Zuschauer. */
     fun assign(f: EirholmFight) {
         val online = f.fighters.keys.toList()
@@ -112,7 +121,7 @@ object RideSeats {
             if (id in seats || f.server.playerManager.getPlayer(id) == null) continue
             // Wer die Begegnung verlassen hat, behält seinen Dorn: Niemand rückt auf, und er kommt dorthin zurück.
             val taken = online.mapNotNull { seats[it] }
-            var free = 0
+            var free = testSeat ?: 0
             while (free in taken) free++
             seats[id] = free
         }
@@ -160,7 +169,7 @@ object RideSeats {
         syncPassengers(f, d)
     }
 
-    /** Ritt vorbei: alle Plätze und Griffe frei, Vanilla-Mitfahrerliste an alle Zuschauer synchronisieren. */
+    /** Ritt vorbei: alle steigen ab, Plätze und Griffe frei, und alle Clients sehen dieselbe Mitfahrerliste. */
     fun clear(f: EirholmFight) {
         val d = f.nivaris
         for (id in f.fighters.keys) {
@@ -176,23 +185,56 @@ object RideSeats {
 }
 
 /**
- * Flugbahn des Ritts: sauberer, weiter Ausflug durch die Ostöffnung des Horsts hinaus ins Hochland, in einem
- * weiten, flüssigen Bogen um das Massiv (West → Süd → Ost), dann in ruhiger Spirale durch den Sturm um das Felshorn
- * hinauf und im gestreckten Anflug genau über die Abwurfzone des Felds ([ArenaLayout.VAULT_LANDING]) bis zum
- * Liegeplatz. Alle Punkte halten großen Kurvenradius ([TURN] = 34), Geländefreiheit ([CLEAR]) und flache Steigung ein.
+ * Die Route des Ritts (seit 1.12.0 von Grund auf neu, Crix: „sie fliegt viel zu schnell, unter der Erde und macht
+ * 360-Grad-Drehungen“): **eine** von Hand gelegte, glatte Linie. Sie verlässt den Horst geradeaus durch die Ostöffnung,
+ * zieht in einem weiten Bogen an der Nordflanke des Massivs entlang, zwischen den Ostgipfeln hindurch und läuft von Süden
+ * flach über das Feld aus. Keine Kreise, kein Überqueren und erneutes Unterfliegen einer Kante. Die Höhe folgt dem
+ * Gelände mit fester Freiheit und begrenzter Steigung.
  */
 object RideRoute {
-    private const val CLEAR = 16.0
-
-    /** Kleinster Kurvenradius der Route (weit genug für flüssige Bögen ohne 360°-Schleifen). */
-    private const val TURN = 34.0
     private const val STEP = 0.5
 
-    /** Abschnitte (Anteile der Bogenlänge), an denen Sturm und Wetter wechseln. */
-    var stormFrom = 0.58
-        private set
-    var diveFrom = 0.84
-        private set
+    /** Abstand über Gebirge bzw. über flachem Hochland. */
+    private const val CLEAR_ROCK = 15.0
+    private const val CLEAR_FLAT = 9.0
+
+    /** Größte Steigung (Höhe je Block Weg). */
+    private const val MAX_SLOPE = 0.17
+
+    /** Ab hier (Bogenlänge vom Ende) gilt die gezeichnete Landehöhe unverändert. */
+    private const val TAIL = 150.0
+
+    /** Stützpunkte, relativ zum Instanz-Ursprung. */
+    private val CTRL: List<Vec3d> = listOf(
+        Vec3d(-268.0, 15.0, -60.0),
+        Vec3d(-212.0, 31.0, -60.0),
+        Vec3d(-158.0, 46.0, -47.0),
+        Vec3d(-122.0, 56.0, 4.0),
+        Vec3d(-104.0, 64.0, 62.0),
+        Vec3d(-60.0, 72.0, 106.0),
+        Vec3d(8.0, 78.0, 120.0),
+        Vec3d(84.0, 76.0, 120.0),
+        Vec3d(150.0, 70.0, 140.0),
+        Vec3d(214.0, 62.0, 172.0),
+        Vec3d(278.0, 54.0, 168.0),
+        Vec3d(316.0, 44.0, 118.0),
+        Vec3d(331.0, 33.0, 66.0),
+        Vec3d(330.0, 23.0, 32.0),
+        Vec3d(328.5, 16.0, 10.0),
+        Vec3d(329.0, 11.0, -14.0),
+        Vec3d(330.5, 5.0, -29.0),
+        Vec3d(ArenaLayout.VAULT_REST.x, ArenaLayout.VAULT_REST.y, ArenaLayout.VAULT_REST.z),
+    )
+
+    /** Der Abwurfpunkt über den Landeplätzen des Felds. */
+    private val DROP = Vec3d(328.5, 16.0, 10.0)
+
+    /** Bogenlänge, an der die Route den Horst-Abflug übernimmt. */
+    const val JOIN = 74.0
+
+    /** Abschnitte (Anteile der Bogenlänge), an denen Sturm und Sturzflug beginnen. */
+    const val stormFrom = 0.50
+    const val diveFrom = 0.86
 
     private var pts: List<Vec3d>? = null
 
@@ -200,6 +242,20 @@ object RideRoute {
     fun points(): List<Vec3d> = pts ?: build().also { pts = it }
 
     val length: Double get() = (points().size - 1) * STEP
+
+    /** Bogenlänge des Abwurfpunkts. */
+    val dropS: Double by lazy {
+        var best = 0
+        var bestD = Double.MAX_VALUE
+        points().forEachIndexed { i, q ->
+            val dist = q.squaredDistanceTo(DROP)
+            if (dist < bestD) { bestD = dist; best = i }
+        }
+        best * STEP
+    }
+
+    /** Bogenlängen der festen Hindernisse (für die Sichtprüfung). */
+    val obstacleArcs: List<Double> get() = RideLandmarks.all.map { it.s }
 
     /** Punkt bei Bogenlänge [s] (Blöcke ab dem Start), relativ. */
     fun at(s: Double): Vec3d {
@@ -210,131 +266,86 @@ object RideRoute {
     }
 
     private fun build(): List<Vec3d> {
-        val ax = ArenaLayout.SPIRE.x + 0.5
-        val az = ArenaLayout.SPIRE.z + 0.5
-        fun around(a: Double, r: Double, up: Double) = Vec3d(ax + sin(a) * r, maxOf(FarPlan.massifH(r), 0.0) + up, az + cos(a) * r)
-        val aerie = Vec3d(ArenaLayout.AERIE.x + 0.5, 0.0, ArenaLayout.AERIE.z + 0.5)
-        val vault = Vec3d(ArenaLayout.VAULT.x + 0.5, ArenaLayout.VAULT.y.toDouble(), ArenaLayout.VAULT.z + 0.5)
-        val rest = ArenaLayout.VAULT_REST
-        val ctrl = ArrayList<Vec3d>()
-        // Sauberer Ausflug nach Osten durch die Öffnung des Horsts (kein senkrechtes Hochreißen über die Felswand).
-        ctrl += aerie.add(0.0, 10.0, 0.0)
-        ctrl += aerie.add(54.0, 18.0, 4.0)
-        ctrl += aerie.add(122.0, 28.0, 36.0)
-        // Weiter Bogen um das Massiv (Westflanke → Süden → Osten).
-        val exit = ctrl.last()
-        val a0 = atan2(exit.x - ax, exit.z - az) + 0.30
-        val r0 = FarPlan.MASSIF_R - 4.0
-        val turns = 4.65
-        val n = 11
-        for (k in 0..n) {
-            val u = k / n.toDouble()
-            val a = a0 + turns * u
-            val r = r0 - 40.0 * u
-            ctrl += around(a, r, 24.0 + 5.0 * sin(u * PI * 2.5))
-        }
-        val stormIndex = ctrl.size
-        // Durch den Sturm: weite Spirale um das Horn hinauf bis über die Schulter.
-        val a1 = a0 + turns
-        val m = 8
-        for (k in 1..m) {
-            val u = k / m.toDouble()
-            val a = a1 + 1.65 * PI * u
-            val r = (FarPlan.MASSIF_R - 44.0) + (FarPlan.SHOULDER_R + 34.0 - (FarPlan.MASSIF_R - 44.0)) * u
-            ctrl += around(a, r, 26.0 + 9.0 * u)
-        }
-        val diveIndex = ctrl.size
-        // Gestreckter Endanflug aufs Feld: flach genau über die Landeplätze (Abwurf per Fassrolle) zum Liegeplatz.
-        val top = ctrl.last()
-        ctrl += top.lerp(vault, 0.48).add(0.0, 14.0, 18.0)
-        ctrl += vault.add(-4.0, 14.0, 56.0)
-        ctrl += vault.add(-4.0, 8.2, 22.0)
-        ctrl += vault.add(0.0, 6.5, -2.0)
-        ctrl += rest.add(0.0, 2.5, 0.0)
-
-        val fine = ArrayList(DragonRail.path(ctrl[0], ctrl[1].subtract(ctrl[0]), ctrl.drop(1), TURN))
-        val tags = ArrayList<Int>(fine.size)
-        run {
-            var c = 0
-            for (q in fine) {
-                while (c < ctrl.size - 1 && q.squaredDistanceTo(ctrl[c + 1]) <= q.squaredDistanceTo(ctrl[c])) c++
-                tags += c
+        val raw = DragonRail.spline(CTRL)
+        val n = raw.size
+        val tailFrom = (n - (TAIL / STEP).toInt()).coerceAtLeast(1)
+        // Nötige Höhe: Gelände im Umkreis ihres Körpers plus Freiheit; im Endanflug gilt die gezeichnete Höhe.
+        val need = DoubleArray(n) { i ->
+            val q = raw[i]
+            if (i >= tailFrom) q.y else {
+                val top = DragonRail.groundAt(q.x, q.z, 12)
+                if (top == Int.MIN_VALUE) q.y else max(q.y, top + 1.0 + if (top > 6) CLEAR_ROCK else CLEAR_FLAT)
             }
         }
-        // Gelände: mindestens CLEAR über dem höchsten Punkt im Umfeld ±8 Blöcke (außer im Endanflug über dem ebenen Feld).
-        val landing = (fine.size - 170).coerceAtLeast(1)
-        val ys = DoubleArray(fine.size) { fine[it].y }
-        for (i in fine.indices) {
-            if (i >= landing) continue
-            val q = fine[i]
-            var top0 = -1000
-            for (dx in intArrayOf(-8, 0, 8)) for (dz in intArrayOf(-8, 0, 8)) {
-                top0 = maxOf(top0, FarPlan.top(Math.floor(q.x).toInt() + dx, Math.floor(q.z).toInt() + dz))
-            }
-            ys[i] = maxOf(ys[i], top0 + CLEAR)
+        // Erst weit nach außen anheben, dann glätten: Der Mittelwert bleibt so garantiert über der nötigen Höhe.
+        val w1 = 56
+        val w2 = 28
+        val lifted = DoubleArray(n) { i ->
+            var m = need[i]
+            for (k in max(0, i - w1 - w2)..min(n - 1, i + w1 + w2)) m = max(m, need[k])
+            if (i >= tailFrom) need[i] else m
         }
-        // Sanfte Steigungsbegrenzung (vorwärts & rückwärts), damit sie nie jäh auf- und abwippt.
-        val maxStepY = DragonRail.STEP * 0.28
-        for (i in 1 until landing) ys[i] = maxOf(ys[i], ys[i - 1] - maxStepY)
-        for (i in landing - 2 downTo 0) ys[i] = maxOf(ys[i], ys[i + 1] - maxStepY)
-        // Höhe glätten (gleitender Mittelwert über ±25 Blöcke, nie unter das Gelände-Minimum zurück).
-        val sm = DoubleArray(ys.size)
-        for (i in ys.indices) {
-            var s = 0.0
-            var c = 0
-            for (k in maxOf(0, i - 50)..minOf(ys.size - 1, i + 50)) { s += ys[k]; c++ }
-            sm[i] = if (i >= landing) fine[i].y else maxOf(ys[i], s / c)
-        }
-        // Weicher Übergang in den Endanflug über dem Feld.
-        if (landing < fine.size) {
-            val lift = sm[landing - 1] - fine[landing - 1].y
-            if (lift > 0.1) {
-                val blend = min(40, fine.size - landing)
-                for (j in 0 until blend) {
-                    val u = 1.0 - (j + 1.0) / (blend + 1.0)
-                    sm[landing + j] = fine[landing + j].y + lift * (u * u * (3.0 - 2.0 * u))
+        val maxStep = STEP * MAX_SLOPE
+        for (i in 1 until tailFrom) lifted[i] = max(lifted[i], lifted[i - 1] - maxStep)
+        for (i in tailFrom - 2 downTo 0) lifted[i] = max(lifted[i], lifted[i + 1] - maxStep)
+        val first = box(lifted, w1, tailFrom)
+        val second = box(first, w2, tailFrom)
+        // Weicher Übergang in den gezeichneten Endanflug.
+        val blend = 90
+        val ys = DoubleArray(n) { i ->
+            when {
+                i >= tailFrom -> raw[i].y
+                i >= tailFrom - blend -> {
+                    val u = (i - (tailFrom - blend)) / blend.toDouble()
+                    second[i] + (raw[i].y - second[i]) * (u * u * (3.0 - 2.0 * u))
                 }
+                else -> second[i]
             }
         }
-        val lifted = fine.indices.map { Vec3d(fine[it].x, sm[it], fine[it].z) }
-        // Gleichmäßig abtasten und Abschnittsgrenzen merken.
-        val out = ArrayList<Vec3d>()
-        out += lifted[0]
-        var acc = 0.0
-        var next = STEP
-        var stormAt = -1.0
-        var diveAt = -1.0
-        for (i in 1 until lifted.size) {
-            val a = lifted[i - 1]
-            val b = lifted[i]
-            val len = a.distanceTo(b)
-            if (stormAt < 0 && tags[i] >= stormIndex) stormAt = acc
-            if (diveAt < 0 && tags[i] >= diveIndex) diveAt = acc
-            while (acc + len >= next && len > 1e-9) {
-                out += a.lerp(b, (next - acc) / len)
-                next += STEP
-            }
-            acc += len
+        return List(n) { Vec3d(raw[it].x, ys[it], raw[it].z) }
+    }
+
+    private fun box(v: DoubleArray, w: Int, until: Int): DoubleArray {
+        val out = v.copyOf()
+        for (i in 0 until until) {
+            var sum = 0.0
+            var c = 0
+            for (k in max(0, i - w)..min(until - 1, i + w)) { sum += v[k]; c++ }
+            out[i] = sum / c
         }
-        stormFrom = (stormAt / acc).coerceIn(0.35, 0.85)
-        diveFrom = (diveAt / acc).coerceIn(stormFrom + 0.08, 0.94)
         return out
     }
 }
 
 /**
- * Der Ritt auf Solvanes Rücken zwischen Abschnitt II und III:
- * * Sauberer Ausflug aus dem Horst (ohne 360°-Schleifen), ruhiger Flug entlang [RideRoute] vorbei an den
- *   **dauerhaften** Felsbögen und Eisgraten der Dimension ([RideLandmarks]).
- * * Faire Quick-Time-Events: Ducken (flach an Solvanes Rücken unter den festen Bögen hindurch), Hochziehen (Beine über
- *   die festen Eisgrate heben), Festhalten (max. 6 Klicks mit großzügigem Zeitfenster). Wer mit nur einer Hand
- *   1 QTE meistert, bekommt die zweite Hand sofort zurück!
- * * Am Ende über der Landezone des Felds: Solvane dreht ihren Körper per Fassrolle auf den Rücken, sodass die Reiter
- *   natürlich von ihr abrutschen und in den Schnee fallen, während sie sich wieder aufrichtet.
+ * Der Ritt auf Solvanes Rücken zwischen Abschnitt II und III (seit 1.12.0 neu):
+ * * **Aufsammeln:** Sie fliegt in einer einzigen Linie zu den Spielern, streicht in Fahrtrichtung über sie hinweg, ihr
+ *   Lichtstrom zieht jeden im Bogen an seinen Dorn, und sie fliegt ohne Halt geradeaus durch die Ostöffnung weiter.
+ * * **Hindernisse:** fest in der Dimension ([RideLandmarks]). Jeder Reiter bekommt seine Taste zu seinem eigenen Zeitpunkt
+ *   (je nachdem, wie weit hinten er hängt), die Haltung bleibt, bis das Hindernis an ihm vorbei ist; wer es verpasst, wird
+ *   sichtbar getroffen.
+ * * **Eine Hand:** Wer getroffen wurde, kann mit einem Druck wieder zugreifen. Auch das nächste geschaffte Hindernis gibt
+ *   die zweite Hand zurück, und Hacken braucht dann nur noch drei Schläge.
+ * * **Abwurf:** Über den Landeplätzen rollt sie ihren ganzen Körper zur Seite. Darum verlieren die Reiter den Halt.
  */
 class DragonRide(private val f: EirholmFight) {
 
-    private class Event(val triggerS: Double, val kind: Qte.Kind, val count: Int, val ticks: Int, val text: String)
+    /** Ein Hindernis, das jeder Reiter einmal bekommt. */
+    private class Obstacle(val lm: RideLandmarks.Landmark) {
+        val asked = HashSet<UUID>()
+    }
+
+    /** Offene Taste eines Reiters. */
+    private class Prompt(val player: UUID, val ob: Obstacle, val round: Qte.Round, val impactS: Double) {
+        var holding = false
+    }
+
+    /** Bahn vom Abflug bis auf die Route (absolut) und der Stand darauf; läuft über Vorspann und Ritt hinweg. */
+    private var lead: List<Vec3d> = emptyList()
+    private var leadS = 0.0
+    private var speed = 0.3
+
+    private val grips = HashMap<UUID, Int>()
 
     private fun send(grip: Int, player: ServerPlayerEntity) {
         val payload = RideGripS2C(player.id, grip)
@@ -346,172 +357,165 @@ class DragonRide(private val f: EirholmFight) {
         for (p in f.audience()) if (ServerPlayNetworking.canSend(p, RideActionS2C.ID)) ServerPlayNetworking.send(p, payload)
     }
 
-    private fun cue(id: String, at: Vec3d, volume: Float = 3f, pitch: Float = 1f) = f.ambient(id, at, volume, pitch)
-
-    private fun actionFor(kind: Qte.Kind): Int = when (kind) {
-        Qte.Kind.SNEAK -> RideAction.DUCK
-        Qte.Kind.JUMP -> RideAction.VAULT
-        Qte.Kind.USE -> RideAction.BRACE
-        Qte.Kind.MASH, Qte.Kind.ATTACK -> RideAction.TUG
+    private fun cue(id: String, at: Vec3d, volume: Float = 3f, pitch: Float = 1f) {
+        if (!Cine.muted) f.ambient(id, at, volume, pitch)
     }
 
-    fun play(neckOf: (NivarisEntity) -> Vec3d): Script = script {
+    private fun flat(from: Vec3d, to: Vec3d): Vec3d {
+        val v = Vec3d(to.x - from.x, 0.0, to.z - from.z)
+        return if (v.lengthSquared() < 1e-6) Vec3d(1.0, 0.0, 0.0) else v.normalize()
+    }
+
+    // --- Aufsammeln ---------------------------------------------------------------------------------------------------
+
+    /**
+     * Eine Linie aus ihrer jetzigen Lage und Flugrichtung: an den Spielern in Abflugrichtung vorbei, weiter durch die
+     * Ostöffnung auf die Route. Innerhalb des Kessels hält sie Abstand zur Felswand. Liefert die Stelle über den Spielern.
+     */
+    private fun buildLead(d: NivarisEntity): Double {
+        val center = f.abs(Vec3d.of(ArenaLayout.AERIE)).add(0.5, 0.0, 0.5)
+        val players = f.players()
+        val mid = if (players.isEmpty()) center else players.map { it.entityPos }.fold(Vec3d.ZERO) { acc, v -> acc.add(v) }.multiply(1.0 / players.size)
+        val inner = ArenaLayout.AERIE_R - 20.0
+        fun keep(v: Vec3d, r: Double): Vec3d {
+            val o = Vec3d(v.x - center.x, 0.0, v.z - center.z)
+            return if (o.length() <= r) v else Vec3d(center.x + o.x / o.length() * r, v.y, center.z + o.z / o.length() * r)
+        }
+        val routeIn = f.abs(RideRoute.at(0.0))
+        val low = ArenaLayout.AERIE_PILLARS.any { p ->
+            val c = f.abs(Vec3d.of(p))
+            kotlin.math.hypot(c.x - mid.x, c.z - mid.z) < 13.0
+        }
+        val pickup = keep(Vec3d(mid.x, f.floorY + if (low) 17.0 else 10.0, mid.z), inner)
+        val dir = flat(pickup, routeIn)
+        val before = keep(pickup.subtract(dir.multiply(58.0)).let { Vec3d(it.x, f.floorY + 18.0, it.z) }, inner)
+        val start = d.entityPos
+        val heading = DragonRail.heading(f, d).let { Vec3d(it.x, it.y.coerceIn(-0.2, 0.25), it.z) }
+        val toPickup = ArrayList<Vec3d>()
+        if (start.squaredDistanceTo(before) > 34.0 * 34.0 && start.squaredDistanceTo(pickup) > 62.0 * 62.0) toPickup += before
+        toPickup += pickup
+        val first = DragonRail.path(start, heading, toPickup, 28.0, center, inner + 4.0)
+        val endDir = first.last().subtract(first[(first.size - 8).coerceAtLeast(0)]).let { if (it.lengthSquared() < 1e-4) dir else it.normalize() }
+        val second = DragonRail.path(first.last(), endDir, listOf(routeIn, f.abs(RideRoute.at(RideRoute.JOIN - 34.0)), f.abs(RideRoute.at(RideRoute.JOIN))), 30.0)
+        val whole = ArrayList(first)
+        whole.addAll(second.drop(1))
+        lead = DragonRail.clearTerrain(whole, f.origin, f.floorY, clearance = 6.0)
+        leadS = 0.0
+        var best = 0
+        var bestD = Double.MAX_VALUE
+        lead.forEachIndexed { i, q ->
+            val dist = q.squaredDistanceTo(pickup)
+            if (dist < bestD) { bestD = dist; best = i }
+        }
+        return best * DragonRail.STEP
+    }
+
+    private fun flyLead(d: NivarisEntity, cruise: Double): Boolean {
+        val len = DragonRail.length(lead)
+        if (leadS >= len) return false
+        speed += (cruise - speed).coerceIn(-0.012, 0.012)
+        leadS = min(len, leadS + speed)
+        val at = DragonRail.at(lead, leadS)
+        f.place(d, at)
+        val next = DragonRail.at(lead, leadS + 5.0)
+        if (next.squaredDistanceTo(at) > 0.01) f.face(d, next)
+        return true
+    }
+
+    private fun mount(d: NivarisEntity, p: ServerPlayerEntity, i: Int) {
+        if (!p.isAlive || p.isRemoved || p.vehicle === d) return
+        grips[p.uuid] = 2
+        if (!Cine.muted) f.fx(FxKind.THREAD, p.entityPos, life = 26, e1 = p, e2 = d)
+        cue("resonance.chime", p.entityPos, 1.6f, 1.3f + i * 0.05f)
+        p.addStatusEffect(StatusEffectInstance(StatusEffects.SLOW_FALLING, 3000, 0, false, false, false))
+        p.startRiding(d, true, true)
+        send(2, p)
+    }
+
+    /** Wird die Szene abgebrochen, fehlt nichts für den Ritt: Die Bahn entsteht dann in [play] aus der aktuellen Lage. */
+    fun settleIntro() {
+        lead = emptyList()
+    }
+
+    /** Vorspann: Arius pfeift, sie kommt in einer Linie heran, sammelt alle auf und fliegt ohne Halt weiter. */
+    fun intro(scene: CineScene): Script = script {
         val a = f.arius ?: return@script
         val d = f.nivaris ?: return@script
-        RideSeats.assign(f)
-        val length = RideRoute.length
-        val dropStart = (length - 78.0).coerceAtLeast(length * 0.90)
-        // Ruhigeres, flüssiges Tempo je Abschnitt; Gesamtdauer mindestens MIN_TICKS.
-        fun pace(u: Double) = when {
-            u < RideRoute.stormFrom -> 0.95
-            u < RideRoute.diveFrom -> 0.82
-            u < 0.94 -> 1.25
-            else -> 0.68
-        }
-        var est = 0.0
-        run {
-            var s = 0.0
-            while (s < dropStart) { s += pace(s / length); est++ }
-        }
-        val scale = if (est < MIN_TICKS) est / MIN_TICKS else 1.0
-        val grips = HashMap<UUID, Int>()
-        for (p in f.players()) if (p.vehicle === d) { grips[p.uuid] = 2; send(2, p) }
-
-        // Einstieg in die Route weit außerhalb des Horsts (kein enges Wenden oder 360°-Schleifen im Kessel).
-        val join = 115.0
-        val events = buildEvents(length, join, dropStart, ::pace, scale)
-        var nextEvent = 0
-        val rounds = ArrayList<Triple<Qte.Round, Int, Qte.Kind>>()
-        var mood = "ride"
-        MusicCue.play(f, mood, 20)
-        f.atmos(dev.henny.hha_arius.net.AtmosMode.SNOW, 40)
+        f.setPhase(EirholmFight.Phase.COLLAPSE)
+        f.calls.reset()
+        f.music("music.transform", 10)
+        MusicCue.play(f, "ride_intro", 10)
+        d.mode = NivarisMode.NORMAL
         d.flying = true
         d.bodyRoll = 0f
+        d.wingTuck = 0f
         d.play(NivarisPose.GLIDE)
-        RideSeats.perch(f, a, d)
-
-        // Sanfter, weiter Bogen aus dem Horst heraus auf die Route (Abstand > 2× Wendekreis: keine Extraschleife).
-        val aerie = f.abs(Vec3d.of(ArenaLayout.AERIE)).add(0.5, 0.0, 0.5)
-        val eastOut = aerie.add(56.0, 18.0, 4.0)
-        val entryPre = f.abs(RideRoute.at(join - 28.0))
-        val entryPt = f.abs(RideRoute.at(join))
-        val leadPts = ArrayList<Vec3d>()
-        if (d.entityPos.squaredDistanceTo(eastOut) > 30.0 * 30.0) leadPts += eastOut
-        leadPts += entryPre
-        leadPts += entryPt
-        val leadRaw = DragonRail.path(d.entityPos, DragonRail.heading(f, d).let { Vec3d(it.x, it.y.coerceIn(-0.15, 0.28), it.z) }, leadPts, 28.0)
-        val lead = DragonRail.clearTerrain(leadRaw, f.origin, f.floorY, clearance = 8.0)
-        val leadLen = DragonRail.length(lead)
-        var q = 0.0
-        while (q < leadLen) {
-            q = minOf(leadLen, q + 0.92)
-            val at = DragonRail.at(lead, q)
-            f.place(d, at)
-            val next = DragonRail.at(lead, q + 3.5)
-            if (next.squaredDistanceTo(at) > 0.01) f.face(d, next)
-            lockArius(a, d)
-            for (p in f.players()) if (p.uuid in grips && p.vehicle !== d) p.startRiding(d, true, true)
+        RideSeats.assign(f)
+        val mountS = buildLead(d)
+        val mountAt = DragonRail.at(lead, mountS)
+        // Er pfeift auf seinem Pfeiler.
+        a.sheathed = false
+        a.play(AriusPose.WHISTLE)
+        val face = a.entityPos.add(0.0, 1.8, 0.0)
+        val toward = flat(a.entityPos, d.entityPos)
+        val side = Vec3d(-toward.z, 0.0, toward.x)
+        scene.line(
+            face.add(toward.multiply(2.4)).add(side.multiply(1.0)).add(0.0, -0.4, 0.0), face.add(toward.multiply(1.8)).add(side.multiply(0.8)).add(0.0, -0.3, 0.0),
+            face, d.entityPos.add(0.0, 4.0, 0.0), 40, 52.0, 60.0,
+        )
+        if (!Cine.muted) f.say("fall.together", 50)
+        cue("resonance.chime", a.entityPos, 3f)
+        a.eyeGlow = 100
+        d.eyeGlow = 100
+        var t = 0
+        var mounted = false
+        var after = 0
+        var wide = false
+        while (true) {
+            t++
+            flyLead(d, 0.88)
+            if (t == 18) {
+                f.fx(FxKind.THREAD, a.entityPos, life = 40, e1 = a, e2 = d)
+                cue("nivaris.roar", d.entityPos, 5f, 0.9f)
+            }
+            if (t == 40) {
+                // Weite Seitenansicht auf die Spieler: Man sieht sie kommen.
+                wide = true
+                val look = mountAt
+                val across = Vec3d(-flat(d.entityPos, mountAt).z, 0.0, flat(d.entityPos, mountAt).x)
+                val remain = ((mountS - leadS) / 0.88).toInt().coerceAtLeast(24) + 34
+                scene.line(
+                    look.add(across.multiply(34.0)).add(0.0, 2.0, 0.0), look.add(across.multiply(26.0)).add(0.0, -1.0, 0.0),
+                    d.entityPos.add(0.0, 3.0, 0.0), look, remain, 66.0, 62.0, lookAt = d, lookOffset = 3.0,
+                )
+            }
+            // Arius springt ab, sobald sie an ihm vorbeistreicht, und sitzt auf ihrem Kopf, bevor die Spieler aufsteigen.
+            if (a.vehicle !== d && leadS >= mountS - 16.0) {
+                RideSeats.perch(f, a, d)
+                cue("arius.wind_step", a.entityPos, 3f, 0.8f)
+            }
+            if (!mounted && leadS >= mountS - 4.0) {
+                mounted = true
+                if (!wide) {
+                    val across = Vec3d(-flat(d.entityPos, mountAt).z, 0.0, flat(d.entityPos, mountAt).x)
+                    scene.line(mountAt.add(across.multiply(30.0)), mountAt.add(across.multiply(24.0)).add(0.0, 2.0, 0.0), mountAt, mountAt, 34, 64.0, 60.0, lookAt = d, lookOffset = 3.0)
+                }
+                f.calls.roomShake(mountAt, 3f, 40f)
+                for ((i, p) in f.players().withIndex()) mount(d, p, i)
+                scene.once { Cine.title(it, "hha_arius.cine.hold_on", "hha_arius.cine.hold_on.sub", 50) }
+            }
+            if (mounted) {
+                after++
+                if (after == 24) scene.home(14)
+                if (after >= 38) break
+            }
+            if (leadS >= DragonRail.length(lead)) break
             yield(Unit)
         }
-        var s = join
-        var tick = 0
-        var stormOn = false
-        var diveOn = false
-        var prev = f.abs(RideRoute.at(join))
-        while (s < dropStart) {
-            val u = s / length
-            s = minOf(dropStart, s + pace(u) * scale)
-            tick++
-            val pos = f.abs(RideRoute.at(s))
-            val ahead = f.abs(RideRoute.at(minOf(length, s + 6.0)))
-            f.place(d, pos)
-            val look = if (ahead.squaredDistanceTo(pos) > 1e-4) ahead else pos.add(pos.subtract(prev))
-            f.face(d, look)
-            prev = pos
-            lockArius(a, d)
-            // Wer noch hält, aber abgerutscht ist, sitzt wieder auf; Nachzügler bekommen ihren Platz.
-            for (p in f.players()) if (p.uuid in grips && p.vehicle !== d) {
-                RideSeats.assign(f)
-                p.startRiding(d, true, true)
-            }
-            if (tick % 26 == 0) cue("nivaris.wing", pos, 4f, 0.75f + (tick % 52) * 0.002f)
-            if (tick % 320 == 120) cue("nivaris.roar", pos, 5f, 0.85f)
-            if (!stormOn && u >= RideRoute.stormFrom) {
-                stormOn = true
-                mood = "storm"
-                MusicCue.play(f.audience().filter { p -> rounds.none { p.uuid in it.first.players } }, mood, 40)
-                f.atmos(dev.henny.hha_arius.net.AtmosMode.AERIE, 30)
-                cue("nivaris.roar", pos, 5f, 0.7f)
-            }
-            if (!diveOn && u >= RideRoute.diveFrom) {
-                diveOn = true
-                mood = "dive"
-                MusicCue.play(f.audience().filter { p -> rounds.none { p.uuid in it.first.players } }, mood, 30)
-                f.atmos(dev.henny.hha_arius.net.AtmosMode.VAULT, 60)
-                d.play(NivarisPose.DIVE, 20)
-            }
-            // Quick-Time-Events: faire Fenster auch mit einer Hand; 1 Erfolg holt die zweite Hand zurück!
-            while (nextEvent < events.size && s >= events[nextEvent].triggerS) {
-                val ev = events[nextEvent++]
-                val riders = f.players().filter { it.vehicle === d }
-                for (grip in intArrayOf(2, 1)) {
-                    val group = riders.filter { (grips[it.uuid] ?: 2) == grip }
-                    if (group.isEmpty()) continue
-                    val hard = grip == 1
-                    val ticks = if (hard && ev.kind != Qte.Kind.MASH) (ev.ticks * 0.92).toInt().coerceAtLeast(42) else ev.ticks
-                    val count = if (hard && ev.kind == Qte.Kind.MASH) minOf(ev.count + 1, 6) else ev.count
-                    rounds += Triple(Qte.start(group, ev.kind, ticks, count, ev.text), tick + ticks, ev.kind)
-                    MusicCue.play(group, "qte", 6)
-                }
-                if (riders.isNotEmpty()) f.calls.roomShake(pos, 2.2f, 40f)
-            }
-            val it = rounds.iterator()
-            while (it.hasNext()) {
-                val (r, end, kind) = it.next()
-                if (tick < end && !r.done()) continue
-                Qte.close(r)
-                it.remove()
-                for (p in f.players()) {
-                    if (p.uuid !in r.players) continue
-                    MusicCue.play(p, mood, 14)
-                    if (r.success(p)) {
-                        MusicCue.sting(listOf(p), "qte_ok")
-                        sendAction(p, actionFor(kind), 28)
-                        // Erholung auf beide Hände nach einem gemeisterten QTE mit nur einer Hand!
-                        if ((grips[p.uuid] ?: 2) < 2) {
-                            grips[p.uuid] = 2
-                            send(2, p)
-                            cue("resonance.chime", p.entityPos, 1.8f, 1.35f)
-                            p.sendMessage(Text.translatable("hha_arius.msg.ride_recover").formatted(Formatting.AQUA), true)
-                        }
-                        continue
-                    }
-                    val first = (grips[p.uuid] ?: 2) >= 2
-                    grips[p.uuid] = 1
-                    send(1, p)
-                    f.calls.hitShake(p.entityPos, 3f, 6f)
-                    MusicCue.sting(listOf(p), "qte_fail")
-                    slipDamage(p, d, first)
-                    p.sendMessage(Text.translatable(if (first) "hha_arius.msg.ride_slip" else "hha_arius.msg.ride_slip_again").formatted(Formatting.GOLD), true)
-                }
-            }
-            // Reitet niemand mehr: den Rest abkürzen.
-            if (tick > 40 && f.players().none { it.vehicle === d }) {
-                s = maxOf(s, dropStart)
-            }
-            yield(Unit)
-        }
-        for ((r, _, _) in rounds) Qte.close(r)
-        rounds.clear()
-        // Abwurf-Szene über dem Feld: Solvane dreht ihren Körper per Fassrolle, sodass alle Reiter natürlich abfallen!
-        yieldAll(barrelRollDrop(d, a, dropStart, length))
-        d.bodyRoll = 0f
-        for (p in f.players()) send(0, p)
-        RideSeats.unperch(f, a)
-        RideSeats.clear(f)
     }
 
-    /** Hält Arius während des gesamten Ritts exakt und nach vorn gerichtet auf Solvanes Kopf verankert. */
+    // --- Der Flug -----------------------------------------------------------------------------------------------------
+
     private fun lockArius(a: AriusEntity, d: NivarisEntity) {
         if (a.vehicle !== d) RideSeats.perch(f, a, d)
         a.yaw = d.yaw
@@ -520,105 +524,303 @@ class DragonRide(private val f: EirholmFight) {
         if (a.pose != AriusPose.SEATED) a.play(AriusPose.SEATED)
     }
 
-    /**
-     * Erstellt die QTE-Folge: jedes dauerhafte Bauwerk ([RideLandmarks]) bekommt seinen exakt getimten Ausweich-Prompt
-     * (Ducken unter Bögen, Hochziehen über Eisgrate), dazwischen faire Festhalte-/Klammer-Prompts (höchstens 6 Klicks).
-     */
-    private fun buildEvents(length: Double, join: Double, dropStart: Double, pace: (Double) -> Double, scale: Double): List<Event> {
-        val out = ArrayList<Event>()
-        val landmarks = RideLandmarks.all
-        for (lm in landmarks) {
-            val kind = if (lm.kind == RideLandmarks.Kind.ICE_RIDGE) Qte.Kind.JUMP else Qte.Kind.SNEAK
-            val ticks = 46
-            val leadDist = pace(lm.u) * scale * ticks * 0.88
-            val trig = (lm.s - leadDist).coerceIn(join + 18.0, dropStart - 40.0)
-            out += Event(trig, kind, 1, ticks, lm.qteKey)
+    private fun holdRiders(d: NivarisEntity) {
+        for (p in f.players()) if (p.uuid in grips && p.vehicle !== d && p.isAlive) {
+            RideSeats.assign(f)
+            p.startRiding(d, true, true)
         }
-        val extraSpecs = listOf(
-            Triple(0.11, Qte.Kind.MASH, 4 to "hha_arius.qte.hold_on"),
-            Triple(0.28, Qte.Kind.MASH, 5 to "hha_arius.qte.hold_turn"),
-            Triple(0.46, Qte.Kind.MASH, 5 to "hha_arius.qte.ride_ice"),
-            Triple(RideRoute.stormFrom + 0.05, Qte.Kind.MASH, 5 to "hha_arius.qte.hold_storm"),
-            Triple(RideRoute.diveFrom + 0.02, Qte.Kind.USE, 1 to "hha_arius.qte.ride_brace"),
-        )
-        for ((u, kind, pair) in extraSpecs) {
-            val trig = (u * length).coerceIn(join + 14.0, dropStart - 44.0)
-            // Genug Abstand zu den dauerhaften Hindernis-Prompts lassen, damit sich nichts überschneidet.
-            if (out.any { kotlin.math.abs(it.triggerS - trig) < 55.0 }) continue
-            val ticks = if (kind == Qte.Kind.MASH) 54 else 44
-            out += Event(trig, kind, pair.first, ticks, pair.second)
-        }
-        out.sortBy { it.triggerS }
-        return out
     }
 
+    private fun qteKind(k: RideLandmarks.Kind) = when (k) {
+        RideLandmarks.Kind.ROCK_ARCH, RideLandmarks.Kind.ICE_ARCH -> Qte.Kind.SNEAK
+        RideLandmarks.Kind.FANGS -> Qte.Kind.JUMP
+        RideLandmarks.Kind.NEEDLE_RIGHT -> Qte.Kind.LEFT
+        RideLandmarks.Kind.NEEDLE_LEFT -> Qte.Kind.RIGHT
+        RideLandmarks.Kind.ICEFALL -> Qte.Kind.MASH
+    }
+
+    private fun action(k: RideLandmarks.Kind) = when (k) {
+        RideLandmarks.Kind.ROCK_ARCH, RideLandmarks.Kind.ICE_ARCH -> RideAction.DUCK
+        RideLandmarks.Kind.FANGS -> RideAction.VAULT
+        RideLandmarks.Kind.NEEDLE_RIGHT -> RideAction.SWING_L
+        RideLandmarks.Kind.NEEDLE_LEFT -> RideAction.SWING_R
+        RideLandmarks.Kind.ICEFALL -> RideAction.TUG
+    }
+
+    private fun promptKey(k: RideLandmarks.Kind) = when (k) {
+        RideLandmarks.Kind.ROCK_ARCH -> "hha_arius.qte.r_arch"
+        RideLandmarks.Kind.ICE_ARCH -> "hha_arius.qte.r_arch_ice"
+        RideLandmarks.Kind.FANGS -> "hha_arius.qte.r_fangs"
+        RideLandmarks.Kind.NEEDLE_RIGHT -> "hha_arius.qte.r_needle_right"
+        RideLandmarks.Kind.NEEDLE_LEFT -> "hha_arius.qte.r_needle_left"
+        RideLandmarks.Kind.ICEFALL -> "hha_arius.qte.r_ice"
+    }
+
+    private fun hitKey(k: RideLandmarks.Kind) = when (k) {
+        RideLandmarks.Kind.ROCK_ARCH, RideLandmarks.Kind.ICE_ARCH -> "hha_arius.msg.ride_hit_arch"
+        RideLandmarks.Kind.FANGS -> "hha_arius.msg.ride_hit_fangs"
+        RideLandmarks.Kind.NEEDLE_RIGHT, RideLandmarks.Kind.NEEDLE_LEFT -> "hha_arius.msg.ride_hit_needle"
+        RideLandmarks.Kind.ICEFALL -> "hha_arius.msg.ride_hit_ice"
+    }
+
+    /** So weit hängt der Reiter hinter dem Entity-Punkt (entlang der Bahn). */
+    private fun seatBack(p: ServerPlayerEntity): Double {
+        val seat = RideSeats.of(p.uuid)?.coerceAtLeast(0) ?: 0
+        return -RideHooks.serverOffset(seat).z
+    }
+
+    private fun regain(p: ServerPlayerEntity) {
+        if ((grips[p.uuid] ?: 2) >= 2) return
+        grips[p.uuid] = 2
+        send(2, p)
+        cue("resonance.chime", p.entityPos, 1.8f, 1.35f)
+        p.sendMessage(Text.translatable("hha_arius.msg.ride_recover").formatted(Formatting.AQUA), true)
+    }
+
+    /** Vom Hindernis getroffen: Körper reißt zurück, Splitter, eine Hand weg, Schaden. */
+    private fun struck(p: ServerPlayerEntity, d: NivarisEntity, k: RideLandmarks.Kind) {
+        val first = (grips[p.uuid] ?: 2) >= 2
+        grips[p.uuid] = 1
+        send(1, p)
+        sendAction(p, RideAction.HIT, 24)
+        f.calls.hitShake(p.entityPos, 3f, 6f)
+        MusicCue.sting(listOf(p), "qte_fail")
+        cue("hold.impact", p.entityPos, 2.2f, 0.8f)
+        val block = if (k == RideLandmarks.Kind.ROCK_ARCH || k == RideLandmarks.Kind.NEEDLE_LEFT || k == RideLandmarks.Kind.NEEDLE_RIGHT) Blocks.DEEPSLATE else Blocks.PACKED_ICE
+        f.world.spawnParticles(BlockStateParticleEffect(ParticleTypes.BLOCK, block.defaultState), p.x, p.y + 1.0, p.z, 26, 0.5, 0.4, 0.5, 0.22)
+        slipDamage(p, d, first)
+        p.sendMessage(Text.translatable(hitKey(k)).formatted(Formatting.GOLD), true)
+    }
+
+    fun play(): Script = script {
+        val a = f.arius ?: return@script
+        val d = f.nivaris ?: return@script
+        RideSeats.assign(f)
+        d.flying = true
+        d.bodyRoll = 0f
+        d.play(NivarisPose.GLIDE)
+        RideSeats.perch(f, a, d)
+        // Übersprungener Vorspann: Bahn aus der aktuellen Lage, alle steigen sofort auf.
+        if (lead.isEmpty()) buildLead(d)
+        for ((i, p) in f.players().withIndex()) if (p.vehicle !== d) mount(d, p, i)
+        for (p in f.players()) if (p.vehicle === d) { grips.putIfAbsent(p.uuid, 2); send(grips[p.uuid] ?: 2, p) }
+        var mood = "ride"
+        MusicCue.play(f, mood, 20)
+        f.atmos(dev.henny.hha_arius.net.AtmosMode.SNOW, 40)
+
+        // Restliche Anflugbahn bis auf die Route.
+        while (flyLead(d, 0.74)) {
+            lockArius(a, d)
+            holdRiders(d)
+            yield(Unit)
+        }
+        val length = RideRoute.length
+        val dropFrom = RideRoute.dropS - DROP_RUNUP
+        fun pace(s: Double): Double {
+            val near = RideLandmarks.all.any { abs(it.s - s) < 60.0 }
+            return when {
+                s > dropFrom - 40.0 -> 0.62
+                near -> 0.64
+                s / length > RideRoute.diveFrom -> 0.72
+                else -> 0.70
+            }
+        }
+        val obstacles = RideLandmarks.all.map { Obstacle(it) }
+        val open = ArrayList<Prompt>()
+        val regrips = HashMap<UUID, Qte.Round>()
+        var s = RideRoute.JOIN
+        var tick = 0
+        var stormOn = false
+        var diveOn = false
+        // Der Anflug endet nie exakt auf der Route (Geländeanhebung): Der Rest läuft über 90 Blöcke weich aus, statt zu springen.
+        val seam = d.entityPos.subtract(f.abs(RideRoute.at(RideRoute.JOIN)))
+        fun routeAt(q: Double): Vec3d {
+            val k = ((q - RideRoute.JOIN) / SEAM_BLEND).coerceIn(0.0, 1.0)
+            return f.abs(RideRoute.at(q)).add(seam.multiply(1.0 - k * k * (3.0 - 2.0 * k)))
+        }
+        var prev = routeAt(s)
+        while (s < dropFrom) {
+            speed += (pace(s) - speed).coerceIn(-0.006, 0.006)
+            s = min(dropFrom, s + speed)
+            tick++
+            val u = s / length
+            val pos = routeAt(s)
+            val ahead = routeAt(min(length, s + 6.0))
+            f.place(d, pos)
+            f.face(d, if (ahead.squaredDistanceTo(pos) > 1e-4) ahead else pos.add(pos.subtract(prev)))
+            prev = pos
+            lockArius(a, d)
+            holdRiders(d)
+            // Flügel an, solange sie zwischen Felsen hindurchschießt.
+            val tight = RideLandmarks.all.any { s in (it.s - 30.0)..(it.s + 26.0) }
+            d.wingTuck = (d.wingTuck + if (tight) 0.06f else -0.035f).coerceIn(0f, 1f)
+            if (!tight && tick % 30 == 0) cue("nivaris.wing", pos, 3.4f, 0.74f + (tick % 60) * 0.002f)
+            if (tick % 340 == 140) cue("nivaris.roar", pos, 4.5f, 0.85f)
+            if (!stormOn && u >= RideRoute.stormFrom) {
+                stormOn = true
+                mood = "storm"
+                MusicCue.play(f.audience().filter { p -> open.none { it.player == p.uuid } }, mood, 40)
+                f.atmos(dev.henny.hha_arius.net.AtmosMode.AERIE, 30)
+                cue("nivaris.roar", pos, 5f, 0.7f)
+            }
+            if (!diveOn && u >= RideRoute.diveFrom) {
+                diveOn = true
+                mood = "dive"
+                MusicCue.play(f.audience().filter { p -> open.none { it.player == p.uuid } }, mood, 30)
+                f.atmos(dev.henny.hha_arius.net.AtmosMode.VAULT, 60)
+            }
+            // Tasten je Reiter, passend dazu, wann das Hindernis genau seinen Platz erreicht.
+            for (ob in obstacles) for (p in f.players()) {
+                if (p.uuid in ob.asked || p.vehicle !== d) continue
+                val impact = ob.lm.s + seatBack(p)
+                val kind = qteKind(ob.lm.kind)
+                val window = if (kind == Qte.Kind.MASH) WINDOW_MASH else WINDOW_KEY
+                if (s < impact - window * CRUISE) continue
+                ob.asked += p.uuid
+                regrips.remove(p.uuid)?.let { Qte.close(it) }
+                val count = if (kind == Qte.Kind.MASH) { if ((grips[p.uuid] ?: 2) >= 2) 5 else 3 } else 1
+                open += Prompt(p.uuid, ob, Qte.start(listOf(p), kind, window, count, promptKey(ob.lm.kind)), impact)
+                MusicCue.play(listOf(p), "qte", 6)
+            }
+            val it = open.iterator()
+            while (it.hasNext()) {
+                val q = it.next()
+                val p = f.server.playerManager.getPlayer(q.player)
+                if (p == null || p.vehicle !== d) {
+                    Qte.close(q.round)
+                    it.remove()
+                    continue
+                }
+                // Geschafft: Die Haltung bleibt, bis das Hindernis am Reiter vorbei ist.
+                if (!q.holding && q.round.results[q.player] == true) {
+                    q.holding = true
+                    val left = ((q.impactS - s) / speed.coerceAtLeast(0.2)).toInt().coerceAtLeast(0)
+                    sendAction(p, action(q.ob.lm.kind), left + HOLD_PAST)
+                    MusicCue.sting(listOf(p), "qte_ok")
+                }
+                if (s < q.impactS) continue
+                Qte.close(q.round)
+                it.remove()
+                MusicCue.play(p, mood, 14)
+                if (q.round.success(p)) {
+                    cue("nivaris.wing", p.entityPos, 2f, 1.5f)
+                    regain(p)
+                } else {
+                    struck(p, d, q.ob.lm.kind)
+                    if (open.none { o -> o.player == p.uuid }) {
+                        regrips[p.uuid] = Qte.start(listOf(p), Qte.Kind.USE, WINDOW_REGRIP, 1, "hha_arius.qte.r_regrip")
+                    }
+                }
+            }
+            // Wieder zugreifen nach einem Treffer.
+            val rg = regrips.entries.iterator()
+            while (rg.hasNext()) {
+                val (id, round) = rg.next()
+                val p = f.server.playerManager.getPlayer(id)
+                if (p == null || p.vehicle !== d) {
+                    Qte.close(round)
+                    rg.remove()
+                } else if (round.results[id] == true) {
+                    Qte.close(round)
+                    rg.remove()
+                    sendAction(p, RideAction.BRACE, 16)
+                    regain(p)
+                } else if (round.results[id] == false) {
+                    Qte.close(round)
+                    rg.remove()
+                }
+            }
+            if (tick > 40 && f.players().none { it.vehicle === d }) s = max(s, dropFrom)
+            yield(Unit)
+        }
+        for (q in open) Qte.close(q.round)
+        for (r in regrips.values) Qte.close(r)
+        open.clear()
+        regrips.clear()
+        d.wingTuck = 0f
+        yieldAll(dropOff(d, a, s))
+        d.bodyRoll = 0f
+        for (p in f.players()) send(0, p)
+        RideSeats.unperch(f, a)
+        RideSeats.clear(f)
+    }
+
+    // --- Abwurf -------------------------------------------------------------------------------------------------------
+
     /**
-     * Abwurf am Feld (Fassrolle): Solvane gleitet tief über die Landezone, dreht ihren ganzen Körper weich um 180° auf
-     * den Rücken ([NivarisEntity.bodyRoll]), sodass die Reiter natürlich von den Dornen rutschen und in den Schnee fallen;
-     * währenddessen richtet sie sich mit einer vollen 360°-Rolle wieder auf und gleitet zum Liegeplatz, Arius springt ab.
+     * Über den Landeplätzen rollt sie ihren ganzen Körper einmal um die Längsachse. Bei etwa 110° können sich die Reiter
+     * nicht mehr halten und fallen seitlich in den Schnee; sie dreht weiter, bis sie wieder aufrecht ist, und gleitet aus.
+     * Kamera: neben ihr auf die Reiter, dann vom Boden hinauf zum Sturz, zuletzt nah an den Aufschlag.
      */
-    private fun barrelRollDrop(d: NivarisEntity, a: AriusEntity, dropStart: Double, length: Double): Script = script {
+    private fun dropOff(d: NivarisEntity, a: AriusEntity, from: Double): Script = script {
+        val length = RideRoute.length
         val vault = f.abs(Vec3d.of(ArenaLayout.VAULT)).add(0.5, 0.0, 0.5)
-        val finish = {
-            d.bodyRoll = 0f
+        val landed = HashSet<UUID>()
+        var released = false
+        fun release(pos: Vec3d) {
+            released = true
+            cue("nivaris.wing", pos, 4.5f, 0.95f)
             for ((j, p) in f.players().withIndex()) {
+                val at = p.entityPos
                 if (p.vehicle === d) p.stopRiding()
                 p.removeStatusEffect(StatusEffects.SLOW_FALLING)
                 send(0, p)
                 val spot = f.abs(ArenaLayout.VAULT_LANDING[j % ArenaLayout.VAULT_LANDING.size])
-                if (p.squaredDistanceTo(spot) > 12.0 * 12.0 || p.y > spot.y + 4.0) {
-                    p.teleport(f.world, spot.x, spot.y, spot.z, emptySet(), 180f, 0f, false)
-                }
+                if (!p.isAlive) continue
+                val up = Vec3d(at.x, max(at.y, spot.y + 3.0), at.z)
+                p.teleport(f.world, up.x, up.y, up.z, emptySet(), p.yaw, p.pitch, false)
+                Hold.drop(p)
+                Hold.allowLong(p, 110)
+                Hold.launch(p, Ballistic.velocity(up, spot, 0.16), 100, spot, spot)
+                p.fallDistance = 0.0
+            }
+            RideSeats.clear(f)
+        }
+        val finish = {
+            d.bodyRoll = 0f
+            if (!released) release(d.entityPos)
+            RideSeats.unperch(f, a)
+            RideSeats.clear(f)
+            for (p in f.players()) {
                 p.fallDistance = 0.0
                 p.onLanding()
             }
-            RideSeats.unperch(f, a)
-            RideSeats.clear(f)
         }
         val scene = CineScene(f) { finish() }
         yieldAll(scene.play(script {
-            val totalTicks = 48
-            val dropTick = 20
-            val ariusJumpTick = 30
-            val startPos = f.abs(RideRoute.at(dropStart))
-            val dropPos = f.abs(RideRoute.at(min(length, dropStart + (length - dropStart) * (dropTick / totalTicks.toDouble()))))
-            val land0 = f.abs(ArenaLayout.VAULT_LANDING[0])
-            val fwd = dropPos.subtract(startPos).let { Vec3d(it.x, 0.0, it.z) }.let { if (it.lengthSquared() < 1e-4) Vec3d(0.0, 0.0, -1.0) else it.normalize() }
+            val fwd = flat(f.abs(RideRoute.at(from)), f.abs(RideRoute.at(RideRoute.dropS)))
             val side = Vec3d(-fwd.z, 0.0, fwd.x)
-            // Kamera schräg seitlich-hinten über der Landezone: man sieht Solvanes Körper sich drehen und den eigenen Sturz in den Schnee.
-            val camFrom = dropPos.subtract(fwd.multiply(16.0)).add(side.multiply(18.0)).add(0.0, 5.5, 0.0)
-            val camTo = land0.subtract(fwd.multiply(10.0)).add(side.multiply(15.0)).add(0.0, 3.8, 0.0)
-            scene.line(camFrom, camTo, dropPos.add(0.0, 1.5, 0.0), land0.add(0.0, 1.2, 0.0), totalTicks, 66.0, 58.0)
+            val land0 = f.abs(ArenaLayout.VAULT_LANDING[0])
+            val dropAt = f.abs(RideRoute.at(RideRoute.dropS))
+            // A) Neben ihr: die Reiter am Dorn, während sie sich zu drehen beginnt.
+            val startPos = f.abs(RideRoute.at(from))
+            val rideBy = fwd.multiply(RELEASE_TICK * 0.62)
+            scene.line(
+                startPos.add(side.multiply(15.0)).add(fwd.multiply(-5.0)).add(0.0, 5.0, 0.0),
+                startPos.add(rideBy).add(side.multiply(13.0)).add(fwd.multiply(-5.0)).add(0.0, 4.0, 0.0),
+                startPos.add(0.0, 2.5, 0.0), startPos.add(rideBy).add(0.0, 2.5, 0.0), RELEASE_TICK + 4, 58.0, 54.0, lookAt = d, lookOffset = 2.5,
+            )
             d.play(NivarisPose.GLIDE)
-            cue("nivaris.wing", startPos, 5f, 0.72f)
-            var dropped = false
+            var s = from
             var ariusFrom: Vec3d? = null
             val ariusTarget = vault.add(0.0, 7.0, 0.0)
-            val landed = HashSet<UUID>()
-            for (t in 1..totalTicks) {
-                val u = t / totalTicks.toDouble()
-                val curS = dropStart + (length - dropStart) * u
-                val pos = f.abs(RideRoute.at(curS))
-                val ahead = f.abs(RideRoute.at(min(length, curS + 5.0)))
+            var t = 0
+            while (t < TOTAL_TICKS || s < length) {
+                t++
+                speed += ((if (s > length - 34.0) 0.34 else 0.60) - speed).coerceIn(-0.012, 0.012)
+                s = min(length, s + speed)
+                val pos = f.abs(RideRoute.at(s))
+                val ahead = f.abs(RideRoute.at(min(length, s + 5.0)))
                 f.place(d, pos)
                 if (ahead.squaredDistanceTo(pos) > 0.01) f.face(d, ahead)
-                // Fassrolle: Ticks 5..25 dreht sie sich 0° -> 180° (Rücken nach unten -> Reiter fallen ab),
-                // Ticks 25..45 dreht sie 180° -> 360° zurück in Normal-Lage.
-                val roll = when {
-                    t < 5 -> 0f
-                    t <= 45 -> {
-                        val r = ((t - 5) / 40.0).coerceIn(0.0, 1.0)
-                        val eased = r * r * (3.0 - 2.0 * r)
-                        (eased * 2.0 * PI).toFloat()
-                    }
-                    else -> 0f
-                }
-                d.bodyRoll = roll
-                if (t == 12) {
+                // Eine einzige weiche Rolle um die Längsachse (zur rechten Seite, Rücken nach unten bei der Hälfte).
+                val r = ((t - ROLL_FROM) / ROLL_TICKS.toDouble()).coerceIn(0.0, 1.0)
+                d.bodyRoll = (r * r * r * (r * (6.0 * r - 15.0) + 10.0) * 2.0 * PI).toFloat()
+                if (t == ROLL_FROM + 8) {
                     cue("nivaris.roar", pos, 4.5f, 0.9f)
-                    f.calls.roomShake(pos, 2.8f, 50f)
+                    f.calls.roomShake(pos, 2.2f, 50f)
                 }
-                if (t < ariusJumpTick) {
+                if (t < ARIUS_TICK) {
                     lockArius(a, d)
                 } else {
                     if (ariusFrom == null) {
@@ -627,41 +829,35 @@ class DragonRide(private val f: EirholmFight) {
                         a.play(AriusPose.LAUNCH, 6)
                         cue("arius.wind_step", a.entityPos, 3f, 0.85f)
                     }
-                    val ak = ((t - ariusJumpTick) / 14.0).coerceIn(0.0, 1.0)
-                    f.place(a, ariusFrom!!.lerp(ariusTarget, ak).add(0.0, sin(ak * PI) * 2.8, 0.0))
+                    val ak = ((t - ARIUS_TICK) / 18.0).coerceIn(0.0, 1.0)
+                    f.place(a, ariusFrom!!.lerp(ariusTarget, ak).add(0.0, sin(ak * PI) * 3.2, 0.0))
                     f.face(a, land0)
                 }
-                // Abwurf genau beim Kippen auf den Rücken (ca. 135°..150°): Spieler gleiten natürlich herunter!
-                if (!dropped && t == dropTick) {
-                    dropped = true
-                    cue("nivaris.wing", pos, 4.5f, 0.95f)
-                    for ((j, p) in f.players().withIndex()) {
-                        if (p.vehicle === d) p.stopRiding()
-                        p.removeStatusEffect(StatusEffects.SLOW_FALLING)
-                        send(0, p)
-                        val spot = f.abs(ArenaLayout.VAULT_LANDING[j % ArenaLayout.VAULT_LANDING.size])
-                        val dropOrigin = Vec3d(p.x, max(p.y, spot.y + 3.0), p.z)
-                        val vel = Ballistic.velocity(dropOrigin, spot, 0.08)
-                        Fx.launchPlayer(p, vel)
-                        p.fallDistance = 0.0
-                    }
-                    RideSeats.clear(f)
+                if (!released) for (p in f.players()) if (p.vehicle !== d && p.uuid in grips && p.isAlive) p.startRiding(d, true, true)
+                if (t == RELEASE_TICK - 6) for (p in f.players()) if (p.vehicle === d) sendAction(p, RideAction.HIT, 10)
+                if (t == RELEASE_TICK && !released) {
+                    release(pos)
+                    // B) Vom Schnee hinauf: die Reiter fallen, über ihnen dreht sich ihr Leib.
+                    val ground = land0.add(side.multiply(-9.0)).add(fwd.multiply(-11.0)).add(0.0, 1.4, 0.0)
+                    scene.line(ground, ground.add(fwd.multiply(2.5)).add(0.0, 0.6, 0.0), dropAt.add(0.0, 1.0, 0.0), land0.add(0.0, 1.0, 0.0), FALL_SHOT, 72.0, 56.0)
                 }
-                // Aufprall im Schnee (Staub & Klang, ohne Fallschaden).
-                if (dropped) {
-                    for (p in f.players()) {
-                        p.fallDistance = 0.0
-                        if (p.uuid !in landed && (p.isOnGround || p.y <= land0.y + 0.35)) {
-                            landed += p.uuid
-                            p.onLanding()
-                            f.world.spawnParticles(
-                                BlockStateParticleEffect(ParticleTypes.BLOCK, Blocks.SNOW_BLOCK.defaultState),
-                                p.x, p.y + 0.2, p.z, 22, 0.65, 0.2, 0.65, 0.14,
-                            )
-                            cue("hold.impact", p.entityPos, 1.4f, 0.85f)
-                        }
+                if (t == RELEASE_TICK + FALL_SHOT) {
+                    // C) Nah am Aufschlag, dann zurück zur eigenen Sicht.
+                    val c = land0.add(side.multiply(-5.0)).add(fwd.multiply(-5.0)).add(0.0, 1.8, 0.0)
+                    scene.line(c, c.add(side.multiply(-1.0)).add(0.0, 0.5, 0.0), land0.add(0.0, 0.9, 0.0), land0.add(0.0, 1.2, 0.0), 22, 52.0, 48.0)
+                }
+                if (t == RELEASE_TICK + FALL_SHOT + 18) scene.home(16)
+                if (released) for (p in f.players()) {
+                    p.fallDistance = 0.0
+                    if (p.uuid !in landed && (p.isOnGround || p.y <= land0.y + 0.35)) {
+                        landed += p.uuid
+                        p.onLanding()
+                        f.world.spawnParticles(BlockStateParticleEffect(ParticleTypes.BLOCK, Blocks.SNOW_BLOCK.defaultState), p.x, p.y + 0.2, p.z, 26, 0.7, 0.2, 0.7, 0.14)
+                        cue("hold.impact", p.entityPos, 1.6f, 0.85f)
                     }
                 }
+                if (t >= RELEASE_TICK + FALL_SHOT + 34 && s >= length) break
+                if (t > TOTAL_TICKS + 200) break
                 yield(Unit)
             }
             d.bodyRoll = 0f
@@ -669,24 +865,41 @@ class DragonRide(private val f: EirholmFight) {
         finish()
     }
 
-    /**
-     * Schaden bei einem verpassten Prompt: Anteil der maximalen Gesundheit (die eigene Schadensart umgeht Rüstung,
-     * Resistenz wirkt). Der erste Fehler lässt immer mindestens ein Herz übrig.
-     */
+    /** Schaden bei einem Treffer: Anteil der maximalen Gesundheit; der erste lässt immer mindestens ein Herz übrig. */
     private fun slipDamage(p: ServerPlayerEntity, d: NivarisEntity, first: Boolean) {
-        var amount = p.maxHealth * (if (first) 0.22f else 0.3f)
+        var amount = p.maxHealth * (if (first) 0.2f else 0.28f)
         if (first) amount = minOf(amount, p.health - 1f)
         if (amount <= 0.05f) return
         p.timeUntilRegen = 0
         p.damage(f.world, f.world.damageSources.create(Damage.Kind.IMPACT.key, d), amount)
     }
 
-    companion object {
-        /** Mindestdauer des Ritts in Ticks (65 s). */
-        const val MIN_TICKS = 1300.0
+    private companion object {
+        /** Reisetempo, mit dem die Tasten vorab geplant werden (Blöcke je Tick). */
+        const val CRUISE = 0.64
+
+        /** Zeitfenster: Taste, Hacken, Wieder-Zugreifen (Ticks). */
+        const val WINDOW_KEY = 58
+        const val WINDOW_MASH = 76
+        const val WINDOW_REGRIP = 70
+
+        /** So lange bleibt die Haltung nach dem Hindernis. */
+        const val HOLD_PAST = 16
+
+        /** Strecke, auf der der Anflug in die Route übergeht (Blöcke). */
+        const val SEAM_BLEND = 90.0
+
+        /** Anlauf vor dem Abwurfpunkt (Blöcke). */
+        const val DROP_RUNUP = 34.0
+
+        const val ROLL_FROM = 16
+        const val ROLL_TICKS = 96
+        const val RELEASE_TICK = 54
+        const val ARIUS_TICK = 34
+        const val FALL_SHOT = 44
+        const val TOTAL_TICKS = 150
     }
 }
-
 
 /**
  * Wo die Reiter auf Solvanes Rücken hängen (seit 1.10.0, Crix: „man soll sich am Eisdorn auf ihrem Rücken festhalten,

@@ -92,8 +92,26 @@ class NivarisMoves(private val f: EirholmFight) {
 
     /** Sicherer Flugradius in der aktuellen Arena (hält Kopf, Schwingen und langen Leib von den Felswänden fern). */
     private fun flyKeepRadius(): Double =
-        if (f.phase == EirholmFight.Phase.GLACIER) (f.arenaRadius - 14.0).coerceAtLeast(36.0)
+        if (f.phase == EirholmFight.Phase.GLACIER) AERIE_FLIGHT_R
         else (f.arenaRadius - 6.0).coerceAtLeast(28.0)
+
+    /**
+     * Mitte ihres Flugraums. Seit 1.12.0 (Crix: „der fliegt durch die Wand“): Im Norden des Horsts ragen die Rippen des alten
+     * Drachen bis 54 Blöcke an die Mitte heran und 53 hoch, sie stehen in keiner Höhenkarte. Der Flugkreis liegt darum nach
+     * Süden versetzt und hält Rippen wie Felswand mitsamt den Flügeln frei.
+     */
+    private fun flyCenter(): Vec3d =
+        if (f.phase == EirholmFight.Phase.GLACIER) f.arenaCenter.add(0.0, 0.0, AERIE_FLIGHT_SOUTH) else f.arenaCenter
+
+    /** Hält einen Flugpunkt im Flugraum ([flyCenter], [flyKeepRadius]), [margin] Blöcke vom Rand. */
+    private fun keepInFlight(p: Vec3d, margin: Double = 0.0): Vec3d {
+        val c = flyCenter()
+        val r = (flyKeepRadius() - margin).coerceAtLeast(6.0)
+        val dx = p.x - c.x
+        val dz = p.z - c.z
+        val d = sqrt(dx * dx + dz * dz)
+        return if (d <= r || d < 1e-6) p else Vec3d(c.x + dx / d * r, p.y, c.z + dz / d * r)
+    }
 
     /** Geländehöhe unter [pos] (Fernlandschaft ±6 Blöcke) plus [clearance], mindestens [f.floorY] + 3. */
     private fun terrainMinY(pos: Vec3d, clearance: Double = 4.0): Double {
@@ -108,7 +126,8 @@ class NivarisMoves(private val f: EirholmFight) {
             }
         }
         val tMin = if (top > Int.MIN_VALUE) f.origin.y + top + 1.0 + clearance else f.floorY + 3.0
-        return maxOf(f.floorY + 3.0, tMin)
+        val pillar = if (f.phase == EirholmFight.Phase.GLACIER && DragonRail.overPillar(rx, rz)) f.floorY + DragonRail.PILLAR_TOP else 0.0
+        return maxOf(f.floorY + 3.0, tMin, pillar)
     }
 
     /**
@@ -120,7 +139,7 @@ class NivarisMoves(private val f: EirholmFight) {
     private fun steer(d: NivarisEntity, toward: Vec3d, speed: Double, maxTurn: Double, faceTarget: Vec3d? = null,
                       ceil: Double = Double.MAX_VALUE, floorLimit: Double = f.floorY + 3.0) {
         val pos = d.entityPos
-        val cappedSpeed = speed.coerceAtMost(1.15)
+        val cappedSpeed = speed.coerceAtMost(MAX_FLIGHT)
         // Seit 1.11.0 aus der echten Flugrichtung: `vel` kann nach einer Bahn aus einem anderen Ablauf veraltet sein.
         var v = DragonRail.heading(f, d).normalize().multiply(vel?.length()?.takeIf { it > 1e-3 } ?: maxOf(0.25, cappedSpeed * 0.5))
         val sp = (v.length() + (cappedSpeed - v.length()).coerceIn(-0.05, 0.05)).coerceAtLeast(0.05)
@@ -128,7 +147,7 @@ class NivarisMoves(private val f: EirholmFight) {
         var want = if (delta.lengthSquared() < 1e-6) v.normalize() else delta.normalize()
         // Arenawand-Abstand beim freien Steuern (Horst-Felswand & Rippen).
         val keepR = flyKeepRadius()
-        val c = f.arenaCenter
+        val c = flyCenter()
         val ox = pos.x - c.x
         val oz = pos.z - c.z
         val distR = sqrt(ox * ox + oz * oz)
@@ -146,7 +165,7 @@ class NivarisMoves(private val f: EirholmFight) {
             next = Vec3d(next.x, next.y.coerceIn(minY, ceil), next.z)
             v = Vec3d(v.x, next.y - pos.y, v.z)
         }
-        val clamped = f.clampToArena(next, (f.arenaRadius - keepR).coerceAtLeast(2.0))
+        val clamped = keepInFlight(next)
         f.place(d, Vec3d(clamped.x, next.y, clamped.z))
         f.face(d, faceTarget ?: next.add(v.multiply(4.0)))
         vel = v
@@ -162,20 +181,21 @@ class NivarisMoves(private val f: EirholmFight) {
         d.flying = true
         val heading = DragonRail.heading(f, d)
         val keepR = flyKeepRadius()
-        val safeTo = f.clampToArena(to, (f.arenaRadius - keepR).coerceAtLeast(3.0)).let { Vec3d(it.x, maxOf(to.y, f.floorY + 3.0), it.z) }
+        val safeTo = keepInFlight(to).let { Vec3d(it.x, maxOf(to.y, f.floorY + 3.0), it.z) }
         val points = if (arrive != null && arrive.lengthSquared() > 1e-6) {
-            val before = f.clampToArena(safeTo.subtract(arrive.normalize().multiply(26.0)), (f.arenaRadius - keepR).coerceAtLeast(4.0))
+            val before = keepInFlight(safeTo.subtract(arrive.normalize().multiply(26.0)), 2.0)
             listOf(Vec3d(before.x, safeTo.y + 2.0, before.z), safeTo)
         } else listOf(safeTo)
         val open = f.arenaRadius > 40.0
-        val raw = DragonRail.path(d.entityPos, heading, points, DragonRail.MIN_RADIUS, if (open) f.arenaCenter else null, keepR)
+        val raw = DragonRail.path(d.entityPos, heading, points, DragonRail.MIN_RADIUS, if (open) flyCenter() else null, keepR)
         val rail = DragonRail.clearTerrain(raw, f.origin, f.floorY, clearance = 4.5)
         val len = DragonRail.length(rail)
-        val cruise = maxOf(speed.coerceAtMost(1.15), (len / maxTicks.coerceAtLeast(1)) * 0.85).coerceIn(0.55, 1.20)
-        var cur = (vel?.length() ?: (cruise * 0.65)).coerceIn(0.25, 1.20)
+        // Seit 1.12.0 ruhiger (Crix: „viel zu schnell“) und mit sanfter Beschleunigung statt Ruck.
+        val cruise = maxOf(speed.coerceAtMost(MAX_FLIGHT), (len / maxTicks.coerceAtLeast(1)) * 0.85).coerceIn(0.5, MAX_FLIGHT)
+        var cur = (vel?.length() ?: (cruise * 0.65)).coerceIn(0.25, MAX_FLIGHT)
         var s = 0.0
         while (s < len) {
-            cur += (cruise - cur).coerceIn(-0.07, 0.07)
+            cur += (cruise - cur).coerceIn(-0.03, 0.03)
             s = minOf(len, s + cur)
             val before = d.entityPos
             val pos = DragonRail.at(rail, s)
@@ -212,7 +232,7 @@ class NivarisMoves(private val f: EirholmFight) {
     private suspend fun SequenceScope<Unit>.circle(ticks: Int, radius: Double, height: Double, speed: Double = 0.78, sign: Double = circleSign) {
         val d = f.nivaris ?: return
         d.flying = true
-        val c = f.arenaCenter
+        val c = flyCenter()
         val maxR = (flyKeepRadius() - 6.0).coerceAtLeast(DragonRail.MIN_RADIUS + 4.0)
         val r = radius.coerceIn(DragonRail.MIN_RADIUS + 4.0, maxR)
         var a = kotlin.math.atan2(d.z - c.z, d.x - c.x)
@@ -238,7 +258,7 @@ class NivarisMoves(private val f: EirholmFight) {
         return a.multiply(kotlin.math.cos(maxAngle)).add(axisHint.multiply(kotlin.math.sin(maxAngle))).normalize()
     }
 
-    private fun airPoint(xz: Vec3d, height: Double = cruise): Vec3d = Vec3d(xz.x, f.floorY + height, xz.z)
+    private fun airPoint(xz: Vec3d, height: Double = cruise): Vec3d = keepInFlight(xz).let { Vec3d(it.x, f.floorY + height, it.z) }
 
     private suspend fun SequenceScope<Unit>.takeoff() {
         val d = f.nivaris ?: return
@@ -534,7 +554,7 @@ class NivarisMoves(private val f: EirholmFight) {
         val low = from.lerp(to, 0.45).add(0.0, 2.8, 0.0)
         val end = to.add(0.0, 1.0, 0.0)
         val rail = DragonRail.clearTerrain(
-            DragonRail.path(top, low.subtract(top), listOf(low, end), 20.0, if (f.arenaRadius > 40.0) f.arenaCenter else null, flyKeepRadius()),
+            DragonRail.path(top, low.subtract(top), listOf(low, end), 24.0, if (f.arenaRadius > 40.0) flyCenter() else null, flyKeepRadius()),
             f.origin, f.floorY, clearance = 3.5, landingTail = 22,
         )
         val railLen = DragonRail.length(rail)
@@ -584,7 +604,7 @@ class NivarisMoves(private val f: EirholmFight) {
         val d = f.nivaris ?: return@script
         f.sound("nivaris.wing", d.entityPos, 3f, 0.6f)
         // Aufsteigen in einer weiten Spirale (gleicher Drehsinn wie die Runden).
-        val c = f.arenaCenter
+        val c = flyCenter()
         val r = minOf(28.0, flyKeepRadius() - 8.0).coerceAtLeast(DragonRail.MIN_RADIUS + 2.0)
         var a = kotlin.math.atan2(d.z - c.z, d.x - c.x)
         repeat(28) { k ->
@@ -602,7 +622,7 @@ class NivarisMoves(private val f: EirholmFight) {
         val from = d.entityPos
         val fall = ring.remaining.coerceAtLeast(12)
         val plunge = DragonRail.clearTerrain(
-            DragonRail.path(from, DragonRail.heading(f, d).add(0.0, -0.35, 0.0), listOf(spot.add(0.0, 1.0, 0.0)), 18.0, if (f.arenaRadius > 40.0) f.arenaCenter else null, flyKeepRadius()),
+            DragonRail.path(from, DragonRail.heading(f, d).add(0.0, -0.35, 0.0), listOf(spot.add(0.0, 1.0, 0.0)), 24.0, if (f.arenaRadius > 40.0) flyCenter() else null, flyKeepRadius()),
             f.origin, f.floorY, clearance = 3.0, landingTail = 20,
         )
         val plungeLen = DragonRail.length(plunge)
@@ -954,7 +974,7 @@ class NivarisMoves(private val f: EirholmFight) {
         // Seit 1.11.0 über eine Bahn: Sie setzt weit hinter dem Landeplatz an und gleitet flach und gerade ein.
         val from = flatDir(spot, d.entityPos)
         val keepR = flyKeepRadius()
-        val approach = f.clampToArena(Vec3d(spot.x, f.floorY + 7.0, spot.z).add(from.multiply(28.0)), (f.arenaRadius - keepR).coerceAtLeast(8.0)).let { Vec3d(it.x, f.floorY + 7.0, it.z) }
+        val approach = keepInFlight(Vec3d(spot.x, f.floorY + 7.0, spot.z).add(from.multiply(28.0)), 6.0).let { Vec3d(it.x, f.floorY + 7.0, it.z) }
         flyTo(approach, 0.85, 38, arrive = flatDir(approach, spot))
         val ring = f.calls.ring(spot, 6f, AriusTimings.NIVARIS_WINDUP[NivarisPose.LAND], style = style)
         d.play(NivarisPose.LAND, ring.ticks)
@@ -962,7 +982,7 @@ class NivarisMoves(private val f: EirholmFight) {
         val start = d.entityPos
         val dir = flatDir(start, spot)
         val glide = DragonRail.clearTerrain(
-            DragonRail.path(start, DragonRail.heading(f, d), listOf(spot), DragonRail.MIN_RADIUS, if (f.arenaRadius > 40.0) f.arenaCenter else null, keepR),
+            DragonRail.path(start, DragonRail.heading(f, d), listOf(spot), DragonRail.MIN_RADIUS, if (f.arenaRadius > 40.0) flyCenter() else null, keepR),
             f.origin, f.floorY, clearance = 3.0, landingTail = 22,
         )
         val glideLen = DragonRail.length(glide)
@@ -1162,3 +1182,10 @@ object DragonTimings {
     const val COIL_CRUSH_WINDUP = 40
     const val COIL_CRUSH_OPEN = 30
 }
+
+/** Höchstes Flugtempo im Kampf (Blöcke je Tick): groß und ruhig statt hektisch. */
+private const val MAX_FLIGHT = 0.92
+
+/** Flugkreis im Horst: Radius und Versatz nach Süden, weg von den Rippen im Norden. */
+private const val AERIE_FLIGHT_R = 60.0
+private const val AERIE_FLIGHT_SOUTH = 15.0

@@ -263,7 +263,7 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
         builder.add(UNCOIL, 0f)
         builder.add(VEIL, 0f)
         builder.add(BODY_ROLL, 0f)
-        builder.add(RIDERS, "")
+        builder.add(WING_TUCK, 0f)
     }
 
     /** Zusätzliche Längsrolle des Körpers in Bogenmaß (Fassrolle beim Abwurf der Reiter). */
@@ -271,35 +271,34 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
         get() = dataTracker.get(BODY_ROLL)
         set(value) = dataTracker.set(BODY_ROLL, value)
 
-    /** Serverseitig aktive Mitfahrer-IDs (Komma-getrennt) für zuverlässigen Mehrspieler-Abgleich auf Clients. */
-    private var syncedRidersRaw: String
-        get() = dataTracker.get(RIDERS)
-        set(value) = dataTracker.set(RIDERS, value)
+    /**
+     * Seit 1.12.0: Flügel angelegt 0..1 (sie zieht sie im Ritt an, um durch enge Felsen zu schießen). Der Client blendet
+     * weich dorthin ([wingTuckAt]).
+     */
+    var wingTuck: Float
+        get() = dataTracker.get(WING_TUCK)
+        set(value) = dataTracker.set(WING_TUCK, value.coerceIn(0f, 1f))
 
-    private var cachedRidersKey: String? = null
-    private var cachedRiderIds: Set<Int> = emptySet()
+    private var lastTuck = 0f
+    private var seenTuck = 0f
 
-    /** Client: ob der Server den Mitfahrer-Stand über den DataTracker geliefert hat. */
-    var hasSyncedRiders = false
-        private set
+    /** Angelegte Flügel zwischen den Ticks (Client). */
+    fun wingTuckAt(tickDelta: Float): Float = lastTuck + (seenTuck - lastTuck) * tickDelta
 
-    /** Client: aktuelle serverseitige Mitfahrer-Entity-IDs. */
-    val syncedRiderIds: Set<Int>
-        get() {
-            val raw = syncedRidersRaw
-            if (raw != cachedRidersKey) {
-                cachedRidersKey = raw
-                cachedRiderIds = if (raw.isEmpty()) emptySet() else raw.split(',').mapNotNull { it.toIntOrNull() }.toSet()
-            }
-            return cachedRiderIds
-        }
+    /**
+     * Seit 1.12.0 (Crix: „für andere bleibt man auf dem Drachen sitzen“): Vanilla schickt die Mitfahrerliste nicht an
+     * Spieler, deren eigener Reitstatus sich gerade geändert hat. Steigen mehrere im selben Tick ab, behielt jeder alle
+     * nach ihm Abgestiegenen auf seinem Client für immer auf ihrem Rücken. Daher geht die Liste hier nach jeder
+     * Änderung an alle, die sie sehen.
+     */
+    private var sentRiders: List<Int> = emptyList()
 
-    override fun onTrackedDataSet(data: TrackedData<*>) {
-        super.onTrackedDataSet(data)
-        if (data == RIDERS && entityWorld.isClient) {
-            hasSyncedRiders = true
-            cachedRidersKey = null
-        }
+    private fun syncRiders() {
+        val now = passengerList.map { it.id }
+        if (now == sentRiders) return
+        sentRiders = now
+        val packet = net.minecraft.network.packet.s2c.play.EntityPassengersSetS2CPacket(this)
+        for (p in net.fabricmc.fabric.api.networking.v1.PlayerLookup.tracking(this)) p.networkHandler.sendPacket(packet)
     }
 
     /** Darstellung des Schlangenkörpers, siehe [NivarisMode] (Windung um die Nadel im Auftritt). */
@@ -390,9 +389,10 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
             lastRoll = seenRoll
             seenRoll = bodyRoll
             if (kotlin.math.abs(seenRoll - lastRoll) > 1.2f) lastRoll = seenRoll
+            lastTuck = seenTuck
+            seenTuck += (wingTuck - seenTuck).coerceIn(-0.09f, 0.09f)
         } else {
-            val cur = if (passengerList.isEmpty()) "" else passengerList.joinToString(",") { it.id.toString() }
-            if (cur != syncedRidersRaw) syncedRidersRaw = cur
+            syncRiders()
             if (veilRate != 0f) {
                 val v = (veil + veilRate).coerceIn(0f, 1f)
                 veil = v
@@ -439,7 +439,7 @@ class NivarisEntity(type: EntityType<out NivarisEntity>, world: World) : Eirholm
         private val UNCOIL: TrackedData<Float> = DataTracker.registerData(NivarisEntity::class.java, TrackedDataHandlerRegistry.FLOAT)
         private val VEIL: TrackedData<Float> = DataTracker.registerData(NivarisEntity::class.java, TrackedDataHandlerRegistry.FLOAT)
         private val BODY_ROLL: TrackedData<Float> = DataTracker.registerData(NivarisEntity::class.java, TrackedDataHandlerRegistry.FLOAT)
-        private val RIDERS: TrackedData<String> = DataTracker.registerData(NivarisEntity::class.java, TrackedDataHandlerRegistry.STRING)
+        private val WING_TUCK: TrackedData<Float> = DataTracker.registerData(NivarisEntity::class.java, TrackedDataHandlerRegistry.FLOAT)
 
         /**
          * Trefferbox 4,5 × 3,6: der Rumpf vorn (Glieder 2–4). Der 96 Blöcke lange Körper ist nur Darstellung und
