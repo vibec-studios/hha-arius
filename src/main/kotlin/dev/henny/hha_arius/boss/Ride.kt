@@ -110,6 +110,10 @@ object RideSeats {
 
     private val seats = HashMap<UUID, Int>()
 
+    /** Nur Sichtprüfung (src/gametest): erster vergebener Dorn, um hintere Plätze mit einem Spieler zu prüfen. */
+    @JvmField
+    var testSeat: Int? = null
+
     /** Vergibt freie Plätze in Beitrittsreihenfolge und meldet alle Plätze an alle Zuschauer. */
     fun assign(f: EirholmFight) {
         val online = f.fighters.keys.toList()
@@ -117,7 +121,7 @@ object RideSeats {
             if (id in seats || f.server.playerManager.getPlayer(id) == null) continue
             // Wer die Begegnung verlassen hat, behält seinen Dorn: Niemand rückt auf, und er kommt dorthin zurück.
             val taken = online.mapNotNull { seats[it] }
-            var free = 0
+            var free = testSeat ?: 0
             while (free in taken) free++
             seats[id] = free
         }

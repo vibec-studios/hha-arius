@@ -69,15 +69,23 @@ object RideClient {
 
     private val perches = HashMap<Int, Perch>()
 
+    /** Fahrtwind je Drachin: Tempo (Blöcke je Tick) und je Platz, wie schnell der Körper dort gerade seitlich eindreht. */
+    private class Wind {
+        var age = Float.NaN
+        var last: Vec3d? = null
+        var speed = 0f
+        val turn = FloatArray(SEATS)
+        val heads = arrayOfNulls<Vec3d>(SEATS)
+    }
+
+    private val winds = HashMap<Int, Wind>()
+
     /** Lage eines Reiters relativ zur Render-Position der Drachin: Griff, Kopfrichtung (vorn), Rückenrichtung (oben). */
     private class Anchor(val grip: Vec3d, val head: Vec3d, val back: Vec3d) {
         val right: Vec3d = head.crossProduct(back).let { if (it.lengthSquared() < 1e-6) Vec3d(1.0, 0.0, 0.0) else it.normalize() }
 
-        /** Fußpunkt der liegenden Figur. */
-        val feet: Vec3d = grip.subtract(head.multiply(REACH)).subtract(back.multiply(BELOW))
-
         /** Augen (Kopfmitte): hier sitzt die Kamera der ersten Person. */
-        val eye: Vec3d = feet.add(head.multiply(HEAD)).add(back.multiply(0.06))
+        val eye: Vec3d = grip.subtract(head.multiply(REACH - HEAD)).subtract(back.multiply(BELOW - 0.06))
 
         /** Entity-Position des Reiters (stehende Augenhöhe abgezogen). */
         val entity: Vec3d = eye.subtract(0.0, RideHooks.EYE, 0.0)
@@ -120,6 +128,7 @@ object RideClient {
             anchors.clear()
             seats.clear()
             perches.clear()
+            winds.clear()
             lastFreePos.clear()
             mountAnims.clear()
             actionAnims.clear()
@@ -233,6 +242,13 @@ object RideClient {
     fun anchor(d: NivarisEntity, s: NivarisRenderState, pts: Array<Vec3d>, headUp: Vec3d, headFwd: Vec3d) {
         val out = arrayOfNulls<Anchor>(SEATS)
         val base = Vec3d(s.x, s.y, s.z)
+        val wind = winds.getOrPut(d.id) { Wind() }
+        val dt = if (wind.age.isNaN()) 0f else (s.age - wind.age).coerceIn(0f, 5f)
+        if (wind.age.isNaN() || dt > 1e-3f) {
+            wind.last?.let { if (dt > 1e-3f) wind.speed += ((base.distanceTo(it) / dt).toFloat() - wind.speed) * (1f - kotlin.math.exp(-dt * 0.12f)) }
+            wind.last = base
+            wind.age = s.age
+        }
         val q = 0.72
         val c = cos(-34.0 * PI / 180.0)
         val sn = sin(-34.0 * PI / 180.0)
@@ -251,7 +267,15 @@ object RideClient {
             var up = belly.negate()
             up = up.subtract(head.multiply(up.dotProduct(head)))
             if (up.lengthSquared() < 1e-6) up = Vec3d(0.0, 1.0, 0.0)
-            out[i] = Anchor(grip.subtract(base), head, up.normalize())
+            val made = Anchor(grip.subtract(base), head, up.normalize())
+            out[i] = made
+            if (dt > 1e-3f) {
+                wind.heads[i]?.let { before ->
+                    val rate = (head.subtract(before).dotProduct(made.right) / dt).toFloat()
+                    wind.turn[i] += (rate - wind.turn[i]) * (1f - kotlin.math.exp(-dt * 0.14f))
+                }
+                wind.heads[i] = head
+            }
         }
         anchors[d.id] = out
         // Arius: fest auf dem Schädeldach direkt zwischen den Hörnern, Blick nach vorn entlang headFwd (nie nach hinten rutschend).
@@ -292,8 +316,9 @@ object RideClient {
         val (act, w) = actionWeight(passenger.id)
         if (w > 0.01f) {
             target = when (act) {
-                RideAction.DUCK -> target.subtract(a.back.multiply(1.18 * w)).add(a.head.multiply(0.22 * w))
-                RideAction.VAULT -> target.add(a.back.multiply(1.15 * w)).add(a.head.multiply(0.18 * w))
+                // Nur so weit, dass die Figur auf ihrem Rücken bleibt und nie in ihn hinein taucht.
+                RideAction.DUCK -> target.subtract(a.back.multiply(0.62 * w)).add(a.head.multiply(0.22 * w))
+                RideAction.VAULT -> target.add(a.back.multiply(0.70 * w)).add(a.head.multiply(0.18 * w))
                 RideAction.TUG -> target.add(a.head.multiply(0.20 * w))
                 RideAction.BRACE -> target.subtract(a.back.multiply(0.35 * w)).add(a.head.multiply(0.15 * w))
                 RideAction.SWING_L -> target.subtract(a.right.multiply(SWING_SHIFT * w))
@@ -341,22 +366,31 @@ object RideClient {
         }
         val hitShake = if (act == RideAction.HIT) 0.34 * aw * sin(t * 2.6) else 0.0
         val roll = (if (g == 1) 0.12 else 0.03) * sin(t * 0.37) + swing * 0.42 + hitShake
-        val back = a.back.multiply(cos(roll)).add(a.right.multiply(sin(roll))).normalize()
-        val right = a.head.crossProduct(back).let { if (it.lengthSquared() < 1e-6) a.right else it.normalize() }
+        // Seit 1.12.0 liegt die Figur schräg im Wind: Die Hände bleiben am Dorn, Hüfte und Füße stehen höher als die Hände.
+        val tilt = BODY_TILT + when (act) {
+            RideAction.DUCK -> -0.20 * aw
+            RideAction.VAULT -> 0.16 * aw
+            else -> 0.0
+        }
+        val figHead = a.head.multiply(cos(tilt)).subtract(a.back.multiply(sin(tilt))).normalize()
+        val figBack = a.back.multiply(cos(tilt)).add(a.head.multiply(sin(tilt))).normalize()
+        val feet = a.grip.subtract(figHead.multiply(REACH)).subtract(figBack.multiply(BELOW))
+        val back = figBack.multiply(cos(roll)).add(a.right.multiply(sin(roll))).normalize()
+        val right = figHead.crossProduct(back).let { if (it.lengthSquared() < 1e-6) a.right else it.normalize() }
         // QTE-Ausweichversatz in der Figur (zusätzlich zur Entity-Lage, damit man das Ducken/Hochziehen klar sieht).
         val shiftBack = when (act) {
-            RideAction.DUCK -> -0.35 * aw
-            RideAction.VAULT -> 0.45 * aw
+            RideAction.DUCK -> -0.18 * aw
+            RideAction.VAULT -> 0.20 * aw
             RideAction.BRACE -> -0.15 * aw
             else -> 0.0
         }
-        val off = a.feet.subtract(a.entity).add(back.multiply(shiftBack)).add(right.multiply(swing * 0.4))
+        val off = feet.subtract(a.entity).add(back.multiply(shiftBack)).add(right.multiply(swing * 0.4))
         val mp = mountProgress(e.id)
         matrices.translate((off.x * mp).toFloat(), (off.y * mp).toFloat(), (off.z * mp).toFloat())
         // Spalten: lokal x → rechts, y → Kopf, z → Rücken (lokal −z ist die Brust/Front der Figur).
         m3.set(
             right.x.toFloat(), right.y.toFloat(), right.z.toFloat(),
-            a.head.x.toFloat(), a.head.y.toFloat(), a.head.z.toFloat(),
+            figHead.x.toFloat(), figHead.y.toFloat(), figHead.z.toFloat(),
             back.x.toFloat(), back.y.toFloat(), back.z.toFloat(),
         )
         rot.setFromNormalized(m3)
@@ -372,7 +406,7 @@ object RideClient {
         return true
     }
 
-    /** Ende von PlayerEntityModel.setAngles: Arme um den Dorn, Beine flattern bzw. ducken/hochziehen bei QTEs. */
+    /** Ende von PlayerEntityModel.setAngles: Arme um den Dorn, die Beine wehen geschlossen wie eine Fahne im Fahrtwind. */
     @JvmStatic
     fun applyPose(model: PlayerEntityModel, state: PlayerEntityRenderState) {
         // Immer zuerst zurücksetzen, damit kein Spieler nach dem Absteigen gestreckte Reit-Arme behält!
@@ -383,14 +417,12 @@ object RideClient {
         val grip = grip(e)
         if (grip <= 0) return
         val t = state.age
-        val wild = if (grip == 1) 1.6f else 1f
         val (act, aw) = actionWeight(e.id)
         // Kopf hebt sich und blickt nach vorn in den Wind; beim Ducken flach nach unten an den Rücken gedrückt.
         val duckPitch = if (act == RideAction.DUCK) 0.95f * aw else 0f
         model.head.pitch = -1.05f + duckPitch + 0.04f * sin(t * 0.23f)
         model.head.yaw = 0.12f * sin(t * 0.11f) * (1f - aw * 0.8f)
         model.head.roll = 0f
-        model.body.pitch = if (act == RideAction.VAULT) -0.25f * aw else 0f
         model.body.yaw = 0f
         model.body.roll = 0f
         val pi = PI.toFloat()
@@ -414,32 +446,37 @@ object RideClient {
             model.leftArm.roll = -(0.7f + 0.35f * sin(t * 0.45f))
             model.rightArm.roll = 0.14f
         }
-        // Beine: normal nach außen gespreizt (flatternd); beim Hochziehen (JUMP) eng angezogen über den Rücken,
-        // beim Ducken (SNEAK) flach und schmal hinter dem Rückgrat!
-        val spread = when (act) {
-            RideAction.VAULT -> MathHelper.lerp(aw, LEG_SPREAD, 0.14f)
-            RideAction.DUCK -> MathHelper.lerp(aw, LEG_SPREAD, 0.32f)
-            RideAction.SWING_L, RideAction.SWING_R -> MathHelper.lerp(aw, LEG_SPREAD, 0.3f)
-            RideAction.HIT -> MathHelper.lerp(aw, LEG_SPREAD, 1.5f)
-            else -> LEG_SPREAD
+        // Seit 1.12.0 (Crix): keine gespreizten Beine mehr. Sie bleiben dicht zusammen und wehen schräg nach oben hinter dem
+        // Reiter wie eine Fahne. Positive Neigung hebt den Fuß von ihrem Rücken weg, darum berühren sie weder Rücken noch Dorn.
+        // Das Spielermodell hat kein Knie: Die Welle läuft als versetzte Phase von Rumpf über rechtes zu linkem Bein.
+        val vehicle = e.vehicle as? NivarisEntity
+        val wind = vehicle?.let { winds[it.id] }
+        val seat = vehicle?.let { seatOf(it, e) }?.takeIf { it in 0 until SEATS } ?: 0
+        val pace = ((wind?.speed ?: 0f) / CRUISE_SPEED).coerceIn(0f, 1.25f)
+        val bend = ((wind?.turn?.get(seat) ?: 0f) / TURN_FULL).coerceIn(-1f, 1f)
+        val calm = 1f - aw * 0.72f
+        val amp = (0.06f + 0.10f * pace) * (1f + 0.45f * kotlin.math.abs(bend)) * (if (grip == 1) 1.5f else 1f) * calm
+        val phase = t * (0.40f + 0.34f * pace)
+        val trail = when (act) {
+            RideAction.DUCK -> MathHelper.lerp(aw, LEG_TRAIL + 0.16f * pace, 0.22f)
+            RideAction.VAULT -> MathHelper.lerp(aw, LEG_TRAIL + 0.16f * pace, 1.45f)
+            RideAction.HIT -> LEG_TRAIL + 0.16f * pace + 0.34f * aw * sin(t * 2.2f)
+            else -> LEG_TRAIL + 0.16f * pace
         }
-        // Beim Schwingen zeigen beide Beine zur selben Seite, weg von der Felsnadel.
-        val legSwing = when (act) {
+        // Im Wind treiben die Beine zur Kurvenaußenseite; beim Schwingen weg von der Felsnadel.
+        val aside = -bend * 0.30f * calm + when (act) {
             RideAction.SWING_L -> -0.95f * aw
             RideAction.SWING_R -> 0.95f * aw
+            RideAction.HIT -> 0.30f * aw * sin(t * 1.7f)
             else -> 0f
         }
-        val legLift = when (act) {
-            RideAction.VAULT -> -1.15f * aw
-            RideAction.DUCK -> 0.12f * aw
-            else -> 0f
-        }
-        model.rightLeg.roll = spread + legSwing + 0.07f * wild * sin(t * 0.9f) * (1f - aw * 0.7f)
-        model.leftLeg.roll = -spread + legSwing - 0.07f * wild * sin(t * 1.05f) * (1f - aw * 0.7f)
-        model.rightLeg.pitch = legLift + wild * (0.14f * sin(t * 1.15f) + 0.05f * sin(t * 2.4f + 1f)) * (1f - aw * 0.6f)
-        model.leftLeg.pitch = legLift + wild * (0.14f * sin(t * 1.15f + 2.3f) + 0.05f * sin(t * 2.9f)) * (1f - aw * 0.6f)
-        model.rightLeg.yaw = 0.05f * sin(t * 0.7f)
-        model.leftLeg.yaw = -0.05f * sin(t * 0.8f)
+        model.body.pitch = (if (act == RideAction.VAULT) -0.25f * aw else 0f) + 0.2f * amp * sin(phase + 1.3f)
+        model.rightLeg.pitch = trail + amp * sin(phase) + 0.35f * amp * sin(2f * phase - 0.7f)
+        model.leftLeg.pitch = trail + amp * sin(phase - 0.85f) + 0.35f * amp * sin(2f * phase - 2.2f)
+        model.rightLeg.roll = LEG_CLOSE + aside + 0.25f * amp * sin(phase * 0.7f)
+        model.leftLeg.roll = -LEG_CLOSE + aside + 0.25f * amp * sin(phase * 0.7f - 0.6f)
+        model.rightLeg.yaw = 0f
+        model.leftLeg.yaw = 0f
     }
 
     /**
@@ -550,8 +587,14 @@ object RideClient {
     /** Armlänge in der Haltung (Vielfaches), passend zu [REACH]. */
     private const val ARM_LENGTH = 1.62f
 
-    /** Beine: so weit zur Seite gespreizt (Bogenmaß). */
-    private const val LEG_SPREAD = 1.12f
+    /** Grundhaltung im Wind: Figur schräg (Bogenmaß), Beine dazu angehoben und fast geschlossen. */
+    private const val BODY_TILT = 0.22
+    private const val LEG_TRAIL = 0.38f
+    private const val LEG_CLOSE = 0.035f
+
+    /** Fahrtwind: Reisetempo (Blöcke je Tick) und Drehrate (rad je Tick), bei der die Wirkung voll ist. */
+    private const val CRUISE_SPEED = 0.70f
+    private const val TURN_FULL = 0.022f
 
     /** Arius auf dem Kopf: fest auf dem Schädeldach leicht vor dem Kopfgelenk (zwischen den Hörnern). */
     private const val PERCH_UP = 1.66

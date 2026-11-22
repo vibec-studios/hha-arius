@@ -67,6 +67,7 @@ class VerifyDragon : FabricClientGameTest {
 
     /** Vom Pfiff über den ganzen Ritt bis zum Abwurf: Bilder an jedem Hindernis, Tempo und Geländeabstand im Protokoll. */
     private fun VerifyKit.routeScene() {
+        dev.henny.hha_arius.boss.RideSeats.testSeat = System.getProperty("arius.verify.seat")?.toIntOrNull()
         startStage(2)
         tick(60)
         var answers = 0
@@ -98,7 +99,10 @@ class VerifyDragon : FabricClientGameTest {
         film("pick", 900, 10, before = measure) { client { c -> c.player?.hasVehicle() != true } }
         film("pick2", 90, 6, before = measure)
         log("pick-up: total heading change %.0f deg".format(turned))
-        val sideCam = System.getProperty("arius.verify.cam") == "side"
+        val camMode = System.getProperty("arius.verify.cam", "")
+        val sideCam = camMode == "side" || camMode == "rider"
+        var straightDone = false
+        var curveDone = false
         val route = dev.henny.hha_arius.boss.RideRoute.points()
         val arcs = dev.henny.hha_arius.boss.RideRoute.obstacleArcs
         var last: Vec3d? = null
@@ -133,7 +137,15 @@ class VerifyDragon : FabricClientGameTest {
             lastTick = serverTick
             last = pos
             // Nahaufnahme von Arius auf ihrem Kopf: einmal im ruhigen Flug, einmal während eines Prompts.
-            if (n == 240 || n == seatAt) {
+            if (camMode == "rider" && !straightDone && s in 425.0..460.0) {
+                straightDone = true
+                poseBurst("straight")
+            }
+            if (camMode == "rider" && !curveDone && s in 655.0..690.0) {
+                curveDone = true
+                poseBurst("curve")
+            }
+            if (camMode != "rider" && (n == 240 || n == seatAt)) {
                 server { Cine.start(listOf(player(it))) }
                 repeat(5) { k ->
                     headCam()
@@ -160,7 +172,7 @@ class VerifyDragon : FabricClientGameTest {
                         sideOn = false
                         server { Cine.end(listOf(player(it))) }
                     }
-                    if (want) rideCam(15.0, 5.0, 8.0)
+                    if (want) { if (camMode == "rider") riderCam() else rideCam(15.0, 5.0, 8.0) }
                 }
                 if (near >= 0 && n % 3 == 0 && shots[near] < 10) {
                     val third = !sideCam && near % 2 == 1
@@ -268,7 +280,9 @@ class VerifyDragon : FabricClientGameTest {
                 val w = player(srv).entityWorld
                 for (dx in intArrayOf(-2, 0, 2)) for (dz in intArrayOf(-2, 0, 2)) for (dy in intArrayOf(0, 2, 4)) {
                     val q = net.minecraft.util.math.BlockPos.ofFloored(d.x + dx, d.y + dy, d.z + dz)
-                    if (!w.getBlockState(q).isAir && w.getBlockState(q).isSolidBlock(w, q)) solid++
+                    if (!w.getBlockState(q).isAir && w.getBlockState(q).isSolidBlock(w, q)) {
+                        if (solid++ < 12) log("air hit rel=%d/%d/%d %s pose=%d".format(q.x - f.origin.x, q.y - f.origin.y, q.z - f.origin.z, w.getBlockState(q).block.translationKey, d.pose))
+                    }
                 }
             }
         })
@@ -298,6 +312,38 @@ class VerifyDragon : FabricClientGameTest {
         val cam = head.add(s.multiply(6.0)).add(fwd.multiply(1.6)).add(0.0, 1.7, 0.0)
         val v = fwd.multiply(1.5)
         Cine.camera(listOf(player(srv)), cam, cam.add(v), head, head.add(v), 4, 42.0, 42.0, null, 0.0)
+    }
+
+    /** Fährt neben ([top] = false) oder über dem eigenen Reiter mit: Haltung und Beine im Fahrtwind. */
+    private fun VerifyKit.riderCam(top: Boolean = false) {
+        val at = client { c -> c.player?.getLerpedPos(1f) } ?: return
+        server { srv ->
+            val f = fight() ?: return@server
+            val d = f.nivaris ?: return@server
+            val fwd = f.facing(d)
+            val side = Vec3d(-fwd.z, 0.0, fwd.x)
+            val focus = at.add(0.0, 1.55, 0.0).subtract(fwd.multiply(0.8))
+            val cam = if (top) focus.add(0.0, 5.0, 0.0).subtract(fwd.multiply(1.0)) else focus.add(side.multiply(5.0)).add(0.0, 1.0, 0.0)
+            val v = fwd.multiply(2.8)
+            Cine.camera(listOf(player(srv)), cam, cam.add(v), focus, focus.add(v), 4, 50.0, 50.0, null, 0.0)
+        }
+    }
+
+    /** Aufeinanderfolgende Bilder der Haltung von der Seite und von oben. */
+    private fun VerifyKit.poseBurst(name: String) {
+        server { Cine.start(listOf(player(it))) }
+        repeat(8) { k ->
+            riderCam()
+            tick(2)
+            shot("pose_${name}_side_$k")
+        }
+        repeat(4) { k ->
+            riderCam(top = true)
+            tick(2)
+            shot("pose_${name}_top_$k")
+        }
+        server { Cine.end(listOf(player(it))) }
+        tick(2)
     }
 
     /** Kamera schräg über dem eigenen Reiter: Beine zur Seite, Arme am Dorn, nichts in der Hand. */
