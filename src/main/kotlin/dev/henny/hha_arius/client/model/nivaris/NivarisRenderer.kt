@@ -203,7 +203,7 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
                     val spread = Quaternionf().rotationZYX(sgn * flapRoll, sgn * flapYaw, 0f)
                     val r = if (clinging) Quaternionf().rotationZYX(0f, sgn * 90f * deg, 165f * deg)
                         else fold.slerp(spread, w)
-                    limb(q, matrices, if (sgn > 0) m.wingR else m.wingL, -6f * sgn, -6f, 4f, r, girth, stretch, layer, light, overlay, color)
+                    limb(q, matrices, if (sgn > 0) m.wingR else m.wingL, -6f * sgn, -6f, 4f, r, girth, stretch, layer, light, overlay, color, foldedMembrane = clinging)
                 }
             }
             NivarisShape.FORE_GLIED -> {
@@ -222,13 +222,15 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
 
     private fun limb(
         q: RenderCommandQueue, matrices: MatrixStack, part: ModelPart, x: Float, y: Float, z: Float, r: Quaternionf, girth: Float, stretch: Float,
-        layer: RenderLayer, light: Int, overlay: Int, color: Int,
+        layer: RenderLayer, light: Int, overlay: Int, color: Int, foldedMembrane: Boolean = false,
     ) {
         matrices.push()
         // Ansatzpunkt im verjüngten Gliedraum, das Teil selbst unverjüngt und ohne die Längsdehnung des Glieds.
         matrices.translate(x / 16f, y / 16f, z / 16f)
         matrices.scale(1f / girth, 1f / girth, 1f / (stretch * 1.03f))
         matrices.multiply(r)
+        // In the perch the membrane is pleated against the trailing bones.
+        if (foldedMembrane) matrices.scale(0.8f, 1f, 0.35f)
         q.submitModelPart(part, matrices, layer, light, overlay, null, color, null)
         matrices.pop()
     }

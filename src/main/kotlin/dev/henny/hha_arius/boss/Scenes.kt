@@ -1726,11 +1726,9 @@ class Scenes(private val f: EirholmFight) {
                 wait(8)
                 shown { f.say("dragon.return", 50) }
                 d.play(NivarisPose.ROAR, 10)
-                Entrance.storyFx(f, FxKind.THREAD, a.entityPos, life = 34 + RETURN_PEAK, e1 = a, e2 = d)
+                Entrance.storyFx(f, FxKind.THREAD, a.entityPos, life = 56, e1 = a, e2 = d)
                 cue("resonance.chime", a.entityPos, 3.5f, 0.8f)
                 wait(12)
-                // Von der untersten Windung an der Eisspitze bis hinauf zum Kopf löst sie sich in Licht auf.
-                d.fadeOut(22 + RETURN_PEAK - 1)
                 cue("nivaris.inhale", spireHead, 4f, 0.65f)
                 wait(22)
                 // B) Totale auf die Eisspitze: Solvane zerfällt oben im Licht und verschwindet am Höhepunkt.
