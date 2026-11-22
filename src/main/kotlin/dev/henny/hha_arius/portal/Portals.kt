@@ -12,10 +12,12 @@ import dev.henny.hha_arius.net.HuntNet
 import net.fabricmc.fabric.api.entity.event.v1.ServerEntityWorldChangeEvents
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents
+import net.minecraft.block.Block
 import net.minecraft.block.BlockState
 import net.minecraft.block.Blocks
 import net.minecraft.datafixer.DataFixTypes
 import net.minecraft.item.ItemStack
+import net.minecraft.particle.BlockStateParticleEffect
 import net.minecraft.particle.ParticleTypes
 import net.minecraft.registry.RegistryKey
 import net.minecraft.registry.RegistryKeys
@@ -39,8 +41,12 @@ import java.util.UUID
  * Das Tor nach Eirholm (seit 1.10.0, Crix: „ein eigenes Portal, und nach dem Sieg nicht sofort rausfliegen“).
  *
  * * **Bauen:** Rahmen aus Raureif-Torstein wie ein Netherportal (innen 2–21 breit, 3–21 hoch, senkrecht, Ecken
- *   beliebig). Mit dem **Siegel von Eirholm** einen Rahmenstein benutzen: das Tor füllt sich (das Siegel bleibt).
- * * **Hindurch:** Wer zwei Sekunden im Tor steht, bricht auf. Gemerkt wird ein Platz **vor** dem Tor (Blick vom Tor weg) als Rückkehrpunkt.
+ *   beliebig). Mit dem **Siegel von Eirholm** einen Rahmenstein benutzen: das Siegel geht **in das Tor** über, ein
+ *   brennendes Tor ist ein eingesetztes Siegel. Bricht der Rahmen, fällt das Siegel wieder heraus.
+ * * **Hindurch** (seit 1.12.0 ohne Siegel im Inventar): Wer zwei Sekunden im Tor steht, bricht auf; das Tor erlischt, sein
+ *   Siegel ist der Einsatz der Begegnung. Niederlage oder Abbruch: Das Tor brennt wieder (ist der Rahmen fort, kommt das
+ *   Siegel ins Inventar). Sieg: Das Siegel ist verbraucht, für den nächsten Versuch braucht es ein neues. Gemerkt wird
+ *   ein Platz **vor** dem Tor (Blick vom Tor weg) als Rückkehrpunkt.
  * * **Zurück:** Nach dem Sieg bleiben alle in Eirholm und können sich umsehen ([Encounters.stayAfterVictory]); die
  *   Rückkehrtore auf dem Gipfel und am Feld leuchten auf. Durch sie geht es an den gemerkten Platz (sonst an den
  *   Rückkehrpunkt des Kampfes, sonst an den Weltspawn); erst dort wird die Beute ausgezahlt.
@@ -56,6 +62,14 @@ object Portals {
 
     /** Wer gerade durch ein Tor gekommen ist, muss es erst verlassen, bevor es wieder wirkt. */
     private val needsExit = HashSet<UUID>()
+
+    /** Tor, dessen Siegel gerade als Einsatz in einer Begegnung steckt (Begegnungs-ID → Lage des erloschenen Tors). */
+    private class Taken(val dim: RegistryKey<World>, val corner: BlockPos, val axis: Direction.Axis)
+
+    private val taken = HashMap<String, Taken>()
+
+    /** In diesem Tick zerfallene Torzellen je Dimension: Jede zusammenhängende Gruppe gibt genau ein Siegel zurück. */
+    private val collapsed = HashMap<RegistryKey<World>, HashSet<BlockPos>>()
 
     fun init() {
         PortalBlocks.register()
@@ -78,6 +92,7 @@ object Portals {
     class Frame(val corner: BlockPos, val axis: Direction.Axis, val width: Int, val height: Int) {
         val along: Direction = if (axis == Direction.Axis.X) Direction.EAST else Direction.SOUTH
         fun cells(): List<BlockPos> = (0 until width).flatMap { w -> (0 until height).map { h -> corner.offset(along, w).up(h) } }
+        fun middle(): Vec3d = Vec3d.ofCenter(corner).add(Vec3d.of(along.vector).multiply((width - 1) / 2.0)).add(0.0, (height - 1) / 2.0, 0.0)
     }
 
     private fun open(state: BlockState): Boolean = state.isAir || state.isOf(Blocks.SNOW) || state.isOf(Blocks.FIRE) || PortalBlocks.isGate(state)
@@ -97,7 +112,8 @@ object Portals {
 
     private fun frameFrom(world: World, start: BlockPos, axis: Direction.Axis): Frame? {
         val along = if (axis == Direction.Axis.X) Direction.EAST else Direction.SOUTH
-        var p = start
+        // Vanilla reicht beim Berühren eine veränderliche Position herein; der Rahmen darf sie nicht festhalten.
+        var p = start.toImmutable()
         // nach unten bis auf den Rahmen
         var n = 0
         while (open(world.getBlockState(p.down()))) {
@@ -132,8 +148,8 @@ object Portals {
         return Frame(corner, axis, width, height)
     }
 
-    /** Siegel auf einen Rahmenstein: Tor füllen. */
-    fun ignite(world: ServerWorld, clicked: BlockPos, player: ServerPlayerEntity): Boolean {
+    /** Siegel auf einen Rahmenstein: Das Siegel geht in das Tor über und füllt es. */
+    fun ignite(world: ServerWorld, clicked: BlockPos, player: ServerPlayerEntity, seal: ItemStack): Boolean {
         val frame = findFrame(world, clicked)
         if (frame == null) {
             player.sendMessage(Text.translatable("hha_arius.portal.no_frame").formatted(Formatting.GRAY), true)
@@ -143,9 +159,65 @@ object Portals {
             player.sendMessage(Text.translatable("hha_arius.portal.inside").formatted(Formatting.GRAY), true)
             return false
         }
+        if (frame.cells().all { PortalBlocks.isGate(world.getBlockState(it)) }) {
+            player.sendMessage(Text.translatable("hha_arius.portal.already_lit").formatted(Formatting.GRAY), true)
+            return false
+        }
+        seal.decrementUnlessCreative(1, player)
         fill(world, frame)
         Advancements.grant(player, "rime_gate")
         return true
+    }
+
+    /** Löscht das Tor, ohne dass die Nachbarn reagieren (sein Siegel ist jetzt der Einsatz, es fällt also nichts heraus). */
+    private fun closeGate(world: ServerWorld, frame: Frame) {
+        for (c in frame.cells()) if (PortalBlocks.isGate(world.getBlockState(c))) world.setBlockState(c, Blocks.AIR.defaultState, 2 or 16)
+        val mid = frame.middle()
+        world.playSound(null, mid.x, mid.y, mid.z, SoundEvents.BLOCK_BEACON_DEACTIVATE, SoundCategory.BLOCKS, 1.1f, 0.7f)
+        world.spawnParticles(ParticleTypes.SNOWFLAKE, mid.x, mid.y, mid.z, 60, frame.width * 0.35, frame.height * 0.35, 0.3, 0.04)
+    }
+
+    /**
+     * Niederlage oder Abbruch: Das Tor dieser Begegnung brennt wieder, sein Siegel bleibt eingesetzt. False, wenn der
+     * Rahmen fort ist oder dort inzwischen ein anderes Siegel brennt: Dann gehört der Einsatz ins Inventar.
+     */
+    fun relight(encounterId: String, server: MinecraftServer): Boolean {
+        val t = taken.remove(encounterId) ?: return false
+        val world = server.getWorld(t.dim) ?: return false
+        val frame = frameFrom(world, t.corner, t.axis) ?: return false
+        if (frame.corner != t.corner || frame.cells().any { PortalBlocks.isGate(world.getBlockState(it)) }) return false
+        fill(world, frame)
+        return true
+    }
+
+    fun forgetTaken(encounterId: String) {
+        taken.remove(encounterId)
+    }
+
+    /** Eine Torzelle ist zerfallen, weil ihr Rahmen brach (in Eirholm gibt es kein eingesetztes Siegel). */
+    fun gateCollapsed(world: ServerWorld, pos: BlockPos) {
+        if (world.registryKey == Encounters.WORLD) return
+        collapsed.getOrPut(world.registryKey) { HashSet() }.add(pos.toImmutable())
+    }
+
+    private fun refundCollapsed(server: MinecraftServer) {
+        if (collapsed.isEmpty()) return
+        for ((dim, cells) in collapsed) {
+            val world = server.getWorld(dim) ?: continue
+            val open = HashSet(cells)
+            while (open.isNotEmpty()) {
+                val first = open.first()
+                open.remove(first)
+                val queue = ArrayDeque(listOf(first))
+                while (queue.isNotEmpty()) {
+                    val c = queue.removeFirst()
+                    for (dir in Direction.entries) if (open.remove(c.offset(dir))) queue.addLast(c.offset(dir))
+                }
+                Block.dropStack(world, first, ItemStack(dev.henny.hha_arius.gear.GearItems.EIRHOLM_SEAL))
+                world.playSound(null, first, SoundEvents.BLOCK_AMETHYST_CLUSTER_BREAK, SoundCategory.BLOCKS, 1f, 0.7f)
+            }
+        }
+        collapsed.clear()
     }
 
     private fun fill(world: ServerWorld, frame: Frame) {
@@ -155,7 +227,7 @@ object Portals {
             val panel = (along and 1) + 2 * ((c.y - frame.corner.y) and 1)
             world.setBlockState(c, state.with(EirholmGateBlock.PANEL, panel), 2 or 16)
         }
-        val mid = Vec3d.ofCenter(frame.corner).add(Vec3d.of(frame.along.vector).multiply((frame.width - 1) / 2.0)).add(0.0, (frame.height - 1) / 2.0, 0.0)
+        val mid = frame.middle()
         world.playSound(null, mid.x, mid.y, mid.z, SoundEvents.BLOCK_END_PORTAL_SPAWN, SoundCategory.BLOCKS, 0.9f, 1.4f)
         world.playSound(null, mid.x, mid.y, mid.z, SoundEvents.BLOCK_BEACON_ACTIVATE, SoundCategory.BLOCKS, 1.2f, 0.7f)
         world.spawnParticles(ParticleTypes.SNOWFLAKE, mid.x, mid.y, mid.z, 120, frame.width * 0.4, frame.height * 0.4, 0.4, 0.08)
@@ -164,15 +236,56 @@ object Portals {
 
     // --- Rückkehrtore in Eirholm --------------------------------------------------------------------------------------
 
-    /** Nach dem Sieg: die Rückkehrtore der Instanz leuchten auf (gesetzt ohne ArenaEdits, sie bleiben stehen). */
+    /**
+     * Stellt die Rückkehrtore fertig hin (gesetzt ohne ArenaEdits, sie bleiben stehen). Schon stehende Tore bleiben
+     * unberührt, also auch der Abschluss, falls [raiseReturn] unterbrochen wurde.
+     */
     fun lightReturn(world: ServerWorld, origin: BlockPos) {
         for (g in FarPlan.RETURN_GATES) {
+            val frame = Frame(origin.add(g.x0, g.y0, g.z), Direction.Axis.X, g.x1 - g.x0 + 1, g.y1 - g.y0 + 1)
+            if (frame.cells().all { PortalBlocks.isGate(world.getBlockState(it)) }) continue
             for (x in g.x0 - 1..g.x1 + 1) for (y in g.y0 - 1..g.y1 + 1) {
                 if (g.frame(x, y, g.z)) world.setBlockState(origin.add(x, y, g.z), PortalBlocks.FRAME.defaultState, 2 or 16)
             }
-            fill(world, Frame(origin.add(g.x0, g.y0, g.z), Direction.Axis.X, g.x1 - g.x0 + 1, g.y1 - g.y0 + 1))
+            fill(world, frame)
         }
     }
+
+    /**
+     * Seit 1.12.0 steht in der Arena vor dem Sieg kein Tor. Nach dem Sieg wächst der Rahmen Reihe für Reihe aus dem Boden
+     * ([RISE_DELAY] Ticks Vorlauf für die Kamera, je Reihe [RISE_ROW] Ticks), dann zündet das Tor.
+     */
+    fun raiseReturn(world: ServerWorld, origin: BlockPos): Sequence<Unit> = sequence {
+        repeat(RISE_DELAY) { yield(Unit) }
+        val rows = FarPlan.RETURN_GATES.maxOf { it.y1 - it.y0 + 3 }
+        for (row in 0 until rows) {
+            for (g in FarPlan.RETURN_GATES) {
+                val y = g.y0 - 1 + row
+                if (y > g.y1 + 1) continue
+                for (x in g.x0 - 1..g.x1 + 1) {
+                    if (!g.frame(x, y, g.z)) continue
+                    val pos = origin.add(x, y, g.z)
+                    world.setBlockState(pos, PortalBlocks.FRAME.defaultState, 2 or 16)
+                    world.spawnParticles(BlockStateParticleEffect(ParticleTypes.BLOCK, PortalBlocks.FRAME.defaultState), pos.x + 0.5, pos.y + 0.2, pos.z + 0.5, 8, 0.45, 0.15, 0.45, 0.08)
+                    world.spawnParticles(ParticleTypes.SNOWFLAKE, pos.x + 0.5, pos.y + 0.5, pos.z + 0.5, 2, 0.4, 0.3, 0.4, 0.02)
+                }
+                val mid = Vec3d(origin.x + (g.x0 + g.x1) / 2.0 + 0.5, origin.y + y + 0.5, origin.z + g.z + 0.5)
+                world.playSound(null, mid.x, mid.y, mid.z, SoundEvents.BLOCK_DEEPSLATE_BRICKS_PLACE, SoundCategory.BLOCKS, 2.2f, 0.55f + row * 0.05f)
+                if (row % 2 == 0) world.playSound(null, mid.x, mid.y, mid.z, SoundEvents.BLOCK_AMETHYST_BLOCK_RESONATE, SoundCategory.BLOCKS, 1.6f, 0.6f + row * 0.08f)
+            }
+            repeat(RISE_ROW) { yield(Unit) }
+        }
+        lightReturn(world, origin)
+        for (g in FarPlan.RETURN_GATES) {
+            val mid = Vec3d(origin.x + (g.x0 + g.x1) / 2.0 + 0.5, origin.y + (g.y0 + g.y1) / 2.0 + 0.5, origin.z + g.z + 0.5)
+            world.spawnParticles(ParticleTypes.END_ROD, mid.x, mid.y, mid.z, 70, 1.3, 1.7, 0.5, 0.09)
+            world.playSound(null, mid.x, mid.y, mid.z, SoundEvents.BLOCK_END_PORTAL_SPAWN, SoundCategory.BLOCKS, 3f, 1.2f)
+        }
+    }
+
+    /** Vorlauf bis zur ersten Reihe, Ticks je Reihe (siehe [raiseReturn], die Szene in `Scenes.ending` richtet sich danach). */
+    const val RISE_DELAY = 18
+    const val RISE_ROW = 5
 
     /** Entfernt auch Rahmen aus alten Instanzen und stellt die begehbare Schwelle wieder her. */
     fun extinguishReturn(world: ServerWorld, origin: BlockPos) {
@@ -215,8 +328,17 @@ object Portals {
             return
         }
         needsExit.add(player.uuid)
+        val axis = if (state.contains(EirholmGateBlock.AXIS)) state.get(EirholmGateBlock.AXIS) else Direction.Axis.X
+        // Das brennende Tor ist das Siegel: Ohne vollständigen Rahmen gibt es keinen Einsatz und damit keinen Aufbruch.
+        val frame = frameFrom(world, pos, axis)
+        if (frame == null) {
+            player.sendMessage(Text.translatable("hha_arius.portal.no_frame").formatted(Formatting.GRAY), true)
+            return
+        }
         world.playSound(null, player.x, player.y, player.z, SoundEvents.BLOCK_PORTAL_TRAVEL, SoundCategory.BLOCKS, 0.4f, 1.5f)
-        if (Encounters.requestStart(player, ItemStack.EMPTY)) {
+        if (Encounters.requestStart(player, ItemStack(dev.henny.hha_arius.gear.GearItems.EIRHOLM_SEAL))) {
+            Encounters.all().firstOrNull { !it.ended && it.isParticipant(player) }?.let { taken[it.encounterId] = Taken(world.registryKey, frame.corner, frame.axis) }
+            closeGate(world, frame)
             homes(world.server ?: return).put(player, world, front.first, front.second)
             // Mitgenommene in der Nähe des Tors kehren ebenfalls vor das Tor zurück.
             for (other in world.players) if (other !== player && other.squaredDistanceTo(player) <= 12.0 * 12.0 && Encounters.isParticipant(other)) {
@@ -282,6 +404,7 @@ object Portals {
     }
 
     private fun tick(server: MinecraftServer) {
+        refundCollapsed(server)
         if (needsExit.isEmpty()) return
         if (server.ticks % 5 != 0) return
         val it = needsExit.iterator()

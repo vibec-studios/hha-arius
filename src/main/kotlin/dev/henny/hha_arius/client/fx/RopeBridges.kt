@@ -39,6 +39,10 @@ import kotlin.math.sqrt
  * auf die Laufrichtung: Auf B3 (läuft fast genau nach −X) ist diese Drehung mehrdeutig, die Planken wirbelten wie ein
  * Fächer. Morsche Planken ([HuntRoute.weakPlanks]) sind sichtbar gesplittert und brechen unter dem Fuß. Gekappte Seile
  * lassen das Deck als Kette am nahen Anker herabschwingen ([Drop]). Am fernen Kopf markiert ein Leuchten die Seile.
+ *
+ * Seit 1.12.0 schwingt die Brücke als gespanntes Seil ([Sway]): Böen laufen als Welle über die Spannweite, Schritte und
+ * Plankenbrüche federn nach, die Enden bleiben fest. Tragseile und Handläufe laufen immer durch, auch über Lücken im Deck;
+ * erst gekappte Seile fallen.
  */
 object RopeBridges {
 
@@ -60,6 +64,8 @@ object RopeBridges {
     fun reset() {
         shakes.clear()
         drops.clear()
+        sims.clear()
+        lastAt.clear()
         localSway = 0f
         onBridge = false
     }
@@ -174,6 +180,74 @@ object RopeBridges {
         }
     }
 
+    // --- Schwingen: gespanntes Seil mit festen Enden -----------------------------------------------------------------------
+
+    private class Sway(val n: Int) {
+        val lat = DoubleArray(n + 1)
+        val latV = DoubleArray(n + 1)
+        val latOld = DoubleArray(n + 1)
+        val dip = DoubleArray(n + 1)
+        val dipV = DoubleArray(n + 1)
+        val dipOld = DoubleArray(n + 1)
+
+        fun latAt(k: Int, td: Float) = latOld[k] + (lat[k] - latOld[k]) * td
+        fun dipAt(k: Int, td: Float) = dipOld[k] + (dip[k] - dipOld[k]) * td
+
+        fun kick(k: Int, amount: Double) {
+            for (j in maxOf(1, k - 2)..minOf(n - 1, k + 2)) dipV[j] += amount * (1.0 - abs(j - k) / 3.0)
+        }
+
+        fun step(t: Double, id: Int, wind: Double) {
+            System.arraycopy(lat, 0, latOld, 0, n + 1)
+            System.arraycopy(dip, 0, dipOld, 0, n + 1)
+            repeat(2) {
+                for (k in 1 until n) {
+                    val u = k / n.toDouble()
+                    val taper = 4 * u * (1 - u)
+                    // Die Böe läuft über die Spannweite; ein zweiter, schnellerer Anteil macht sie unregelmäßig.
+                    val gust = sin(t * 0.045 + id * 1.7 - u * 2.2) + 0.45 * sin(t * 0.118 + id + u * 5.0)
+                    latV[k] += 0.23 * (lat[k - 1] - 2 * lat[k] + lat[k + 1]) - 0.012 * lat[k] - 0.055 * latV[k] + gust * wind * taper * 0.0075
+                    dipV[k] += 0.2 * (dip[k - 1] - 2 * dip[k] + dip[k + 1]) - 0.03 * dip[k] - 0.085 * dipV[k]
+                }
+                for (k in 1 until n) {
+                    lat[k] = (lat[k] + latV[k]).coerceIn(-0.9, 0.9)
+                    dip[k] = (dip[k] + dipV[k]).coerceIn(-0.45, 0.3)
+                }
+            }
+        }
+    }
+
+    private val sims = HashMap<Int, Sway>()
+    private val lastAt = HashMap<Int, Vec3d>()
+
+    /** Eine Brücke in der Nähe rechnet weiter: Wind, Schritte der Spieler, Erschütterungen. */
+    private fun tickSway(world: net.minecraft.client.world.ClientWorld, cam: Vec3d) {
+        val o = origin(cam)
+        for (span in HuntRoute.ropeSpans) {
+            val mid = HuntRoute.indexOfArc((span.a0 + span.a1) / 2)
+            val dx = o.x + HuntRoute.x(mid) - cam.x
+            val dz = o.z + HuntRoute.z(mid) - cam.z
+            if (dx * dx + dz * dz > 200.0 * 200.0 || span.id in drops) continue
+            val n = (span.length / PLANK).toInt()
+            val sim = sims.getOrPut(span.id) { Sway(n) }
+            for (pl in world.players) {
+                val h = HuntRoute.bridgeEntry(floor(pl.x).toInt() - o.x, floor(pl.z).toInt() - o.z)
+                if (h < 0) continue
+                val j = HuntRoute.hitIndex(h)
+                if (j !in span.i0..span.i1 || abs(pl.y - o.y - HuntRoute.standY(j)) > 2.0) continue
+                val now = pl.entityPos
+                val before = lastAt.put(pl.id, now) ?: continue
+                val moved = sqrt((now.x - before.x) * (now.x - before.x) + (now.z - before.z) * (now.z - before.z))
+                if (moved > 0.04 && pl.age % 5 == 0) sim.kick(((HuntRoute.arc(j) - span.a0) / PLANK).toInt().coerceIn(1, n - 1), -0.018 * moved.coerceAtMost(0.5) / 0.25)
+            }
+            for (sh in shakes) {
+                val k = ((HuntRoute.arc(HuntRoute.indexAtHeight(floor(sh.at.x).toInt() - o.x, floor(sh.at.z).toInt() - o.z, sh.at.y - o.y, 2.0, 3.0).coerceAtLeast(span.i0)) - span.a0) / PLANK).toInt()
+                if (k in 1 until n && time % 3 == 0L) sim.kick(k, 0.03)
+            }
+            sim.step(time.toDouble(), span.id, wind())
+        }
+    }
+
     private fun origin(cam: Vec3d): BlockPos {
         val slot = Math.floorDiv(floor(cam.x).toInt() + ArenaLayout.SLOT_SPACING / 2, ArenaLayout.SLOT_SPACING)
         return ArenaLayout.origin(slot)
@@ -187,17 +261,6 @@ object RopeBridges {
         return 4 * u * (1 - u)
     }
 
-    /** Seitliches Schwingen (Blöcke) an Bogenlänge u (0..1) zur Zeit t. */
-    private fun sway(span: HuntRoute.Span, u: Double, t: Double): Double {
-        val belly = belly(span, u * span.length)
-        return belly * wind() * (sin(t * 0.04 + span.id * 1.7) + 0.2 * sin(t * 0.09 + u * 3.1))
-    }
-
-    private fun bob(span: HuntRoute.Span, u: Double, t: Double): Double {
-        val belly = belly(span, u * span.length)
-        return belly * 0.08 * sin(t * 0.07 + span.id + u * 3.0)
-    }
-
     fun tick() {
         time++
         shakes.removeIf { --it.left <= 0 }
@@ -207,6 +270,7 @@ object RopeBridges {
         val world = mc.world ?: return
         onBridge = false
         if (world.registryKey != ArenaDimension.WORLD) return
+        tickSway(world, mc.gameRenderer.camera.cameraPos)
         val o = origin(p.entityPos)
         val rx = floor(p.x).toInt() - o.x
         val rz = floor(p.z).toInt() - o.z
@@ -266,21 +330,22 @@ object RopeBridges {
                 loads += HuntRoute.arc(j) - span.a0
             }
             val n = (span.length / PLANK).toInt()
+            val sim = sims[span.id]?.takeIf { it.n == n }
             val present = BooleanArray(n + 1)
             val pts = arrayOfNulls<Vec3d>(n + 1)
             val sides = arrayOfNulls<Vec3d>(n + 1)
             for (k in 0..n) {
                 val s = k * PLANK
-                val u = s / span.length
                 val i = HuntRoute.indexOfArc(span.a0 + s)
                 val deckY = o.y + HuntRoute.standY(i)
                 var w = 0.0
                 for (l in loads) w = maxOf(w, exp(-((s - l) / 5.0).let { it * it }))
                 val belly = belly(span, s)
-                var y = deckY + LIFT * belly * (1 - w) + bob(span, u, t) * (1 - w)
+                // Unter einem Spieler liegt das Deck genau auf der Kollision; das Schwingen klingt dort aus.
+                var y = deckY + LIFT * belly * (1 - w) + (sim?.dipAt(k, d.tickDelta) ?: 0.0) * (1 - 0.8 * w)
                 val (tx, tz) = HuntRoute.tangent(i)
                 val side = Vec3d(-tz, 0.0, tx)
-                var lat = sway(span, u, t) * (1 - 0.85 * w)
+                var lat = (sim?.latAt(k, d.tickDelta) ?: 0.0) * (1 - 0.85 * w)
                 for (sh in shakes) {
                     val dx = o.x + HuntRoute.x(i) - sh.at.x
                     val dz = o.z + HuntRoute.z(i) - sh.at.z

@@ -16,16 +16,8 @@ void main() {
         discard;
     }
     vec3 rgb = tex.rgb * vertexColor.rgb;
-    float fogFactor;
-    if (FogEnvironmentalEnd < 65.0) {
-        // Dense blizzard / whiteout / cave: respect environmental visibility so peaks vanish naturally in storms.
-        fogFactor = linear_fog_value(viewDist, FogEnvironmentalStart, FogEnvironmentalEnd);
-    } else {
-        // Clear or light snow: keep real distant mountains sharp with gentle aerial perspective instead of a fog wall.
-        float hazeStart = max(FogEnvironmentalStart, 90.0);
-        float hazeEnd = max(FogEnvironmentalEnd * 2.4, 680.0);
-        fogFactor = min(linear_fog_value(viewDist, hazeStart, hazeEnd), 0.52);
-    }
+    // Derselbe Dunst wie auf den echten Chunks, sonst sieht man die Naht zwischen beiden.
+    float fogFactor = linear_fog_value(viewDist, FogEnvironmentalStart, FogEnvironmentalEnd);
     vec3 finalRgb = mix(rgb, FogColor.rgb, fogFactor * FogColor.a);
     fragColor = vec4(finalRgb, 1.0);
 }

@@ -8,6 +8,7 @@ import com.mojang.blaze3d.vertex.VertexFormat
 import dev.henny.hha_arius.HhaArius
 import dev.henny.hha_arius.arena.ArenaDimension
 import dev.henny.hha_arius.arena.ArenaLayout
+import dev.henny.hha_arius.arena.FarPlan
 import dev.henny.hha_arius.arena.HighlandChunk
 import io.netty.buffer.Unpooled
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
@@ -49,18 +50,26 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Real distant mountain terrain renderer for Eirholm.
+ * Echte Berge jenseits der Sichtweite (seit 1.12.0, ersetzt das frühere Nebelbild).
  *
- * Receives [HighlandChunk] block-palette payloads from the server, decodes and meshes exposed faces on a background
- * worker thread using the live block atlas sprites and directional/AO shading, uploads budgeted GPU vertex buffers on
- * the render thread, and draws all visible chunks beyond vanilla render distance in a single [BEFORE_ENTITIES] pass.
+ * Der Server schickt die Blockpaletten der Fernlandschaft ([HighlandChunk]). Gebaut wird nur, was gerade gebraucht wird:
+ * Abschnitte außerhalb des runden Bereichs, den Sodium selbst zeichnet. Innere Flächen des hohlen Bergs entfallen über
+ * die Höhenkarte ([FarPlan.terrain]), ab [LOD_FROM] Chunks Abstand genügt ein Raster aus 2er-Zellen. So bleibt der
+ * Grafikspeicher klein (mit 32 Chunks Sichtweite fast leer), und alles Zeichnen ist ein einziger Durchgang.
  */
 object HighlandViewClient {
 
     private const val BASE_SECTION = (ArenaLayout.BASE_Y - 1) shr 4
     private const val MAX_SECTION = 24
     private const val MAX_UPLOADS_PER_TICK = 12
+    private const val MAX_JOBS_PER_TICK = 24
     private const val VERTEX_BYTES = 24 // float x, y, z (12) + float u, v (8) + ubyte4 color (4)
+
+    /** Ab diesem Chunk-Abstand zur Kamera wird in 2er-Zellen gebaut. */
+    private const val LOD_FROM = 14
+
+    /** Flächen, die mehr als so viele Blöcke unter der Geländeoberkante liegen, sieht von außen niemand. */
+    private const val SKIN = 4
 
     private val PIPELINE: RenderPipeline = RenderPipelines.register(
         RenderPipeline.builder(RenderPipelines.TRANSFORMS_PROJECTION_FOG_SNIPPET)
@@ -77,8 +86,14 @@ object HighlandViewClient {
     )
 
     private class SpriteUv(val u0: Float, val v0: Float, val u1: Float, val v1: Float, val tintR: Float, val tintG: Float, val tintB: Float)
-    private class BuiltMesh(val epoch: Int, val pos: ChunkPos, val minY: Int, val maxY: Int, val vertices: ByteArray?, val quadCount: Int)
-    private class GpuChunk(val pos: ChunkPos, val minY: Int, val maxY: Int, val buffer: GpuBuffer, val indexCount: Int)
+    private class BuiltMesh(val epoch: Int, val pos: ChunkPos, val rev: Int, val step: Int, val minY: Int, val maxY: Int, val vertices: ByteArray?, val quadCount: Int)
+    private class GpuChunk(val pos: ChunkPos, val rev: Int, val step: Int, val minY: Int, val maxY: Int, val buffer: GpuBuffer, val indexCount: Int)
+
+    /** Empfangene Palette eines Abschnitts; [rev] steigt mit jeder neuen Fassung (z. B. nach dem Bergschnitt). */
+    private class Source(var payload: HighlandChunk, var rev: Int) {
+        var queuedRev = -1
+        var queuedStep = 0
+    }
 
     private val worker = Executors.newSingleThreadExecutor { r ->
         Thread(r, "hha-arius-highland-mesh").apply { isDaemon = true }
@@ -87,6 +102,7 @@ object HighlandViewClient {
     private val epoch = AtomicInteger(0)
     private val readyQueue = ConcurrentLinkedQueue<BuiltMesh>()
     private val chunks = HashMap<Long, GpuChunk>()
+    private val sources = HashMap<Long, Source>()
     private val uvCache = ConcurrentHashMap<Block, SpriteUv>()
 
     @Volatile
@@ -109,13 +125,11 @@ object HighlandViewClient {
                 activeWorld = world
                 palettesFactory = PalettesFactory.fromRegistryManager(world.registryManager)
             }
-            if (!uvReady) warmUvCache(client)
-            val currentEpoch = epoch.get()
-            val factory = palettesFactory ?: return@registerGlobalReceiver
-            worker.execute {
-                if (epoch.get() != currentEpoch) return@execute
-                val mesh = runCatching { buildMesh(currentEpoch, factory, payload) }.getOrNull() ?: return@execute
-                if (epoch.get() == currentEpoch) readyQueue.add(mesh)
+            val key = payload.pos.toLong()
+            val src = sources[key]
+            if (src == null) sources[key] = Source(payload, 0) else {
+                src.payload = payload
+                src.rev++
             }
         }
 
@@ -131,13 +145,15 @@ object HighlandViewClient {
                 palettesFactory = PalettesFactory.fromRegistryManager(world.registryManager)
                 uvReady = false
             }
+            if (!uvReady) warmUvCache(client)
+            schedule(client)
             drainUploads()
         }
 
         WorldRenderEvents.BEFORE_ENTITIES.register { _ ->
             val client = MinecraftClient.getInstance()
             val world = client.world ?: return@register
-            if (world.registryKey != ArenaDimension.WORLD || chunks.isEmpty()) return@register
+            if (world.registryKey != ArenaDimension.WORLD || chunks.isEmpty() || debugOff) return@register
             try {
                 render(client, world)
             } catch (t: Throwable) {
@@ -151,6 +167,16 @@ object HighlandViewClient {
         ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> reset() }
     }
 
+    /** Nur für die Sichtprüfung: Fernlandschaft aus (Vergleich der Bildzeit). */
+    @JvmField
+    var debugOff = false
+
+    /** Nur für die Sichtprüfung: Abschnitte, Vierecke, Puffergröße in MB. */
+    fun debugStats(): String {
+        val quads = chunks.values.sumOf { it.indexCount / 6L }
+        return "chunks=%d quads=%d vram=%.1fMB queued=%d".format(chunks.size, quads, quads * 4.0 * VERTEX_BYTES / (1024 * 1024), readyQueue.size)
+    }
+
     fun reset() {
         epoch.incrementAndGet()
         activeWorld = null
@@ -159,6 +185,54 @@ object HighlandViewClient {
         readyQueue.clear()
         for (c in chunks.values) runCatching { c.buffer.close() }
         chunks.clear()
+        sources.clear()
+    }
+
+    /** Liegt der Abschnitt im runden Bereich, den die normale Chunk-Darstellung selbst zeichnet? */
+    private fun coveredByWorld(world: ClientWorld, cx: Int, cz: Int, camCx: Int, camCz: Int, view: Int): Boolean {
+        val dx = cx - camCx
+        val dz = cz - camCz
+        val r = view - 1
+        return dx * dx + dz * dz < r * r && world.chunkManager.isChunkLoaded(cx, cz)
+    }
+
+    /** Baut fehlende Abschnitte jenseits der Sichtweite, gibt innen liegende frei und wechselt die Auflösung nach Abstand. */
+    private fun schedule(client: MinecraftClient) {
+        val world = client.world ?: return
+        val factory = palettesFactory ?: return
+        if (!uvReady || sources.isEmpty()) return
+        val cam = client.gameRenderer.camera.cameraPos
+        val camCx = floor(cam.x).toInt() shr 4
+        val camCz = floor(cam.z).toInt() shr 4
+        val view = client.options.clampedViewDistance
+        val currentEpoch = epoch.get()
+        val wanted = ArrayList<Triple<Int, Source, Int>>()
+        for ((key, src) in sources) {
+            val pos = src.payload.pos
+            if (coveredByWorld(world, pos.x, pos.z, camCx, camCz, view - 2)) {
+                chunks.remove(key)?.let { runCatching { it.buffer.close() } }
+                src.queuedRev = -1
+                continue
+            }
+            val d = maxOf(abs(pos.x - camCx), abs(pos.z - camCz))
+            val step = if (d >= LOD_FROM) 2 else 1
+            val have = chunks[key]
+            val fresh = have != null && have.rev == src.rev && (have.step == step || abs(d - LOD_FROM) < 2)
+            val queued = src.queuedRev == src.rev && (src.queuedStep == step || abs(d - LOD_FROM) < 2)
+            if (!fresh && !queued) wanted.add(Triple(d, src, step))
+        }
+        wanted.sortBy { it.first }
+        for ((_, src, step) in wanted.take(MAX_JOBS_PER_TICK)) {
+            src.queuedRev = src.rev
+            src.queuedStep = step
+            val payload = src.payload
+            val rev = src.rev
+            worker.execute {
+                if (epoch.get() != currentEpoch) return@execute
+                val mesh = runCatching { buildMesh(currentEpoch, factory, payload, rev, step) }.getOrNull() ?: return@execute
+                if (epoch.get() == currentEpoch) readyQueue.add(mesh)
+            }
+        }
     }
 
     private fun warmUvCache(client: MinecraftClient) {
@@ -189,6 +263,8 @@ object HighlandViewClient {
             val mesh = readyQueue.poll() ?: break
             if (mesh.epoch != epoch.get()) continue
             val key = mesh.pos.toLong()
+            val src = sources[key]
+            if (src == null || src.rev != mesh.rev || src.queuedRev != mesh.rev) continue
             chunks.remove(key)?.let { runCatching { it.buffer.close() } }
             val bytes = mesh.vertices
             if (bytes == null || mesh.quadCount <= 0) continue
@@ -197,7 +273,7 @@ object HighlandViewClient {
                 direct = MemoryUtil.memAlloc(bytes.size)
                 direct.put(bytes).flip()
                 val gpuBuf = device.createBuffer({ "hha_arius highland ${mesh.pos.x},${mesh.pos.z}" }, GpuBuffer.USAGE_VERTEX, direct)
-                chunks[key] = GpuChunk(mesh.pos, mesh.minY, mesh.maxY, gpuBuf, mesh.quadCount * 6)
+                chunks[key] = GpuChunk(mesh.pos, mesh.rev, mesh.step, mesh.minY, mesh.maxY, gpuBuf, mesh.quadCount * 6)
                 uploaded++
             } finally {
                 if (direct != null) MemoryUtil.memFree(direct)
@@ -217,15 +293,12 @@ object HighlandViewClient {
         val camCx = floor(cam.x).toInt() shr 4
         val camCz = floor(cam.z).toInt() shr 4
         val view = client.options.clampedViewDistance
-        val chunkManager = world.chunkManager
 
         val visible = ArrayList<GpuChunk>(chunks.size.coerceAtMost(512))
         var maxIndices = 0
         for (c in chunks.values) {
-            val dcx = abs(c.pos.x - camCx)
-            val dcz = abs(c.pos.z - camCz)
-            // Vanilla already draws loaded interior chunks; skip them cleanly. Keep 1-chunk overlap at the edge.
-            if (dcx < view - 1 && dcz < view - 1 && chunkManager.isChunkLoaded(c.pos.x, c.pos.z)) continue
+            // Innen zeichnet die normale Chunk-Darstellung (Sodium: rund); am Rand bleibt ein Chunk Überlappung.
+            if (coveredByWorld(world, c.pos.x, c.pos.z, camCx, camCz, view)) continue
             val centerX = c.pos.startX + 8.0
             val centerY = (c.minY + c.maxY) * 0.5
             val centerZ = c.pos.startZ + 8.0
@@ -275,10 +348,13 @@ object HighlandViewClient {
         }
     }
 
-    // --- Background chunk decoding & culled block meshing -----------------------------------------------------------
+    // --- Bau im Hintergrund: Palette lesen, innere Flächen weglassen, Vierecke schreiben -----------------------------------
 
-    private fun buildMesh(currentEpoch: Int, factory: PalettesFactory, payload: HighlandChunk): BuiltMesh {
-        if (payload.blocks.isEmpty()) return BuiltMesh(currentEpoch, payload.pos, ArenaLayout.BASE_Y, ArenaLayout.BASE_Y, null, 0)
+    private fun empty(currentEpoch: Int, payload: HighlandChunk, rev: Int, step: Int) =
+        BuiltMesh(currentEpoch, payload.pos, rev, step, ArenaLayout.BASE_Y, ArenaLayout.BASE_Y, null, 0)
+
+    private fun buildMesh(currentEpoch: Int, factory: PalettesFactory, payload: HighlandChunk, rev: Int, step: Int): BuiltMesh {
+        if (payload.blocks.isEmpty()) return empty(currentEpoch, payload, rev, step)
         val sections = HashMap<Int, PalettedContainer<BlockState>>()
         val buf = PacketByteBuf(Unpooled.wrappedBuffer(payload.blocks))
         try {
@@ -291,60 +367,68 @@ object HighlandViewClient {
         } finally {
             buf.release()
         }
-        if (sections.isEmpty()) return BuiltMesh(currentEpoch, payload.pos, ArenaLayout.BASE_Y, ArenaLayout.BASE_Y, null, 0)
+        if (sections.isEmpty()) return empty(currentEpoch, payload, rev, step)
 
-        val minSy = sections.keys.min()
-        val maxSy = sections.keys.max()
         val baseY = ArenaLayout.BASE_Y
-        val yStart = max(minSy shl 4, baseY - 1)
-        val yEnd = ((maxSy + 1) shl 4) - 1
+        val yStart = max(sections.keys.min() shl 4, baseY - 1)
+        val yEnd = ((sections.keys.max() + 1) shl 4) - 1
         val height = yEnd - yStart + 1
-        if (height <= 0) return BuiltMesh(currentEpoch, payload.pos, baseY, baseY, null, 0)
+        if (height <= 0) return empty(currentEpoch, payload, rev, step)
 
-        // Unpack into a fast local array for O(1) neighbor lookups & AO checks.
-        val states = arrayOfNulls<BlockState>(16 * height * 16)
-        val solid = BooleanArray(16 * height * 16)
-        val renderable = BooleanArray(16 * height * 16)
-        var actualMinY = Int.MAX_VALUE
-        var actualMaxY = Int.MIN_VALUE
-
+        // Zellen: Kantenlänge [step]; eine Zelle ist belegt, wenn ein Block darin zählt, und zeigt den obersten.
+        val cells = 16 / step
+        val layers = (height + step - 1) / step
+        val cellStates = arrayOfNulls<BlockState>(cells * layers * cells)
+        val solid = BooleanArray(cells * layers * cells)
+        val topOf = IntArray(cells * layers * cells) { Int.MIN_VALUE }
+        fun cell(cx: Int, cy: Int, cz: Int) = (cy * cells + cz) * cells + cx
+        var minLayer = Int.MAX_VALUE
+        var maxLayer = Int.MIN_VALUE
         for ((sy, container) in sections) {
             val secBaseY = sy shl 4
             for (ly in 0 until 16) {
                 val wy = secBaseY + ly
                 if (wy < yStart || wy > yEnd) continue
-                val yi = wy - yStart
-                val yOff = yi shl 8
-                for (lz in 0 until 16) {
-                    val zOff = yOff or (lz shl 4)
-                    for (lx in 0 until 16) {
-                        val st = container.get(lx, ly, lz)
-                        if (st.isAir) continue
-                        val idx = zOff or lx
-                        states[idx] = st
-                        val opaque = isOccluder(st)
-                        solid[idx] = opaque
-                        if (opaque || isSpecialVisible(st)) {
-                            renderable[idx] = true
-                            if (wy < actualMinY) actualMinY = wy
-                            if (wy > actualMaxY) actualMaxY = wy
-                        }
+                val cy = (wy - yStart) / step
+                for (lz in 0 until 16) for (lx in 0 until 16) {
+                    val st = container.get(lx, ly, lz)
+                    if (st.isAir) continue
+                    val opaque = isOccluder(st)
+                    if (!opaque && !isSpecialVisible(st)) continue
+                    val c = cell(lx / step, cy, lz / step)
+                    // Von oben nach unten gelesen gewinnt der höchste Block; die Reihenfolge der Abschnitte ist beliebig.
+                    val prev = cellStates[c]
+                    if (prev == null || wy >= topOf[c]) {
+                        cellStates[c] = st
+                        topOf[c] = wy
                     }
+                    if (opaque || step > 1) solid[c] = true
+                    if (cy < minLayer) minLayer = cy
+                    if (cy > maxLayer) maxLayer = cy
                 }
             }
         }
-        if (actualMinY > actualMaxY) return BuiltMesh(currentEpoch, payload.pos, baseY, baseY, null, 0)
+        if (minLayer > maxLayer) return empty(currentEpoch, payload, rev, step)
 
-        fun isSolidAt(x: Int, yi: Int, z: Int): Boolean {
-            if (x !in 0..15 || z !in 0..15 || yi !in 0 until height) return false
-            return solid[(yi shl 8) or (z shl 4) or x]
+        // Höhenkarte der Fernlandschaft (relativ), eine Zelle Rand rundum: Was tiefer liegt, ist Inneres des Bergs.
+        val slot = Math.floorDiv(payload.pos.startX + 8 + ArenaLayout.SLOT_SPACING / 2, ArenaLayout.SLOT_SPACING)
+        val ox = ArenaLayout.origin(slot).x
+        val oz = ArenaLayout.origin(slot).z
+        val tops = IntArray((cells + 2) * (cells + 2))
+        for (cz in -1..cells) for (cx in -1..cells) {
+            val rx = payload.pos.startX + cx * step + step / 2 - ox
+            val rz = payload.pos.startZ + cz * step + step / 2 - oz
+            tops[(cz + 1) * (cells + 2) + cx + 1] = runCatching { FarPlan.terrain(rx, rz) }.getOrDefault(Int.MIN_VALUE / 2)
         }
+        fun topAt(cx: Int, cz: Int) = tops[(cz + 1) * (cells + 2) + cx + 1]
+        fun solidAt(cx: Int, cy: Int, cz: Int): Boolean =
+            cx in 0 until cells && cz in 0 until cells && cy in 0 until layers && solid[cell(cx, cy, cz)]
 
         val out = ByteArrayOutputStream(16384)
         val scratch = ByteBuffer.allocate(VERTEX_BYTES * 4).order(ByteOrder.LITTLE_ENDIAN)
         var quads = 0
 
-        fun emitQuad(
+        fun quad(
             x0: Float, y0: Float, z0: Float, u0: Float, v0: Float,
             x1: Float, y1: Float, z1: Float, u1: Float, v1: Float,
             x2: Float, y2: Float, z2: Float, u2: Float, v2: Float,
@@ -360,74 +444,71 @@ object HighlandViewClient {
             quads++
         }
 
-        fun packColor(uv: SpriteUv, rMul: Float, gMul: Float, bMul: Float): Int {
-            val r = (uv.tintR * rMul * 255f).toInt().coerceIn(0, 255)
-            val g = (uv.tintG * gMul * 255f).toInt().coerceIn(0, 255)
-            val b = (uv.tintB * bMul * 255f).toInt().coerceIn(0, 255)
-            return (0xFF shl 24) or (b shl 16) or (g shl 8) or r
+        fun color(uv: SpriteUv, r: Float, g: Float, b: Float): Int {
+            val rr = (uv.tintR * r * 255f).toInt().coerceIn(0, 255)
+            val gg = (uv.tintG * g * 255f).toInt().coerceIn(0, 255)
+            val bb = (uv.tintB * b * 255f).toInt().coerceIn(0, 255)
+            return (0xFF shl 24) or (bb shl 16) or (gg shl 8) or rr
         }
 
-        for (wy in actualMinY..actualMaxY) {
-            val yi = wy - yStart
-            val yOff = yi shl 8
-            val ry = (wy - baseY).toFloat()
-            for (lz in 0 until 16) {
-                val zOff = yOff or (lz shl 4)
-                val fz = lz.toFloat()
-                for (lx in 0 until 16) {
-                    val idx = zOff or lx
-                    if (!renderable[idx]) continue
-                    val st = states[idx] ?: continue
-                    val uv = uvCache[st.block] ?: continue
-                    val fx = lx.toFloat()
-                    val h = if (st.block is SnowBlock) (st.get(SnowBlock.LAYERS) / 8f).coerceAtLeast(0.125f) else 1f
-                    val yTop = ry + h
-                    val u0 = uv.u0; val v0 = uv.v0; val u1 = uv.u1; val v1 = uv.v1
-                    val vSideTop = v0 + (v1 - v0) * (1f - h)
-
-                    // +Y top face
-                    if (h < 1f || !isSolidAt(lx, yi + 1, lz)) {
-                        var ao = 1.0f
-                        if (isSolidAt(lx - 1, yi + 1, lz)) ao -= 0.06f
-                        if (isSolidAt(lx + 1, yi + 1, lz)) ao -= 0.06f
-                        if (isSolidAt(lx, yi + 1, lz - 1)) ao -= 0.06f
-                        if (isSolidAt(lx, yi + 1, lz + 1)) ao -= 0.06f
-                        val c = packColor(uv, 1.00f * ao, 1.00f * ao, 1.00f * ao)
-                        emitQuad(fx, yTop, fz, u0, v0, fx, yTop, fz + 1f, u0, v1, fx + 1f, yTop, fz + 1f, u1, v1, fx + 1f, yTop, fz, u1, v0, c)
-                    }
-                    // -Y bottom face (skip ground base)
-                    if (wy > baseY && !isSolidAt(lx, yi - 1, lz)) {
-                        val c = packColor(uv, 0.52f, 0.54f, 0.59f)
-                        emitQuad(fx, ry, fz, u0, v0, fx + 1f, ry, fz, u1, v0, fx + 1f, ry, fz + 1f, u1, v1, fx, ry, fz + 1f, u0, v1, c)
-                    }
-                    // -Z north face
-                    if (!isSolidAt(lx, yi, lz - 1)) {
-                        val ao = if (isSolidAt(lx, yi - 1, lz - 1)) 0.92f else 1.0f
-                        val c = packColor(uv, 0.78f * ao, 0.81f * ao, 0.87f * ao)
-                        emitQuad(fx + 1f, yTop, fz, u0, vSideTop, fx + 1f, ry, fz, u0, v1, fx, ry, fz, u1, v1, fx, yTop, fz, u1, vSideTop, c)
-                    }
-                    // +Z south face
-                    if (!isSolidAt(lx, yi, lz + 1)) {
-                        val ao = if (isSolidAt(lx, yi - 1, lz + 1)) 0.92f else 1.0f
-                        val c = packColor(uv, 0.84f * ao, 0.85f * ao, 0.88f * ao)
-                        emitQuad(fx, yTop, fz + 1f, u0, vSideTop, fx, ry, fz + 1f, u0, v1, fx + 1f, ry, fz + 1f, u1, v1, fx + 1f, yTop, fz + 1f, u1, vSideTop, c)
-                    }
-                    // -X west face (alpine shadow side)
-                    if (!isSolidAt(lx - 1, yi, lz)) {
-                        val ao = if (isSolidAt(lx - 1, yi - 1, lz)) 0.91f else 1.0f
-                        val c = packColor(uv, 0.65f * ao, 0.70f * ao, 0.78f * ao)
-                        emitQuad(fx, yTop, fz, u0, vSideTop, fx, ry, fz, u0, v1, fx, ry, fz + 1f, u1, v1, fx, yTop, fz + 1f, u1, vSideTop, c)
-                    }
-                    // +X east face (sunlit side)
-                    if (!isSolidAt(lx + 1, yi, lz)) {
-                        val ao = if (isSolidAt(lx + 1, yi - 1, lz)) 0.93f else 1.0f
-                        val c = packColor(uv, 0.93f * ao, 0.92f * ao, 0.90f * ao)
-                        emitQuad(fx + 1f, yTop, fz + 1f, u0, vSideTop, fx + 1f, ry, fz + 1f, u0, v1, fx + 1f, ry, fz, u1, v1, fx + 1f, yTop, fz, u1, vSideTop, c)
-                    }
+        val size = step.toFloat()
+        var minY = Int.MAX_VALUE
+        var maxY = Int.MIN_VALUE
+        for (cy in minLayer..maxLayer) {
+            val ry = cy * step + yStart - baseY
+            val fy = ry.toFloat()
+            for (cz in 0 until cells) for (cx in 0 until cells) {
+                val c = cell(cx, cy, cz)
+                val st = cellStates[c] ?: continue
+                val uv = uvCache[st.block] ?: continue
+                val own = topAt(cx, cz)
+                val x0 = (cx * step).toFloat()
+                val z0 = (cz * step).toFloat()
+                val x1 = x0 + size
+                val z1 = z0 + size
+                val h = if (step == 1 && st.block is SnowBlock) (st.get(SnowBlock.LAYERS) / 8f).coerceAtLeast(0.125f) else size
+                val yTop = fy + h
+                val u0 = uv.u0; val v0 = uv.v0; val u1 = uv.u1; val v1 = uv.v1
+                val vSide = v0 + (v1 - v0) * (1f - h / size)
+                val before = quads
+                // oben
+                if ((h < size || !solidAt(cx, cy + 1, cz)) && ry + step > own - SKIN) {
+                    var ao = 1f
+                    if (solidAt(cx - 1, cy + 1, cz)) ao -= 0.06f
+                    if (solidAt(cx + 1, cy + 1, cz)) ao -= 0.06f
+                    if (solidAt(cx, cy + 1, cz - 1)) ao -= 0.06f
+                    if (solidAt(cx, cy + 1, cz + 1)) ao -= 0.06f
+                    quad(x0, yTop, z0, u0, v0, x0, yTop, z1, u0, v1, x1, yTop, z1, u1, v1, x1, yTop, z0, u1, v0, color(uv, ao, ao, ao))
+                }
+                // unten: nur Überhänge (Bögen, Äste), nie der Bergbauch
+                if (ry > 0 && ry > own && !solidAt(cx, cy - 1, cz)) {
+                    quad(x0, fy, z0, u0, v0, x1, fy, z0, u1, v0, x1, fy, z1, u1, v1, x0, fy, z1, u0, v1, color(uv, 0.52f, 0.54f, 0.59f))
+                }
+                // Seiten: nur, wo die Nachbarspalte tiefer liegt als diese Fläche
+                if (!solidAt(cx, cy, cz - 1) && ry + step > topAt(cx, cz - 1) - SKIN) {
+                    val ao = if (solidAt(cx, cy - 1, cz - 1)) 0.92f else 1f
+                    quad(x1, yTop, z0, u0, vSide, x1, fy, z0, u0, v1, x0, fy, z0, u1, v1, x0, yTop, z0, u1, vSide, color(uv, 0.78f * ao, 0.81f * ao, 0.87f * ao))
+                }
+                if (!solidAt(cx, cy, cz + 1) && ry + step > topAt(cx, cz + 1) - SKIN) {
+                    val ao = if (solidAt(cx, cy - 1, cz + 1)) 0.92f else 1f
+                    quad(x0, yTop, z1, u0, vSide, x0, fy, z1, u0, v1, x1, fy, z1, u1, v1, x1, yTop, z1, u1, vSide, color(uv, 0.84f * ao, 0.85f * ao, 0.88f * ao))
+                }
+                if (!solidAt(cx - 1, cy, cz) && ry + step > topAt(cx - 1, cz) - SKIN) {
+                    val ao = if (solidAt(cx - 1, cy - 1, cz)) 0.91f else 1f
+                    quad(x0, yTop, z0, u0, vSide, x0, fy, z0, u0, v1, x0, fy, z1, u1, v1, x0, yTop, z1, u1, vSide, color(uv, 0.65f * ao, 0.70f * ao, 0.78f * ao))
+                }
+                if (!solidAt(cx + 1, cy, cz) && ry + step > topAt(cx + 1, cz) - SKIN) {
+                    val ao = if (solidAt(cx + 1, cy - 1, cz)) 0.93f else 1f
+                    quad(x1, yTop, z1, u0, vSide, x1, fy, z1, u0, v1, x1, fy, z0, u1, v1, x1, yTop, z0, u1, vSide, color(uv, 0.93f * ao, 0.92f * ao, 0.90f * ao))
+                }
+                if (quads > before) {
+                    if (ry + baseY < minY) minY = ry + baseY
+                    if (ry + baseY + step > maxY) maxY = ry + baseY + step
                 }
             }
         }
-        return BuiltMesh(currentEpoch, payload.pos, actualMinY, actualMaxY + 1, if (quads > 0) out.toByteArray() else null, quads)
+        if (quads == 0) return empty(currentEpoch, payload, rev, step)
+        return BuiltMesh(currentEpoch, payload.pos, rev, step, minY, maxY, out.toByteArray(), quads)
     }
 
     private fun isOccluder(state: BlockState): Boolean =

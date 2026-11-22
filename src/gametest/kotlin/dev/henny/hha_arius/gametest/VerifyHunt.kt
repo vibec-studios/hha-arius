@@ -25,6 +25,18 @@ class VerifyHunt : FabricClientGameTest {
 
     override fun runTest(context: ClientGameTestContext) = VerifyKit.run(context, "hunt") {
         startFull()
+        if ("far" in parts) {
+            far()
+            if (parts.size == 1) return@run
+        }
+        if ("moon" in parts) {
+            moon()
+            if (parts.size == 1) return@run
+        }
+        if ("mtn" in parts) {
+            mountainCut()
+            if (parts.size == 1) return@run
+        }
         val h = reachHunt()
         if (h == null) {
             log("FEHLER: Jagd nicht erreicht, Phase ${phase()}")
@@ -47,7 +59,131 @@ class VerifyHunt : FabricClientGameTest {
         if ("arius" in parts) ariusRoute(h, spans[0].second + 40.0)
         if ("tunnel" in parts) caves.firstOrNull { it.first == "LAKE" }?.let { tunnel(h, it.second, it.third) }
         if ("fan" in parts) bridge(h, spans[1], "b3")
+        if ("seal" in parts) sealedCaves(h)
         log("fertig")
+    }
+
+    /** Fernlandschaft: Standbilder aus mehreren Blickwinkeln und Bildzeit mit und ohne die Fern-Berge. */
+    private fun VerifyKit.far() {
+        waitUntil(900, 2) {
+            server { srv -> Cine.requestSkip(player(srv)) }
+            !client { dev.henny.hha.client.cine.CinePlayer.active }
+        }
+        tick(20)
+        cmd("gamemode creative @p")
+        cmd("time set 6000")
+        val spots = listOf(
+            Triple("temple_south", Vec3d(0.5, 6.0, -44.0), Vec3d(0.0, 60.0, 250.0)),
+            Triple("plateau_high", Vec3d(-30.0, 60.0, -120.0), Vec3d(0.0, 80.0, 250.0)),
+            Triple("east_field", Vec3d(300.0, 12.0, 40.0), Vec3d(0.0, 90.0, 250.0)),
+            Triple("west", Vec3d(-300.0, 30.0, 120.0), Vec3d(0.0, 90.0, 250.0)),
+            Triple("summit", Vec3d(0.5, 190.0, 225.0), Vec3d(-260.0, 40.0, 0.0)),
+        )
+        for ((name, rel, look) in spots) {
+            server { srv ->
+                val p = player(srv)
+                val f = fight() ?: return@server
+                p.abilities.flying = true
+                p.sendAbilitiesUpdate()
+                val at = f.abs(rel)
+                val d = f.abs(look).subtract(at)
+                val yaw = (Math.toDegrees(atan2(d.z, d.x)) - 90.0).toFloat()
+                val pitch = (-Math.toDegrees(atan2(d.y, sqrt(d.x * d.x + d.z * d.z)))).toFloat()
+                p.teleport(p.entityWorld as ServerWorld, at.x, at.y, at.z, emptySet(), yaw, pitch, false)
+                p.velocity = Vec3d.ZERO
+            }
+            tick(120)
+            settle(400)
+            tick(40)
+            shot("far_$name")
+            val on = frameMs()
+            client { dev.henny.hha_arius.client.fx.HighlandViewClient.debugOff = true }
+            val off = frameMs()
+            client { dev.henny.hha_arius.client.fx.HighlandViewClient.debugOff = false }
+            log("far $name: frame %.2f ms with mountains, %.2f ms without; %s".format(on, off, client { dev.henny.hha_arius.client.fx.HighlandViewClient.debugStats() }))
+        }
+        cmd("gamemode survival @p")
+    }
+
+    /** Der gefrorene Mond am echten Himmel: Entstehen, voll ausgebildet, kurz vor dem Sturz. */
+    private fun VerifyKit.moon() {
+        waitUntil(900, 2) {
+            server { srv -> Cine.requestSkip(player(srv)) }
+            !client { dev.henny.hha.client.cine.CinePlayer.active }
+        }
+        cmd("gamemode creative @p")
+        val ticks = 200
+        server { srv ->
+            val p = player(srv)
+            val f = fight() ?: return@server
+            p.abilities.flying = true
+            p.sendAbilitiesUpdate()
+            val at = f.abs(Vec3d(0.5, 4.0, -60.0))
+            p.teleport(p.entityWorld as ServerWorld, at.x, at.y, at.z, emptySet(), 0f, -32f, false)
+            p.velocity = Vec3d.ZERO
+            f.fxAll(dev.henny.hha_arius.net.FxKind.FROZEN_STAR, f.abs(Vec3d(0.5, 0.0, -34.0)), a = 20f, b = ticks.toFloat(), life = ticks + 40)
+        }
+        for ((k, wait) in listOf(50, 50, 40, 30).withIndex()) {
+            tick(wait)
+            shot("moon_%d".format(k))
+        }
+        cmd("gamemode survival @p")
+        tick(60)
+    }
+
+    /** Bergschnitt und Tritt aus dem Tempel, ein Bild je 8 Ticks. */
+    private fun VerifyKit.mountainCut() {
+        server { fight()?.let { f -> f.startDirector(f.scenes.theCut()) } }
+        var i = 0
+        var t = 0
+        while (t < 840 && phase() < dev.henny.hha_arius.boss.EirholmFight.Phase.GLACIER) {
+            shot("mtn_%03d".format(i++))
+            // Der Tritt selbst dichter: Treffer, Salto, Aufprall, Aufstehen.
+            val step = if (t in 350..520) 3 else 8
+            tick(step)
+            t += step
+        }
+        log("mountain cut: $i frames, phase ${phase()}")
+    }
+
+    /** Mittlere Zeit eines echten Bildes (ohne Tick-Warten). */
+    private fun VerifyKit.frameMs(n: Int = 40): Double = client { c ->
+        val delta = net.fabricmc.fabric.mixin.client.gametest.screenshot.DeltaTrackerDefaultValueAccessor.create(1f)
+        repeat(5) { c.gameRenderer.render(delta, true) }
+        val t0 = System.nanoTime()
+        repeat(n) { c.gameRenderer.render(delta, true) }
+        (System.nanoTime() - t0) / (n * 1e6)
+    }
+
+    /** Nach dem Einsturz muss von vor dem Geröll ein begehbarer Weg (2 hoch, Stufen bis 1) hinter das Geröll führen. */
+    private fun VerifyKit.sealedCaves(h: Hunt) {
+        val pairs = server { h.debugSealAll() }
+        tick(5)
+        val results = server {
+            val w = fight()!!.world
+            fun low(p: BlockPos): Boolean { val s = w.getBlockState(p).getCollisionShape(w, p); return s.isEmpty || s.getMax(net.minecraft.util.math.Direction.Axis.Y) <= 0.5 }
+            fun stand(p: BlockPos) = low(p) && w.getBlockState(p.up()).getCollisionShape(w, p.up()).isEmpty && !w.getBlockState(p.down()).getCollisionShape(w, p.down()).isEmpty
+            pairs.map { (a, b) ->
+                val goal = BlockPos.ofFloored(b.x, b.y + 0.05, b.z)
+                val start = BlockPos.ofFloored(a.x, a.y + 0.05, a.z)
+                val seen = hashSetOf(start)
+                val queue = ArrayDeque(listOf(start))
+                var found = false
+                while (queue.isNotEmpty() && seen.size < 40000 && !found) {
+                    val c = queue.removeFirst()
+                    if (c.getSquaredDistance(goal) <= 4.0) found = true
+                    for (dx in -1..1) for (dz in -1..1) for (dy in -1..1) {
+                        if ((dx == 0) == (dz == 0)) continue
+                        val q = c.add(dx, dy, dz)
+                        if (kotlin.math.abs(q.x - start.x) > 34 || kotlin.math.abs(q.z - start.z) > 34 || q in seen || !stand(q)) continue
+                        seen.add(q)
+                        queue.addLast(q)
+                    }
+                }
+                found
+            }
+        }
+        log("Eingestürzte Höhlen mit freiem Weg: ${results.count { it }} von ${results.size}: $results")
     }
 
     private fun VerifyKit.reachHunt(): Hunt? {

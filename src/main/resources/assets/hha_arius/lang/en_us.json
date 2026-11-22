@@ -273,6 +273,7 @@
   "hha_arius.msg.training_done": "Training finished.",
   "hha_arius.msg.watching": "He only watches. A white boundary lies between you.",
   "hha_arius.parry.now": "PARRY!",
+  "hha_arius.portal.already_lit": "This gate is already burning, the seal is inside it.",
   "hha_arius.portal.explore": "You are still in Eirholm. The return gates on the summit and by the field take you home.",
   "hha_arius.portal.inside": "In Eirholm the seal opens no gate.",
   "hha_arius.portal.no_frame": "No complete frame of Rime Gate Stone (inside 2–21 wide, 3–21 tall).",

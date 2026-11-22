@@ -1094,10 +1094,11 @@ class EirholmFight(
         }
         // Seit 1.10.0: Niemand wird hinausgeworfen. Die Rückkehrtore leuchten, nach 20 s räumt der Kampf auf und alle
         // dürfen bleiben und sich umsehen; die Beute gibt es beim Durchschreiten eines Rückkehrtors.
-        dev.henny.hha_arius.portal.Portals.lightReturn(world, origin)
+        task(dev.henny.hha_arius.portal.Portals.raiseReturn(world, origin))
         task(script {
             wait(400)
             val everyone = audience()
+            dev.henny.hha_arius.portal.Portals.lightReturn(world, origin)
             finish(win = true)
             for (p in everyone) Encounters.stayAfterVictory(p, slot)
         })
@@ -1143,12 +1144,16 @@ class EirholmFight(
                     if (ledger.stake == encounterId) {
                         // Vermerk löschen und Siegel ins Fach: beides Spielerdatei. Das Fach füllt das Inventar, sobald Platz ist.
                         ledger.stake = ""
-                        Ledgers.deposit(owner, listOf(sealStake.copy()))
-                        Ledgers.flush(owner)
+                        // Kam das Siegel aus einem Tor, brennt dieses wieder; sonst zurück ins Inventar.
+                        if (!dev.henny.hha_arius.portal.Portals.relight(encounterId, server)) {
+                            Ledgers.deposit(owner, listOf(sealStake.copy()))
+                            Ledgers.flush(owner)
+                        }
                     }
                 }
                 sealStake = net.minecraft.item.ItemStack.EMPTY
             }
+            dev.henny.hha_arius.portal.Portals.forgetTaken(encounterId)
             state.save()
         }
         Encounters.onFinished(this)

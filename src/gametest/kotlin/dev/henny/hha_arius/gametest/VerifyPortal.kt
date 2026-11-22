@@ -2,12 +2,15 @@ package dev.henny.hha_arius.gametest
 
 import dev.henny.hha_arius.arena.ArenaLayout
 import dev.henny.hha_arius.boss.Encounters
+import dev.henny.hha_arius.gear.GearItems
 import dev.henny.hha_arius.gear.SealRitual
 import dev.henny.hha_arius.portal.PortalBlocks
 import dev.henny.hha_arius.portal.Portals
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext
 import net.minecraft.block.Blocks
+import net.minecraft.item.ItemStack
+import net.minecraft.item.Items
 import net.minecraft.util.math.BlockPos
 
 class VerifyPortal : FabricClientGameTest {
@@ -21,7 +24,11 @@ class VerifyPortal : FabricClientGameTest {
                 w.setBlockState(c.add(x, y, 0), block.defaultState)
             }
             for (z in -6..1) for (x in -2..3) w.setBlockState(c.add(x, -1, z), if (z == 0 && x in -1..2) PortalBlocks.FRAME.defaultState else Blocks.SNOW_BLOCK.defaultState)
-            check(Portals.ignite(w, c.down(), p))
+            // Das Siegel geht ins Tor über: ein zweites Anzünden verbraucht nichts.
+            val seal = ItemStack(GearItems.EIRHOLM_SEAL, 2)
+            p.changeGameMode(net.minecraft.world.GameMode.SURVIVAL)
+            check(Portals.ignite(w, c.down(), p, seal) && seal.count == 1) { "Lighting must take exactly one seal" }
+            check(!Portals.ignite(w, c.down(), p, seal) && seal.count == 1) { "A burning gate must not take a second seal" }
             p.teleport(w, c.x + 1.0, c.y.toDouble(), c.z - 4.0, emptySet(), 0f, 0f, false)
             c
         }
@@ -29,12 +36,15 @@ class VerifyPortal : FabricClientGameTest {
         shot("gate")
         server { srv ->
             val p = player(srv)
-            check(SealRitual.findSeal(p) == null)
+            p.inventory.clear()
+            p.inventory.insertStack(ItemStack(Items.BREAD))
             val w = srv.overworld
             p.teleport(w, corner.x + 0.5, corner.y.toDouble(), corner.z + 0.5, emptySet(), 0f, 0f, false)
         }
         check(waitUntil(80, 1) { server { Encounters.isParticipant(player(it)) } }) { "Empty-handed player could not enter" }
-        server {
+        server { srv ->
+            check(!PortalBlocks.isGate(srv.overworld.getBlockState(corner))) { "The gate must go dark while its seal is staked" }
+            check(SealRitual.findSeal(player(srv)) == null) { "The stake must not appear in the inventory" }
             val f = checkNotNull(fight())
             val origin = ArenaLayout.origin(f.slot)
             val inside = BlockPos.ofFloored(Portals.returnGateNear(origin))
@@ -46,6 +56,18 @@ class VerifyPortal : FabricClientGameTest {
             check(f.world.getBlockState(frame).isAir && f.world.getBlockState(inside).isAir)
         }
         cmd("hhaarius stop")
+        tick(10)
+        server { srv ->
+            check(PortalBlocks.isGate(srv.overworld.getBlockState(corner))) { "A lost fight must relight the gate" }
+            check(SealRitual.findSeal(player(srv)) == null) { "The seal must return to the gate, not the inventory" }
+            // Rahmen brechen: genau ein Siegel fällt heraus.
+            srv.overworld.breakBlock(corner.add(-1, 1, 0), false)
+        }
+        tick(5)
+        val drops = server { srv ->
+            srv.overworld.getEntitiesByClass(net.minecraft.entity.ItemEntity::class.java, net.minecraft.util.math.Box(corner).expand(6.0)) { it.stack.isOf(GearItems.EIRHOLM_SEAL) }.sumOf { it.stack.count }
+        }
+        check(drops == 1) { "Breaking a burning gate must drop exactly one seal, got $drops" }
         log("Portal entry without a seal, victory gate creation and slot reuse passed")
     }
 }
