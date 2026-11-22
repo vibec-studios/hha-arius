@@ -29,6 +29,7 @@ internal class AriusNavigation(private val fight: EirholmFight, private val acto
     private var goal: Vec3d? = null
     private var replanAt = 0L
     private var blocked = 0
+    private var directUntil = 0L
 
     fun step(to: Vec3d, speed: Double, faceTarget: Boolean): Boolean {
         val dest = fight.clampToArena(to, 0.6)
@@ -47,8 +48,13 @@ internal class AriusNavigation(private val fight: EirholmFight, private val acto
         val now = fight.now
         // Eine laufende Route wird zu Ende gegangen: Der Wechsel zwischen Direktweg und Route ließ ihn sonst pendeln.
         if (route.isEmpty()) {
-            if (clearLine(start, dest)) return advance(start, dest, speed)
-            if (now >= replanAt) plan(start, dest)
+            // Die Sichtprüfung ist teuer und läuft nur alle paar Ticks; jeder Schritt selbst wird trotzdem geprüft.
+            if (blocked < 2 && (now < directUntil || clearLine(start, dest))) {
+                if (now >= directUntil) directUntil = now + 3
+                return advance(start, dest, speed)
+            }
+            directUntil = 0L
+            if (now >= replanAt || blocked >= 2) plan(start, dest)
         } else if ((goal?.squaredDistanceTo(dest) ?: 99.0) > 4.0 && now >= replanAt) {
             plan(start, dest)
         }
@@ -58,7 +64,7 @@ internal class AriusNavigation(private val fight: EirholmFight, private val acto
             return false
         }
         // Liegt ein späterer Eckpunkt schon frei, wird die Ecke abgekürzt.
-        while (next + 1 < route.size && clearLine(start, route[next + 1])) next++
+        if (now % 3L == 0L) while (next + 1 < route.size && clearLine(start, route[next + 1])) next++
         val point = route[next]
         if (hypot(point.x - start.x, point.z - start.z) <= max(speed, 0.3)) {
             if (next + 1 < route.size) {
@@ -69,7 +75,8 @@ internal class AriusNavigation(private val fight: EirholmFight, private val acto
                 return if (clearLine(start, dest)) advance(start, dest, speed) else false
             }
         }
-        return advance(start, route[next], speed).also { if (blocked >= STUCK) replan(start, dest) }
+        // Hängt er an einer gestrafften Ecke, geht er die ungestraffte Route Block für Block.
+        return advance(start, route[next], speed).also { if (blocked >= STUCK) plan(start, dest, pull = false) }
     }
 
     private fun advance(start: Vec3d, toward: Vec3d, speed: Double): Boolean {
@@ -85,16 +92,12 @@ internal class AriusNavigation(private val fight: EirholmFight, private val acto
         return false
     }
 
-    private fun replan(start: Vec3d, dest: Vec3d) {
-        blocked = 0
-        plan(start, dest)
-    }
-
     private fun clearRoute() {
         route = emptyList()
         next = 0
         goal = null
         blocked = 0
+        directUntil = 0L
     }
 
     /** Dreht ihn mit höchstens [TURN] Grad je Tick; im Stand bleibt der Blick ruhig. */
@@ -117,8 +120,8 @@ internal class AriusNavigation(private val fight: EirholmFight, private val acto
             .filter { it <= refY + 1.01 }.maxOrNull()
     }
 
-    private fun bodyFree(x: Double, y: Double, z: Double): Boolean {
-        val r = actor.width * 0.42
+    private fun bodyFree(x: Double, y: Double, z: Double, margin: Double = 0.0): Boolean {
+        val r = actor.width * 0.42 + margin
         return !fight.world.getBlockCollisions(actor, Box(x - r, y + 0.02, z - r, x + r, y + actor.height, z + r)).iterator().hasNext()
     }
 
@@ -162,14 +165,15 @@ internal class AriusNavigation(private val fight: EirholmFight, private val acto
     private fun clearLine(from: Vec3d, to: Vec3d): Boolean {
         val distance = hypot(to.x - from.x, to.z - from.z)
         if (distance < 0.05) return true
-        val samples = ceil(distance / 0.45).toInt().coerceIn(1, 96)
+        val samples = ceil(distance / 0.28).toInt().coerceIn(1, 200)
         var y = if (groundAt(from.x, from.z, from.y) != null) from.y else fight.floorY
         for (i in 1..samples) {
             val k = i.toDouble() / samples
             val x = from.x + (to.x - from.x) * k
             val z = from.z + (to.z - from.z) * k
             val top = groundAt(x, z, y) ?: return false
-            if (!bodyFree(x, top, z)) return false
+            // Etwas Luft zur Sichtlinie: Sonst gilt eine Ecke als frei, an der der Körper beim Gehen hängen bleibt.
+            if (!bodyFree(x, top, z, 0.08)) return false
             y = top
         }
         return true
@@ -208,7 +212,8 @@ internal class AriusNavigation(private val fight: EirholmFight, private val acto
         return best
     }
 
-    private fun plan(start: Vec3d, dest: Vec3d) {
+    private fun plan(start: Vec3d, dest: Vec3d, pull: Boolean = true) {
+        blocked = 0
         goal = dest
         replanAt = fight.now + REPLAN
         next = 0
@@ -277,6 +282,10 @@ internal class AriusNavigation(private val fight: EirholmFight, private val acto
         }
         raw.reverse()
         if (found != null) raw[raw.lastIndex] = Vec3d(dest.x, raw.last().y, dest.z)
+        if (!pull) {
+            route = raw
+            return
+        }
         // Straffen: von jedem Eckpunkt zum weitesten frei sichtbaren.
         val pulled = ArrayList<Vec3d>()
         var from = start

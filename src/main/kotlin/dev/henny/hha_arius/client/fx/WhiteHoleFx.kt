@@ -267,7 +267,7 @@ class WhiteHoleFx(val center: Vec3d, private val radius: Double, private var pul
                 val r1 = r0 + (diskR - R) / 8.0 * 1.15
                 val col = dev.henny.hha.client.vfx.lerpColor(
                     dev.henny.hha.client.vfx.lerpColor(0xFFFFFFFF.toInt(), 0xFF9FC4F0.toInt(), f),
-                    dev.henny.hha.client.vfx.lerpColor(0xFFFFE2A0.toInt(), 0xFFE0443A.toInt(), f), twist(time),
+                    dev.henny.hha.client.vfx.lerpColor(0xFFFFE2A0.toInt(), 0xFFC98A1E.toInt(), f), twist(time),
                 )
                 val a = (1f - f * 0.8f) * 0.5f * k
                 d.ring(VfxLayers.FLOW_ADD, center, du, dv, r0, r1, withAlpha(col, a), withAlpha(col, a * 0.4f), segments = 96,
@@ -328,9 +328,9 @@ class WhiteHoleFx(val center: Vec3d, private val radius: Double, private var pul
                 d.billboard(VfxLayers.FLARE_ADD, pos, 0.25 + 0.35 * tw, withAlpha(0xFFFFFFFF.toInt(), 0.8f * tw * k))
             }
             // Die Scheibe selbst: harte, gleißend weiße Kugel mit Korona
-            d.sphere(VfxLayers.SHARD_ALPHA, center, R, { _ -> withAlpha(dev.henny.hha.client.vfx.lerpColor(0xFFFFFFFF.toInt(), 0xFF120A12.toInt(), twist(time)), k) }, lat = 14, lon = 24)
+            d.sphere(VfxLayers.SHARD_ALPHA, center, R, { _ -> withAlpha(dev.henny.hha.client.vfx.lerpColor(0xFFFFFFFF.toInt(), 0xFF0A1826.toInt(), twist(time)), k) }, lat = 14, lon = 24)
             // Umkehr: ein glühender Rand um das dunkle Herz.
-            if (inverted) d.ring(VfxLayers.GLOW_ADD, center, d.camRight, d.camUp, R * 1.0, R * 1.5, withAlpha(0xFFFFB040.toInt(), 0.95f * k * twist(time)), withAlpha(0xFFE0443A.toInt(), 0f), segments = 72)
+            if (inverted) d.ring(VfxLayers.GLOW_ADD, center, d.camRight, d.camUp, R * 1.0, R * 1.5, withAlpha(0xFFFFB040.toInt(), 0.95f * k * twist(time)), withAlpha(0xFFC98A1E.toInt(), 0f), segments = 72)
             d.billboard(VfxLayers.GLOW_ADD, center, R * 2.4, withAlpha(0xFFFFFFFF.toInt(), 0.6f * k))
             d.billboard(VfxLayers.GLOW_ADD, center, R * 6.0, withAlpha(0xFFDDEBFF.toInt(), 0.25f * k))
         }

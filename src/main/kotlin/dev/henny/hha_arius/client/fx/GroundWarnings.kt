@@ -10,6 +10,7 @@ import net.minecraft.client.world.ClientWorld
 import net.minecraft.util.math.BlockPos
 import net.minecraft.util.math.Direction
 import net.minecraft.util.math.Vec3d
+import java.util.Random
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -22,25 +23,28 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * Bodenmarker und Trefferbilder in Eirholm, gebaut für den hellsten Fall: Fullbright-Gamma auf weißem Schnee, ohne Nebel
- * und ohne Partikel. Additives Licht verschwindet dort, also trägt dunkle Tinte die Form und die Farbe liegt darauf:
- * * Rot ist Gefahr, Gold ist sicher.
- * * Der Rand ist eine scharfe Linie mit Gravur, das Innere bleibt frei. Es gibt keine Bodenfläche und keine Wände.
- * * Eine schmale Front läuft zum Rand: Erreicht sie ihn, schlägt der Angriff ein.
- * * Im letzten Drittel stellen sich kleine Dornen am Rand auf, damit der Marker im Sturm über den Schnee ragt.
+ * Bodenmarker und Trefferbilder in Eirholm: eine einzige Frostsprache, gebaut für den hellsten Fall (Fullbright-Gamma auf
+ * weißem Schnee, ohne Nebel und Partikel). Additives Licht verschwindet dort, also trägt dunkle Eistinte die Form:
+ * * Der Rand ist eine haarfeine, dunkelblaue Linie mit hellem Eisgrat. Es gibt keine Bodenfläche und keine Wände.
+ * * Risse und Raureif kriechen vom Rand zur Mitte (Ring) oder die Bahn entlang (Linie, Kegel). Sie kommen genau beim
+ *   Treffer an, und eine feine Frostfront zeigt den Stand.
+ * * Gold bedeutet sicher: gleich fein, aber ohne Risse.
  * Die Linienbreite wächst mit dem Abstand zur Kamera, damit auch ferne Marker lesbar bleiben.
  */
 object GroundWarnings {
 
-    private class Palette(val shadow: Int, val ink: Int, val line: Int, val hot: Int, val shade: Int)
+    private class Palette(val halo: Int, val ink: Int, val line: Int, val hot: Int)
 
-    private val DANGER = Palette(0xFF22040A.toInt(), 0xFF4A0712.toInt(), 0xFFE5122C.toInt(), 0xFFFFD2C4.toInt(), 0xFF9E1026.toInt())
-    private val SAFE = Palette(0xFF2B1C03.toInt(), 0xFF5A3A04.toInt(), 0xFFFFB400.toInt(), 0xFFFFF6D2.toInt(), 0xFFE89A00.toInt())
+    private val FROST = Palette(0xFF0C2C4C.toInt(), 0xFF103C66.toInt(), 0xFF57C6F2.toInt(), 0xFFF2FCFF.toInt())
+    private val SAFE = Palette(0xFF3A2704.toInt(), 0xFF6B4708.toInt(), 0xFFFFC23A.toInt(), 0xFFFFF8E0.toInt())
 
     /** Punktfolge auf dem Boden, je Punkt die Normale zur Innenseite (auf Gehrung gestreckt). */
     private class Poly(val pts: Array<Vec3d>, val ns: Array<Vec3d>, val closed: Boolean) {
         val spans: Int get() = if (closed) pts.size else pts.size - 1
     }
+
+    /** Ein Riss: läuft zwischen den Fortschritten [from] und [to] von seinem ersten zum letzten Punkt. */
+    private class Crack(val pts: Array<Vec3d>, val from: Float, val to: Float, val width: Double)
 
     private class Mark(
         val kind: Vfx.Kind,
@@ -52,9 +56,9 @@ object GroundWarnings {
         val born: Long,
         val life: Int,
         val rims: List<Poly>,
-    ) {
-        val heights = HashMap<Long, Double>()
-    }
+        val cracks: List<Crack>,
+        val heights: HashMap<Long, Double>,
+    )
 
     private class Burst(
         val kind: Vfx.Kind,
@@ -67,7 +71,6 @@ object GroundWarnings {
         val life: Int,
     )
 
-    private val X = Vec3d(1.0, 0.0, 0.0)
     private val Z = Vec3d(0.0, 0.0, 1.0)
 
     private var level: ClientWorld? = null
@@ -112,25 +115,32 @@ object GroundWarnings {
         val vector = Vec3d(p.dx, p.dy, p.dz)
         val radius = p.a.toDouble().coerceIn(0.05, 256.0)
         val inner = p.b.toDouble()
+        val safe = kind != Vfx.Kind.TELEGRAPH_CONE && p.style == Vfx.Style.GOLD.ordinal
         val heights = HashMap<Long, Double>()
-        fun ground(x: Double, z: Double) = Vec3d(x, heightAt(world, heights, x, origin.y, z), z)
+        val ground = { x: Double, z: Double -> Vec3d(x, heightAt(world, heights, x, origin.y, z), z) }
+        val rng = Random(java.lang.Double.doubleToLongBits(origin.x * 31.0 + origin.z) xor world.time)
         val rims = ArrayList<Poly>(2)
+        val cracks = ArrayList<Crack>()
         when (kind) {
             Vfx.Kind.TELEGRAPH_RING -> {
-                rims += circle(origin, radius, ::ground)
-                if (inner > 0.05 && inner < radius - 0.05) rims += circle(origin, inner, ::ground, invert = true)
+                rims += circle(origin, radius, ground)
+                val hole = if (inner > 0.05 && inner < radius - 0.05) inner else 0.0
+                if (hole > 0.0) rims += circle(origin, hole, ground, invert = true)
+                if (!safe) ringCracks(origin, radius, hole, rng, ground, cracks)
             }
             Vfx.Kind.TELEGRAPH_LINE -> {
                 val flat = Vec3d(vector.x - origin.x, 0.0, vector.z - origin.z)
                 if (flat.lengthSquared() < 1e-6) return true
                 val side = Vec3d(-flat.z, 0.0, flat.x).normalize().multiply(radius)
-                rims += polygon(listOf(origin.add(side), vector.add(side), vector.subtract(side), origin.subtract(side)), ::ground)
+                rims += polygon(listOf(origin.add(side), vector.add(side), vector.subtract(side), origin.subtract(side)), ground)
+                if (!safe) laneCracks(origin, flat, side, rng, ground, cracks)
             }
             else -> {
                 val heading = atan2(vector.z, vector.x)
                 val half = Math.toRadians(inner.coerceIn(1.0, 180.0))
                 if (half >= PI - 0.01) {
-                    rims += circle(origin, radius, ::ground)
+                    rims += circle(origin, radius, ground)
+                    ringCracks(origin, radius, 0.0, rng, ground, cracks)
                 } else {
                     val n = ceil(half * 2 * radius / 0.8).toInt().coerceIn(8, 160)
                     val corners = ArrayList<Vec3d>(n + 2)
@@ -139,13 +149,13 @@ object GroundWarnings {
                         val a = heading - half + 2 * half * i / n
                         corners += origin.add(radius * cos(a), 0.0, radius * sin(a))
                     }
-                    rims += polygon(corners, ::ground)
+                    rims += polygon(corners, ground)
+                    coneCracks(origin, radius, heading, half, rng, ground, cracks)
                 }
             }
         }
         if (marks.size >= 96) marks.removeAt(0)
-        val safe = kind != Vfx.Kind.TELEGRAPH_CONE && p.style == Vfx.Style.GOLD.ordinal
-        marks += Mark(kind, origin, vector, radius, inner, safe, world.time, p.life.coerceAtLeast(1), rims).also { it.heights.putAll(heights) }
+        marks += Mark(kind, origin, vector, radius, inner, safe, world.time, p.life.coerceAtLeast(1), rims, cracks, heights)
         return true
     }
 
@@ -176,7 +186,7 @@ object GroundWarnings {
     }
 
     private fun circle(c: Vec3d, r: Double, ground: (Double, Double) -> Vec3d, invert: Boolean = false): Poly {
-        val n = ceil(2 * PI * r / 0.7).toInt().coerceIn(28, 220)
+        val n = ceil(2 * PI * r / 0.6).toInt().coerceIn(32, 240)
         val pts = Array(n) { i ->
             val a = 2 * PI * i / n
             ground(c.x + r * cos(a), c.z + r * sin(a))
@@ -195,7 +205,7 @@ object GroundWarnings {
         for (i in corners.indices) {
             val a = corners[i]
             val b = corners[(i + 1) % corners.size]
-            val n = ceil(sqrt((b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z)) / 0.8).toInt().coerceIn(1, 200)
+            val n = ceil(sqrt((b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z)) / 0.7).toInt().coerceIn(1, 220)
             for (k in 0 until n) {
                 val s = k.toDouble() / n
                 pts += ground(a.x + (b.x - a.x) * s, a.z + (b.z - a.z) * s)
@@ -235,6 +245,76 @@ object GroundWarnings {
         }
     }
 
+    /** Gezackter Riss von [a] nach [b]; die Auslenkung läuft zu beiden Enden auf null. */
+    private fun jagged(a: Vec3d, b: Vec3d, amp: Double, rng: Random, ground: (Double, Double) -> Vec3d): Array<Vec3d> {
+        val dx = b.x - a.x
+        val dz = b.z - a.z
+        val len = sqrt(dx * dx + dz * dz)
+        val n = ceil(len / 0.62).toInt().coerceIn(2, 64)
+        val nx = if (len < 1e-6) 0.0 else -dz / len
+        val nz = if (len < 1e-6) 0.0 else dx / len
+        var off = 0.0
+        return Array(n + 1) { i ->
+            val s = i.toDouble() / n
+            off = (off + (rng.nextDouble() - 0.5) * amp * 1.1) * 0.78
+            val env = sin(s * PI).coerceAtLeast(0.0)
+            ground(a.x + dx * s + nx * off * env, a.z + dz * s + nz * off * env)
+        }
+    }
+
+    /** Seitliche Raureif-Äste an einem Riss, die später loslaufen und früher enden als der Hauptriss. */
+    private fun branches(main: Array<Vec3d>, from: Float, to: Float, reach: Double, rng: Random, ground: (Double, Double) -> Vec3d, out: ArrayList<Crack>) {
+        val count = 1 + rng.nextInt(2)
+        for (b in 0 until count) {
+            val s = 0.18 + rng.nextDouble() * 0.55
+            val i = (s * (main.size - 2)).toInt().coerceIn(0, main.size - 2)
+            val at = main[i]
+            val next = main[i + 1]
+            val base = atan2(next.z - at.z, next.x - at.x)
+            val ang = base + (if (rng.nextBoolean()) 1 else -1) * (0.45 + rng.nextDouble() * 0.5)
+            val len = reach * (0.5 + rng.nextDouble() * 0.5)
+            val tip = Vec3d(at.x + cos(ang) * len, at.y, at.z + sin(ang) * len)
+            val start = from + (to - from) * s.toFloat()
+            out += Crack(jagged(at, tip, 0.22, rng, ground), start, min(to, start + (to - from) * 0.3f), 0.62)
+        }
+    }
+
+    private fun ringCracks(c: Vec3d, r: Double, hole: Double, rng: Random, ground: (Double, Double) -> Vec3d, out: ArrayList<Crack>) {
+        val n = ceil(r * 1.7).toInt().coerceIn(6, 26)
+        val turn = rng.nextDouble() * PI * 2
+        for (i in 0 until n) {
+            val a = turn + 2 * PI * (i + (rng.nextDouble() - 0.5) * 0.45) / n
+            val from = Vec3d(c.x + r * cos(a), c.y, c.z + r * sin(a))
+            val end = if (hole > 0.0) hole else r * 0.02
+            val to = Vec3d(c.x + end * cos(a), c.y, c.z + end * sin(a))
+            val main = jagged(from, to, min(0.42, r * 0.09), rng, ground)
+            out += Crack(main, 0f, 1f, 1.0)
+            branches(main, 0f, 1f, min(1.5, r * 0.3), rng, ground, out)
+        }
+    }
+
+    private fun laneCracks(origin: Vec3d, flat: Vec3d, side: Vec3d, rng: Random, ground: (Double, Double) -> Vec3d, out: ArrayList<Crack>) {
+        val count = ceil(side.length() * 1.6).toInt().coerceIn(2, 7)
+        for (i in 0 until count) {
+            val o = if (count == 1) 0.0 else -0.72 + 1.44 * i / (count - 1)
+            val a = origin.add(side.multiply(o))
+            val main = jagged(a, a.add(flat), 0.3, rng, ground)
+            out += Crack(main, 0f, 1f, 1.0)
+            branches(main, 0f, 1f, min(1.2, side.length() * 0.6), rng, ground, out)
+        }
+    }
+
+    private fun coneCracks(c: Vec3d, r: Double, heading: Double, half: Double, rng: Random, ground: (Double, Double) -> Vec3d, out: ArrayList<Crack>) {
+        val n = ceil(half * 2 * r / 1.5).toInt().coerceIn(3, 18)
+        for (i in 0 until n) {
+            val a = heading - half * 0.86 + 2 * half * 0.86 * (i + 0.5) / n
+            val to = Vec3d(c.x + r * 0.98 * cos(a), c.y, c.z + r * 0.98 * sin(a))
+            val main = jagged(c, to, min(0.4, r * 0.08), rng, ground)
+            out += Crack(main, 0f, 1f, 1.0)
+            branches(main, 0f, 1f, min(1.3, r * 0.26), rng, ground, out)
+        }
+    }
+
     // --- Zeichnen ------------------------------------------------------------------------------------------------------
 
     fun render(world: ClientWorld, draw: VfxDraw) {
@@ -261,46 +341,78 @@ object GroundWarnings {
         val t = time - m.born + d.tickDelta
         val p = (t / m.life).coerceIn(0f, 1f)
         val appear = (t / 4f).coerceIn(0f, 1f)
-        val late = ((p - 0.62f) / 0.38f).coerceIn(0f, 1f)
-        val beat = 0.5f + 0.5f * sin(t * (0.5f + 0.7f * late))
+        val late = ((p - 0.7f) / 0.3f).coerceIn(0f, 1f)
         val storm = SnowStorm.whiteout.coerceIn(0f, 1f)
-        val pal = if (m.safe) SAFE else DANGER
-        val grow = 1.0 + 0.3 * storm + 0.22 * late * beat
-        val near = m.origin.squaredDistanceTo(d.cam) < 70.0 * 70.0
+        val pal = if (m.safe) SAFE else FROST
+        val grow = 1.0 + 0.32 * storm
 
         for (rim in m.rims) {
-            // Innenschatten: nur eine schmale Kante, damit das Feld als Fläche lesbar ist, ohne den Boden zu fluten.
-            val inside = min(1.25, m.radius * 0.42)
-            band(d, vc, rim, 0.0, inside, 0.012, withAlpha(pal.shade, (0.17f + 0.15f * late + 0.1f * storm) * appear), withAlpha(pal.shade, 0f), false)
-            // Weicher dunkler Hof, trägt die Linie auf weißem Schnee.
-            val hof = 0.42 * grow
-            band(d, vc, rim, -hof, 0.0, 0.016, withAlpha(pal.shadow, 0f), withAlpha(pal.shadow, (0.3f + 0.2f * storm) * appear), true)
-            band(d, vc, rim, 0.0, hof, 0.016, withAlpha(pal.shadow, (0.3f + 0.2f * storm) * appear), withAlpha(pal.shadow, 0f), true)
-            // Schnittkante.
-            val ink = 0.15 * grow
-            band(d, vc, rim, -ink, ink, 0.02, withAlpha(pal.ink, 0.96f * appear), withAlpha(pal.ink, 0.96f * appear), true)
-            val line = 0.088 * grow
-            band(d, vc, rim, -line, line, 0.024, withAlpha(pal.line, appear), withAlpha(pal.line, appear), true)
-            val core = 0.026 * grow * (1.0 + late)
-            band(d, vc, rim, -core, core, 0.028, withAlpha(pal.hot, (0.28f + 0.72f * late) * appear), withAlpha(pal.hot, (0.28f + 0.72f * late) * appear), true)
-            if (near) engrave(d, vc, rim, pal, m.safe, appear, late, storm, t)
+            val hof = 0.17 * grow
+            val hofA = (0.2f + 0.2f * storm) * appear
+            band(d, vc, rim, -hof, 0.0, 0.012, withAlpha(pal.halo, 0f), withAlpha(pal.halo, hofA))
+            band(d, vc, rim, 0.0, hof, 0.012, withAlpha(pal.halo, hofA), withAlpha(pal.halo, 0f))
+            val ink = 0.062 * grow
+            band(d, vc, rim, -ink, ink, 0.018, withAlpha(pal.ink, 0.95f * appear), withAlpha(pal.ink, 0.95f * appear))
+            val core = 0.024 * grow * (1.0 + 0.5 * late)
+            val edge = if (late > 0f) lerpColor(pal.line, pal.hot, late) else pal.line
+            band(d, vc, rim, -core, core, 0.024, withAlpha(edge, appear), withAlpha(edge, appear))
         }
-
-        val heights = m.heights
-        val ground = { x: Double, z: Double -> Vec3d(x, heightAt(world, heights, x, m.origin.y, z), z) }
+        if (m.origin.squaredDistanceTo(d.cam) < 80.0 * 80.0) for (c in m.cracks) crack(d, vc, c, p, pal, appear, late, grow)
+        val ground = { x: Double, z: Double -> Vec3d(x, heightAt(world, m.heights, x, m.origin.y, z), z) }
         front(m, p, ground)?.let { f ->
-            val trail = min(0.95, m.radius * 0.26)
-            band(d, vc, f, 0.0, trail, 0.03, withAlpha(pal.line, (0.5f + 0.35f * late) * appear), withAlpha(pal.line, 0f), false)
-            val w = 0.1 * grow
-            band(d, vc, f, -w, w, 0.034, withAlpha(pal.ink, 0.92f * appear), withAlpha(pal.ink, 0.92f * appear), true)
-            val h = 0.046 * grow
-            band(d, vc, f, -h, h, 0.038, withAlpha(pal.hot, appear), withAlpha(pal.hot, appear), true)
+            val trail = min(0.48, m.radius * 0.14)
+            band(d, vc, f, 0.0, trail, 0.028, withAlpha(pal.line, 0.34f * appear), withAlpha(pal.line, 0f))
+            val w = 0.05 * grow
+            band(d, vc, f, -w, w, 0.032, withAlpha(pal.ink, 0.9f * appear), withAlpha(pal.ink, 0.9f * appear))
+            val h = 0.022 * grow
+            band(d, vc, f, -h, h, 0.036, withAlpha(pal.hot, appear), withAlpha(pal.hot, appear))
         }
-        if (near && (m.kind == Vfx.Kind.TELEGRAPH_LINE || m.kind == Vfx.Kind.TELEGRAPH_CONE)) chevrons(d, vc, m, pal, appear, t, ground)
+    }
+
+    /** Zeichnet einen Riss bis zum aktuellen Fortschritt: spitz auslaufend, dunkler Grund, heller Grat. */
+    private fun crack(d: VfxDraw, vc: VertexConsumer, c: Crack, p: Float, pal: Palette, appear: Float, late: Float, grow: Double) {
+        if (p <= c.from) return
+        val u = ((p - c.from) / (c.to - c.from)).coerceIn(0f, 1f)
+        val segs = c.pts.size - 1
+        val reach = u * segs
+        val whole = floor(reach).toInt().coerceAtMost(segs)
+        val frac = reach - whole
+        val ink = withAlpha(pal.ink, 0.86f * appear)
+        val glint = withAlpha(if (late > 0f) lerpColor(pal.line, pal.hot, late) else pal.line, 0.95f * appear)
+        with(d) {
+            for (i in 0 until min(whole + 1, segs)) {
+                val a = c.pts[i]
+                val full = c.pts[i + 1]
+                val b = if (i == whole) a.lerp(full, frac.toDouble()) else full
+                val dx = b.x - a.x
+                val dz = b.z - a.z
+                val len = sqrt(dx * dx + dz * dz)
+                if (len < 1e-3) continue
+                val nx = -dz / len
+                val nz = dx / len
+                val sa = (1.0 - i.toDouble() / segs * 0.62) * c.width * grow * widen(a, d.cam)
+                val sb = (1.0 - (i + 1.0) / segs * 0.62) * c.width * grow * widen(b, d.cam) * (if (i == whole) 0.3 else 1.0)
+                for (layer in 0..1) {
+                    val wa = (if (layer == 0) 0.05 else 0.017) * sa
+                    val wb = (if (layer == 0) 0.05 else 0.017) * sb
+                    val col = if (layer == 0) ink else glint
+                    val y = 0.02 + layer * 0.004
+                    vc.put(a.x - nx * wa, a.y + y, a.z - nz * wa, 0f, 0f, col)
+                    vc.put(a.x + nx * wa, a.y + y, a.z + nz * wa, 1f, 0f, col)
+                    vc.put(b.x + nx * wb, b.y + y, b.z + nz * wb, 1f, 1f, col)
+                    vc.put(b.x - nx * wb, b.y + y, b.z - nz * wb, 0f, 1f, col)
+                }
+            }
+        }
+    }
+
+    private fun lerpColor(a: Int, b: Int, k: Float): Int {
+        fun ch(shift: Int) = (((a ushr shift) and 255) + (((b ushr shift) and 255) - ((a ushr shift) and 255)) * k).toInt().coerceIn(0, 255)
+        return (0xFF shl 24) or (ch(16) shl 16) or (ch(8) shl 8) or ch(0)
     }
 
     /** Ein Streifen entlang [poly] zwischen den Versätzen [from] und [to] (nach innen positiv). */
-    private fun band(d: VfxDraw, vc: VertexConsumer, poly: Poly, from: Double, to: Double, lift: Double, cFrom: Int, cTo: Int, scaled: Boolean) {
+    private fun band(d: VfxDraw, vc: VertexConsumer, poly: Poly, from: Double, to: Double, lift: Double, cFrom: Int, cTo: Int) {
         val pts = poly.pts
         val ns = poly.ns
         val size = pts.size
@@ -309,8 +421,8 @@ object GroundWarnings {
                 val j = (i + 1) % size
                 val a = pts[i]
                 val b = pts[j]
-                val sa = if (scaled) widen(a, d.cam) else 1.0
-                val sb = if (scaled) widen(b, d.cam) else 1.0
+                val sa = widen(a, d.cam)
+                val sb = widen(b, d.cam)
                 val na = ns[i]
                 val nb = ns[j]
                 vc.put(a.x + na.x * from * sa, a.y + lift, a.z + na.z * from * sa, 0f, 0f, cFrom)
@@ -325,84 +437,37 @@ object GroundWarnings {
         val dx = p.x - cam.x
         val dy = p.y - cam.y
         val dz = p.z - cam.z
-        return (sqrt(dx * dx + dy * dy + dz * dz) / 11.0).coerceIn(1.0, 2.8)
+        return (sqrt(dx * dx + dy * dy + dz * dz) / 9.0).coerceIn(0.7, 3.2)
     }
 
-    /** Gravur am Rand: feine Kerben nach innen (Gefahr) oder Rauten (sicher), im letzten Drittel kleine Dornen. */
-    private fun engrave(d: VfxDraw, vc: VertexConsumer, rim: Poly, pal: Palette, safe: Boolean, appear: Float, late: Float, storm: Float, t: Float) {
-        val every = 2
-        val strong = withAlpha(pal.ink, 0.88f * appear)
-        val bright = withAlpha(pal.line, 0.95f * appear)
-        val rise = max(late, storm * 0.55f)
-        with(d) {
-            var i = 0
-            var n = 0
-            while (i < rim.pts.size) {
-                val a = rim.pts[i]
-                val nn = rim.ns[i]
-                val s = widen(a, d.cam)
-                val major = n % 4 == 0
-                val along = Vec3d(-nn.z, 0.0, nn.x)
-                val y = a.y + 0.03
-                if (safe) {
-                    val c = a.add(nn.multiply(0.42 * s))
-                    val r = (if (major) 0.15 else 0.09) * s
-                    vc.put(c.x + nn.x * r, y, c.z + nn.z * r, 0f, 0f, bright)
-                    vc.put(c.x + along.x * r, y, c.z + along.z * r, 1f, 0f, bright)
-                    vc.put(c.x - nn.x * r, y, c.z - nn.z * r, 1f, 1f, strong)
-                    vc.put(c.x - along.x * r, y, c.z - along.z * r, 0f, 1f, strong)
-                } else {
-                    val w = 0.04 * s
-                    val len = (if (major) 0.72 else 0.36) * s
-                    vc.put(a.x + along.x * w, y, a.z + along.z * w, 0f, 0f, bright)
-                    vc.put(a.x + nn.x * len, y, a.z + nn.z * len, 1f, 0f, withAlpha(pal.ink, 0f))
-                    vc.put(a.x + nn.x * len, y, a.z + nn.z * len, 1f, 1f, withAlpha(pal.ink, 0f))
-                    vc.put(a.x - along.x * w, y, a.z - along.z * w, 0f, 1f, bright)
-                }
-                if (rise > 0.01f && n % 3 == 0) {
-                    val wob = 0.82 + 0.18 * sin(t * 0.55 + n * 1.7)
-                    val h = (if (major) 0.92 else 0.6) * rise * wob * (0.8 + 0.2 * s)
-                    val base = 0.075 * s
-                    val tip = a.add(0.0, h, 0.0)
-                    val foot = withAlpha(pal.line, (0.8f + 0.2f * late) * appear)
-                    val top = withAlpha(pal.hot, 0.25f * appear)
-                    for (side in 0..1) {
-                        val w = if (side == 0) along.multiply(base) else nn.multiply(base)
-                        vc.put(a.x - w.x, a.y, a.z - w.z, 0f, 1f, foot)
-                        vc.put(a.x + w.x, a.y, a.z + w.z, 1f, 1f, foot)
-                        vc.put(tip.x, tip.y, tip.z, 1f, 0f, top)
-                        vc.put(tip.x, tip.y, tip.z, 0f, 0f, top)
-                    }
-                }
-                i += every
-                n++
-            }
-        }
-    }
-
-    /** Die laufende Front: erreicht sie den Rand, schlägt der Angriff ein. Die Normalen zeigen zum Ursprung. */
+    /**
+     * Die Frostfront zeigt den Stand: beim Ring vom Rand zur Mitte, bei Linie und Kegel die Bahn entlang. Sie kommt genau
+     * beim Treffer an. Die Normalen zeigen zu der Seite, von der sie kommt.
+     */
     private fun front(m: Mark, p: Float, ground: (Double, Double) -> Vec3d): Poly? {
-        val k = p * p * (3f - 2f * p) * 0.35 + p * 0.65
         val pts = ArrayList<Vec3d>()
         var closed = false
+        var toward = m.origin
         when (m.kind) {
             Vfx.Kind.TELEGRAPH_RING -> {
-                val from = if (m.inner > 0.05 && m.inner < m.radius) m.inner else 0.0
-                val r = from + (m.radius - from) * k
-                if (r < 0.2) return null
-                val n = ceil(2 * PI * r / 0.8).toInt().coerceIn(14, 140)
+                val hole = if (m.inner > 0.05 && m.inner < m.radius) m.inner else 0.0
+                val r = m.radius + (hole - m.radius) * p
+                if (r < 0.18) return null
+                val n = ceil(2 * PI * r / 0.7).toInt().coerceIn(14, 150)
                 for (i in 0 until n) {
                     val a = 2 * PI * i / n
                     pts += ground(m.origin.x + r * cos(a), m.origin.z + r * sin(a))
                 }
                 closed = true
+                val probe = pts[0]
+                toward = probe.add(probe.subtract(m.origin))
             }
             Vfx.Kind.TELEGRAPH_CONE -> {
-                val r = m.radius * k
+                val r = m.radius * p
                 if (r < 0.25) return null
                 val heading = atan2(m.vector.z, m.vector.x)
                 val half = Math.toRadians(m.inner.coerceIn(1.0, 180.0))
-                val n = ceil(half * 2 * r / 0.8).toInt().coerceIn(4, 120)
+                val n = ceil(half * 2 * r / 0.7).toInt().coerceIn(4, 130)
                 for (i in 0..n) {
                     val a = heading - half + 2 * half * i / n
                     pts += ground(m.origin.x + r * cos(a), m.origin.z + r * sin(a))
@@ -412,8 +477,8 @@ object GroundWarnings {
                 val flat = Vec3d(m.vector.x - m.origin.x, 0.0, m.vector.z - m.origin.z)
                 if (flat.lengthSquared() < 1e-6) return null
                 val side = Vec3d(-flat.z, 0.0, flat.x).normalize().multiply(m.radius)
-                val c = m.origin.add(flat.multiply(k))
-                val n = ceil(m.radius * 2 / 0.8).toInt().coerceIn(2, 40)
+                val c = m.origin.add(flat.multiply(p.toDouble()))
+                val n = ceil(m.radius * 2 / 0.7).toInt().coerceIn(2, 40)
                 for (i in 0..n) {
                     val s = -1.0 + 2.0 * i / n
                     pts += ground(c.x + side.x * s, c.z + side.z * s)
@@ -422,54 +487,11 @@ object GroundWarnings {
         }
         if (pts.size < 2) return null
         var ns = miter(pts, closed, 1.0)
-        val probe = pts[pts.size / 2]
-        val toOrigin = Vec3d(m.origin.x - probe.x, 0.0, m.origin.z - probe.z)
-        if (ns[pts.size / 2].dotProduct(toOrigin) < 0.0) ns = Array(ns.size) { ns[it].multiply(-1.0) }
+        val mid = pts.size / 2
+        val probe = pts[if (closed) 0 else mid]
+        val back = Vec3d(toward.x - probe.x, 0.0, toward.z - probe.z)
+        if (ns[if (closed) 0 else mid].dotProduct(back) < 0.0) ns = Array(ns.size) { ns[it].multiply(-1.0) }
         return Poly(pts.toTypedArray(), ns, closed)
-    }
-
-    /** Laufende Winkel entlang der Stoßrichtung von Linie und Kegel. */
-    private fun chevrons(d: VfxDraw, vc: VertexConsumer, m: Mark, pal: Palette, appear: Float, t: Float, ground: (Double, Double) -> Vec3d) {
-        val dir: Vec3d
-        val length: Double
-        val half: Double
-        if (m.kind == Vfx.Kind.TELEGRAPH_LINE) {
-            val flat = Vec3d(m.vector.x - m.origin.x, 0.0, m.vector.z - m.origin.z)
-            length = flat.length()
-            if (length < 1.5) return
-            dir = flat.multiply(1.0 / length)
-            half = min(m.radius * 0.6, 0.95)
-        } else {
-            val flat = Vec3d(m.vector.x, 0.0, m.vector.z)
-            if (flat.lengthSquared() < 1e-6) return
-            dir = flat.normalize()
-            length = m.radius
-            half = min(m.radius * 0.16, 0.8)
-        }
-        val side = Vec3d(-dir.z, 0.0, dir.x)
-        val count = ceil(length / 3.4).toInt().coerceIn(2, 7)
-        with(d) {
-            for (i in 0 until count) {
-                val u = ((t * 0.035f + i.toFloat() / count) % 1f)
-                val fade = (min(u, 1f - u) * 6f).coerceIn(0f, 1f) * 0.8f * appear
-                if (fade < 0.02f) continue
-                val at = m.origin.add(dir.multiply(0.8 + (length - 1.2) * u))
-                val tip = ground(at.x, at.z)
-                val wide = half * (if (m.kind == Vfx.Kind.TELEGRAPH_CONE) (0.35 + 0.65 * u) else 1.0)
-                val back = dir.multiply(-wide * 0.72)
-                val c = withAlpha(pal.line, fade)
-                val soft = withAlpha(pal.ink, fade * 0.7f)
-                for (s in intArrayOf(-1, 1)) {
-                    val w = side.multiply(wide * s)
-                    val thick = dir.multiply(0.13)
-                    val y = tip.y + 0.04
-                    vc.put(tip.x, y, tip.z, 0f, 0f, c)
-                    vc.put(tip.x + thick.x, y, tip.z + thick.z, 1f, 0f, c)
-                    vc.put(tip.x + w.x + back.x + thick.x, y, tip.z + w.z + back.z + thick.z, 1f, 1f, soft)
-                    vc.put(tip.x + w.x + back.x, y, tip.z + w.z + back.z, 0f, 1f, soft)
-                }
-            }
-        }
     }
 
     // --- Trefferbilder ---------------------------------------------------------------------------------------------------
@@ -485,23 +507,23 @@ object GroundWarnings {
             val fade = (1f - u) * (1f - u) * fx
             if (fade <= 0.01f) continue
             val gold = b.style == Vfx.Style.GOLD.ordinal
-            val deep = if (gold) 0xFF5A3A04.toInt() else 0xFF12324F.toInt()
-            val mid = if (gold) 0xFFFFB400.toInt() else 0xFF58BDF0.toInt()
-            val hot = if (gold) 0xFFFFF6D2.toInt() else 0xFFF2FCFF.toInt()
+            val deep = if (gold) 0xFF6B4708.toInt() else 0xFF103C66.toInt()
+            val mid = if (gold) 0xFFFFC23A.toInt() else 0xFF57C6F2.toInt()
+            val hot = if (gold) 0xFFFFF8E0.toInt() else 0xFFF2FCFF.toInt()
             when (b.kind) {
                 Vfx.Kind.CRESCENT -> crescent(draw, vc, b, u, fade, deep, mid, hot)
                 Vfx.Kind.SHOCKWAVE -> {
                     val grow = 1.0 - (1.0 - u) * (1.0 - u) * (1.0 - u)
                     val r = max(0.3, b.a * grow)
-                    val thick = max(0.2, min(0.62, b.b * 0.34)) * (1.0 - u * 0.6)
-                    flatRing(draw, vc, b.pos.add(0.0, 0.12, 0.0), r - thick * 1.7, r - thick * 0.5, withAlpha(mid, 0f), withAlpha(mid, 0.5f * fade))
+                    val thick = max(0.14, min(0.4, b.b * 0.22)) * (1.0 - u * 0.6)
+                    flatRing(draw, vc, b.pos.add(0.0, 0.12, 0.0), r - thick * 2.2, r - thick * 0.5, withAlpha(mid, 0f), withAlpha(mid, 0.42f * fade))
                     flatRing(draw, vc, b.pos.add(0.0, 0.13, 0.0), r - thick * 0.5, r, withAlpha(deep, 0.9f * fade), withAlpha(deep, 0.9f * fade))
-                    flatRing(draw, vc, b.pos.add(0.0, 0.14, 0.0), r - thick * 0.34, r - thick * 0.1, withAlpha(hot, fade), withAlpha(hot, fade))
+                    flatRing(draw, vc, b.pos.add(0.0, 0.14, 0.0), r - thick * 0.34, r - thick * 0.12, withAlpha(hot, fade), withAlpha(hot, fade))
                 }
                 Vfx.Kind.NOVA -> {
                     val grow = 1.0 - (1.0 - u) * (1.0 - u)
                     val r = max(0.3, b.a * (0.3 + 0.8 * grow))
-                    val thick = max(0.1, r * 0.09)
+                    val thick = max(0.07, r * 0.06)
                     camRing(draw, vc, b.pos, r - thick, r, withAlpha(deep, 0.8f * fade), withAlpha(mid, 0.95f * fade))
                     camRing(draw, vc, b.pos, r - thick * 0.45, r - thick * 0.12, withAlpha(hot, fade), withAlpha(hot, fade))
                 }
@@ -516,7 +538,7 @@ object GroundWarnings {
         val side = Vec3d(-fwd.z, 0.0, fwd.x)
         val span = b.b.coerceIn(0.8, 2.6)
         val reach = b.a * (0.82 + 0.26 * u)
-        val thick = min(b.a * 0.2, 1.05) * (1.0 - u * 0.45)
+        val thick = min(b.a * 0.14, 0.7) * (1.0 - u * 0.45)
         val n = 26
         fun point(s: Double, off: Double): Vec3d {
             val a = (s - 0.5) * span
@@ -540,9 +562,9 @@ object GroundWarnings {
                 }
             }
         }
-        strip(0.0, thick, withAlpha(deep, 0.95f * fade), withAlpha(deep, 0.5f * fade), 0.0)
-        strip(thick * 0.08, thick * 0.72, withAlpha(mid, 0.92f * fade), withAlpha(mid, 0f), 0.004)
-        strip(thick * 0.12, thick * 0.34, withAlpha(hot, fade), withAlpha(hot, 0.35f * fade), 0.008)
+        strip(0.0, thick, withAlpha(deep, 0.95f * fade), withAlpha(deep, 0.4f * fade), 0.0)
+        strip(thick * 0.08, thick * 0.72, withAlpha(mid, 0.9f * fade), withAlpha(mid, 0f), 0.004)
+        strip(thick * 0.12, thick * 0.3, withAlpha(hot, fade), withAlpha(hot, 0.3f * fade), 0.008)
     }
 
     private fun flatRing(d: VfxDraw, vc: VertexConsumer, c: Vec3d, r0: Double, r1: Double, c0: Int, c1: Int) {

@@ -13,16 +13,16 @@ import kotlin.math.sin
 /** Konterhaltung: nur an Arius selbst sichtbar (Klinge, Nähte, Augen), ohne Bodenfläche, Text oder Zeichen. */
 object CounterStance {
 
-    private const val RED = 0xFFFF2A38.toInt()
-    private const val HOT = 0xFFFFD0C8.toInt()
+    private const val ICE = 0xFF6FD6FF.toInt()
+    private const val HOT = 0xFFF6FDFF.toInt()
 
-    /** Deckendes Rot, das auch auf weißem Schnee stehen bleibt. */
-    private const val SOLID = 0xFFD8101E.toInt()
+    /** Deckendes Tiefblau, das auch auf weißem Schnee stehen bleibt. */
+    private const val DEEP = 0xFF14508A.toInt()
     private const val GOLD = 0xFFFFD45A.toInt()
     private const val GOLD_INK = 0xFF5A3A04.toInt()
 
-    /** Dunkler Grund unter der roten Klinge: Auf weißem Schnee trägt er die Farbe. */
-    private const val INK = 0xFF3A0610.toInt()
+    /** Schwarzes Eis unter der Klinge: Auf weißem Schnee trägt es die Form. */
+    private const val INK = 0xFF061A30.toInt()
 
     private const val RELEASE_TICKS = 16
 
@@ -84,8 +84,8 @@ object CounterStance {
     }
 
     /**
-     * Die Haltung liest man an ihm selbst: Die Klinge färbt sich von der Wurzel her blutrot, ein Glanz läuft zur Spitze,
-     * Funken lösen sich von der Schneide. Nähte und Augen färbt [dev.henny.hha_arius.client.model.arius.AriusRenderer].
+     * Die Haltung liest man an ihm selbst: Die Klinge wird von der Wurzel her zu schwarzem Eis, ein weißer Glanz läuft zur Spitze,
+     * Eissplitter lösen sich von der Schneide. Nähte und Augen färbt [dev.henny.hha_arius.client.model.arius.AriusRenderer].
      */
     private fun drawStance(d: VfxDraw, e: AriusEntity, t: Float, td: Float) {
         val anchor = BladeAnchors.of(e) ?: return
@@ -93,15 +93,15 @@ object CounterStance {
         val pulse = 0.78f + 0.22f * sin(t * 0.62f)
         if (e.sheathed) {
             d.billboard(AriusLayers.VFX_SHARD, anchor.sheath, 0.3 * intro, withAlpha(INK, 0.9f * intro))
-            d.billboard(AriusLayers.VFX_GLOW, anchor.sheath, 0.46, withAlpha(RED, 0.75f * intro * pulse))
+            d.billboard(AriusLayers.VFX_GLOW, anchor.sheath, 0.46, withAlpha(ICE, 0.75f * intro * pulse))
             return
         }
         val axis = anchor.tip.subtract(anchor.base)
         val across = d.camForward.crossProduct(axis).let { if (it.lengthSquared() < 1e-5) d.camRight else it.normalize() }
         val edge = anchor.base.lerp(anchor.tip, intro.toDouble())
         d.band(AriusLayers.VFX_SHARD, anchor.base, edge, across, 0.105, withAlpha(INK, 0.92f * intro), withAlpha(INK, 0.86f * intro))
-        d.band(AriusLayers.VFX_SHARD, anchor.base, edge, across, 0.062, withAlpha(SOLID, intro), withAlpha(RED, intro))
-        d.band(AriusLayers.VFX_GLOW, anchor.base, edge, across, 0.2, withAlpha(RED, 0.55f * intro * pulse), withAlpha(RED, 0.3f * intro * pulse))
+        d.band(AriusLayers.VFX_SHARD, anchor.base, edge, across, 0.062, withAlpha(DEEP, intro), withAlpha(ICE, intro))
+        d.band(AriusLayers.VFX_GLOW, anchor.base, edge, across, 0.2, withAlpha(ICE, 0.55f * intro * pulse), withAlpha(ICE, 0.3f * intro * pulse))
         val run = (t * 0.055f) % 1f
         val glintA = anchor.base.lerp(anchor.tip, (run - 0.09f).coerceAtLeast(0f).toDouble())
         val glintB = anchor.base.lerp(anchor.tip, (run + 0.09f).coerceAtMost(1f).toDouble())
@@ -111,7 +111,7 @@ object CounterStance {
             val at = anchor.base.lerp(anchor.tip, 0.12 + 0.84 * ((i * 0.37f + 0.1f) % 1f)).add(across.multiply(0.09 * sin(k * 7f + i)))
                 .add(0.0, 0.05 + k * 0.42, 0.0)
             val fade = (min(k, 1f - k) * 5f).coerceIn(0f, 1f) * intro
-            if (fade > 0.03f) d.billboard(AriusLayers.VFX_SHARD, at, 0.045 * (1f - k * 0.5f), withAlpha(SOLID, 0.95f * fade), (t * 3f + i * 40f).toDouble())
+            if (fade > 0.03f) d.billboard(AriusLayers.VFX_SHARD, at, 0.045 * (1f - k * 0.5f), withAlpha(DEEP, 0.95f * fade), (t * 3f + i * 40f).toDouble())
         }
     }
 

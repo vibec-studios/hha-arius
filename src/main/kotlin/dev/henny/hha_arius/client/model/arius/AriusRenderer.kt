@@ -63,7 +63,7 @@ class AriusRenderer(context: EntityRendererFactory.Context) :
                     val extra = if (state.lead) 0.7f + 0.2f * sin(state.age * 0.25f) else (base - 0.85f) * 4f
                     batch.submitModel(contextModel, state, matrices, eyes, FULL_BRIGHT, OverlayTexture.DEFAULT_UV, tint(extra), null, 0, null)
                 }
-                // Konterhaltung: Nähte und Augen brennen blutrot (deckend gemischt, damit es auf weißer Rüstung sichtbar bleibt).
+                // Konterhaltung: Nähte und Augen brennen tiefblau (deckend gemischt, damit es auf weißer Rüstung sichtbar bleibt).
                 if (state.counter && state.form != AriusForm.ECHO) {
                     val burn = 0.82f + 0.18f * sin(state.age * 0.62f)
                     val seams = if (state.form == AriusForm.WHITE) whiteSeams else darkSeams
@@ -80,7 +80,7 @@ class AriusRenderer(context: EntityRendererFactory.Context) :
 
     private fun tint(alpha: Float): Int = ((MathHelper.clamp(alpha, 0f, 1f) * 255f).toInt() shl 24) or 0xFFFFFF
 
-    private fun counterTint(alpha: Float): Int = ((MathHelper.clamp(alpha, 0f, 1f) * 255f).toInt() shl 24) or 0xFF1E2C
+    private fun counterTint(alpha: Float): Int = ((MathHelper.clamp(alpha, 0f, 1f) * 255f).toInt() shl 24) or 0x1F7BFF
 
     private fun renderIceBlade(matrices: MatrixStack, queue: OrderedRenderCommandQueue, state: AriusRenderState) {
         val blade = bladeChain ?: chainTo(AriusModel.Keys.SOLVANE)?.also { bladeChain = it } ?: return

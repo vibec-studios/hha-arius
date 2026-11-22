@@ -52,6 +52,7 @@ class VerifyBoss : FabricClientGameTest {
                 "shield" -> shield()
                 "tele" -> teleGallery()
                 "path" -> pathing()
+                "fx" -> fxGallery()
                 "pace" -> pace()
                 else -> log("unknown case $c")
             }
@@ -708,6 +709,57 @@ class VerifyBoss : FabricClientGameTest {
         }
     }
 
+    /** Jeder Angriffseffekt einzeln auf dem Gipfel, mit Vergleichsbild ohne Effekt (für die Farbprüfung). */
+    private fun VerifyKit.fxGallery() {
+        finaleFight()
+        server { srv ->
+            val f = checkNotNull(fight())
+            f.startDirector(dev.henny.hha_arius.boss.script { while (true) yield(Unit) })
+            f.calls.reset()
+            val c = f.arenaCenter
+            f.arius?.let { a -> f.place(a, Vec3d(c.x + 3.5, f.floorY, c.z + 9.0)); f.face(a, Vec3d(c.x, f.floorY, c.z - 8.0)) }
+            player(srv).teleport(f.world, c.x, f.floorY, c.z - 8.0, emptySet(), 0f, 16f, false)
+        }
+        tick(60)
+        shot("fx_base")
+        val V = dev.henny.hha.logic.Vfx
+        val H = dev.henny.hha.logic.Vfx.Style.HEAVEN
+        val St = dev.henny.hha.logic.Vfx.Style.STORM
+        val So = dev.henny.hha.logic.Vfx.Style.SOUL
+        val G = dev.henny.hha.logic.Vfx.Style.GOLD
+        val K = dev.henny.hha_arius.net.FxKind.entries
+        fun kind(n: String) = K.first { it.name == n }
+        val fwd = Vec3d(0.0, 0.0, 1.0)
+        val list: List<Pair<String, (EirholmFight, Vec3d, dev.henny.hha_arius.boss.AriusEntity) -> Unit>> = listOf(
+            "crescent_h" to { f, p, _ -> V.crescent(f.world, H, p.add(0.0, 1.1, 0.0), fwd, 7f, 2.6f, 10) },
+            "crescent_s" to { f, p, _ -> V.crescent(f.world, St, p.add(0.0, 1.3, 0.0), fwd, 8f, 1.1f, 10) },
+            "wave_h" to { f, p, _ -> V.shockwave(f.world, H, p, 6f, 14, 1.4f) },
+            "wave_so" to { f, p, _ -> V.shockwave(f.world, So, p, 6f, 14, 1.4f) },
+            "wave_g" to { f, p, _ -> V.shockwave(f.world, G, p, 6f, 14, 1.4f) },
+            "nova" to { f, p, _ -> V.nova(f.world, H, p.add(0.0, 1.2, 0.0), 3f, 12) },
+            "flare" to { f, p, _ -> V.flare(f.world, St, p.add(0.0, 1.3, 0.0), 2f, 10) },
+            "beam" to { f, p, _ -> V.beam(f.world, H, p, p.add(0.0, 8.0, 0.0), 1f, 12) },
+            "slash" to { f, p, _ -> f.fx(kind("SLASH_ARC"), p.add(0.0, 1.1, 0.0), fwd, a = 5f, b = 0.3f, life = 14) },
+            "dash" to { f, p, _ -> f.fx(kind("DASH_STREAK"), p.add(-5.0, 0.0, 0.0), p.add(5.0, 0.0, 0.0), life = 12) },
+            "clear" to { f, p, _ -> f.fx(kind("CLEAR_WAVE"), p, a = 7f, life = 16) },
+            "seam" to { f, p, _ -> f.fx(kind("SEAM"), p.add(-6.0, 0.2, 0.0), p.add(6.0, 0.2, 0.0), a = 3f, life = 18) },
+            "cut" to { f, p, _ -> f.fx(kind("CUT_PLANE"), p.add(-5.0, 1.0, 0.0), Vec3d(10.0, 0.0, 0.0), a = 2f, b = 1f, life = 14) },
+            "breath" to { f, p, a -> f.fx(kind("DRAGON_BREATH"), a.entityPos, a = 10f, life = 18, e1 = a) },
+            "blade" to { f, p, a -> f.fxAll(kind("GIANT_BLADE"), a.entityPos, a = 14f, b = 8f, life = 24, e1 = a) },
+            "shatter" to { f, p, a -> f.fx(kind("BLADE_SHATTER"), a.entityPos.add(0.0, 1.0, 0.0), life = 18, e1 = a) },
+            "debris" to { f, p, _ -> f.fx(kind("DEBRIS_CLOUD"), p, a = 4f, life = 18) },
+        )
+        for ((name, fire) in list) {
+            server {
+                val f = checkNotNull(fight())
+                fire(f, Vec3d(f.arenaCenter.x, f.floorY + 0.05, f.arenaCenter.z - 1.0), f.arius!!)
+            }
+            tick(3)
+            shot("fx_$name")
+            tick(30)
+        }
+    }
+
     /** Arius muss um die Säulen des Tempels zum Spieler finden, ohne Festhängen und ohne Laufen auf der Stelle. */
     private fun VerifyKit.pathing() {
         temple()
@@ -715,6 +767,21 @@ class VerifyBoss : FabricClientGameTest {
         tick(5)
         val c = server { fight()!!.arenaCenter.let { Vec3d(it.x, fight()!!.floorY, it.z) } }
         val r = server { fight()!!.arenaRadius }
+        server {
+            val f = fight()!!
+            val y = f.floorY
+            val sb = StringBuilder("floor map (center ${c.x},${c.z} r=$r)\n")
+            for (z in (c.z - r).toInt()..(c.z + r).toInt()) {
+                for (x in (c.x - r).toInt()..(c.x + r).toInt()) {
+                    val v = Vec3d(x + 0.5, y, z + 0.5)
+                    val inside = Math.hypot(v.x - c.x, v.z - c.z) <= r - 0.6
+                    val under = !f.world.getBlockState(net.minecraft.util.math.BlockPos.ofFloored(v).down()).isAir
+                    sb.append(if (!inside) ' ' else if (f.passable(v) && under) '.' else '#')
+                }
+                sb.append('\n')
+            }
+            log(sb.toString())
+        }
         val rnd = java.util.Random(7)
         var worst = 0
         var failed = 0

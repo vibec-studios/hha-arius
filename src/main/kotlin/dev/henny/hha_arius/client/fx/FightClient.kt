@@ -225,8 +225,8 @@ object PunishCam {
         rigLook = m
     }
 
-    private const val FOLLOW = 0.1
-    private const val AIM_FILTER = 0.24
+    private const val FOLLOW = 0.085
+    private const val AIM_FILTER = 0.18
 
     fun reset() {
         on = false

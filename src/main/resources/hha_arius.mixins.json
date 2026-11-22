@@ -32,6 +32,7 @@
     "client.PunishCameraMixin",
     "client.PunishViewMixin",
     "client.CounterShakeMixin",
+    "client.FrostPaletteMixin",
     "client.RidePlayerRendererMixin",
     "client.CineCameraMixin",
     "client.CineHidePlayerMixin",
