@@ -308,12 +308,14 @@ class VerifyBoss : FabricClientGameTest {
                     val f = checkNotNull(fight())
                     val me = player(srv)
                     val p = if (i == 1) checkNotNull(srv.playerManager.getPlayer(bots[0].id)) else me
+                    val previous = p.entityPos
                     if (p !== me) {
                         val at = me.entityPos
                         p.teleport(f.world, at.x, at.y, at.z, emptySet(), me.yaw, me.pitch, false)
                     }
                     fullCharge(p)
                     p.attack(f.arius!!)
+                    if (p !== me) p.teleport(f.world, previous.x, previous.y, previous.z, emptySet(), p.yaw, p.pitch, false)
                 }
                 check(waitUntil(22, 1) { server { fight()?.arius?.bladeState == state } })
                 tick(5)
