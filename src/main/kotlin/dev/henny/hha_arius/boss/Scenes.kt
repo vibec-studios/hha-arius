@@ -682,7 +682,7 @@ class Scenes(private val f: EirholmFight) {
             mounted.add(p.uuid)
             shown { f.fx(FxKind.THREAD, p.entityPos, life = 34, e1 = p, e2 = d) }
             cue("resonance.chime", p.entityPos, 1.6f, 1.3f + i * 0.05f)
-            p.startRiding(d, true, true)
+            RideSeats.pickUp(f, d, p)
         }
         wait(40)
         // 3) Sie stößt sich ab, streicht über den Tempel, Arius springt auf ihren Kopf. Seit 1.11.0 ist der ganze Flug eine
@@ -698,14 +698,16 @@ class Scenes(private val f: EirholmFight) {
         val pickup = perch.add(0.0, 22.0, 0.0).add(toD.multiply(6.0))
         // Seit 1.12.0 durch die Ostöffnung hinein (vorher quer über den Felsrand) und in einem weiten Bogen zur Mitte,
         // immer südlich der Rippen.
-        val rail = DragonRail.path(
-            start, toward.add(0.0, 0.3, 0.0),
-            listOf(
-                pickup, aerie.add(176.0, 44.0, 6.0), aerie.add(124.0, 32.0, 0.0), aerie.add(74.0, 20.0, 0.0), aerie.add(34.0, 18.0, -34.0),
-                aerie.add(-22.0, 15.0, -40.0), aerie.add(-54.0, 11.0, -8.0), aerie.add(-36.0, 7.0, 16.0), aerie.add(-12.0, 3.0, 6.0), aerie,
-            ),
-            30.0,
-        )
+        val route = DragonRail.spline(listOf(
+            start, start.add(toward.multiply(20.0)).add(0.0, 7.0, 0.0), pickup,
+            aerie.add(176.0, 45.0, 8.0), aerie.add(123.0, 31.0, 0.0), aerie.add(88.0, 23.0, 0.0),
+            aerie.add(56.0, 19.0, 4.0), aerie.add(30.0, 18.0, 31.0),
+            aerie.add(-24.0, 16.0, 43.0), aerie.add(-56.0, 13.0, 23.0),
+            aerie.add(-53.0, 9.0, -5.0), aerie.add(-29.0, 4.0, -2.0), aerie,
+        )).toMutableList().apply { this[lastIndex] = aerie }
+        val rail = DragonRail.clearTerrain(route, f.origin, f.floorY, clearance = 9.0,
+            landingTail = (149.0 / DragonRail.STEP).toInt()).toMutableList().apply { this[0] = start }
+        val dropS = rail.indices.minBy { rail[it].squaredDistanceTo(aerie.add(56.0, 19.0, 4.0)) } * DragonRail.STEP
         val len = DragonRail.length(rail)
         fun pace(q: Double) = when {
             q < 50.0 -> 0.42 + 0.56 * (q / 50.0)
@@ -738,6 +740,9 @@ class Scenes(private val f: EirholmFight) {
         var ariusUp = false
         var stormed = false
         var landing = false
+        var releaseTick = -1
+        var dismountAt = -1
+        var dismountFrom = Vec3d.ZERO
         while (q0 < len) {
             q0 = minOf(len, q0 + pace(q0))
             tick++
@@ -745,16 +750,16 @@ class Scenes(private val f: EirholmFight) {
             val ahead = DragonRail.at(rail, q0 + 3.0)
             f.place(d, pos)
             if (ahead.squaredDistanceTo(pos) > 0.01) f.face(d, ahead)
-            for (p in f.players()) if (p.uuid in mounted && p.vehicle !== d && p.isAlive) p.startRiding(d, true, true)
+            for (p in f.players()) if (releaseTick < 0 && p.uuid in mounted && p.vehicle !== d && p.isAlive) p.startRiding(d, true, true)
             // Arius springt ab, sobald sie über ihn streicht, und setzt sich auf ihren Kopf.
-            if (!ariusUp && jumpAt < 0 && pos.distanceTo(perch) < 22.0) {
+            if (!ariusUp && jumpAt < 0 && pos.distanceTo(pickup) < 16.0) {
                 jumpAt = tick
                 a.play(AriusPose.LAUNCH, 6)
                 cue("arius.wind_step", perch, 3f, 0.8f)
             }
             if (jumpAt > 0 && !ariusUp) {
                 val kk = ((tick - jumpAt) / 10.0).coerceAtMost(1.0)
-                f.place(a, perch.lerp(neckOf(d), kk).add(0.0, sin(kk * PI) * 3.0, 0.0))
+                f.place(a, perch.lerp(d.entityPos.add(RideHooks.offsetFor(d, a).rotateY(-Math.toRadians(d.bodyYaw.toDouble()).toFloat())), kk).add(0.0, sin(kk * PI) * 3.0, 0.0))
                 if (kk >= 1.0) {
                     ariusUp = true
                     RideSeats.perch(f, a, d)
@@ -779,13 +784,47 @@ class Scenes(private val f: EirholmFight) {
             }
             if (tick == tArrive / 3) f.farSound("nivaris.roar", pos, 5f, 0.85f)
             if (tick % 22 == 0) cue("nivaris.wing", pos, 4f, 0.75f)
+            if (q0 >= dropS - 26.0) d.bodyRoll = RideSeats.roll((q0 - dropS + 26.0) / 68.0)
+            if (releaseTick < 0 && q0 >= dropS) {
+                releaseTick = tick
+                val land = f.abs(ArenaLayout.AERIE_LANDING[0])
+                scene.line(pos.add(4.0, 1.0, 24.0), land.add(11.0, 7.0, 18.0),
+                    pos.add(0.0, 2.0, 0.0), land.add(0.0, 1.0, 0.0), 46, 64.0, 54.0)
+                for ((j, p) in f.players().withIndex()) {
+                    if (p.vehicle !== d) continue
+                    p.stopRiding()
+                    val target = f.abs(ArenaLayout.AERIE_LANDING[j % ArenaLayout.AERIE_LANDING.size])
+                    RideSeats.landRider(f, p, target, 0.24)
+                }
+                RideSeats.syncPassengers(f, d)
+                cue("nivaris.wing", pos, 4f, 0.9f)
+            }
+            if (releaseTick >= 0 && tick == releaseTick + 42) {
+                val towardLanding = aerie.subtract(pos)
+                val side = Vec3d(-towardLanding.z, 0.0, towardLanding.x).normalize()
+                scene.line(pos.add(side.multiply(27.0)).add(0.0, 14.0, 0.0),
+                    aerie.add(25.0, 8.0, 20.0), pos.add(0.0, 3.0, 0.0), aerie.add(0.0, 4.0, 0.0),
+                    (total - tick).coerceAtLeast(1), 66.0, 58.0, lookAt = d, lookOffset = 2.6)
+            }
+            if (dismountAt < 0 && len - q0 <= 40.0) {
+                dismountAt = tick
+                dismountFrom = a.entityPos
+                RideSeats.unperch(f, a)
+                a.play(AriusPose.LAUNCH, 6)
+            }
+            if (dismountAt >= 0) {
+                val k = ((tick - dismountAt) / 43.0).coerceIn(0.0, 1.0)
+                f.place(a, dismountFrom.lerp(seat, k).add(0.0, sin(k * PI) * 38.0, 0.0))
+                f.face(a, aerie)
+                if (k >= 1.0 && a.pose != AriusPose.SEATED) a.play(AriusPose.SEATED)
+            }
             if (!landing && len - q0 < 30.0) {
                 landing = true
                 d.play(NivarisPose.LAND, 24)
             }
             yield(Unit)
         }
-        if (!ariusUp) RideSeats.perch(f, a, d)
+        d.bodyRoll = 0f
         d.flying = false
         f.place(d, aerie)
         f.face(d, aerie.add(10.0, 0.0, 0.0))
@@ -796,64 +835,9 @@ class Scenes(private val f: EirholmFight) {
             f.fx(FxKind.CLEAR_WAVE, aerie, a = 34f, life = 28)
         }
         d.play(NivarisPose.IDLE)
-        // 5) Sie wirft alle ab (seit 1.11.0 als eigener Moment, Crix: „man soll besser sehen, wie Solvane mich rauswirft“):
-        //    Blick von der Seite auf ihren Rücken mit den Reitern, sie bäumt sich auf, ein Ruck, und alle fliegen im hohen
-        //    Bogen über ihren Kopf auf die Kamera zu.
-        val backLook = aerie.add(-6.0, 3.4, 0.0)
-        scene.line(aerie.add(-9.0, 5.5, 19.0), aerie.add(-6.0, 6.0, 16.0), backLook, backLook.add(1.0, 0.8, 0.0), 32, 58.0, 50.0)
-        wait(14)
-        d.play(NivarisPose.ROAR, 12)
-        d.eyeGlow = 100
-        cue("nivaris.inhale", aerie, 4f, 0.7f)
-        f.calls.roomShake(aerie, 3f, 60f)
-        wait(16)
-        f.farSound("nivaris.roar", aerie, 6f, 0.75f)
-        f.calls.roomShake(aerie, 7f, 80f)
-        MusicCue.sting(f, "roar")
-        shown {
-            f.fxAll(FxKind.FLASH, aerie, a = 0.25f, life = 5)
-            Vfx.shockwave(f.world, Vfx.Style.SOUL, aerie.add(-6.0, 2.0, 0.0), 14f, 16, 1.8f)
-        }
-        d.play(NivarisPose.TAIL, 4)
-        val thrown = ArrayList<ServerPlayerEntity>()
-        var airtime = 26
-        for ((j, p) in f.players().withIndex()) {
-            if (p.vehicle === d) p.stopRiding()
-            val s = f.abs(ArenaLayout.AERIE_LANDING[j % ArenaLayout.AERIE_LANDING.size])
-            Hold.drop(p)
-            Hold.allowLong(p, 90)
-            val up = p.entityPos.add(0.0, 0.4, 0.0)
-            if (p.isAlive) p.teleport(f.world, up.x, up.y, up.z, emptySet(), 90f, 0f, false)
-            airtime = maxOf(airtime, Ballistic.ticks(s.y - up.y, 1.25))
-            Hold.launch(p, Ballistic.velocity(up, s, 1.25), 80, s, s)
-            thrown += p
-            cue("hold.impact", up, 2f, 0.7f + j * 0.06f)
-        }
-        // Von weit vorn mit langer Brennweite: Sie bleibt im Bild, und die Reiter fliegen im ganzen Bogen auf die Kamera zu
-        // und schlagen vor ihr auf (näher dran verließen sie das Bild schon nach wenigen Ticks).
-        scene.line(aerie.add(80.0, 5.0, 6.0), aerie.add(77.0, 5.5, 6.0), aerie.add(16.0, 6.5, 0.0), aerie.add(36.0, 4.0, 0.0), airtime + 2, 44.0, 50.0)
-        // Währenddessen springt Arius von ihrem Kopf auf seinen Pfeiler.
-        RideSeats.unperch(f, a)
-        val jumpFrom = a.entityPos
-        a.play(AriusPose.LAUNCH, 6)
-        cue("arius.wind_step", jumpFrom, 3f, 0.7f)
-        for (i in 1..(airtime + 2)) {
-            if (i <= 18) {
-                val k = i / 18.0
-                f.place(a, jumpFrom.lerp(seat, k).add(0.0, sin(k * PI) * 6.0, 0.0))
-                f.face(a, aerie)
-            }
-            if (i == 18) {
-                f.place(a, seat)
-                a.play(AriusPose.SEATED)
-            }
-            yield(Unit)
-        }
-        if (airtime + 2 < 18) {
-            f.place(a, seat)
-            a.play(AriusPose.SEATED)
-        }
-        // Blick zurück: Sie steht über dem Kessel und brüllt, Titelkarte.
+        f.place(a, seat)
+        f.face(a, aerie)
+        a.play(AriusPose.SEATED)
         val landed0 = f.abs(ArenaLayout.AERIE_LANDING[0])
         scene.line(landed0.add(-20.0, 3.2, 9.0), landed0.add(-25.0, 2.8, 7.0), aerie.add(2.0, 6.0, 0.0), aerie.add(2.0, 7.5, 0.0), 44, 62.0, 54.0)
         d.play(NivarisPose.ROAR, 8)
@@ -937,19 +921,10 @@ class Scenes(private val f: EirholmFight) {
             }
             p.onLanding()
         }
-        f.place(a, f.abs(Vec3d.of(ArenaLayout.VAULT)).add(0.5, 7.0, 0.5))
-        f.place(d, f.abs(ArenaLayout.VAULT_REST))
-        d.flying = false
-        d.wingTuck = 0f
-        d.bodyRoll = 0f
-        d.play(NivarisPose.EXHAUSTED)
         val scene = CineScene(f) {}
         yieldAll(scene.play(script { yieldAll(transformBody(scene)) }))
         yieldAll(vaultFight())
     }
-
-    /** Nackenansatz der Drachin (wo Arius steht), Weltkoordinaten. */
-    private fun neckOf(d: NivarisEntity): Vec3d = d.entityPos.add(f.facing(d).multiply(1.2)).add(0.0, NivarisShape.SPINE_UP + 1.0, 0.0)
 
     /** Wartet, bis die Fernlandschaft (mit dem Himmelsbalkon) fertig gebaut ist, und zeigt den Fortschritt. */
     private fun waitForFar(): Script = script {
@@ -1725,14 +1700,12 @@ class Scenes(private val f: EirholmFight) {
         yieldAll(scene.play(script {
             if (f.onSummit) {
                 f.atmos(dev.henny.hha_arius.net.AtmosMode.REVEAL, 20)
-                f.place(d, f.arenaCenter.add(0.0, 2.0, 6.0))
                 d.mode = NivarisMode.COIL
                 d.uncoil = 0f
                 d.flying = false
                 d.showNow()
                 d.resonance = true
                 d.eyeGlow = 100
-                d.play(NivarisPose.IDLE)
                 val spireHead = f.abs(EntrancePath.HEAD_RAISED)
                 val spireMid = f.abs(EntrancePath.coil(0.62))
                 f.face(a, spireHead)
@@ -1759,9 +1732,9 @@ class Scenes(private val f: EirholmFight) {
                 cue("nivaris.inhale", spireHead, 4f, 0.65f)
                 wait(22)
                 // B) Totale auf die Eisspitze: Solvane zerfällt oben im Licht und verschwindet am Höhepunkt.
-                val spireCam0 = f.abs(Vec3d(ArenaLayout.SPIRE.x - 16.0, FarPlan.SHOULDER_Y + 12.0, ArenaLayout.SPIRE.z - 42.0))
-                val spireCam1 = f.abs(Vec3d(ArenaLayout.SPIRE.x - 11.0, FarPlan.SHOULDER_Y + 18.0, ArenaLayout.SPIRE.z - 36.0))
-                scene.line(spireCam0, spireCam1, spireMid.lerp(spireHead, 0.45), spireHead.add(0.0, -3.0, 0.0), RETURN_PEAK + 12, 62.0, 56.0)
+                val spireCam0 = f.abs(Vec3d(ArenaLayout.SPIRE.x - 30.0, ArenaLayout.SPIRE_TOP + 12.0, ArenaLayout.SPIRE.z - 46.0))
+                val spireCam1 = f.abs(Vec3d(ArenaLayout.SPIRE.x - 22.0, ArenaLayout.SPIRE_TOP + 14.0, ArenaLayout.SPIRE.z - 37.0))
+                scene.rawLine(spireCam0, spireCam1, spireMid.lerp(spireHead, 0.62), spireHead.add(0.0, -3.0, 0.0), RETURN_PEAK + 12, 62.0, 56.0)
                 Entrance.storyFx(f, FxKind.DRAGON_DISSOLVE, spireHead, spireMid, a = 8f, life = RETURN_PEAK + 34)
                 Entrance.storyFx(f, FxKind.BLIZZARD, spireMid, a = 14f, life = 36)
                 cue("transform.pulse", spireHead, 5f, 0.7f)
@@ -1772,10 +1745,10 @@ class Scenes(private val f: EirholmFight) {
                 // C) Der Strom stürzt von der Eisspitze herab in Arius' Scheide, die Eisklinge zerspringt.
                 val chest = a.entityPos.add(0.0, 1.4, 0.0)
                 val travel = RETURN_TRAVEL + 10
-                scene.line(
-                    chest.add(side.multiply(5.4)).add(toSpire.multiply(-3.6)).add(0.0, 1.8, 0.0),
+                scene.rawLine(
+                    chest.add(side.multiply(5.9)).add(toSpire.multiply(-2.4)).add(0.0, 2.2, 0.0),
                     chest.add(side.multiply(3.2)).add(toSpire.multiply(-1.6)).add(0.0, 0.6, 0.0),
-                    spireHead.lerp(chest, 0.48), chest.add(toSpire.multiply(-0.2)), travel + 26, 66.0, 50.0,
+                    chest.add(0.0, 4.0, 0.0), chest.add(toSpire.multiply(-0.2)), travel + 26, 66.0, 50.0,
                 )
                 val sheath = a.entityPos.add(0.0, 1.55, 0.0).subtract(toSpire.multiply(0.25))
                 Entrance.storyFx(f, FxKind.BLADE_STREAM, spireHead, sheath, a = travel.toFloat(), b = 1f, life = travel + 16, e1 = a)

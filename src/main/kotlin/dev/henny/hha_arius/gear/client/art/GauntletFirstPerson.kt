@@ -180,12 +180,10 @@ internal object GauntletFirstPerson {
 
     /**
      * Ritt (erste Person): die Hände greifen den Eisdorn an seiner Stelle in der Welt (über die Kameradrehung in den
-     * Blickraum gerechnet, er bleibt also beim Umsehen am Drachen). Mit nur einer Hand rudert die linke frei.
+     * Blickraum gerechnet, er bleibt also beim Umsehen am Drachen).
      */
     private fun renderRide(player: AbstractClientPlayerEntity, td: Float, matrices: MatrixStack, queue: OrderedRenderCommandQueue, light: Int) {
         val (upper, lower) = dev.henny.hha_arius.client.fx.RideClient.handTargets(td) ?: return
-        val grip = dev.henny.hha_arius.client.fx.RideClient.grip(player)
-        val leftHanded = player.mainArm == Arm.LEFT
         val slim = player.skin.model() == PlayerSkinType.SLIM
         val gloves = GauntletsItem.isGauntlets(player.mainHandStack)
         val t = player.age + td
@@ -193,24 +191,21 @@ internal object GauntletFirstPerson {
         val lS = Vector3f(-0.62f, -1.05f, -0.40f)
         // Rechte Hand oben, linke darunter, beide Handflächen zum Dorn.
         val rH = Vector3f(upper).add(0.05f, 0f, 0.04f)
-        val lH = if (grip >= 2) Vector3f(lower).add(-0.05f, 0f, 0.04f)
-        else Vector3f(-0.74f, -0.46f + 0.12f * sin(t * 0.45f), -0.74f + 0.08f * cos(t * 0.37f))
+        val lH = Vector3f(lower).add(-0.05f, 0f, 0.04f)
         val rN = Vector3f(-1f, 0f, 0.15f).normalize()
-        val lN = if (grip >= 2) Vector3f(1f, 0f, 0.15f).normalize() else Vector3f(0.6f, -0.6f, 0.4f).normalize()
+        val lN = Vector3f(1f, 0f, 0.15f).normalize()
         matrices.push()
         for (canonRight in booleanArrayOf(true, false)) {
-            val right = if (leftHanded) !canonRight else canonRight
             val h = Vector3f(if (canonRight) rH else lH)
             val sh = Vector3f(if (canonRight) rS else lS)
             val n = Vector3f(if (canonRight) rN else lN)
-            if (leftHanded) { h.x = -h.x; sh.x = -sh.x; n.x = -n.x }
             // Liegt der Griff hinter der Kamera (Blick nach hinten/oben), ist der Arm ohnehin nicht zu sehen.
             if (h.z > 0.15f) continue
             // Steigt sie steil, liegt der Dorn fast über der Kamera: Die Hand bleibt dann vor der Nahebene sichtbar.
             if (h.z > -0.38f) h.z = -0.38f
             // Seit 1.11.0 greift man weiter vor sich: Der Arm wird bis zur Schulter gestreckt.
             val stretch = (h.distance(sh) / 0.72f).coerceIn(1f, 2.4f)
-            arm(player, matrices, queue, light, right, h, sh, n, slim, gloves, false, 0f, null, td, t, canonRight, stretch)
+            arm(player, matrices, queue, light, canonRight, h, sh, n, slim, gloves, false, 0f, null, td, t, canonRight, stretch)
         }
         matrices.pop()
     }

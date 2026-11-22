@@ -298,40 +298,44 @@ class Hunt(private val f: EirholmFight) {
     private fun tunnelScene(d: NivarisEntity, c: HuntRoute.Cave): Script = script {
         dragonBusy = true
         try {
+            val i0 = HuntRoute.indexOfArc(c.a0 + 1.0)
+            val mouth = pathAt(c.a0)
+            val valley = beside(i0, 1.0).subtract(point(i0)).let { Vec3d(it.x, 0.0, it.z) }
+            val out = tangentVec(i0).negate().add(valley.multiply(0.55)).normalize()
+            val side = Vec3d(-out.z, 0.0, out.x)
+            val raw = (-3..3).map { k ->
+                val e = k / 3.0
+                mouth.add(out.multiply(19.0 + 11.0 * e * e)).add(side.multiply(k * 17.0))
+            }
+            val y = maxOf(mouth.y + 7.0, raw.maxOf { terrainTop(it, 7) + 7.0 })
+            val wps = raw.map { Vec3d(it.x, y, it.z) }
+            d.flying = true
+            d.play(NivarisPose.GLIDE)
+            yieldAll(DragonRail.fly(f, d, listOf(wps.first().subtract(side.multiply(40.0))), speed = 2.2))
+            val crossing = DragonRail.spline(listOf(d.entityPos, wps.first().subtract(side.multiply(5.0))) + wps.drop(1))
+            val flight = DragonRail.clearTerrain(crossing, f.origin, f.floorY, clearance = 12.0)
+            val speed = 1.85
+            val pass = kotlin.math.ceil(DragonRail.length(flight) / speed).toInt()
             yieldAll(mini(onAbort = { f.atmos(HUNT_ATMOS, 16) }) {
                 script {
                     f.atmos(AtmosMode.SNOW, 6)
-                    val i0 = HuntRoute.indexOfArc(c.a0 + 1.0)
-                    val mouth = pathAt(c.a0)
-                    val valley = beside(i0, 1.0).subtract(point(i0)).let { Vec3d(it.x, 0.0, it.z) }
-                    val out = tangentVec(i0).negate().add(valley.multiply(0.55)).normalize()
-                    val side = Vec3d(-out.z, 0.0, out.x)
-                    val raw = (-3..3).map { k ->
-                        val e = k / 3.0
-                        mouth.add(out.multiply(19.0 + 11.0 * e * e)).add(side.multiply(k * 17.0))
-                    }
-                    val y = maxOf(mouth.y + 7.0, raw.maxOf { terrainTop(it, 7) + 7.0 })
-                    val wps = raw.map { Vec3d(it.x, y, it.z) }
-                    f.place(d, wps.first())
-                    f.face(d, wps[1])
-                    d.flying = true
-                    d.play(NivarisPose.GLIDE)
-                    val speed = 1.7
-                    val pass = (102.0 / speed).toInt() + 4
-                    val camA = freeCam(listOf(safeTunnelCam(c.a0 + 1.6, 0.0, 1.7), mouth.add(out.multiply(1.5)).add(0.0, 1.8, 0.0), mouth.add(out.multiply(4.0)).add(0.0, 2.6, 0.0)), wps[3])
-                    val camB = camA.lerp(mouth.add(out.multiply(3.0)).add(0.0, 2.2, 0.0), 0.35).takeIf { airAt(it) } ?: camA
-                    HuntNet.fx(f.audience(), HuntFx.LETTERBOX, camA, life = pass + 24)
+                    val overlook = mouth.add(out.multiply(9.0)).add(side.multiply(-9.0))
+                    val camA = overlook.add(0.0, maxOf(8.0, terrainTop(overlook, 4) - overlook.y + 6.0), 0.0)
+                    val camB = camA.add(side.multiply(6.0)).add(0.0, 3.0, 0.0)
+                    HuntNet.fx(f.audience(), HuntFx.LETTERBOX, camA, life = pass + 16)
                     HuntNet.fx(f.audience(), HuntFx.RUMBLE, camA, a = 0.45f, life = pass)
-                    cam(camA, camB, wps[2].add(0.0, 1.0, 0.0), wps[4].add(0.0, 1.0, 0.0), pass, 72.0, 62.0, lookAt = d, lookOffset = 2.0)
+                    line(camA, camB, wps[2].add(0.0, 1.0, 0.0), wps[4].add(0.0, 1.0, 0.0), pass, 70.0, 61.0)
                     cue("nivaris.wing", mouth, 4f, 0.6f)
-                    var n = 0
-                    for (step in DragonRail.fly(f, d, wps, speed)) {
-                        n++
+                    for (n in 1..pass) {
+                        val distance = n * speed
+                        val pos = DragonRail.at(flight, distance)
+                        f.place(d, pos)
+                        f.face(d, pos.add(DragonRail.at(flight, distance + 4.0).subtract(DragonRail.at(flight, distance - 2.0))))
                         if (n == pass / 2) {
                             cue("nivaris.roar", mouth, 5f, 0.8f)
                             HuntNet.fx(f.audience(), HuntFx.NEAR_MISS, mouth, life = 16)
                         }
-                        yield(step)
+                        yield(Unit)
                     }
                     f.atmos(HUNT_ATMOS, 16)
                     home(12)
@@ -344,6 +348,7 @@ class Hunt(private val f: EirholmFight) {
             dragonBusy = false
         }
     }
+
 
     // --- Hilfen -----------------------------------------------------------------------------------------------------
 
@@ -644,8 +649,8 @@ class Hunt(private val f: EirholmFight) {
             // 2) Jede Höhle schließt nach fester Zeit zuverlässig durch echte fallende Steine (auch wenn eine andere Szene vorgemerkt war).
             if (age >= 135L && !run.collapsing && !run.sealed) startCollapse(run)
             // Solvane fliegt einmal durch die lange Höhle der Dritten Wacht, neben den Spielern her.
-            if (c.theme == HuntRoute.Theme.LAKE && "tunnel" !in sceneDone && !dragonBusy && leaderArc - c.a0 in 3.0..c.length * 0.6) {
-                f.nivaris?.takeIf { !f.dragonDowned && !it.isRemoved }?.let { d -> queueScene("tunnel") { tunnelScene(d, c) } }
+            if (c.theme == HuntRoute.Theme.LAKE && "tunnel" !in sceneDone && players.any { arcOf(it) in (c.a0 + 2.0)..(c.a1 + 24.0) }) {
+                f.nivaris?.takeIf { !it.isRemoved }?.let { d -> queueScene("tunnel") { tunnelScene(d, c) } }
             }
             // Arius schlägt den Pfropfen auf, wenn er davorsteht.
             val a = f.arius
@@ -1137,12 +1142,12 @@ class Hunt(private val f: EirholmFight) {
     private fun cutRopes(span: HuntRoute.Span) {
         cutSpans += span.id
         ropeHold.clear()
-        vanilla(SoundEvents.ITEM_SHEARS_SNIP, point(span.i1), 2f, 0.7f)
         val a = f.arius
         if (a != null && !a.isRemoved && aS in span.a0 + 1.0..span.a1 - 1.0) {
             pendingScene = { ropeScene(span) }
             pendingUntil = f.now + 120
         } else {
+            vanilla(SoundEvents.ITEM_SHEARS_SNIP, point(span.i1), 2f, 0.7f)
             dropBridge(span)
         }
     }
@@ -1213,7 +1218,7 @@ class Hunt(private val f: EirholmFight) {
             dropBridge(span)
             return@script
         }
-        val d = f.nivaris?.takeIf { !it.isRemoved && !f.dragonDowned }
+        val d = f.nivaris?.takeIf { !it.isRemoved }
         val landingArc = HuntRoute.arc(HuntRoute.stationBefore(span.a1 + 9.0)).coerceAtLeast(span.a1 + 1.0)
         val landing = pathAt(landingArc)
         val far = point(span.i1)
@@ -1235,11 +1240,56 @@ class Hunt(private val f: EirholmFight) {
         }
         if (d != null) dragonBusy = true
         try {
+            val fallFrom = a.entityPos
+            val catchTicks = 30
+            val plannedCatch = (8..24 step 4).map { offset ->
+                fallFrom.add(valley.multiply(offset.toDouble()))
+            }.plus(fallFrom).map { q ->
+                Vec3d(q.x, maxOf(fallFrom.y - 19.0, terrainTop(q, 4) + 5.0), q.z)
+            }.firstOrNull { it.y < fallFrom.y - 10.0 }
+                ?: fallFrom.add(0.0, -8.0, 0.0)
+            val startRaw = plannedCatch.subtract(dir.multiply(42.0)).add(valley.multiply(20.0))
+            val diveStart = Vec3d(startRaw.x, maxOf(fallFrom.y + 18.0, terrainTop(startRaw, 8) + 12.0), startRaw.z)
+            val pullout = plannedCatch.add(dir.multiply(8.0)).add(valley.multiply(18.0)).add(0.0, 4.0, 0.0)
+            val rise = pullout.add(dir.multiply(10.0)).add(valley.multiply(21.0))
+            val climb = Vec3d(rise.x, maxOf(landing.y + 22.0, terrainTop(rise, 12) + 16.0), rise.z)
+            val dropPoint = landing.add(valley.multiply(25.0)).add(0.0, 20.0, 0.0)
+            val exit = dropPoint.add(dir.multiply(30.0)).add(valley.multiply(15.0)).add(0.0, 12.0, 0.0)
+            val rawFlight = if (d != null) {
+                val approach = diveStart.subtract(dir.multiply(52.0)).add(valley.multiply(7.0))
+                yieldAll(DragonRail.fly(f, d, listOf(approach, diveStart), speed = 2.3))
+                val dive = d.entityPos.lerp(plannedCatch, 0.56).add(0.0, 1.0, 0.0)
+                DragonRail.spline(listOf(d.entityPos, dive, plannedCatch, pullout, climb, dropPoint, exit))
+            } else emptyList()
+            val catchIdx = rawFlight.indices.minByOrNull { rawFlight[it].squaredDistanceTo(plannedCatch) } ?: 0
+            val dropIdx = rawFlight.indices.minByOrNull { rawFlight[it].squaredDistanceTo(dropPoint) } ?: 0
+            // A height envelope for level flight erases this dive: the rim on either
+            // side of the ravine can be higher than the deck. Guard the local corridor.
+            val flight = rawFlight.mapIndexed { i, q ->
+                if (i == 0) q else {
+                    val p = terrainTop(q, if (i <= catchIdx + 20) 3 else 7)
+                    val margin = if (i <= catchIdx + 20) 3.5 else 8.0
+                    Vec3d(q.x, maxOf(q.y, p + margin), q.z)
+                }
+            }
+            val catchS = catchIdx * DragonRail.STEP
+            val dropS = dropIdx * DragonRail.STEP
+            val catchAt = flight.getOrNull(catchIdx) ?: plannedCatch
+            val caught = catchAt.add(0.0, NivarisShape.SPINE_UP + 0.5, 0.0)
+            fun flyAt(s: Double): Vec3d {
+                val p = DragonRail.at(flight, s)
+                val motion = DragonRail.at(flight, s + 3.0).subtract(DragonRail.at(flight, s - 2.0))
+                if (d != null) {
+                    f.place(d, p)
+                    f.face(d, p.add(motion))
+                }
+                return p
+            }
             yieldAll(mini(onAbort = { finish() }) {
                 script {
                     // Sicht über der Schlucht kurz aufklären, damit Sturz und Rettung nicht im Whiteout verschwinden.
                     f.atmos(AtmosMode.SNOW, 8)
-                    HuntNet.fx(f.audience(), HuntFx.LETTERBOX, far, life = 112)
+                    HuntNet.fx(f.audience(), HuntFx.LETTERBOX, far, life = 160)
 
                     // 1) Am Anker: die Seile reißen im Blitz, Blick über die gespannte Brücke auf Arius (16 Ticks).
                     val knot = far.add(valley.multiply(1.9)).add(0.0, 1.6, 0.0)
@@ -1252,63 +1302,31 @@ class Hunt(private val f: EirholmFight) {
                         far.add(dir.multiply(2.8)).add(valley.multiply(6.2)).add(0.0, 2.6, 0.0),
                         cam0.lerp(knot, 0.15),
                     ), a.entityPos.add(0.0, 1.2, 0.0))
-                    cam(cam0, cam0To, knot.lerp(a.entityPos, 0.35), a.entityPos.add(0.0, 1.2, 0.0), 16, 58.0, 54.0)
                     f.face(a, far)
                     a.play(AriusPose.GUARD, 8)
+                    cam(cam0, cam0To, knot.lerp(fallFrom, 0.35), fallFrom.add(0.0, 1.2, 0.0), 10, 58.0, 54.0)
                     wait(6)
                     if (!Cine.muted) {
                         f.fx(FxKind.SLASH_ARC, knot, valley.negate(), a = 4.2f, b = 0.2f, life = 10)
                         f.fx(FxKind.CLEAR_WAVE, knot, a = 4.5f, life = 12)
                     }
+                    vanilla(SoundEvents.ITEM_SHEARS_SNIP, knot, 2f, 0.7f)
                     dropped = true
                     dropBridge(span)
-                    a.play(AriusPose.STAGGER, 24)
-                    wait(10)
+                    a.play(AriusPose.STAGGER, catchTicks)
+                    d?.play(NivarisPose.DIVE)
 
-                    // 2) Sturz in die Schlucht & Solvanes Sturzflug von der gegenüberliegenden Seite (32 Ticks).
-                    val fallFrom = a.entityPos
-                    val groundY = terrainTop(fallFrom, 4) + 3.0
-                    val catchTicks = 32
-                    val dropDepth = minOf(22.0, (fallFrom.y - (groundY + 5.0)).coerceAtLeast(10.0))
-                    fun fallY(n: Int): Double {
-                        val u = (n / catchTicks.toDouble()).coerceIn(0.0, 1.0)
-                        return fallFrom.y - dropDepth * (u * u * 0.85 + u * 0.15)
-                    }
-                    val catchAt = Vec3d(fallFrom.x, fallY(catchTicks) - 2.2, fallFrom.z)
-                    // Kamera weit draußen über dem Tal (24..26 Blöcke Abstand) – volle Übersicht, kein Drachen-Clipping im Bild!
-                    val wide0 = freeCam(listOf(
-                        fallFrom.add(valley.multiply(24.0)).add(dir.multiply(5.0)).add(0.0, 4.5, 0.0),
-                        fallFrom.add(valley.multiply(-24.0)).add(dir.multiply(5.0)).add(0.0, 4.5, 0.0),
-                        fallFrom.add(valley.multiply(18.0)).add(0.0, 8.0, 0.0),
-                    ), fallFrom.add(0.0, 1.0, 0.0))
-                    val wide1 = freeCam(listOf(
-                        catchAt.add(valley.multiply(26.0)).add(dir.multiply(8.0)).add(0.0, 5.5, 0.0),
-                        catchAt.add(valley.multiply(-26.0)).add(dir.multiply(8.0)).add(0.0, 5.5, 0.0),
-                        wide0.add(0.0, -4.0, 0.0),
-                    ), catchAt.add(0.0, 1.2, 0.0))
-                    cam(wide0, wide1, fallFrom.add(0.0, 1.0, 0.0), catchAt.add(0.0, 1.2, 0.0), catchTicks + 4, 64.0, 58.0, lookAt = a, lookOffset = 1.1)
-
-                    // Solvane stößt sauber aus dem offenen Luftraum (entgegen der Kamera-Seite bzw. hoch hinter der Brücke) herab.
-                    val inbound = d?.let { dr ->
-                        val startRaw = catchAt.subtract(dir.multiply(42.0)).add(valley.multiply(-10.0)).add(0.0, 26.0, 0.0)
-                        val swoopStart = Vec3d(startRaw.x, maxOf(startRaw.y, terrainTop(startRaw, 8) + 12.0), startRaw.z)
-                        val midRaw = catchAt.subtract(dir.multiply(18.0)).add(valley.multiply(-4.0)).add(0.0, 7.0, 0.0)
-                        val swoopMid = Vec3d(midRaw.x, maxOf(midRaw.y, terrainTop(midRaw, 6) + 6.0), midRaw.z)
-                        f.place(dr, swoopStart)
-                        f.face(dr, swoopMid)
-                        dr.flying = true
-                        dr.play(NivarisPose.DIVE)
-                        DragonRail.path(swoopStart, swoopMid.subtract(swoopStart).normalize(), listOf(swoopMid, catchAt))
-                    }
+                    val wide0 = fallFrom.add(valley.multiply(25.0)).subtract(dir.multiply(12.0)).add(0.0, 6.0, 0.0)
+                    val wide1 = wide0.add(dir.multiply(14.0)).add(0.0, -3.0, 0.0)
+                    val focus = fallFrom.lerp(caught, 0.48)
+                    line(wide0, wide1, diveStart.lerp(fallFrom, 0.70), focus, catchTicks, 68.0, 56.0)
                     for (n in 1..catchTicks) {
-                        val ay = fallY(n)
-                        f.place(a, Vec3d(fallFrom.x, ay, fallFrom.z))
-                        if (d != null && inbound != null) {
-                            val k = (n / catchTicks.toDouble()).let { it * it * (3.0 - 2.0 * it) }
-                            val q = (inbound.lastIndex * k).toInt().coerceAtMost(inbound.lastIndex)
-                            f.place(d, inbound[q])
-                            val ahead = inbound[(q + 8).coerceAtMost(inbound.lastIndex)]
-                            if (ahead.squaredDistanceTo(inbound[q]) > 0.01) f.face(d, ahead)
+                        val k = n / catchTicks.toDouble()
+                        val fall = fallFrom.lerp(caught, k)
+                        f.place(a, Vec3d(fall.x, fallFrom.y + (caught.y - fallFrom.y) * k * k, fall.z))
+                        if (d != null) {
+                            d.wingTuck = (n / 14f).coerceAtMost(0.84f)
+                            flyAt(catchS * (0.55 * k + 0.45 * k * k))
                         }
                         if (n == 12) cue("nivaris.roar", catchAt, 5f, 0.85f)
                         if (n == 22) cue("nivaris.wing", catchAt, 4f, 0.7f)
@@ -1334,44 +1352,27 @@ class Hunt(private val f: EirholmFight) {
                     if (d != null) {
                         for (p in f.audience()) p.sendMessage(Text.translatable("hha_arius.hunt.rope.caught").formatted(Formatting.AQUA, Formatting.BOLD), true)
                         d.play(NivarisPose.GLIDE)
-                        val dropPoint = landing.add(0.0, 6.5, 0.0)
-                        val exitPoint = landing.add(dir.multiply(22.0)).add(valley.multiply(14.0)).add(0.0, 18.0, 0.0)
-                        val carry = DragonRail.path(
-                            d.entityPos, dir.add(0.0, 0.35, 0.0).normalize(),
-                            listOf(catchAt.lerp(dropPoint, 0.5).add(valley.multiply(4.0)).add(0.0, 5.0, 0.0), dropPoint, exitPoint),
-                        )
-                        // Punkt auf der Bahn, der dem Landepunkt am nächsten liegt (dort springt Arius ab).
-                        var dropIdx = (carry.size * 0.65).toInt().coerceIn(4, carry.lastIndex)
-                        var bestD = Double.MAX_VALUE
-                        for (k in carry.indices) {
-                            val dd = carry[k].squaredDistanceTo(dropPoint)
-                            if (dd < bestD) { bestD = dd; dropIdx = k }
-                        }
-                        val rideTicks = 26
-                        val leapTicks = 10
-                        cam(climbCam0, climbCam1, catchAt.add(0.0, 2.0, 0.0), landing.add(0.0, 1.4, 0.0), rideTicks + leapTicks + 10, 64.0, 54.0, lookAt = a, lookOffset = 1.3)
+                        val rideTicks = kotlin.math.ceil((dropS - catchS) / 1.7).toInt().coerceAtLeast(36)
+                        val leapTicks = 26
+                        a.play(AriusPose.SEATED)
+                        line(climbCam0, climbCam1, catchAt.add(0.0, 2.0, 0.0), landing.add(0.0, 1.4, 0.0),
+                            rideTicks + leapTicks + 10, 64.0, 54.0, lookAt = a, lookOffset = 1.3)
                         for (n in 1..rideTicks) {
-                            val q = (dropIdx * (n / rideTicks.toDouble())).toInt().coerceAtMost(dropIdx)
-                            f.place(d, carry[q])
-                            val ahead = carry[(q + 8).coerceAtMost(carry.lastIndex)]
-                            if (ahead.squaredDistanceTo(carry[q]) > 0.01) f.face(d, ahead)
-                            f.place(a, carry[q].add(0.0, NivarisShape.SPINE_UP + 1.0, 0.0))
+                            val p = flyAt(catchS + (dropS - catchS) * n / rideTicks)
+                            f.place(a, p.add(0.0, NivarisShape.SPINE_UP + 0.5, 0.0))
                             f.face(a, landing)
-                            if (n == 10) cue("nivaris.wing", carry[q], 5f, 0.72f)
+                            if (n == 10) cue("nivaris.wing", p, 5f, 0.72f)
                             yield(Unit)
                         }
-                        // Arius springt wuchtig hinab auf den Weg, während Solvane über die Schlucht abdreht.
                         val rel = a.entityPos
                         a.play(AriusPose.STAB_GROUND, leapTicks)
                         cue("arius.wind_step", rel, 3f, 0.85f)
                         for (n in 1..leapTicks) {
                             val k = n / leapTicks.toDouble()
-                            f.place(a, rel.lerp(landing, k).add(0.0, sin(k * PI) * 1.4, 0.0))
+                            f.place(a, rel.lerp(landing, k).add(0.0, sin(k * PI) * 3.0, 0.0))
                             f.face(a, landing.add(dir))
-                            val q = (dropIdx + ((carry.lastIndex - dropIdx) * k).toInt()).coerceAtMost(carry.lastIndex)
-                            f.place(d, carry[q])
-                            val ahead = carry[(q + 6).coerceAtMost(carry.lastIndex)]
-                            if (ahead.squaredDistanceTo(carry[q]) > 0.01) f.face(d, ahead)
+                            d.wingTuck = (1f - k.toFloat()) * 0.84f
+                            flyAt(dropS + (DragonRail.length(flight) - dropS) * k)
                             yield(Unit)
                         }
                     } else {
@@ -1400,8 +1401,9 @@ class Hunt(private val f: EirholmFight) {
         } finally {
             f.atmos(HUNT_ATMOS, 16)
             if (d != null) {
+                d.wingTuck = 0f
                 f.task(script {
-                    try { yieldAll(rejoinRail(d)) } finally { dragonBusy = false }
+                    try { yieldAll(whileChasing(rejoinRail(d))) } finally { dragonBusy = false }
                 })
             }
         }
@@ -1477,13 +1479,13 @@ class Hunt(private val f: EirholmFight) {
         // Am Ende der Schlacht steht seine Leiste auf null: In der Jagd zeigt sie, was ihm geblieben ist.
         if (f.ariusHp <= 0f) f.ariusHp = f.ariusMax * 0.4f
         f.updateBars()
-        val d = f.nivaris?.takeIf { !f.dragonDowned }
+        val d = f.nivaris?.takeIf { !it.isRemoved }
         d?.let {
             it.flying = true
             it.resonance = true
             it.play(NivarisPose.GLIDE)
             dragonBusy = true
-            f.task(script { try { yieldAll(rejoinRail(it)) } finally { dragonBusy = false } })
+            f.task(script { try { yieldAll(whileChasing(rejoinRail(it))) } finally { dragonBusy = false } })
         }
         aS = 0.0
         current = this@Hunt
@@ -1510,7 +1512,7 @@ class Hunt(private val f: EirholmFight) {
                 lastLeaderArc = leaderArc
                 // Eine vorgemerkte kurze Szene beginnt, sobald kein Angriff mehr läuft.
                 val next = pendingScene
-                if (next != null && ((!busy && !dragonBusy) || f.now >= pendingUntil)) {
+                if (next != null && !dragonBusy && (!busy || f.now >= pendingUntil)) {
                     pendingScene = null
                     inScene = true
                     try {
@@ -2043,7 +2045,14 @@ class Hunt(private val f: EirholmFight) {
         d.flying = true
         d.play(NivarisPose.GLIDE)
         yieldAll(DragonRail.fly(f, d, listOf(rail.pts[k]), 1.6))
-        railS = k.toDouble()
+        val from = (k - 24).coerceAtLeast(0)
+        val to = (k + 24).coerceAtMost(rail.pts.lastIndex)
+        railS = (from..to).minBy { rail.pts[it].squaredDistanceTo(d.entityPos) }.toDouble()
+    }
+
+    private fun whileChasing(motion: Script): Script = script {
+        val steps = motion.iterator()
+        while (f.chasing && steps.hasNext()) yield(steps.next())
     }
 
     /** Solvane begleitet die Spieler auf der Bahn und speit von Zeit zu Zeit Frost über den Weg vor dem Vordersten. */
@@ -2053,11 +2062,11 @@ class Hunt(private val f: EirholmFight) {
         // In Höhlen sieht man sie nicht: dann kein Anflug mit Atem (die Höhle hat ihre eigenen Auftritte).
         val li = denseIndex(leader, 1.0, 2.0)
         val inCave = li >= 0 && HuntRoute.kind(li) == HuntRoute.TUNNEL
-        if (f.now >= nextDragon && !inCave && pendingScene == null) {
+        if (!f.dragonDowned && f.now >= nextDragon && !inCave && pendingScene == null) {
             dragonBusy = true
             nextDragon = f.now + 170 + rnd.nextInt(60)
             f.task(script {
-                try { yieldAll(dragonStrafe(d, sL)) } finally { dragonBusy = false }
+                try { yieldAll(whileChasing(dragonStrafe(d, sL))) } finally { dragonBusy = false }
             })
         }
     }
@@ -2164,6 +2173,8 @@ class Hunt(private val f: EirholmFight) {
             a.play(AriusPose.IDLE)
             a.eyeGlow = 60
         }
+        val dragon = f.nivaris
+        dragon?.fadeOut(36)
         val scene = CineScene(f) { place() }
         yieldAll(scene.play(script {
             // 1) Vom Gipfel auf das Tor: der Erste tritt herauf, der Sturm reißt auf.
@@ -2185,6 +2196,15 @@ class Hunt(private val f: EirholmFight) {
                 val yaw = (Math.toDegrees(atan2(center.z - s.z, center.x - s.x)) - 90.0).toFloat()
                 p.teleport(f.world, s.x, s.y, s.z, emptySet(), yaw, 0f, false)
                 p.onLanding()
+            }
+            dragon?.let { d ->
+                d.hideNow()
+                f.place(d, center.add(0.0, 2.0, 6.0))
+                d.mode = NivarisMode.COIL
+                d.uncoil = 0f
+                d.flying = false
+                d.play(NivarisPose.IDLE)
+                d.fadeIn(36)
             }
             val below = point(HuntRoute.stationBefore(HuntRoute.arc(HuntRoute.stations.last()) - 20.0))
             f.place(a, below)

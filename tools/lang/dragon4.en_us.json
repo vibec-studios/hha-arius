@@ -7,9 +7,9 @@
   "hha_arius.qte.r_needle_right": "Rock needle on the right: swing your legs left!",
   "hha_arius.qte.r_needle_left": "Rock needle on the left: swing your legs right!",
   "hha_arius.qte.r_ice": "The spray is freezing your hands: hack the ice off!",
-  "hha_arius.qte.r_regrip": "You're hanging by one hand: grab back on!",
-  "hha_arius.msg.ride_hit_arch": "The rock tears you off her back, you're down to one hand!",
-  "hha_arius.msg.ride_hit_fangs": "The ice fangs catch your legs, one hand slips!",
-  "hha_arius.msg.ride_hit_needle": "The needle slams you aside, one hand slips!",
-  "hha_arius.msg.ride_hit_ice": "The ice bursts your grip, you're down to one hand!"
+  "hha_arius.qte.r_regrip": "Your grip is slipping: hold tight!",
+  "hha_arius.msg.ride_hit_arch": "The rock hits you and loosens your grip!",
+  "hha_arius.msg.ride_hit_fangs": "The ice fangs catch your legs and loosen your grip!",
+  "hha_arius.msg.ride_hit_needle": "The needle slams you aside and loosens your grip!",
+  "hha_arius.msg.ride_hit_ice": "The blast of ice loosens your grip!"
 }

@@ -38,7 +38,47 @@ class VerifyDragon : FabricClientGameTest {
             bladeScene()
             stopFight()
         }
+        if ("return" in scenes) {
+            summitReturn()
+            stopFight()
+        }
+        if ("pickup" in scenes) {
+            startStage(2)
+            tick(60)
+            server { fight()?.let { f -> f.startDirector(f.scenes.collapse()) } }
+            film("pickup_before", 900, 8) { client { c -> c.player?.hasVehicle() != true } }
+            film("pickup_contact", 48, 2)
+            stopFight()
+        }
         if ("route" in scenes) routeScene()
+    }
+
+    /** Stage the actors on the summit immediately before filming the handoff to the blade. */
+    private fun VerifyKit.summitReturn() {
+        startFull()
+        server { srv ->
+            val f = fight() ?: return@server
+            f.startDirector(emptySequence())
+            Cine.end(f.audience())
+            f.onSummit = true
+            val c = f.abs(f.summitCenterRel)
+            val p = player(srv)
+            p.teleport(f.world, c.x + 3.0, c.y, c.z + 6.0, emptySet(), 180f, -10f, false)
+            f.arius?.let { f.place(it, c) }
+            if (f.nivaris == null) f.spawnNivaris(c.add(0.0, 2.0, 6.0), 0f)
+        }
+        settle(240)
+        server { srv ->
+            val f = fight() ?: return@server
+            val c = f.abs(f.summitCenterRel)
+            val p = player(srv)
+            if (p.entityPos.squaredDistanceTo(c) > 18.0 * 18.0) {
+                p.teleport(f.world, c.x + 3.0, c.y, c.z + 6.0, emptySet(), 180f, -10f, false)
+            }
+            f.arius?.let { f.place(it, c) }
+            f.startDirector(f.scenes.finale())
+        }
+        film("return", 190, 4)
     }
 
     /** Solvane wird wieder zur Klinge: oben um die Eisspitze wie beim Auftritt. */
@@ -250,6 +290,7 @@ class VerifyDragon : FabricClientGameTest {
         // Ritt in den Horst: Tick für Tick bis zum Abwurf, dann dichte Bilder und die Lagen im Protokoll.
         var guard = 0
         while (guard++ < 1200 && client { c -> c.player?.hasVehicle() == true }) {
+            if (guard <= 34 && guard % 3 == 1) shot("carry_pickup_%02d".format(guard / 3))
             if (guard % 20 == 1) shot("carry_%03d".format(guard / 20))
             tick()
         }

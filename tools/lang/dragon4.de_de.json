@@ -7,9 +7,9 @@
   "hha_arius.qte.r_needle_right": "Felsnadel rechts: schwing die Beine nach links!",
   "hha_arius.qte.r_needle_left": "Felsnadel links: schwing die Beine nach rechts!",
   "hha_arius.qte.r_ice": "Die Gischt friert deine Hände fest: hack das Eis ab!",
-  "hha_arius.qte.r_regrip": "Du hängst an einer Hand: greif wieder zu!",
-  "hha_arius.msg.ride_hit_arch": "Der Fels reißt dich vom Rücken, du hängst nur noch an einer Hand!",
-  "hha_arius.msg.ride_hit_fangs": "Die Eiszähne erwischen deine Beine, eine Hand rutscht ab!",
-  "hha_arius.msg.ride_hit_needle": "Die Felsnadel schlägt dich zur Seite, eine Hand rutscht ab!",
-  "hha_arius.msg.ride_hit_ice": "Das Eis sprengt deinen Griff, du hängst nur noch an einer Hand!"
+  "hha_arius.qte.r_regrip": "Dein Griff lockert sich: Pack fester zu!",
+  "hha_arius.msg.ride_hit_arch": "Der Fels trifft dich und dein Griff lockert sich!",
+  "hha_arius.msg.ride_hit_fangs": "Die Eiszähne erwischen deine Beine und dein Griff lockert sich!",
+  "hha_arius.msg.ride_hit_needle": "Die Felsnadel schlägt dich zur Seite und dein Griff lockert sich!",
+  "hha_arius.msg.ride_hit_ice": "Der Eisschlag lockert deinen Griff!"
 }
