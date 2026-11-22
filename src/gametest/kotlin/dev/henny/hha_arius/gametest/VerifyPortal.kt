@@ -23,7 +23,7 @@ class VerifyPortal : FabricClientGameTest {
                 val block = if (x in 0..1 && y in 0..2) Blocks.AIR else PortalBlocks.FRAME
                 w.setBlockState(c.add(x, y, 0), block.defaultState)
             }
-            for (z in -6..1) for (x in -2..3) w.setBlockState(c.add(x, -1, z), if (z == 0 && x in -1..2) PortalBlocks.FRAME.defaultState else Blocks.SNOW_BLOCK.defaultState)
+            for (z in -12..1) for (x in -3..4) w.setBlockState(c.add(x, -1, z), if (z == 0 && x in -1..2) PortalBlocks.FRAME.defaultState else Blocks.SNOW_BLOCK.defaultState)
             // Das Siegel geht ins Tor über: ein zweites Anzünden verbraucht nichts.
             val seal = ItemStack(GearItems.EIRHOLM_SEAL, 2)
             p.changeGameMode(net.minecraft.world.GameMode.SURVIVAL)
@@ -48,6 +48,13 @@ class VerifyPortal : FabricClientGameTest {
         }
         tick(8)
         shot("gate_angle")
+        server { srv ->
+            val p = player(srv)
+            val w = srv.overworld
+            p.teleport(w, corner.x + 1.0, corner.y + 0.6, corner.z - 10.0, emptySet(), 0f, -2f, false)
+        }
+        tick(8)
+        shot("gate_far")
         server { srv ->
             val p = player(srv)
             p.inventory.clear()

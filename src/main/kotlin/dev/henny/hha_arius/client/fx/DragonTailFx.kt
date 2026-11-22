@@ -78,76 +78,49 @@ class DragonTailFx(private val caster: Entity, private val start: Double, privat
             c.add(sin(ang) * r, y, cos(ang) * r)
         }
 
-        // 1) Geneigtes Frost-Siegel am Rücken (Wurzel des Schweifs)
+        // 1) Sanfter Frosthauch am Rücken (kein Glasring/Portal-Reif)
         val rootDir = pts[1].subtract(pts[0]).let { if (it.lengthSquared() < 1e-6) Z else it.normalize() }
-        val rSide = rootDir.crossProduct(UP).let { if (it.lengthSquared() < 1e-4) X else it.normalize() }
-        val rUp = rSide.crossProduct(rootDir).normalize()
-        val riftPos = pts[0].subtract(rootDir.multiply(0.15))
-        val riftR = 0.85 * grow
-        d.ring(AriusLayers.INK, riftPos, rSide, rUp, riftR * 0.78, riftR,
-            withAlpha(NAVY_DEEP, 0.5f * fade), withAlpha(ICE_MID, 0.75f * fade), segments = 24)
-        d.disc(AriusLayers.VFX_RUNE, riftPos, rSide, rUp, riftR * 0.92,
-            withAlpha(ICE_BRIGHT, 0.55f * fade * grow), t * 0.09)
+        val riftPos = pts[0].subtract(rootDir.multiply(0.12))
+        d.billboard(AriusLayers.VEIL, riftPos, 0.72 * grow, withAlpha(ICE_BRIGHT, 0.22f * fade))
 
-        // 2) Geisterhafter Drachenschweif (zweischichtig + durchgehende Rücken-Lichtbahn)
+        // 2) Geschmeidiger schlangenartiger Drachenschweif (18 verjüngte Glieder + Fächer)
         renderTail(d, matrices, pts, t, fade * grow)
 
-        // 3) Rasiermesserscharfe Frostsichel entlang der überstrichenen Bahn (auf Höhe der Schweifspitze & am Boden)
+        // 3) EINE scharfe, kurze Frostsichel direkt hinter der Schweifspitze (kein breites Plastikband, klingt schnell ab)
+        val slashFade = if (t <= SWEEP) smoothstep(t / 2.0f) else (1f - smoothstep((t - SWEEP) / 3.8f))
         val arcSpan = (lead - start).coerceAtMost(2.0 * PI)
-        if (arcSpan > 0.04) {
-            val trailStart = maxOf(start, lead - 2.65)
-            val slashPos = c.add(0.0, 0.70 + liftAfter * 0.4, 0.0)
-            // Kontraststarker tiefblauer Klingenrücken (auf weißem Schnee extrem sauber lesbar)
-            d.arc(AriusLayers.INK, slashPos, Z, X, radius * 0.62, radius * 1.04, trailStart, lead,
-                withAlpha(NAVY_DEEP, 0.08f * fade), withAlpha(NAVY_DEEP, 0.86f * fade), segments = 48)
-            // Fließendes eisblaues Schwungband
-            d.arc(AriusLayers.VFX_FLOW, slashPos.add(0.0, 0.03, 0.0), Z, X, radius * 0.46, radius * 1.07, trailStart, lead,
-                withAlpha(ICE_MID, 0f), withAlpha(ICE_BRIGHT, 0.88f * fade), segments = 48, uTile = 2.5f, uOffset = -t * 0.25f)
-            // Gleißende frostweiße Außenkante
-            d.arc(AriusLayers.VFX_GLOW, slashPos.add(0.0, 0.06, 0.0), Z, X, radius * 0.86, radius * 1.05, trailStart, lead,
-                withAlpha(ICE_BRIGHT, 0.20f * fade), withAlpha(WHITE, 1.0f * fade), segments = 48)
-
-            // Sauberer Boden-Frostring entlang des gesamten überstrichenen Winkels
-            val floorPos = c.add(0.0, 0.09, 0.0)
-            d.arc(AriusLayers.INK, floorPos, Z, X, radius * 0.78, radius * 1.02, start, lead,
-                withAlpha(NAVY_DEEP, 0.16f * fade), withAlpha(NAVY_MID, 0.64f * fade), segments = 48)
-            d.arc(AriusLayers.VFX_GLOW, floorPos.add(0.0, 0.02, 0.0), Z, X, radius * 0.92, radius * 1.04, start, lead,
-                withAlpha(ICE_MID, 0.15f * fade), withAlpha(WHITE, 0.82f * fade), segments = 48)
+        if (arcSpan > 0.04 && slashFade > 0.02f) {
+            // Kurz & messerscharf (~52° Nachlauf statt 150°-Scheibe)
+            val trailStart = maxOf(start, lead - 0.92)
+            val slashPos = c.add(0.0, 0.68 + liftAfter * 0.35, 0.0)
+            // Schmaler, kontrastreicher Tiefblau-Klingenrücken
+            d.arc(AriusLayers.INK, slashPos, Z, X, radius * 0.85, radius * 1.02, trailStart, lead,
+                withAlpha(NAVY_DEEP, 0f), withAlpha(NAVY_MID, 0.76f * slashFade), segments = 28)
+            // Rasiermesserscharfe frostweiße Schneide direkt an der Außenkante
+            d.arc(AriusLayers.VFX_GLOW, slashPos.add(0.0, 0.02, 0.0), Z, X, radius * 0.93, radius * 1.04, trailStart, lead,
+                withAlpha(ICE_BRIGHT, 0f), withAlpha(WHITE, 0.96f * slashFade), segments = 28)
         }
 
-        // 4) Scharfe Eiskristalle, die sich tangential von der Schweifspitze lösen
-        val shardCount = (10 * AriusClientConfig.fx.coerceIn(0.3f, 1f)).toInt().coerceAtLeast(4)
+        // 4) Wenige feine Eissplitter, die sich tangential von der Schweifspitze lösen und rasch vergehen
+        val shardCount = (8 * AriusClientConfig.fx.coerceIn(0.3f, 1f)).toInt().coerceAtLeast(4)
         for (i in 0 until shardCount) {
             val phase = (i + 0.5) / shardCount
             val dt = t - SWEEP * phase
-            if (dt !in 0.0..8.5) continue
+            if (dt !in 0.0..5.5) continue
             val a = start + 2.0 * PI * (1.0 - (1.0 - phase).pow(2.8))
             val radDir = Vec3d(sin(a), 0.0, cos(a))
             val tang = Vec3d(cos(a), 0.0, -sin(a))
-            val p = c.add(radDir.multiply(radius * (0.90 + 0.08 * sin(i * 2.7)) + dt * 0.14))
-                .add(tang.multiply(dt * 0.12))
-                .add(0.0, 0.45 + 0.18 * sin(i * 1.7) + dt * 0.04, 0.0)
-            val sa = (1.0 - dt / 8.5).toFloat().coerceIn(0f, 1f) * fade
-            d.box(AriusLayers.INK, p, radDir.multiply(0.055), UP.multiply(0.055), tang.multiply(0.24),
-                withAlpha(if (i % 2 == 0) ICE_BRIGHT else NAVY_MID, 0.88f * sa))
+            val p = c.add(radDir.multiply(radius * (0.93 + 0.05 * sin(i * 2.7)) + dt * 0.16))
+                .add(tang.multiply(dt * 0.14))
+                .add(0.0, 0.52 + 0.14 * sin(i * 1.7) + dt * 0.03, 0.0)
+            val sa = (1.0 - dt / 5.5).toFloat().coerceIn(0f, 1f) * fade
+            d.box(AriusLayers.INK, p, radDir.multiply(0.045), UP.multiply(0.045), tang.multiply(0.22),
+                withAlpha(if (i % 2 == 0) ICE_BRIGHT else NAVY_MID, 0.85f * sa))
         }
 
-        // 5) Lichtspitze am Schwanzfächer
+        // 5) Dezenter Lichtpunkt an der Schweifspitze
         val tip = pts.last()
-        d.billboard(AriusLayers.VFX_FLARE, tip, 1.35 * grow, withAlpha(WHITE, 0.95f * fade))
-        d.billboard(AriusLayers.VFX_GLOW, tip, 2.4 * grow, withAlpha(ICE_BRIGHT, 0.45f * fade))
-
-        // 6) Abschluss-Druckring nach Vollendung des 360°-Schwungs
-        if (t > SWEEP - 1f) {
-            val s = ((t - (SWEEP - 1f)) / (life - SWEEP + 1f).coerceAtLeast(1f)).coerceIn(0f, 1f)
-            val ease = 1f - (1f - s) * (1f - s)
-            val rOut = radius * (1.0 + 0.42 * ease)
-            val rf = 1f - s
-            d.ring(AriusLayers.INK, c.add(0.0, 0.10, 0.0), X, Z, rOut - 0.55, rOut,
-                withAlpha(NAVY_DEEP, 0f), withAlpha(ICE_MID, 0.62f * rf), segments = 48)
-            d.ring(AriusLayers.VFX_GLOW, c.add(0.0, 0.12, 0.0), X, Z, rOut - 0.35, rOut + 0.06,
-                withAlpha(ICE_BRIGHT, 0f), withAlpha(WHITE, 0.85f * rf), segments = 48)
-        }
+        d.billboard(AriusLayers.VFX_FLARE, tip, 0.95 * grow, withAlpha(WHITE, 0.88f * slashFade))
     }
 
     private fun renderTail(d: VfxDraw, matrices: MatrixStack, pts: Array<Vec3d>, t: Float, alpha: Float) {

@@ -120,20 +120,14 @@ class DragonBreathFx(private val caster: Entity, private val range: Double, life
         val z = f.negate()
 
         val emerge = (1f - alpha).toDouble()
-        val recoil = if (jaw > 0.85f) 0.09 * sin(t * 1.45) else 0.0
+        val recoil = if (jaw > 0.85f) 0.08 * sin(t * 1.45) else 0.0
         val joint = headJoint(td).subtract(f.multiply(emerge * 1.05 - recoil))
-        // Siegel schwebt schlank über dem Rücken des Spielers (nie direkt vor der Third-Person-Kamera)
-        val portal = joint.subtract(f.multiply(1.55)).add(hu.multiply(0.32))
+        val portal = joint.subtract(f.multiply(1.50)).add(hu.multiply(0.30))
         val cam = d.cam
 
-        // Klares, schlankes Frost-Siegel am Halsansatz (Tiefblau-Kontrast + scharfer Eisring)
-        val ringR = 0.68 + 0.16 * alpha
-        d.ring(AriusLayers.INK, portal, hl, hu, ringR * 0.80, ringR * 1.04,
-            withAlpha(NAVY_DEEP, 0.48f * alpha), withAlpha(ICE_MID, 0.72f * alpha), segments = 32)
-        d.ring(AriusLayers.VFX_GLOW, portal, hl, hu, ringR * 0.90, ringR * 1.02,
-            withAlpha(ICE_MID, 0.25f * alpha), withAlpha(WHITE, 0.82f * alpha), segments = 32)
-        d.disc(AriusLayers.VFX_RUNE, portal, hl, hu, ringR * 0.90,
-            withAlpha(ICE_MID, (if (fp) 0.24f else 0.42f) * alpha), t * 0.04)
+        // Sanfter Frostnebel am Halsansatz (kein Glasring, keine Seifenblase)
+        d.billboard(AriusLayers.VEIL, portal, 1.15 + 0.25 * alpha, withAlpha(ICE_BRIGHT, (if (fp) 0.14f else 0.26f) * alpha))
+        d.billboard(AriusLayers.VFX_GLOW, portal, 1.35 * alpha, withAlpha(ICE_MID, (if (fp) 0.12f else 0.22f) * alpha))
 
         // Geschwungener 5-Glieder-Hals mit durchgehendem Licht-Rückgrat
         renderNeck(d, matrices, joint, portal, f, hu, hl, t, alpha, fp)
@@ -218,17 +212,12 @@ class DragonBreathFx(private val caster: Entity, private val range: Double, life
             { s -> withAlpha(ICE_BRIGHT, (if (fp) 0.30f else 0.65f) * alpha * (1f - s)) }, uScale = 0.45f, uOffset = -t * 0.14f)
     }
 
-    /** Vorlauf-Sog im Rachen (0..BREATH_FROM): klarer Aufbau vor dem Ausstoß. */
+    /** Vorlauf-Sog im Rachen (0..BREATH_FROM): klarer Aufbau vor dem Ausstoß ohne Glasring. */
     private fun renderCharge(d: VfxDraw, t: Float, td: Float, alpha: Float) {
         val k = smoothstep(t / BREATH_FROM) * alpha
         val m = mouth(td)
-        val f = look(td)
-        val side = f.crossProduct(UP).let { if (it.lengthSquared() < 1e-4) X else it.normalize() }
-        val upv = side.crossProduct(f).normalize()
-        val r = 1.15 * (1.0 - 0.65 * k)
-        d.ring(AriusLayers.INK, m, side, upv, r * 0.75, r, withAlpha(NAVY_DEEP, 0f), withAlpha(ICE_MID, 0.72f * k), segments = 28)
-        d.billboard(AriusLayers.VFX_FLARE, m, 0.55 + 0.85 * k, withAlpha(WHITE, 0.9f * k))
-        d.billboard(AriusLayers.VFX_GLOW, m, 1.4 + 0.8 * k, withAlpha(ICE_BRIGHT, 0.45f * k))
+        d.billboard(AriusLayers.VFX_FLARE, m, 0.48 + 0.72 * k, withAlpha(WHITE, 0.88f * k))
+        d.billboard(AriusLayers.VFX_GLOW, m, 1.15 + 0.65 * k, withAlpha(ICE_BRIGHT, 0.42f * k))
     }
 
     // --- Fokussierter, mehrschichtiger Frostodem -------------------------------------------------------------------
@@ -270,98 +259,96 @@ class DragonBreathFx(private val caster: Entity, private val range: Double, life
             ups += s.crossProduct(dir).normalize()
         }
 
-        // 1) Tiefblauer Kontrastmantel (hält den Atem auf Schnee und im Sturm gestochen scharf)
-        d.ribbon(
-            AriusLayers.INK, pts,
-            { q -> 0.34 + q * 1.95 },
-            { q ->
-                val edgeFade = sin(q * PI).toFloat().coerceIn(0f, 1f)
-                withAlpha(lerpColor(NAVY_DEEP, ICE_MID, 1f - q), 0.56f * fade * edgeFade)
-            },
-            uScale = 0.22f, uOffset = -t * 0.18f,
-        )
-
-        // 2) Fließender eisblauer Hauptstrom (VFX_FLOW)
+        // 1) Weich zulaufender eisblauer Froststrom (Tropfen-Hüllkurve: schmal am Maul, bauchig in der Mitte, läuft weich aus — kein Schlauch/Plastikrohr)
         d.ribbon(
             AriusLayers.VFX_FLOW, pts,
-            { q -> 0.38 + q * 2.25 },
-            { q -> withAlpha(lerpColor(ICE_MID, WHITE, (1f - q * 0.65f).coerceIn(0f, 1f)), 0.86f * fade * (1f - q * 0.45f)) },
-            uScale = 0.28f, uOffset = -t * 0.24f,
+            { q ->
+                val env = sin(q * PI).coerceIn(0.0, 1.0)
+                0.16 + env * (0.48 + q * 0.95)
+            },
+            { q ->
+                val env = sin(q * PI).toFloat().coerceIn(0f, 1f)
+                val col = lerpColor(NAVY_MID, ICE_BRIGHT, (1f - q * 0.55f).coerceIn(0f, 1f))
+                withAlpha(col, 0.74f * fade * env)
+            },
+            uScale = 0.28f, uOffset = -t * 0.26f,
         )
 
-        // 3) Gleißender frostweißer Innenkern (verjüngt sich elegant)
+        // 2) Heller, fokussierter frostweißer Kernstrom (kräftig am Maul, verjüngt sich elegant zu feinem Nebel)
         d.ribbon(
             AriusLayers.VFX_GLOW, pts,
-            { q -> 0.18 + q * 0.88 },
-            { q -> withAlpha(lerpColor(ICE_BRIGHT, WHITE, (1f - q).coerceIn(0f, 1f)), 0.95f * fade * (1f - q * 0.40f)) },
-            uScale = 0.2f, uOffset = -t * 0.20f,
+            { q ->
+                val env = (1.0 - q * 0.72).coerceAtLeast(0.06) * sin((q * 0.88 + 0.12) * PI).coerceIn(0.0, 1.0)
+                0.10 + env * 0.52
+            },
+            { q ->
+                val env = (1f - q).coerceIn(0f, 1f)
+                withAlpha(lerpColor(ICE_BRIGHT, WHITE, env), 0.92f * fade * env * env)
+            },
+            uScale = 0.22f, uOffset = -t * 0.22f,
         )
 
-        // 4) Zwei enge, geschwungene Frost-Spiralen um den Kegel
+        // 3) Zwei feine, weich auslaufende Frostschlieren (ohne Ringe oder Röhren)
         for (strand in 0 until 2) {
             val spiral = ArrayList<Vec3d>(segs + 1)
             for (i in 0..segs) {
                 val q = i / segs.toDouble()
-                val rad = 0.26 + q * range * 0.18
-                val ang = q * 8.5 - t * 0.58 + strand * PI
+                val rad = (0.14 + q * range * 0.085) * sin(q * PI).coerceIn(0.0, 1.0)
+                val ang = q * 6.5 - t * 0.48 + strand * PI
                 spiral += pts[i].add(sides[i].multiply(cos(ang) * rad)).add(ups[i].multiply(sin(ang) * rad))
             }
             d.ribbon(
-                AriusLayers.VFX_GLOW, spiral,
-                { q -> 0.08 + q * 0.12 },
-                { q -> withAlpha(if (strand == 0) WHITE else ICE_BRIGHT, 0.85f * fade * (1f - q * 0.80f)) },
-                uScale = 1f, uOffset = 0f,
+                AriusLayers.VFX_FLOW, spiral,
+                { q -> 0.05 + 0.08 * sin(q * PI).coerceIn(0.0, 1.0) },
+                { q ->
+                    val env = sin(q * PI).toFloat().coerceIn(0f, 1f)
+                    withAlpha(if (strand == 0) WHITE else ICE_BRIGHT, 0.56f * fade * env)
+                },
+                uScale = 0.4f, uOffset = -t * 0.20f,
             )
         }
 
-        // 5) Rhythmische Frost-Druckringe, die mit dem Strahl vorwärts rasen (auch von hinten sofort als Kegel lesbar!)
-        val ringCount = 6
-        for (rIdx in 0 until ringCount) {
-            val phase = ((activeT * 0.095f + rIdx.toFloat() / ringCount) % 1f)
-            if (phase > extend) continue
-            val fIdx = (phase * segs).coerceIn(0f, (segs - 1).toFloat())
-            val i0 = fIdx.toInt()
-            val frac = (fIdx - i0).toDouble()
-            val pos = pts[i0].lerp(pts[i0 + 1], frac)
-            val rad = 0.44 + phase * (range * 0.21)
-            val rf = sin(phase * PI).toFloat() * fade
-            d.ring(AriusLayers.INK, pos, sides[i0], ups[i0], rad * 0.78, rad * 1.06,
-                withAlpha(NAVY_DEEP, 0f), withAlpha(NAVY_MID, 0.65f * rf), segments = 28)
-            d.ring(AriusLayers.VFX_GLOW, pos, sides[i0], ups[i0], rad * 0.86, rad * 1.04,
-                withAlpha(ICE_BRIGHT, 0f), withAlpha(WHITE, 0.88f * rf), segments = 28)
+        // 4) Zarte Frostschwaden am weichen Auslauf des Strahls (lösen die Spitze natürlich in Eisnebel auf)
+        for (w in 0 until 5) {
+            val q = ((activeT * 0.06 + w / 5.0) % 1.0)
+            if (q < 0.42 || q > extend) continue
+            val i0 = (q * (segs - 1)).toInt().coerceIn(0, segs - 1)
+            val ang = w * 2.1 + t * 0.08
+            val rad = (q - 0.35) * 1.15
+            val pos = pts[i0].add(sides[i0].multiply(cos(ang) * rad)).add(ups[i0].multiply(sin(ang) * rad * 0.6))
+            val wa = sin(((q - 0.42) / 0.58) * PI).toFloat().coerceIn(0f, 1f) * 0.24f * fade
+            d.billboard(AriusLayers.VEIL, pos, 0.65 + q * 0.85, withAlpha(ICE_BRIGHT, wa), (t * 0.8 + w * 55.0) % 360.0)
         }
 
-        // 6) Facettierte Eiskristalle entlang der Stromkanten (schlank, in Flugrichtung gestreckt)
-        val shardCount = (10 * fx).toInt().coerceAtLeast(4)
+        // 5) Drifting Eissplitter: feine, kristalline Eisnadeln lösen sich aus dem Strahl und treiben auslaufend weiter
+        val shardCount = (18 * fx).toInt().coerceAtLeast(8)
         for (j in 0 until shardCount) {
-            val q = ((activeT * 0.085 + j.toDouble() / shardCount) % 1.0)
-            if (q > extend) continue
+            val q = ((activeT * 0.075 + j.toDouble() / shardCount) % 1.0)
+            if (q < 0.12 || q > extend) continue
             val i0 = (q * (segs - 1)).toInt().coerceIn(0, segs - 1)
             val fwd = pts[i0 + 1].subtract(pts[i0]).let { if (it.lengthSquared() < 1e-6) look(td) else it.normalize() }
-            val ang = j * 2.39996 + t * 0.15
-            val rad = (0.3 + q * range * 0.15) * (0.65 + 0.35 * sin(j * 1.9))
-            val pos = pts[i0].add(sides[i0].multiply(cos(ang) * rad)).add(ups[i0].multiply(sin(ang) * rad))
-            val sf = sin(q * PI).toFloat() * fade
-            val sz = 0.09 + q * 0.08
-            d.box(AriusLayers.INK, pos, sides[i0].multiply(sz * 0.65), ups[i0].multiply(sz * 0.65), fwd.multiply(sz * 2.6),
-                withAlpha(if (j % 2 == 0) ICE_BRIGHT else NAVY_MID, 0.82f * sf))
+            val ang = j * 2.39996 + t * 0.09
+            // Splitter fächern zum auslaufenden Ende hin sanft auf
+            val spread = (0.14 + q * q * range * 0.14) * (0.55 + 0.45 * sin(j * 1.9))
+            val pos = pts[i0].add(sides[i0].multiply(cos(ang) * spread)).add(ups[i0].multiply(sin(ang) * spread * 0.78))
+            val sf = sin(((q - 0.12) / 0.88) * PI).toFloat().coerceIn(0f, 1f) * fade
+            val sz = 0.055 + (1.0 - q * 0.45) * 0.055
+            val col = when (j % 3) {
+                0 -> WHITE
+                1 -> ICE_BRIGHT
+                else -> NAVY_MID
+            }
+            d.box(AriusLayers.INK, pos, sides[i0].multiply(sz * 0.55), ups[i0].multiply(sz * 0.55), fwd.multiply(sz * 2.8),
+                withAlpha(col, 0.84f * sf))
         }
 
-        // 7) Scharfer Mündungsblitz am geöffneten Kiefer
-        if (t < breathTo + 1f) {
+        // 6) Fokussierter Mündungsglanz direkt am geöffneten Kiefer
+        if (t < breathTo + 1f && activeSpan > 0) {
             val m = mouth(td)
             val f = look(td)
-            val pulse = 0.9f + 0.12f * sin(t * 1.5f)
-            d.billboard(AriusLayers.VFX_FLARE, m, 1.35 * pulse, withAlpha(WHITE, 0.92f * fade))
-            d.billboard(AriusLayers.VFX_GLOW, m.add(f.multiply(0.8)), 2.2 * pulse, withAlpha(ICE_BRIGHT, 0.45f * fade))
-        }
-
-        // 8) Leichte Boden-Reifwelle dort, wo der Strahl nahe am Boden entlangstreicht
-        val endPt = pts.last()
-        if (endPt.y - caster.y < 1.8 && activeSpan > 0) {
-            val gPos = Vec3d(endPt.x, caster.y + 0.09, endPt.z)
-            val gr = 1.2 + 0.6 * sin(t * 0.4)
-            d.ring(AriusLayers.VFX_GLOW, gPos, X, Z, gr * 0.55, gr, withAlpha(ICE_MID, 0f), withAlpha(ICE_BRIGHT, 0.45f * fade), segments = 24)
+            val pulse = 0.92f + 0.08f * sin(t * 1.4f)
+            d.billboard(AriusLayers.VFX_FLARE, m, 1.10 * pulse, withAlpha(WHITE, 0.90f * fade))
+            d.billboard(AriusLayers.VFX_GLOW, m.add(f.multiply(0.55)), 1.65 * pulse, withAlpha(ICE_BRIGHT, 0.42f * fade))
         }
     }
 

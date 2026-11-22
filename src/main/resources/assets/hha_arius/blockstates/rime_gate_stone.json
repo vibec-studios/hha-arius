@@ -3,78 +3,78 @@
     "": [
       {
         "model": "hha_arius:block/rime_gate_stone",
-        "weight": 3
+        "weight": 5
       },
       {
         "model": "hha_arius:block/rime_gate_stone",
-        "weight": 3,
+        "weight": 5,
         "y": 90
       },
       {
         "model": "hha_arius:block/rime_gate_stone",
-        "weight": 3,
+        "weight": 5,
         "y": 180
       },
       {
         "model": "hha_arius:block/rime_gate_stone",
-        "weight": 3,
+        "weight": 5,
         "y": 270
       },
       {
         "model": "hha_arius:block/rime_gate_stone_1",
+        "weight": 5
+      },
+      {
+        "model": "hha_arius:block/rime_gate_stone_1",
+        "weight": 5,
+        "y": 90
+      },
+      {
+        "model": "hha_arius:block/rime_gate_stone_1",
+        "weight": 5,
+        "y": 180
+      },
+      {
+        "model": "hha_arius:block/rime_gate_stone_1",
+        "weight": 5,
+        "y": 270
+      },
+      {
+        "model": "hha_arius:block/rime_gate_stone_2",
         "weight": 4
       },
       {
-        "model": "hha_arius:block/rime_gate_stone_1",
+        "model": "hha_arius:block/rime_gate_stone_2",
         "weight": 4,
         "y": 90
       },
       {
-        "model": "hha_arius:block/rime_gate_stone_1",
+        "model": "hha_arius:block/rime_gate_stone_2",
         "weight": 4,
         "y": 180
       },
       {
-        "model": "hha_arius:block/rime_gate_stone_1",
+        "model": "hha_arius:block/rime_gate_stone_2",
         "weight": 4,
         "y": 270
       },
       {
-        "model": "hha_arius:block/rime_gate_stone_2",
+        "model": "hha_arius:block/rime_gate_stone_3",
         "weight": 2
       },
       {
-        "model": "hha_arius:block/rime_gate_stone_2",
+        "model": "hha_arius:block/rime_gate_stone_3",
         "weight": 2,
         "y": 90
       },
       {
-        "model": "hha_arius:block/rime_gate_stone_2",
+        "model": "hha_arius:block/rime_gate_stone_3",
         "weight": 2,
         "y": 180
       },
       {
-        "model": "hha_arius:block/rime_gate_stone_2",
+        "model": "hha_arius:block/rime_gate_stone_3",
         "weight": 2,
-        "y": 270
-      },
-      {
-        "model": "hha_arius:block/rime_gate_stone_3",
-        "weight": 3
-      },
-      {
-        "model": "hha_arius:block/rime_gate_stone_3",
-        "weight": 3,
-        "y": 90
-      },
-      {
-        "model": "hha_arius:block/rime_gate_stone_3",
-        "weight": 3,
-        "y": 180
-      },
-      {
-        "model": "hha_arius:block/rime_gate_stone_3",
-        "weight": 3,
         "y": 270
       }
     ]
