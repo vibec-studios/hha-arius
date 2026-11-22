@@ -173,8 +173,28 @@ class Hunt(private val f: EirholmFight) {
 
     private var pendingScene: (() -> Script)? = null
     private var pendingUntil = 0L
+    private var pendingUrgent = false
     private var inScene = false
     private val sceneDone = HashSet<String>()
+    private var yangTriggered = false
+
+    /**
+     * Erster Wegpunkt auf der Massiv-Spirale (nach der Kristallgrotte), an dem der Pfad die gespaltene Schnittebene
+     * ([ArenaLayout.CUT_X]) erreicht. Genau davor repariert Arius den Berg mit Yang, sodass man nie hineinfallen kann.
+     */
+    private val firstSplitCrossingIdx: Int by lazy {
+        val zMin = ArenaLayout.SPIRE.z - FarPlan.MASSIF_R - 6
+        for (i in 0 until HuntRoute.size) {
+            val rz = floor(HuntRoute.z(i)).toInt()
+            val ry = floor(HuntRoute.y(i)).toInt()
+            if (rz >= zMin && abs(HuntRoute.x(i) - ArenaLayout.CUT_X) <= SplitRecovery.cutHalfWidth(ry) + 1.5) {
+                return@lazy i
+            }
+        }
+        HuntRoute.size - 1
+    }
+
+    private val firstSplitCrossingArc: Double by lazy { HuntRoute.arc(firstSplitCrossingIdx) }
 
     /** Merkt eine einmalige kurze Szene vor; sie beginnt, sobald kein Angriff mehr läuft (spätestens nach 2,5 s). */
     private fun queueScene(id: String, wait: Int = 50, scene: () -> Script): Boolean {
@@ -243,6 +263,105 @@ class Hunt(private val f: EirholmFight) {
             beside(i, -preferOut * 0.5, 1.8),
         )
         return candidates.firstOrNull { clearAir(it, 0.65) } ?: candidates.firstOrNull { airAt(it) } ?: beside(i, 0.0, 1.8)
+    }
+
+    /**
+     * Goldene Yang-Wiederherstellung vor der ersten Querung der Bergspalte (Massiv-Spirale nach der Kristallgrotte):
+     * Arius springt an die Spaltkante, hebt Klinge und Hand und schließt Berg, Pfad und Gipfelarena mit aufsteigendem
+     * goldenem Yang-Licht genau dann, wenn die Spieler hinüber müssen. Beim Überspringen wird sofort exakt wiederhergestellt.
+     */
+    private fun yangRepairScene(a: AriusEntity): Script = mini(onAbort = {
+        f.scenes.restoreSplitInstant()
+        f.atmos(HUNT_ATMOS, 16)
+    }) {
+        script {
+            val crossArc = firstSplitCrossingArc
+            val rimArc = (crossArc - 3.5).coerceAtLeast(0.0)
+            val rimIdx = HuntRoute.indexOfArc(rimArc)
+            val standArc = (crossArc - 11.5).coerceAtLeast(0.0)
+            val standIdx = HuntRoute.indexOfArc(standArc)
+            val resumeArc = minOf(aS, (standArc - 14.0).coerceAtLeast(0.0))
+
+            // Spieler, die schon sehr nah an der Kante sind, sicher auf den festen Weg davor stellen (kein Sturz).
+            for ((idx, p) in f.players().withIndex()) {
+                if (arcOf(p) >= crossArc - 8.5) {
+                    val backIdx = HuntRoute.indexOfArc((standArc - idx * 1.4).coerceAtLeast(0.0))
+                    val spot = point(backIdx)
+                    p.teleport(f.world, spot.x, spot.y + 0.05, spot.z, emptySet(), yawAlong(backIdx), 0f, false)
+                    p.velocity = Vec3d.ZERO
+                    p.velocityDirty = true
+                    p.onLanding()
+                    safe[p.uuid]?.index = backIdx
+                }
+            }
+
+            val rimPos = point(rimIdx)
+            val chasmPos = pathAt(crossArc + 4.5)
+            val x = ArenaLayout.CUT_X
+            val foot = ArenaLayout.SPIRE.z - FarPlan.MASSIF_R
+            val spireZ = ArenaLayout.SPIRE.z.toDouble()
+            val summitY = FarPlan.SHOULDER_Y
+            val yangFrom = f.abs(Vec3d(x, 4.0, foot + 8.0))
+            val yangTo = f.abs(Vec3d(x, ArenaLayout.SPIRE_TOP.toDouble(), spireZ))
+            val mid = f.abs(Vec3d(x, 128.0, spireZ - 58.0))
+
+            f.atmos(AtmosMode.REVEAL, 10)
+            HuntNet.fx(f.audience(), HuntFx.LETTERBOX, rimPos, life = 86)
+
+            // 1) Arius setzt an die Spaltkante, Kamera blickt frei über Arius in den klaffenden Spalt und zum Gipfel.
+            val prevPos = a.entityPos
+            f.place(a, rimPos)
+            f.face(a, chasmPos)
+            a.play(AriusPose.CORE_RAISE)
+            if (!Cine.muted) f.fxAll(FxKind.DASH_STREAK, prevPos, rimPos, life = 10)
+
+            val rawCam0 = rimPos.add(8.5, 4.8, -14.5)
+            val cam0 = Vec3d(rawCam0.x, maxOf(rawCam0.y, terrainTop(rawCam0, 4) + 4.0), rawCam0.z)
+            val rawCam1 = rimPos.add(11.0, 15.5, -28.0)
+            val cam1 = Vec3d(rawCam1.x, maxOf(rawCam1.y, terrainTop(rawCam1, 5) + 6.0), rawCam1.z)
+            val lookA = rimPos.lerp(chasmPos, 0.35).add(0.0, 1.6, 0.0)
+            val lookB = chasmPos.add(0.0, 14.0, 16.0)
+
+            rawLine(cam0, cam0.lerp(cam1, 0.25), lookA, lookA.add(0.0, 1.5, 0.0), 22, 60.0, 58.0)
+            if (!Cine.muted) {
+                f.say("yang_repair", 56)
+                Vfx.flare(f.world, Vfx.Style.GOLD, rimPos.add(0.0, 1.8, 0.0), 2.4f, 18)
+                Vfx.shockwave(f.world, Vfx.Style.GOLD, rimPos.add(0.0, 0.3, 0.0), 8f, 18, 1.8f)
+            }
+            f.farSound("resonance.chime", rimPos, 5f, 0.75f)
+            f.farSound("transform.pulse", rimPos, 4.5f, 0.85f)
+            wait(18)
+
+            // 2) Goldene Yang-Welle steigt durch den gespaltenen Berg auf und schließt Pfad, Flanke und Gipfelarena.
+            rawLine(cam0.lerp(cam1, 0.25), cam1, lookA.add(0.0, 1.5, 0.0), lookB, 46, 58.0, 62.0)
+            if (!Cine.muted) {
+                f.fxAll(FxKind.YANG_RESTORE, yangFrom, yangTo, a = 10f, life = 64)
+                f.fxAll(FxKind.FLASH, rimPos, a = 0.2f, life = 8)
+                Vfx.shockwave(f.world, Vfx.Style.GOLD, chasmPos.add(0.0, 0.6, 0.0), 16f, 22, 2.2f)
+            }
+            f.farVanilla(SoundEvents.BLOCK_BEACON_ACTIVATE, rimPos, 5f, 0.92f)
+            yieldAll(f.scenes.restoreWithYang(ticks = 36))
+
+            // 3) Goldener Nachhall über dem geschlossenen Pfad & Gipfel, dann zurück in die Jagd.
+            if (!Cine.muted) {
+                Vfx.shockwave(f.world, Vfx.Style.GOLD, chasmPos.add(0.0, 0.8, 0.0), 18f, 20, 2.2f)
+                Vfx.shockwave(f.world, Vfx.Style.GOLD, f.abs(Vec3d(x, summitY + 2.0, spireZ)), 30f, 22, 2.2f)
+                f.fxAll(FxKind.FLASH, mid, a = 0.16f, life = 6)
+            }
+            f.farSound("resonance.chime", chasmPos, 5f, 1.15f)
+            a.play(AriusPose.IDLE)
+            wait(12)
+
+            // Arius springt auf seine Verfolgungsposition hinter den Spielern zurück, damit niemand direkt getroffen wird.
+            val backPos = pathAt(resumeArc)
+            if (!Cine.muted) f.fxAll(FxKind.DASH_STREAK, rimPos, backPos, life = 10)
+            f.place(a, backPos)
+            f.face(a, rimPos)
+            aS = resumeArc
+            f.atmos(HUNT_ATMOS, 16)
+            home(12)
+            wait(12)
+        }
     }
 
     /**
@@ -493,6 +612,24 @@ class Hunt(private val f: EirholmFight) {
                 continue
             }
             if (Hold.isHeld(p) || p.hasVehicle()) continue
+            // Sicherheitsgrenze vor dem noch offenen Bergspalt: kein Spieler kann hineinfallen, bevor Yang ihn schließt.
+            if (f.scenes.isSplitActive) {
+                val curArc = arcOf(p)
+                val nearCut = curArc >= firstSplitCrossingArc - 6.5 ||
+                    (p.z - f.origin.z >= ArenaLayout.SPIRE.z - FarPlan.MASSIF_R - 6 &&
+                        abs((p.x - f.origin.x) - ArenaLayout.CUT_X) <= SplitRecovery.cutHalfWidth((p.y - f.origin.y).toInt()) + 2.5)
+                if (nearCut) {
+                    val backIdx = HuntRoute.indexOfArc((firstSplitCrossingArc - 10.5).coerceAtLeast(0.0))
+                    val spot = point(backIdx)
+                    p.teleport(f.world, spot.x, spot.y + 0.05, spot.z, emptySet(), yawAlong(backIdx), p.pitch, false)
+                    p.velocity = Vec3d.ZERO
+                    p.velocityDirty = true
+                    p.onLanding()
+                    s.index = backIdx
+                    s.offTicks = 0
+                    continue
+                }
+            }
             val safeY = f.origin.y + HuntRoute.standY(s.index)
             // Auf dem Feld vor dem Berg (erstes Stück der Route) darf man sich frei bewegen.
             val onField = HuntRoute.arc(s.index) < 50.0 && p.y < f.origin.y + 6.0
@@ -1609,18 +1746,29 @@ class Hunt(private val f: EirholmFight) {
                 val leaderArc = arcOf(leader)
                 val rearArc = arcOf(rear)
                 lastLeaderArc = leaderArc
-                // Eine vorgemerkte kurze Szene beginnt, sobald kein Angriff mehr läuft.
+                // Vor der ersten Querung der Bergspalte auf dem Massiv: Arius schließt den Spalt sichtbar mit Yang.
+                if (f.scenes.isSplitActive && !yangTriggered && leaderArc >= firstSplitCrossingArc - 22.0) {
+                    yangTriggered = true
+                    sceneDone += "yang_repair"
+                    pendingScene = { yangRepairScene(a) }
+                    pendingUntil = f.now
+                    pendingUrgent = true
+                }
+                // Eine vorgemerkte kurze Szene beginnt, sobald kein Angriff mehr läuft (Yang-Reparatur hat Vorrang).
                 val next = pendingScene
-                if (next != null && !dragonBusy && (!busy || f.now >= pendingUntil)) {
+                if (next != null && (pendingUrgent || (!dragonBusy && (!busy || f.now >= pendingUntil)))) {
+                    val urgent = pendingUrgent
                     pendingScene = null
+                    pendingUrgent = false
                     inScene = true
                     try {
                         yieldAll(next())
                     } finally {
                         inScene = false
+                        if (urgent && f.scenes.isSplitActive) f.scenes.restoreSplitInstant()
                     }
-                    nextAttack = maxOf(nextAttack, f.now + 30)
-                    nextLeap = maxOf(nextLeap, f.now + 30)
+                    nextAttack = maxOf(nextAttack, f.now + 45)
+                    nextLeap = maxOf(nextLeap, f.now + 45)
                     continue
                 }
                 tickCaves(players, leaderArc, rearArc)
@@ -1728,9 +1876,13 @@ class Hunt(private val f: EirholmFight) {
         return maxOf(HuntRoute.liftAt(i), free - (p.y - base.y) - 2.2)
     }
 
-    /** Bis wohin Arius von [from] nach [to] kommt, ohne in einen geschlossenen Geröllpfropfen zu laufen. */
+    /** Bis wohin Arius von [from] nach [to] kommt, ohne in einen geschlossenen Geröllpfropfen oder den offenen Bergspalt zu laufen. */
     private fun clearAhead(from: Double, to: Double): Double {
         var end = to
+        if (f.scenes.isSplitActive) {
+            val stop = firstSplitCrossingArc - 5.0
+            if (from < stop && stop < end) end = maxOf(from, stop)
+        }
         for (run in caves) {
             if (!run.sealed || run.opened) continue
             val plug = run.c.a0 + run.c.plugFrom
@@ -2248,6 +2400,7 @@ class Hunt(private val f: EirholmFight) {
      */
     fun arrive(): Script = script {
         val a = f.arius ?: return@script
+        if (f.scenes.isSplitActive) f.scenes.restoreSplitInstant()
         f.chasing = false
         f.calls.reset()
         f.onSummit = true
@@ -2411,6 +2564,9 @@ class Hunt(private val f: EirholmFight) {
     fun debugInScene(): Boolean = inScene
 
     fun debugPending(): Boolean = pendingScene != null
+
+    /** Bogenlänge der ersten Querung der Bergspalte (für die Sichtprüfung der verzögerten Yang-Reparatur). */
+    fun debugCrossingArc(): Double = firstSplitCrossingArc
 
     /** Verschließt alle Höhlen sofort; liefert je Höhle Punkt davor und Punkt dahinter (Prüfung auf Sackgassen). */
     fun debugSealAll(): List<Pair<Vec3d, Vec3d>> = caves.map { run ->

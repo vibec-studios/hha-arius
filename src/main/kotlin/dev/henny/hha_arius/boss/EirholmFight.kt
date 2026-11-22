@@ -1144,6 +1144,7 @@ class EirholmFight(
         calls.reset()
         tasks.clear()
         director = null
+        scenes.restoreSplitInstant()
         edits.restore()
         SplitRecovery.ensureClean(server, slot)
         // Liegengebliebene Items/Geschosse in der Arena entfernen.

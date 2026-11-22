@@ -233,28 +233,68 @@ class Scenes(private val f: EirholmFight) {
         f.cutSurvivors.addAll(f.players().map { it.uuid })
         for (p in f.audience()) dev.henny.hha.logic.boss.Cine.title(listOf(p), "hha_arius.feat.white_horizon", "hha_arius.feat.white_horizon.sub", 60)
         cue("cut.charge", stand, 5f, 0.6f)
+        val cutDir = Vec3d(0.0, 0.0, 1.0)
         val group = f.calls.boss(pace = Telegraph.Pace.ROOM)
         val line = group.line(f.abs(ArenaLayout.CUT_FROM), f.abs(ArenaLayout.CUT_TO), ArenaLayout.CUT_WIDTH.toFloat(), AriusTimings.CUT_LINE_TICKS)
-        wait(line.ticks)
+        a.play(AriusPose.CUT_CHARGE)
+        horizonCharge(a, cutDir, line.ticks)
+        wait((line.ticks - 5).coerceAtLeast(1))
+        a.play(AriusPose.SPIN_CUT, 5)
+        wait(5)
+        f.fxAll(FxKind.HORIZON, Vec3d(stand.x, f.floorY + 1.45, stand.z), cutDir, a = 19f, b = 2f, life = 36)
+        cue("cut.strike", stand, 5f, 0.78f)
+        MusicCue.sting(f, "impact")
         for (p in line.hits(f.players())) {
             f.cutSurvivors.remove(p.uuid)
             f.hurt(p, 30f, Damage.Kind.NULL_CUT)
         }
+        wait(18)
         val vantage = Vantage(f)
         val post = CineScene(f) {
-            restoreSplitInstant()
+            ensureSplitImmediate()
             vantage.restore()
         }
         yieldAll(post.play(script { yieldAll(cutAftermath(post, vantage, a, stand)) }))
-        restoreSplitInstant()
+        ensureSplitImmediate()
         vantage.restore()
         f.atmos(dev.henny.hha_arius.net.AtmosMode.CLEAR, 30)
         yieldAll(arrival())
     }
 
-    /** Gespaltene Blöcke der laufenden Szene, nach Höhe sortiert für die aufsteigende Yang-Wiederherstellung. */
+    /** Gespaltene Blöcke der laufenden Szene, nach Höhe sortiert für die spätere Yang-Wiederherstellung in der Jagd. */
     private var activeSplit: List<Pair<BlockPos, net.minecraft.block.BlockState>> = emptyList()
     private var splitActive = false
+
+    /** Ist der Berg gerade gespalten (und wartet auf die Yang-Wiederherstellung vor der ersten Querung in der Jagd)? */
+    val isSplitActive: Boolean get() = splitActive || activeSplit.isNotEmpty()
+
+    /** Spaltet den Berg sofort ohne Animation, falls er noch nicht gespalten ist (Skip von cutAftermath oder Training II/III). */
+    fun ensureSplitImmediate() {
+        if (isSplitActive) return
+        val z0 = (ArenaLayout.SPIRE.z - FarPlan.MASSIF_R - 6).toInt()
+        val z1 = (ArenaLayout.SPIRE.z + FarPlan.MASSIF_R + 6).toInt()
+        val cutX = kotlin.math.floor(ArenaLayout.CUT_X).toInt()
+        val maxY = ArenaLayout.SPIRE_TOP + 38
+        val collected = ArrayList<Pair<BlockPos, net.minecraft.block.BlockState>>(48_000)
+        val pos = BlockPos.Mutable()
+        for (z in z0..z1) {
+            for (dx in -8..8) {
+                val x = cutX + dx
+                if (FarPlan.inCore(x, z)) continue
+                for (y in 0..maxY) {
+                    if (!SplitRecovery.inCutPlane(x, y)) continue
+                    pos.set(f.origin.x + x, f.origin.y + y, f.origin.z + z)
+                    val st = f.world.getBlockState(pos)
+                    if (!st.isAir) collected.add(pos.toImmutable() to st)
+                }
+            }
+        }
+        if (collected.isEmpty()) return
+        SplitRecovery.saveSnapshot(f.world, f.slot, z0, z1, collected)
+        activeSplit = collected
+        splitActive = true
+        for ((p, _) in collected) f.edits.clear(p)
+    }
 
     /** Stellt alle noch gespaltenen Blöcke sofort exakt wieder her (Abbruch, Überspringen oder Sicherheitspfad). */
     fun restoreSplitInstant() {
@@ -304,29 +344,13 @@ class Scenes(private val f: EirholmFight) {
             }
         }
         MusicCue.play(f, "horizon", 10)
-        // The danger marker has resolved. Keep the actor and both tips in the same wide shot.
         vantage.move(lookout)
         f.atmos(dev.henny.hha_arius.net.AtmosMode.CLEAR, 8)
-        val direction = Vec3d(0.0, 0.0, 1.0)
-        val focus = stand.add(0.0, 1.25, 10.5)
-        post.line(stand.add(-1.8, 26.0, 24.5), stand.add(-1.0, 25.0, 24.0),
-            focus, focus, 50, 59.0, 59.0)
-        a.play(AriusPose.CUT_CHARGE)
-        shown { horizonCharge(a, direction, 23) }
-        wait(18)
-        a.play(AriusPose.SPIN_CUT, 5)
-        wait(5)
-        shown {
-            f.fxAll(FxKind.HORIZON, stand.add(0.0, 1.15, 0.0), direction, a = 19f, b = 2f, life = 22)
-        }
-        cue("cut.strike", stand, 5f, 0.78f)
-        MusicCue.sting(f, "impact")
-        wait(24)
         val seamFrom = f.abs(ArenaLayout.CUT_FROM)
         val seamTo = f.abs(Vec3d(x, 0.0, foot + 6.0))
         f.fxAll(FxKind.SEAM, seamFrom.add(0.0, 0.2, 0.0), seamTo.add(0.0, 0.2, 0.0), a = 14f, life = 160)
-        // 2) Über dem Tempel folgt die Kamera der Naht bis zum Berg.
-        shown { f.fxAll(FxKind.FLASH, stand, a = 0.3f, life = 6) }
+        // 1) Über dem Tempel folgt die Kamera der Schnittnaht bis zum Berg.
+        shown { f.fxAll(FxKind.FLASH, stand, a = 0.26f, life = 6) }
         f.farSound("cut.split", seamTo, 5f, 1.2f)
         MusicCue.sting(f, "phase")
         post.line(
@@ -340,7 +364,7 @@ class Scenes(private val f: EirholmFight) {
         seamMist(life = 48)
         f.farSound("seal.blizzard", f.abs(Vec3d(x, 48.0, foot + 36.0)), 5f, 0.6f)
         wait(6)
-        // 3) Weite Totale von Fuß bis Horn: Berg UND Gipfelarena spalten sich sauber vor den Augen der Spieler.
+        // 2) Weite Totale von Fuß bis Horn: Berg UND Gipfelarena spalten sich sauber vor den Augen der Spieler.
         // Alle Blickpunkte liegen strikt VOR/ÜBER der Berghaut (freie Sichtlinie), damit HHA-CinePlayer die Kamera nie einzieht.
         val mid = f.abs(Vec3d(x, 90.0, spireZ - 40.0))
         f.farSound("glacier.collapse", mid, 8f, 0.5f)
@@ -367,7 +391,7 @@ class Scenes(private val f: EirholmFight) {
             }
             yield(Unit)
         }
-        // 4) Hoher Blick über die gespaltene Gipfelarena: Arena-Boden, Mauer und Horn sind sichtbar in zwei Hälften geteilt.
+        // 3) Hoher Blick über die gespaltene Gipfelarena: Der Berg bleibt gespalten, bis Arius ihn in der Jagd mit Yang schließt.
         val summitY = FarPlan.SHOULDER_Y
         post.rawLine(
             f.abs(Vec3d(x + 42.0, summitY + 34.0, spireZ - 66.0)), f.abs(Vec3d(x + 28.0, summitY + 42.0, spireZ - 54.0)),
@@ -376,30 +400,7 @@ class Scenes(private val f: EirholmFight) {
         shown { f.sceneText("cut_after") }
         for (id in f.cutSurvivors) f.server.playerManager.getPlayer(id)?.let { Advancements.grant(it, "under_the_line") }
         wait(44)
-        // 5) Goldene Yang-Wiederherstellung: vom Bergfuß bis zur Gipfelarena steigt goldenes Yang-Licht auf und schließt den Spalt exakt.
-        post.rawLine(
-            f.abs(Vec3d(x - 68.0, 136.0, foot - 166.0)), f.abs(Vec3d(x - 78.0, 154.0, foot - 178.0)),
-            f.abs(Vec3d(x, 88.0, spireZ - 110.0)), f.abs(Vec3d(x, 180.0, spireZ - 32.0)), 80, 64.0, 66.0,
-        )
-        val yangFrom = f.abs(Vec3d(x, 4.0, foot + 8.0))
-        val yangTo = f.abs(Vec3d(x, ArenaLayout.SPIRE_TOP.toDouble(), spireZ))
-        shown {
-            f.fxAll(FxKind.YANG_RESTORE, yangFrom, yangTo, a = 10f, life = 74)
-            f.fxAll(FxKind.FLASH, mid, a = 0.22f, life = 10)
-            Vfx.shockwave(f.world, Vfx.Style.GOLD, yangFrom, 28f, 26, 2.5f)
-        }
-        f.farSound("resonance.chime", mid, 6f, 0.7f)
-        f.farSound("transform.pulse", mid, 5f, 0.85f)
-        f.farVanilla(net.minecraft.sound.SoundEvents.BLOCK_BEACON_ACTIVATE, mid, 6f, 0.9f)
-        yieldAll(restoreWithYang(ticks = 52))
-        // Nach dem Schließen: kurzer goldener Nachhall über dem wieder unversehrten Berg & der ganzen Gipfelarena.
-        shown {
-            Vfx.shockwave(f.world, Vfx.Style.GOLD, f.abs(Vec3d(x, summitY + 2.0, spireZ)), 32f, 24, 2.4f)
-            f.fxAll(FxKind.FLASH, mid, a = 0.18f, life = 8)
-        }
-        f.farSound("resonance.chime", f.abs(Vec3d(x, summitY + 4.0, spireZ)), 6f, 1.15f)
-        wait(28)
-        // 6) Whiteout: zurück in den Tempel.
+        // 4) Whiteout: zurück in den Tempel.
         f.farSound("seal.blizzard", lookout, 4f, 0.6f)
         f.atmos(dev.henny.hha_arius.net.AtmosMode.BLIZZARD, 16)
         post.once { Cine.fade(it, 0xF2F6FA, 0.0, 1.0, 16) }
@@ -458,9 +459,9 @@ class Scenes(private val f: EirholmFight) {
 
     /**
      * Goldene Yang-Wiederherstellung: setzt alle in [activeSplit] gesicherten Originalblöcke über [ticks] Ticks von
-     * unten nach oben exakt in ihren Ausgangszustand zurück und räumt das Absturz-Backup ab.
+     * unten nach oben exakt in ihren Ausgangszustand zurück und räumt das Absturz-Backup erst nach dem letzten Block ab.
      */
-    private fun restoreWithYang(ticks: Int): Script = script {
+    fun restoreWithYang(ticks: Int): Script = script {
         val list = activeSplit
         if (list.isEmpty()) {
             splitActive = false
@@ -1710,7 +1711,7 @@ class Scenes(private val f: EirholmFight) {
     }
 
     fun horizonImpact(at: Vec3d, dir: Vec3d, halfWidth: Float) {
-        f.fxAll(FxKind.HORIZON, at.add(0.0, 1.15, 0.0), dir, a = halfWidth, b = 1f, life = 19)
+        f.fxAll(FxKind.HORIZON, at.add(0.0, 1.15, 0.0), dir, a = halfWidth, b = 1f, life = 34)
         f.ambient("cut.strike", at, 4.5f, 0.78f)
         f.calls.roomShake(at, 3.2f, 52f)
     }
@@ -1970,6 +1971,7 @@ class Scenes(private val f: EirholmFight) {
 
     fun trainingGlacier(): Script = script {
         yieldAll(waitForFar())
+        ensureSplitImmediate()
         val a = f.arius ?: return@script
         f.place(a, f.abs(ArenaLayout.AERIE_SEAT))
         a.play(AriusPose.SEATED)
@@ -2005,6 +2007,7 @@ class Scenes(private val f: EirholmFight) {
 
     fun trainingVault(): Script = script {
         yieldAll(waitForFar())
+        ensureSplitImmediate()
         prepareVault()
         f.say("echo", 60)
         wait(60)

@@ -58,6 +58,8 @@ class VerifyBoss : FabricClientGameTest {
                     "parrycue" -> parryCue()
                     "forge" -> forge()
                     "templehorizon" -> templeHorizon()
+                    "horizonviews" -> horizonViews()
+                    "yanglater" -> yangLater()
                     "vaultpace" -> vaultPace()
                     "fallrecover" -> fallRecovery()
                     "kickpose" -> kickPose()
@@ -218,10 +220,177 @@ class VerifyBoss : FabricClientGameTest {
         }
         check(waitUntil(150, 1) { server { fight()?.arius?.pose == AriusPose.SPIN_CUT } })
         shot("temple_horizon_anticipation")
-        tick(10)
+        tick(7)
         shot("temple_horizon_release")
         tick(9)
         shot("temple_horizon_fade")
+    }
+
+    /** White Horizon in third person and in a blizzard storm on white snow (first person). */
+    private fun VerifyKit.horizonViews() {
+        // 1) Third-person view during live White Horizon in the temple
+        temple()
+        client { it.options.perspective = net.minecraft.client.option.Perspective.THIRD_PERSON_BACK }
+        try {
+            server { srv ->
+                val f = checkNotNull(fight())
+                val c = f.abs(dev.henny.hha_arius.arena.ArenaLayout.CUT_STAND)
+                val p = player(srv)
+                p.teleport(f.world, c.x + 5.0, f.floorY, c.z + 12.0, emptySet(), 158f, 4f, false)
+                f.calls.reset()
+                f.startDirector(f.scenes.theCut())
+            }
+            check(waitUntil(150, 1) { server { fight()?.arius?.pose == AriusPose.SPIN_CUT } })
+            shot("horizon_3p_anticipation")
+            tick(7)
+            shot("horizon_3p_release")
+            tick(10)
+            shot("horizon_3p_fade")
+            cmd("hhaarius stop")
+            tick(35)
+
+            // 2) First-person view on white snow inside a blizzard storm (lastHorizon)
+            client { it.options.perspective = net.minecraft.client.option.Perspective.FIRST_PERSON }
+            vault()
+            server { srv ->
+                val f = checkNotNull(fight())
+                val a = checkNotNull(f.arius)
+                val center = f.arenaCenter.let { Vec3d(it.x, f.floorY, it.z) }
+                f.place(a, center.add(0.0, 0.0, -9.0))
+                val p = player(srv)
+                p.teleport(f.world, center.x + 1.5, f.floorY, center.z + 5.0, emptySet(), 172f, 2f, false)
+                f.calls.reset()
+                f.atmos(dev.henny.hha_arius.net.AtmosMode.BLIZZARD, 4)
+                f.startDirector(f.scenes.lastHorizon(a))
+            }
+            tick(12)
+            check(waitUntil(90, 1) { server { fight()?.arius?.pose == AriusPose.SPIN_CUT } })
+            shot("horizon_storm_1p_anticipation")
+            tick(7)
+            shot("horizon_storm_1p_release")
+            tick(10)
+            shot("horizon_storm_1p_fade")
+        } finally {
+            client { it.options.perspective = net.minecraft.client.option.Perspective.FIRST_PERSON }
+        }
+    }
+
+    /** Delayed Yang repair: mountain stays split after theCut & in trainingVault, Arius restores it just before Hunt Crossing 1, and SplitRecovery stays crash-safe. */
+    private fun VerifyKit.yangLater() {
+        // 1) Verify training stage 3 (Vault -> Hunt) starts with the mountain already split & SplitRecovery snapshot active.
+        check(startStage(3)) { "stage 3 did not reach far ready" }
+        val (splitAtStage3, snapAtStage3) = server { srv ->
+            val f = checkNotNull(fight())
+            f.scenes.isSplitActive to dev.henny.hha_arius.boss.SplitRecovery.hasSnapshot(srv, f.slot)
+        }
+        log("yangLater: stage3 splitActive=$splitAtStage3 snapshot=$snapAtStage3")
+        check(splitAtStage3 && snapAtStage3) { "Expected mountain split & snapshot active in stage 3 ($splitAtStage3, $snapAtStage3)" }
+
+        // Sample the split zone across flank + Crossing 1 + summit before starting Hunt.
+        val splitAirBeforeHunt = server {
+            val f = checkNotNull(fight())
+            val w = f.world
+            val cutX = kotlin.math.floor(dev.henny.hha_arius.arena.ArenaLayout.CUT_X).toInt()
+            val sz = dev.henny.hha_arius.arena.ArenaLayout.SPIRE.z
+            var air = 0
+            for (z in (sz - 90)..(sz + 20) step 2) {
+                for (y in intArrayOf(60, 110, 123, 172)) {
+                    if (w.getBlockState(net.minecraft.util.math.BlockPos(f.origin.x + cutX, f.origin.y + y, f.origin.z + z)).isAir) air++
+                }
+            }
+            air
+        }
+        log("yangLater: splitAirBeforeHunt=$splitAirBeforeHunt")
+        check(splitAirBeforeHunt > 40) { "Mountain was not carved in stage 3 ($splitAirBeforeHunt)" }
+
+        // 2) Launch Hunt directly (skipping vault combat) and approach Crossing 1 on the massif spiral.
+        server {
+            val f = checkNotNull(fight())
+            f.calls.reset()
+            f.startDirector(dev.henny.hha_arius.boss.Hunt(f).run())
+        }
+        check(waitUntil(220, 4) { server { dev.henny.hha_arius.boss.Hunt.current != null } }) { "Hunt did not start" }
+        val crossArc = server { checkNotNull(dev.henny.hha_arius.boss.Hunt.current).debugCrossingArc() }
+        log("yangLater: firstSplitCrossingArc=%.1f".format(crossArc))
+
+        // First look at the open chasm from just outside the trigger range (~26 blocks before Crossing 1)
+        server { srv ->
+            val f = checkNotNull(fight())
+            val h = checkNotNull(dev.henny.hha_arius.boss.Hunt.current)
+            h.debugQuiet(400)
+            h.debugArius((crossArc - 42.0).coerceAtLeast(0.0))
+            val p = player(srv)
+            val lookSpot = h.debugPoint(crossArc - 27.0)
+            val target = h.debugPoint(crossArc + 2.0)
+            val yaw = (Math.toDegrees(atan2(target.z - lookSpot.z, target.x - lookSpot.x)) - 90.0).toFloat()
+            p.teleport(f.world, lookSpot.x, lookSpot.y + 0.05, lookSpot.z, emptySet(), yaw, 0f, false)
+            f.atmos(dev.henny.hha_arius.net.AtmosMode.REVEAL, 4)
+        }
+        settle(160)
+        tick(10)
+        shot("yang_01_still_split_in_hunt")
+        val stillSplit = server { srv ->
+            val f = checkNotNull(fight())
+            f.scenes.isSplitActive && dev.henny.hha_arius.boss.SplitRecovery.hasSnapshot(srv, f.slot)
+        }
+        check(stillSplit) { "Mountain should still be split before Crossing 1!" }
+
+        // Step inside the trigger zone (crossArc - 19.0) -> Arius triggers the golden Yang repair beat!
+        server { srv ->
+            val f = checkNotNull(fight())
+            val h = checkNotNull(dev.henny.hha_arius.boss.Hunt.current)
+            val p = player(srv)
+            val spot = h.debugPoint(crossArc - 19.0)
+            p.teleport(f.world, spot.x, spot.y + 0.1, spot.z, emptySet(), 90f, 0f, false)
+            p.isOnGround = true
+        }
+        check(waitUntil(60, 1) { server { dev.henny.hha_arius.boss.Hunt.current?.debugInScene() == true } }) {
+            "Arius Yang repair scene did not trigger before Crossing 1"
+        }
+        tick(8)
+        shot("yang_02_arius_invokes")
+        tick(24)
+        shot("yang_03_wave_restoring")
+        tick(28)
+        shot("yang_04_restored")
+        check(waitUntil(120, 2) { server { dev.henny.hha_arius.boss.Hunt.current?.debugInScene() == false } }) {
+            "Yang repair scene did not finish"
+        }
+
+        val (splitAfterYang, snapAfterYang, crossingSolid) = server { srv ->
+            val f = checkNotNull(fight())
+            val h = checkNotNull(dev.henny.hha_arius.boss.Hunt.current)
+            val mid = h.debugPoint(crossArc + 4.0)
+            val below = net.minecraft.util.math.BlockPos.ofFloored(mid.x, mid.y - 0.5, mid.z)
+            val solid = !f.world.getBlockState(below).getCollisionShape(f.world, below).isEmpty
+            Triple(f.scenes.isSplitActive, dev.henny.hha_arius.boss.SplitRecovery.hasSnapshot(srv, f.slot), solid)
+        }
+        log("yangLater: afterYang splitActive=$splitAfterYang snapshot=$snapAfterYang crossingSolid=$crossingSolid")
+        check(!splitAfterYang && !snapAfterYang && crossingSolid) {
+            "Yang repair did not cleanly restore crossing ($splitAfterYang, $snapAfterYang, $crossingSolid)"
+        }
+
+        // 3) Crash safety check: save snapshot, carve 250 blocks, call SplitRecovery.recoverAll -> 0 remaining diff.
+        val recovered = server { srv ->
+            val f = checkNotNull(fight())
+            val w = f.world
+            val cutX = kotlin.math.floor(dev.henny.hha_arius.arena.ArenaLayout.CUT_X).toInt()
+            val sz = dev.henny.hha_arius.arena.ArenaLayout.SPIRE.z
+            val victim = ArrayList<Pair<net.minecraft.util.math.BlockPos, net.minecraft.block.BlockState>>()
+            for (z in (sz - 60)..(sz + 20)) for (y in 90..175) {
+                if (victim.size >= 250) break
+                val p = net.minecraft.util.math.BlockPos(f.origin.x + cutX, f.origin.y + y, f.origin.z + z)
+                val st = w.getBlockState(p)
+                if (!st.isAir) victim.add(p to st)
+            }
+            dev.henny.hha_arius.boss.SplitRecovery.saveSnapshot(w, f.slot, sz - 60, sz + 20, victim)
+            for ((p, _) in victim) w.setBlockState(p, Blocks.AIR.defaultState, dev.henny.hha_arius.boss.ArenaEdits.FLAGS)
+            val n = dev.henny.hha_arius.boss.SplitRecovery.recoverAll(srv)
+            val left = victim.count { (p, orig) -> w.getBlockState(p) != orig }
+            n to left
+        }
+        log("yangLater: crash-recovery restored=${recovered.first} remainingDiff=${recovered.second}")
+        check(recovered.first >= 250 && recovered.second == 0) { "SplitRecovery failed: $recovered" }
     }
 
     private fun VerifyKit.vaultPace() {
@@ -453,18 +622,43 @@ class VerifyBoss : FabricClientGameTest {
         val cam = ArrayList<Vec3d>()
         val look = ArrayList<Float>()
         val raw = ArrayList<Vec3d>()
+        val realPos = ArrayList<Vec3d>()
+        val realYaw = ArrayList<Float>()
+        val realPitch = ArrayList<Float>()
+        val pPos = ArrayList<Vec3d>()
+        val tickNotes = ArrayList<String>()
         for (t in 0 until 130) {
             val hp = server { player(it).health + player(it).absorptionAmount }
             if (hp < last) lost += last - hp
             if (hp != last) log("punish t=$t health=$hp (${hp - last})")
             last = hp
             client { c ->
+                val ca = c.gameRenderer.camera
+                val world = c.world
+                val ce = c.cameraEntity
+                if (world != null && ce != null) {
+                    ca.update(world, ce, !c.options.perspective.isFirstPerson, c.options.perspective.isFrontView, 1f)
+                }
+                realPos.add(ca.cameraPos)
+                realYaw.add(ca.yaw)
+                realPitch.add(ca.pitch)
                 dev.henny.hha_arius.client.fx.PunishCam.debugRig()?.let { (pos, at) ->
                     cam.add(pos)
                     look.add(Math.toDegrees(atan2(-(at.x - pos.x), at.z - pos.z)).toFloat())
                 }
                 val me = c.player
                 val other = c.world?.entities?.firstOrNull { it is dev.henny.hha_arius.boss.AriusEntity }
+                if (me != null) {
+                    pPos.add(me.entityPos)
+                    val kick = dev.henny.hha_arius.client.fx.CameraKick.offset(1f)
+                    val kickStr = if (kick != null) "kick=(%.2f,%.2f)".format(kick[0], kick[1]) else ""
+                    tickNotes.add("t=%03d pos=(%.2f,%.2f,%.2f) y=%.2f p=%.2f pY=%.2f pVy=%.2f hurt=%d held=%b rig=%b %s".format(
+                        t, ca.cameraPos.x, ca.cameraPos.y, ca.cameraPos.z, ca.yaw, ca.pitch,
+                        me.y, me.velocity.y, me.hurtTime,
+                        dev.henny.hha_arius.client.fx.HoldClient.isHeld(),
+                        dev.henny.hha_arius.client.fx.PunishCam.hidesHands(), kickStr,
+                    ))
+                }
                 if (me != null && other != null) raw.add(me.entityPos.lerp(other.entityPos, 0.5))
             }
             if (t in 16..100 && t % 14 == 2) shot("punish_%03d".format(t))
@@ -472,6 +666,53 @@ class VerifyBoss : FabricClientGameTest {
         }
         godMode = true
         log("punish: total lost=$lost (hearts ${lost / 2})")
+        fun stats(from: Int, to: Int, label: String) {
+            val hi = minOf(to, realPos.size - 1)
+            val lo = maxOf(from, 1)
+            if (hi <= lo) return
+            var maxDp = 0.0; var sumDp = 0.0; var maxDpT = -1
+            var maxDy = 0f; var sumDy = 0.0; var maxDyT = -1
+            var maxDpi = 0f; var sumDpi = 0.0; var maxDpiT = -1
+            var maxJ = 0.0; var maxJy = 0f; var maxJpi = 0f
+            val n = hi - lo + 1
+            for (i in lo..hi) {
+                val dp = realPos[i].distanceTo(realPos[i - 1])
+                val dy = abs(wrap(realYaw[i] - realYaw[i - 1]))
+                val dpi = abs(realPitch[i] - realPitch[i - 1])
+                sumDp += dp; sumDy += dy; sumDpi += dpi
+                if (dp > maxDp) { maxDp = dp; maxDpT = i }
+                if (dy > maxDy) { maxDy = dy; maxDyT = i }
+                if (dpi > maxDpi) { maxDpi = dpi; maxDpiT = i }
+                if (i >= lo + 1) {
+                    val j = realPos[i].subtract(realPos[i - 1]).subtract(realPos[i - 1].subtract(realPos[i - 2])).length()
+                    val jy = abs(wrap(realYaw[i] - realYaw[i - 1]) - wrap(realYaw[i - 1] - realYaw[i - 2]))
+                    val jpi = abs((realPitch[i] - realPitch[i - 1]) - (realPitch[i - 1] - realPitch[i - 2]))
+                    if (j > maxJ) maxJ = j
+                    if (jy > maxJy) maxJy = jy
+                    if (jpi > maxJpi) maxJpi = jpi
+                }
+            }
+            log("punish [$label t=$lo..$hi]: posDelta max=%.4f(t=%d) mean=%.4f jerk=%.4f | yawDelta max=%.3f(t=%d) mean=%.3f jerk=%.3f | pitchDelta max=%.3f(t=%d) mean=%.3f jerk=%.3f".format(
+                maxDp, maxDpT, sumDp / n, maxJ, maxDy, maxDyT, sumDy / n, maxJy, maxDpi, maxDpiT, sumDpi / n, maxJpi,
+            ))
+        }
+        stats(1, 129, "full")
+        stats(8, 100, "combo")
+        var maxPyDelta = 0.0; var maxPyT = -1
+        for (i in 1 until pPos.size) {
+            val d = abs(pPos[i].y - pPos[i - 1].y)
+            if (d > maxPyDelta) { maxPyDelta = d; maxPyT = i }
+        }
+        log("punish: player Y maxDelta=%.4f(t=%d)".format(maxPyDelta, maxPyT))
+        // Log ticks with largest deltas for root-cause analysis
+        for (i in 1 until minOf(realPos.size, tickNotes.size)) {
+            val dp = realPos[i].distanceTo(realPos[i - 1])
+            val dy = abs(wrap(realYaw[i] - realYaw[i - 1]))
+            val dpi = abs(realPitch[i] - realPitch[i - 1])
+            if (dp > 0.15 || dy > 1.0f || dpi > 0.8f || i in listOf(0, 1, 2, 5, 10, 50, 60, 70, 80, 90, 100, 105, 110, 115)) {
+                log("  ${tickNotes[i]} | dPos=%.3f dYaw=%.2f dPitch=%.2f".format(dp, dy, dpi))
+            }
+        }
         var maxAccel = 0.0
         var maxYaw = 0f
         var rawJerk = 0.0

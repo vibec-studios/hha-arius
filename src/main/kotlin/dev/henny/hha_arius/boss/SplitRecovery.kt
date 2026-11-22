@@ -103,6 +103,10 @@ object SplitRecovery {
         }
     }
 
+    /** Liegt für [slot] noch ein offenes Schnitt-Backup auf der Platte? */
+    fun hasSnapshot(server: MinecraftServer, slot: Int): Boolean =
+        slot.toString() in state(server).entries()
+
     /** Prüft beim Serverstart alle offenen Schnitt-Backups und stellt jeden betroffenen Slot lückenlos wieder her. */
     fun recoverAll(server: MinecraftServer): Int {
         val st = state(server)
