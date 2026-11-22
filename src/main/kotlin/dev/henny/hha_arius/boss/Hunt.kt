@@ -566,6 +566,10 @@ class Hunt(private val f: EirholmFight) {
         var sealed = false
         var opened = false
         var scared = false
+        var eyeCueActive = false
+        var eyeHinted = false
+        var eyeSoundAt = 0L
+        val eyeGaze = HashMap<UUID, Int>()
         var plug: List<BlockPos> = emptyList()
         var fillFront = -1.0
         var fillUntil = 0L
@@ -826,12 +830,16 @@ class Hunt(private val f: EirholmFight) {
         val inCave = players.filter { val a = arcOf(it); a >= c.a0 - 6.0 && a <= c.a1 + 6.0 }
         if (inCave.isEmpty()) return
         when (c.theme) {
-            HuntRoute.Theme.DARK -> if (u >= (c.windows.firstOrNull() ?: 10.0) - 7.0) {
-                run.scared = true
-                val w = c.windows.firstOrNull { it > u - 2.0 } ?: c.windows.last()
-                when {
-                    c.i0 > HuntRoute.size / 2 -> crackBreath(c, w, inCave)
-                    !queueScene("eye") { eyeScene(c, w) } -> eye(c, w, inCave, 1.4f)
+            HuntRoute.Theme.DARK -> {
+                val w = c.windows.firstOrNull() ?: 11.0
+                if (c.i0 > HuntRoute.size / 2) {
+                    if (u >= w - 7.0) {
+                        run.scared = true
+                        val w2 = c.windows.firstOrNull { it > u - 2.0 } ?: c.windows.last()
+                        crackBreath(c, w2, inCave)
+                    }
+                } else {
+                    tickEyeLook(run, c, w, inCave, u)
                 }
             }
             HuntRoute.Theme.CRAWL -> if (u >= 4.0) {
@@ -867,6 +875,91 @@ class Hunt(private val f: EirholmFight) {
                 val mid = point(HuntRoute.indexOfArc(c.a0 + c.length * 0.5))
                 cue("nivaris.roar", mid.add(0.0, 14.0, 0.0), 5f, 0.6f)
                 HuntNet.fx(inCave, HuntFx.ROAR, mid, a = 0.5f, life = 24)
+            }
+        }
+    }
+
+    /**
+     * Blick-Auslöser für Solvanes Auge in der dunklen Höhle (1.13.0, Paket C):
+     * 1. Sobald jemand die Höhle betritt, lenken deutliche eisblaue Lichtbahnen, Frostnebel und tiefes Atemgeräusch
+     *    direkt aus dem Felsspalt ([HuntFx.EYE_CUE]) sowie ein dezenter Hinweis den Blick genau auf den Spalt.
+     * 2. Die Szene startet **erst**, wenn ein Spieler im Blickbereich wirklich auf den Spalt schaut (Blickwinkel ≤ 24°
+     *    und freie Sichtlinie über ~5 Ticks).
+     * 3. **Fallback:** Läuft die Gruppe einfach weiter, ohne hinzuschauen (Bogenlänge deutlich hinter dem Spalt),
+     *    erlischt der Hinweis geräuschlos und der Fortschritt hängt niemals von der Szene ab.
+     */
+    private fun tickEyeLook(run: CaveRun, c: HuntRoute.Cave, w: Double, inCave: List<ServerPlayerEntity>, leaderU: Double) {
+        val i = HuntRoute.indexOfArc(c.a0 + w)
+        val slitInner = beside(i, c.theme.lane + 0.35, 2.55)
+        val slitDeep = beside(i, 6.2, 2.55)
+        val into = beside(i, 0.0, 2.0).subtract(slitInner).normalize()
+
+        // Fallback: Gruppe ist weit am Spalt vorbeigelaufen, ohne hinzuschauen -> nichts blockieren, Hinweis beenden.
+        if (leaderU >= w + 8.5 || leaderU >= c.length - 1.5) {
+            if (run.eyeCueActive) {
+                HuntNet.fx(f.audience(), HuntFx.EYE_CUE, slitInner, into, life = 0)
+                run.eyeCueActive = false
+            }
+            run.scared = true
+            return
+        }
+
+        // In-World-Hinweis aktivieren und am Leben halten, solange jemand in der Höhle ist.
+        if (leaderU >= 0.5) {
+            if (!run.eyeCueActive || f.now % 50L == 0L) {
+                run.eyeCueActive = true
+                HuntNet.fx(f.audience(), HuntFx.EYE_CUE, slitInner, into, life = 75)
+            }
+            if (f.now >= run.eyeSoundAt) {
+                run.eyeSoundAt = f.now + 38L
+                cue("nivaris.inhale", slitInner, 2.4f, 0.55f)
+                vanilla(SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME, slitInner, 1.3f, 0.5f)
+            }
+            if (!run.eyeHinted && leaderU >= 3.5) {
+                run.eyeHinted = true
+                for (p in inCave) p.sendMessage(Text.translatable("hha_arius.hunt.eye_cue").formatted(Formatting.AQUA, Formatting.ITALIC), true)
+            }
+        }
+
+        // Echte Blickprüfung: schaut ein Spieler im Bereich um das Fenster gezielt in den Felsspalt?
+        val cosMin = kotlin.math.cos(Math.toRadians(24.0))
+        for (p in inCave) {
+            val pu = arcOf(p) - c.a0
+            if (pu !in (w - 9.0)..(w + 5.5)) {
+                run.eyeGaze.remove(p.uuid)
+                continue
+            }
+            val eyePos = p.eyePos
+            val look = p.rotationVector.normalize()
+            val dInner = slitInner.subtract(eyePos)
+            val dDeep = slitDeep.subtract(eyePos)
+            val dotInner = if (dInner.lengthSquared() > 1e-4) look.dotProduct(dInner.normalize()) else 0.0
+            val dotDeep = if (dDeep.lengthSquared() > 1e-4) look.dotProduct(dDeep.normalize()) else 0.0
+            val looking = maxOf(dotInner, dotDeep) >= cosMin
+            val clearLos = if (looking) {
+                val hit = f.world.raycast(
+                    net.minecraft.world.RaycastContext(
+                        eyePos, slitInner.add(into.multiply(0.45)),
+                        net.minecraft.world.RaycastContext.ShapeType.VISUAL,
+                        net.minecraft.world.RaycastContext.FluidHandling.NONE,
+                        p,
+                    ),
+                )
+                hit.type == net.minecraft.util.hit.HitResult.Type.MISS
+            } else {
+                false
+            }
+            val held = if (looking && clearLos) (run.eyeGaze[p.uuid] ?: 0) + 1 else maxOf(0, (run.eyeGaze[p.uuid] ?: 0) - 1)
+            run.eyeGaze[p.uuid] = held
+            if (held >= 5) {
+                run.scared = true
+                run.eyeGaze.clear()
+                if (run.eyeCueActive) {
+                    HuntNet.fx(f.audience(), HuntFx.EYE_CUE, slitInner, into, life = 0)
+                    run.eyeCueActive = false
+                }
+                if (!queueScene("eye") { eyeScene(c, w) }) eye(c, w, inCave, 1.4f)
+                return
             }
         }
     }
@@ -2261,6 +2354,14 @@ class Hunt(private val f: EirholmFight) {
 
     /** Höhlen als (Art, Anfang, Ende). */
     fun debugCaves(): List<Triple<String, Double, Double>> = HuntRoute.caves.map { Triple(it.theme.name, it.a0, it.a1) }
+
+    /** Position des ersten Felsspalts in der dunklen Höhle (für die Blickprüfung in VerifyHunt). */
+    fun debugEyeSlit(): Vec3d? {
+        val c = HuntRoute.caves.firstOrNull { it.theme == HuntRoute.Theme.DARK && it.i0 <= HuntRoute.size / 2 } ?: return null
+        val w = c.windows.firstOrNull() ?: 11.0
+        val i = HuntRoute.indexOfArc(c.a0 + w)
+        return beside(i, c.theme.lane + 0.35, 2.55)
+    }
 
     /** Stellt Arius auf Bogenlänge [arc]. */
     fun debugArius(arc: Double) {

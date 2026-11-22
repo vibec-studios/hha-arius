@@ -4,31 +4,34 @@ import dev.henny.hha_arius.arena.ArenaLayout.COLLAPSE_RINGS
 import dev.henny.hha_arius.arena.ArenaLayout.CUT_X
 import dev.henny.hha_arius.arena.ArenaLayout.GATE_HALF_WIDTH
 import dev.henny.hha_arius.arena.ArenaLayout.GATE_HEIGHT
-import dev.henny.hha_arius.arena.ArenaLayout.ICE_BOTTOM
-import dev.henny.hha_arius.arena.ArenaLayout.PILLAR_H
 import dev.henny.hha_arius.arena.ArenaLayout.PILLAR_HALF
 import dev.henny.hha_arius.arena.ArenaLayout.PLATEAU_R
-import dev.henny.hha_arius.arena.ArenaLayout.RIM_H
 import dev.henny.hha_arius.arena.ArenaLayout.RIM_R
 import dev.henny.hha_arius.arena.ArenaLayout.SOUTH_WALL_H
 import dev.henny.hha_arius.arena.ArenaLayout.TEMPLE_R
-import dev.henny.hha_arius.arena.ArenaLayout.TEMPLE_TOP
-import dev.henny.hha_arius.arena.ArenaLayout.TEMPLE_WALL_H
-import dev.henny.hha_arius.arena.ArenaLayout.VAULT_R
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
+import kotlin.math.cos
 import kotlin.math.floor
+import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * Reine Geometrie des Heiligtums (ohne Minecraft-Klassen): Block-Id je relativer Position. Gespiegelt in
- * `tools/assets/arena_preview.py` (gleiche Formeln, gleicher Hash) – wer hier ändert, ändert dort mit und schaut sich die
- * Vorschau an. Ids siehe [NAMES]; 0 = Luft (wird nur beim Leeren gesetzt).
+ * Reine Geometrie des Heiligtums (ohne Minecraft-Klassen): Block-Id je relativer Position.
+ * Seit 1.13.0 (Paket C): Das kleine Heiligtum (Klingengrab) ist eine würdige offene Säulen-Rotunde des Ordens der
+ * Weißen Klinge mit zehn weit begehbaren Bogenjochen, monumentalem Südtor mit Klingenkrone, reich eingelegtem Boden,
+ * erhabener Thron-Apsis samt dreidimensionaler Ordensklinge und skulpturalen inneren Klingen-Stelen. Alle Ankerpunkte
+ * (`TEMPLE`, `SEAT`, `CUT_STAND`, `WATCH_SEAT`, `DAIS_FRONT`, `ARRIVAL`, `GATE`, `LANDING`, `WATCH_UPPER`,
+ * `TEMPLE_PILLARS`) bleiben unverändert.
  */
 internal object ArenaPlan {
+
+    /** Fassung des Kernplans; bei Erhöhung wird das Bauvolumen in bestehenden Welten sauber neu gebaut. */
+    const val VERSION = 2
 
     const val AIR: Byte = 0
     const val PACKED: Byte = 1
@@ -52,11 +55,23 @@ internal object ArenaPlan {
     const val GLASS: Byte = 19
     const val SQUARTZ: Byte = 20
     const val STONE: Byte = 21
+    const val DBRICK_WALL: Byte = 22
+    const val DTILE_WALL: Byte = 23
+    const val SOUL_LAMP: Byte = 24
+    const val SOUL_HANG: Byte = 25
+    const val CHAIN: Byte = 26
+    const val DTILE_SLAB: Byte = 27
+    const val QSLAB: Byte = 28
+    const val LBLUE: Byte = 29
 
-    val NAMES = arrayOf("air", "packed_ice", "blue_ice", "snow_block", "snow1", "snow2", "deepslate_tiles",
-        "polished_deepslate", "chiseled_deepslate", "deepslate_bricks", "cobbled_deepslate", "deepslate", "tuff", "calcite",
-        "quartz_bricks", "quartz_pillar", "chiseled_quartz_block", "gold_block", "sea_lantern", "light_blue_stained_glass",
-        "smooth_quartz", "stone")
+    val NAMES = arrayOf(
+        "air", "packed_ice", "blue_ice", "snow_block", "snow1", "snow2", "deepslate_tiles",
+        "polished_deepslate", "chiseled_deepslate", "deepslate_bricks", "cobbled_deepslate", "deepslate", "tuff",
+        "calcite", "quartz_bricks", "quartz_pillar", "chiseled_quartz_block", "gold_block", "sea_lantern",
+        "light_blue_stained_glass", "smooth_quartz", "stone", "deepslate_brick_wall", "deepslate_tile_wall",
+        "soul_lantern", "soul_lantern_hanging", "iron_chain", "deepslate_tile_slab", "quartz_slab",
+        "light_blue_concrete",
+    )
 
     const val X_MIN = -ArenaLayout.BOUND_XZ
     const val X_MAX = ArenaLayout.BOUND_XZ
@@ -67,11 +82,17 @@ internal object ArenaPlan {
     const val NY = Y_MAX - Y_MIN + 1
 
     private const val TZ = -50 // ArenaLayout.TEMPLE.z
-    private const val VY = -36 // ArenaLayout.VAULT.y
     private const val DEG = PI / 180.0
     private const val M32 = 0xFFFFFFFFL
 
     private val TEMPLE_P: List<IntArray> = ArenaLayout.TEMPLE_PILLARS.map { intArrayOf(it.x, it.z) }
+
+    /** Zehn äußere Arkadenpfeiler auf Radius 19,6 (Winkel ±18°, ±54°, ±90°, ±126°, ±162°): lassen Tor und Apsis mittig frei. */
+    private val COLONNADE_PIERS: List<IntArray> = (0 until 10).map { k ->
+        val a = (k * 36.0 + 18.0) * DEG
+        intArrayOf(kround(sin(a) * 19.6), TZ + kround(cos(a) * 19.6))
+    }
+
     // --- Hash und Rauschen -------------------------------------------------------------------------------------------
 
     fun h32(x: Int, y: Int, z: Int, s: Int): Double {
@@ -100,17 +121,8 @@ internal object ArenaPlan {
         return top + (bot - top) * tz
     }
 
-    private fun clamp01(v: Double) = if (v < 0.0) 0.0 else if (v > 1.0) 1.0 else v
-    private fun smooth(v0: Double): Double { val v = clamp01(v0); return v * v * (3.0 - 2.0 * v) }
     private fun kround(v: Double): Int = floor(v + 0.5).toInt()
     private fun deg(x: Double, z: Double): Double = Math.toDegrees(atan2(x, z))
-
-    private fun wrapDeg(a0: Double): Double {
-        var a = a0
-        while (a > 180.0) a -= 360.0
-        while (a < -180.0) a += 360.0
-        return a
-    }
 
     /** Winkelabstand (Grad) zum nächsten Vielfachen offset + k · step. */
     private fun nearStep(a: Double, step: Double, offset: Double): Double {
@@ -128,34 +140,36 @@ internal object ArenaPlan {
 
     fun isGround(x: Int, z: Int): Boolean = sqrt((x * x + z * z).toDouble()) < PLATEAU_R + 0.5 || ellipse(x, z) <= 1.0
 
-    /** Index der Säule, deren 3 × 3-Fläche (x, z) enthält, sonst −1; Versatz in [off]. */
-    private fun pillarAt(x: Int, z: Int, pillars: List<IntArray>, off: IntArray): Int {
-        for (i in pillars.indices) {
-            val p = pillars[i]
-            if (abs(x - p[0]) <= PILLAR_HALF && abs(z - p[1]) <= PILLAR_HALF) {
-                off[0] = x - p[0]; off[1] = z - p[1]
-                return i
-            }
-        }
-        return -1
-    }
-
     private val FLOOR_LAMPS: List<IntArray> = intArrayOf(1, 2, 3, 4, 6, 7, 8, 9).map { k ->
         val ra = k * 36.0 * PI / 180.0
-        intArrayOf(kround(kotlin.math.sin(ra) * 15.5), TZ + kround(kotlin.math.cos(ra) * 15.5))
+        intArrayOf(kround(sin(ra) * 15.5), TZ + kround(cos(ra) * 15.5))
     }
 
+    /** Eingelegter Zeremonialboden der Rotunde: goldenes Zentrum, Frost-Kompass, Kalzitringe und Prozessionsgang. */
     private fun templeFloor(x: Int, z: Int, dt: Double, a: Double): Byte {
-        if (dt < 0.5) return GOLD
-        if (dt < 2.5) return CQUARTZ
-        if (dt >= 5.5 && dt < 6.5) return CALCITE
-        if (dt >= 9.8 && dt < 10.8) return PDEEP
+        if (dt < 0.7) return GOLD
+        if (dt < 2.2) return CQUARTZ
+        if (dt < 3.0) return if (abs(x) == 0 || abs(z - TZ) == 0) GOLD else BLUE
+        if (dt < 3.9) return PDEEP
         for (p in FLOOR_LAMPS) if (x == p[0] && z == p[1]) return LAMP
-        if (z > -62) {
+        // Prozessionsgang vom Südtor zum Altar
+        if (z in -61..-31) {
             if (abs(x) == 3) return CALCITE
-            if (abs(x) <= 2) return PDEEP
+            if (abs(x) == 2) return CDEEP
+            if (abs(x) <= 1) {
+                if (x == 0 && (z == -36 || z == -43 || z == -57)) return GOLD
+                if (abs(x) == 0 && z % 2 == 0) return LBLUE
+                return PDEEP
+            }
         }
-        if (dt >= 6.5 && dt < 9.8 && nearStep(a, 36.0, 18.0) * DEG * dt < 0.6) return CDEEP
+        // Konzentrische Ringe und 10-strahlige Frost-Rose
+        if (dt in 5.5..6.4) return CALCITE
+        if (dt in 9.6..10.5) return PDEEP
+        if (dt in 15.2..16.1) return CDEEP
+        if (dt in 16.1..17.1) return CALCITE
+        if (dt >= 17.1) return PDEEP
+        if (dt in 6.4..15.2 && nearStep(a, 36.0, 18.0) * DEG * dt < 0.55) return if (dt < 9.6) LBLUE else CALCITE
+        if (dt in 10.5..15.2 && nearStep(a, 36.0, 0.0) * DEG * dt < 0.45) return CDEEP
         return DTILES
     }
 
@@ -169,17 +183,15 @@ internal object ArenaPlan {
     }
 
     fun gatePath(x: Int, z: Int): Boolean {
-        if (abs(x) <= 3 && z >= -29 && z <= -14) {
-            if (z <= -23) return true
-            return h32(x, 0, z, 7) < (-14 - z) / 9.0
+        if (abs(x) <= 3 && z >= -30 && z <= -14) {
+            if (z <= -22) return true
+            return h32(x, 0, z, 7) < (-14 - z) / 8.0
         }
         return false
     }
 
     /**
-     * Füllt [col] (Länge [NY], Index y − [Y_MIN]) mit den Block-Ids der Spalte (x, z). Seit 1.4.2 steht alles auf dem
-     * endlosen Schneefeld des Weltgenerators (Stein bis y −6, Schnee bis −1): Der Plan füllt den Untergrund genauso, damit
-     * das Leeren beim Neubau keine Löcher reißt. Keine Gletscherwände und kein Gewölbe mehr.
+     * Füllt [col] (Länge [NY], Index y − [Y_MIN]) mit den Block-Ids der Spalte (x, z).
      */
     fun column(x: Int, z: Int, col: ByteArray) {
         java.util.Arrays.fill(col, AIR)
@@ -191,13 +203,13 @@ internal object ArenaPlan {
         val at = deg(x.toDouble(), dz.toDouble())
         val ground = isGround(x, z)
 
-        // 1) Lauffläche: Klingengrab, Ringwege, Torweg, sonst Schnee mit Eisadern
+        // 1) Lauffläche: Heiligtum-Rotunde, gestufte Außenterrasse, Torweg, Schneefeld mit Eisadern
         val surf: Byte = when {
             dt < TEMPLE_R + 0.5 -> templeFloor(x, z, dt, at)
-            dt < 20.5 -> PDEEP
-            dt < 21.5 -> DTILES
-            dt < 22.5 -> PDEEP
-            gatePath(x, z) -> DTILES
+            dt < 20.8 -> PDEEP
+            dt < 21.7 -> CALCITE
+            dt < 23.0 -> DTILES
+            gatePath(x, z) -> if (abs(x) == 3 && z <= -22) CALCITE else if (abs(x) <= 1 && z <= -24) PDEEP else DTILES
             else -> plateauSurface(x, z, r)
         }
         col[-1 - Y_MIN] = surf
@@ -206,11 +218,13 @@ internal object ArenaPlan {
             if (n > 0.74) col[-Y_MIN] = SNOW2 else if (n > 0.6) col[-Y_MIN] = SNOW1
         }
 
-        // 2) Klingengrab (Abschnitt I): offene Terrasse mit Steinklingen statt Tempel
-        if (dt < 24.5 || (x in -26..-24 && z in -51..-49)) temple(x, z, dt, at, col)
+        // 2) Das Heiligtum (Abschnitt I): offene Säulen-Rotunde, Südtor, Thron-Apsis, Klingen-Stelen, Vorhof
+        if (dt < 25.5 || (x in -27..-23 && z in -52..-48) || (abs(x) <= 12 && z in -74..-16)) {
+            temple(x, z, dt, at, col)
+        }
 
-        // 3) Plateau-Gestaltung: Eis-Obelisken am Rand, Ruinenbögen, Dornenkristalle (Deckung und Bild)
-        if (ground && dt >= 25.0 && r in 24.0..40.0 && !gatePath(x, z)) dressing(x, z, r, col)
+        // 3) Plateau-Gestaltung: Eis-Obelisken am Rand, Ruinenbögen, Dornenkristalle (Sichtachse nach Süden frei)
+        if (ground && dt >= 25.5 && r in 24.0..40.0 && !gatePath(x, z)) dressing(x, z, r, col)
     }
 
     /** Obelisken (r 35), Ruinenbögen (r 31, Ost/West) und Kristallbüschel; die Sichtachse zur Nadel (Süden) bleibt frei. */
@@ -218,13 +232,12 @@ internal object ArenaPlan {
         fun put(y: Int, b: Byte) { if (y - Y_MIN in col.indices) col[y - Y_MIN] = b }
         val a = deg(x.toDouble(), z.toDouble())                    // 0° = Süden (+z)
         if (abs(a) < 55.0) return                                   // Blick zur Nadel frei
-        // Obelisken: 9 Stück auf r 35, 3 × 3 unten, spitz zulaufend, blauer Kern
         for (i in 0 until 9) {
             val ang = Math.toRadians(70.0 + i * 25.0)
-            if (abs(Math.toDegrees(ang) - 180.0) < 22.0) continue   // nicht direkt vor dem Tempel
+            if (abs(Math.toDegrees(ang) - 180.0) < 22.0) continue
             for (sgn in intArrayOf(1, -1)) {
-                val ox = kround(kotlin.math.sin(ang) * 35.0) * sgn
-                val oz = kround(kotlin.math.cos(ang) * 35.0)
+                val ox = kround(sin(ang) * 35.0) * sgn
+                val oz = kround(cos(ang) * 35.0)
                 val dx = abs(x - ox)
                 val dzz = abs(z - oz)
                 if (dx > 1 || dzz > 1) continue
@@ -238,7 +251,6 @@ internal object ArenaPlan {
                 }
             }
         }
-        // Ruinenbögen: je einer im Osten und Westen auf r 31 (zwei Pfeiler, halb eingestürzter Sturz)
         for (sgn in intArrayOf(1, -1)) {
             val cx = 31 * sgn
             val cz = -4
@@ -251,7 +263,6 @@ internal object ArenaPlan {
             if (abs(x - cx) <= 1 && z in (cz - 3)..(cz + 0)) put(7, if (z == cz) CQUARTZ else QBRICK)
             if (x == cx && z == cz + 1 && h32(x, 7, z, 93) < 0.5) put(6, QBRICK)
         }
-        // Dornenkristalle: verstreute blaue Spitzen (1–3 hoch), dichter zum Rand
         val n = h32(x, 0, z, 95)
         if (n < 0.012 + (r - 24.0) / 16.0 * 0.03) {
             val h = 1 + (h32(x, 1, z, 97) * 3).toInt()
@@ -260,64 +271,158 @@ internal object ArenaPlan {
     }
 
     /**
-     * Eine Steinklinge, mit der Spitze im Boden: [u] entlang der Schneide (Breite 2 · [half] + 1), [v] quer (Dicke 1),
-     * Klinge bis [blade] hoch, darüber Parierstange, Griff und Knauf. Kanten weiß (Kalzit), Hohlkehle Eis.
+     * Skulpturale innere Klingen-Stele auf den zehn [TEMPLE_PILLARS]-Plätzen:
+     * Kompakter Sockel (±1), facettierter Quarz-/Eis-Kern mit Kalzitschneiden, schlanke Parierstange und goldener Knauf.
+     * Zerbrechlich über [ArenaBuilder.pillarBlocks] (±4, y 0..14) und schlank genug für freie Wegfindung.
      */
-    private fun sword(u: Int, v: Int, half: Int, blade: Int, glow: Boolean, put: (Int, Byte) -> Unit) {
+    private fun bladeStela(u: Int, v: Int, blade: Int, put: (Int, Byte) -> Unit) {
         val au = abs(u)
         val av = abs(v)
-        if (av == 0 && au <= half) {
-            for (y in 0 until blade) {
-                val tipIn = y < 2 && au == half  // leichte Verjüngung am Boden
-                if (tipIn) continue
-                put(y, when {
-                    au == half -> CALCITE
-                    au == 0 -> if (glow) BLUE else PACKED
-                    else -> SQUARTZ
-                })
-            }
+        // Gestufter Sockel (y = 0)
+        if (au <= 1 && av <= 1) {
+            put(0, if (au == 1 && av == 1) DTILE_SLAB else if (au == 0 && av == 0) CDEEP else PDEEP)
         }
-        val guard = half * 2 + 2
-        if (av == 0 && au <= guard) put(blade, if (au == guard) GOLD else PDEEP)
-        if (av == 1 && au <= 1) put(blade, CDEEP)
-        if (av == 0 && au == 0) {
-            if (glow) put(blade, LAMP)
-            val grip = maxOf(2, half + 1)
-            for (y in blade + 1..blade + grip) put(y, DBRICK)
-            put(blade + grip + 1, GOLD)
+        // Facettierte Klinge (y = 1..blade-1): Kalzitschneiden an ±1, blauer Eiskern mittig, Quarzrippe in v=±1 unten
+        if (av == 0 && au <= 1) {
+            for (y in 1 until blade) {
+                put(y, if (au == 0) (if (y % 3 == 0) BLUE else PACKED) else if (y == 1) QPILLAR else CALCITE)
+            }
+        } else if (av == 1 && au == 0) {
+            for (y in 1 until min(blade - 2, 4)) put(y, DBRICK_WALL)
+        }
+        // Schlanke Parierstange (y = blade)
+        if (av == 0 && au <= 2) {
+            put(blade, when (au) {
+                2 -> GOLD
+                1 -> PDEEP
+                else -> CQUARTZ
+            })
+        } else if (av == 1 && au == 0) {
+            put(blade, CDEEP)
+        }
+        // Griff und goldener Knauf
+        if (au == 0 && av == 0) {
+            put(blade + 1, DBRICK)
+            put(blade + 2, DBRICK_WALL)
+            put(blade + 3, GOLD)
         }
     }
 
     /**
-     * Das Klingengrab (seit 1.4.2 statt des Kuppeltempels; Crix: „für die erste Phase denk dir was anderes aus“): eine
-     * offene, runde Terrasse unter freiem Himmel, umstellt von zehn Steinklingen der gefallenen Weißen Klingen, die mit
-     * der Spitze im Boden stecken. Hinter Arius' Thron ragt die große Klinge des Ordens auf (24 hoch); zwei Klingen
-     * flankieren den Torweg im Süden. Der Schnitt teilt Terrasse und große Klinge.
+     * Die große 3D-Ordensklinge hinter dem Thron (Mitte x = 0, z = -70, Höhe bis y = 27):
+     * Gestufter Altarsockel, 3 Blöcke tiefe facettierte Klinge mit blauem Eiskern und leuchtendem Herz,
+     * breit geschwungene Parierstange mit goldenen Enden und aufragendem Knauf.
+     */
+    private fun greatBlade(x: Int, z: Int, put: (Int, Byte) -> Unit) {
+        val u = x
+        val v = z + 70 // -70 = Mitte
+        val au = abs(u)
+        val av = abs(v)
+        if (au > 8 || av > 2) return
+        // Gestufter Altarsockel im Boden (y 0..2)
+        if (au <= 4 && av <= 2) {
+            put(0, if (au == 4 || av == 2) PDEEP else CDEEP)
+            if (au <= 3 && av <= 1) put(1, if (au == 3) CDEEP else PDEEP)
+            if (au <= 2 && av <= 1) put(2, if (au == 0 && av == 0) BLUE else CQUARTZ)
+        }
+        // 3D-Klingenkörper (y 1..18): außen Kalzit, Mitte glatter Quarz, Kern blaues Eis mit Rückgrat in v=±1
+        if (av == 0 && au <= 2) {
+            for (y in 2..18) {
+                if (y <= 3 && au == 2) continue
+                put(y, when (au) {
+                    2 -> CALCITE
+                    1 -> SQUARTZ
+                    else -> if (y % 4 == 0) LAMP else BLUE
+                })
+            }
+        } else if (av == 1 && au <= 1) {
+            for (y in 3..17) {
+                put(y, if (au == 0) (if (y % 3 == 0) BLUE else PACKED) else if (y in 4..15) QPILLAR else CALCITE)
+            }
+        }
+        // Geschwungene Parierstange (y 18..20)
+        if (av == 0 && au <= 7) {
+            val gy = if (au >= 5) 20 else 19
+            put(gy, when {
+                au == 7 -> GOLD
+                au == 6 -> CQUARTZ
+                au == 0 -> LAMP
+                else -> PDEEP
+            })
+            if (au in 1..4) put(18, CDEEP)
+            if (au == 7) put(21, QSLAB)
+        }
+        if (av == 1 && au <= 2) {
+            put(19, if (au == 0) GOLD else CDEEP)
+            if (au == 0) put(20, CQUARTZ)
+        }
+        // Griff und Knauf (y 20..27)
+        if (au == 0 && av == 0) {
+            for (y in 20..24) put(y, if (y == 22) CQUARTZ else DBRICK)
+            put(25, GOLD)
+            put(26, CQUARTZ)
+            put(27, GOLD)
+        } else if (au + av == 1) {
+            put(25, CQUARTZ)
+        }
+    }
+
+    /**
+     * Offene Säulen-Rotunde des Ordens der Weißen Klinge:
+     * 1) Erhabener Nord-Altar und geschnitzter Thron (exakte Ankerhöhen für SEAT, CUT_STAND, WATCH_SEAT).
+     * 2) Monumentale 3D-Ordensklinge und flankierende Gletscherkristalle hinter dem Thron.
+     * 3) Zehn äußere Arkadenpfeiler auf Radius 19,6 mit weit offenen Bogenjochen (y 0..7 frei begehbar!),
+     *    verwittertem Kranzgesims oben und hängenden Seelenlaternen unter den Scheitelsteinen.
+     * 4) Monumentales Südtor mit Zwillingstürmen und Klingen-Bekrönung (Öffnung |x| ≤ 3, y 0..8 komplett frei).
+     * 5) Zehn innere Klingen-Stelen auf den [TEMPLE_PILLARS]-Plätzen.
+     * 6) Gestufter Zuschauer-Ausguck im Westen (WATCH_UPPER, Lauffläche y 4) und Vorhof-Laternenpfosten.
      */
     private fun temple(x: Int, z: Int, dt: Double, at: Double, col: ByteArray) {
         fun put(y: Int, b: Byte) { if (y - Y_MIN in col.indices) col[y - Y_MIN] = b }
         val inside = dt < TEMPLE_R + 0.5
-        // Altarstufen
+
+        // --- 1) Altarstufen und geschnitzter Thron (Nordteil, z <= -62) --------------------------------------------
         if (inside && z <= -62) {
             if (z >= -63) {
                 val front = z == -62
-                val lamp = front && (x == -10 || x == -6 || x == 6 || x == 10)
-                put(0, if (lamp) LAMP else if (front) CDEEP else PDEEP)
+                val lamp = front && (x == -9 || x == -5 || x == 5 || x == 9)
+                put(0, when {
+                    lamp -> LAMP
+                    front && abs(x) <= 2 -> CALCITE
+                    front -> CDEEP
+                    abs(x) <= 2 -> PDEEP
+                    else -> DTILES
+                })
             } else {
                 put(0, PDEEP)
                 when {
-                    z == -64 -> put(1, if (x == -8 || x == 8) GOLD else CQUARTZ)
-                    abs(x) <= 2 && z >= -66 -> put(1, CALCITE)
+                    z == -64 -> put(1, if (x == -7 || x == 7 || x == -2 || x == 2) GOLD else CQUARTZ)
+                    abs(x) <= 2 && z >= -66 -> put(1, if (x == 0 && z == -65) CQUARTZ else CALCITE)
+                    z == -67 && abs(x) <= 6 -> put(1, PDEEP)
                     else -> put(1, DTILES)
                 }
             }
+            // Geschnitzter Hochlehnen-Thron (SEAT = (0.5, 2.0, -64.5) bleibt frei!)
             if (x in -1..1 && z == -66) {
-                for (y in 2 until 5) put(y, QPILLAR)
-                put(5, if (x == 0) GOLD else CQUARTZ)
+                for (y in 2..5) put(y, if (x == 0 && y == 4) BLUE else QPILLAR)
+                put(6, if (x == 0) GOLD else CQUARTZ)
+                if (x == 0) put(7, QSLAB)
             }
             if ((x == -1 || x == 1) && z == -65) put(2, PDEEP)
+            if ((x == -2 || x == 2) && z == -66) {
+                put(2, CDEEP)
+                put(3, DBRICK_WALL)
+                put(4, SOUL_LAMP)
+            }
+            // Flankierende Feuerschalen/Laternenpfeiler am Rand der untersten Stufe (weit abseits aller Anker)
+            if ((x == -6 || x == 6) && z == -62) {
+                put(1, CDEEP)
+                put(2, DBRICK_WALL)
+                put(3, SOUL_LAMP)
+            }
         }
-        // Die zehn Klingen des Rings (an den alten Säulenplätzen), Schneide quer zum Radius
+
+        // --- 2) Zehn innere Klingen-Stelen (TEMPLE_PILLARS) --------------------------------------------------------
         if (inside) {
             for (p in TEMPLE_P) {
                 val rx = p[0]
@@ -325,33 +430,167 @@ internal object ArenaPlan {
                 val alongX = abs(rz) >= abs(rx)
                 val u = if (alongX) x - p[0] else z - p[1]
                 val v = if (alongX) z - p[1] else x - p[0]
-                if (abs(u) > 4 || abs(v) > 1) continue
-                val blade = 8 + (h32(p[0], 0, p[1], 31) * 3).toInt()
-                sword(u, v, 1, blade, false, ::put)
+                if (abs(u) > 2 || abs(v) > 1) continue
+                val blade = 7 + (h32(p[0], 0, p[1], 31) * 3).toInt()
+                bladeStela(u, v, blade, ::put)
             }
         }
-        // Die große Klinge hinter dem Thron (Schneide in x-Richtung)
-        if (z in -71..-69 && abs(x) <= 7) sword(x, z + 70, 2, 18, true, ::put)
-        // Torklingen links und rechts des Torwegs
-        if (z in -32..-30) {
-            for (cx in intArrayOf(-5, 5)) if (abs(x - cx) <= 4) sword(x - cx, z + 31, 1, 7, false, ::put)
+
+        // --- 3) Äußere offene Säulen-Rotunde (dt 18.2..21.6, alle Bogenjoche y 0..7 frei begehbar!) ----------------
+        if (dt in 18.0..21.8 && !(abs(x) <= 6 && z >= -34)) {
+            // Prüfen, ob Spalte zu einem der zehn Arkadenpfeiler gehört
+            var nearPier = false
+            var pierCore = false
+            for (p in COLONNADE_PIERS) {
+                val dx = abs(x - p[0])
+                val dz = abs(z - p[1])
+                if (dx <= 1 && dz <= 1) {
+                    nearPier = true
+                    pierCore = (dx == 0 && dz == 0)
+                    break
+                }
+            }
+            if (nearPier) {
+                // Massiver, fein gegliederter Arkadenpfeiler (y 0..12)
+                for (y in 0..11) {
+                    val b = when {
+                        y == 0 -> CDEEP
+                        y == 1 -> PDEEP
+                        y == 9 -> CQUARTZ
+                        y == 10 -> PDEEP
+                        y == 11 -> CALCITE
+                        pierCore -> if (y % 3 == 0) BLUE else QPILLAR
+                        else -> DBRICK
+                    }
+                    put(y, b)
+                }
+                if (pierCore) {
+                    put(12, DBRICK_WALL)
+                    put(13, SOUL_LAMP)
+                }
+            } else if (dt in 18.7..20.6) {
+                // Hohes Bogen-Gebälk über den offenen Jochen (y 0..7 bleibt komplett offen!)
+                val angFromPier = nearStep(at, 36.0, 18.0) // 0° am Pfeiler, 18° in Jochmitte
+                // Zwei Joche im fernen Osten/Westen sind leicht verwittert (eingestürztes oberes Gesims)
+                val bay = Math.floorMod(floor((at + 180.0) / 36.0).toInt(), 10)
+                val weathered = (bay == 2 || bay == 7) && angFromPier > 10.0
+                if (!weathered) {
+                    // Gestufte Bogenlaibung an den Pfeilern (y 7..8), schlanker Sturz in der Mitte (y 9..11)
+                    if (angFromPier < 7.0) put(8, DBRICK)
+                    if (angFromPier < 4.5) put(7, CDEEP)
+                    put(9, if (angFromPier > 15.0) CQUARTZ else DBRICK)
+                    put(10, if (dt < 19.6) QBRICK else PDEEP)
+                    if (angFromPier < 14.0 || bay != 3) {
+                        put(11, if (dt < 19.6) CALCITE else DTILE_SLAB)
+                        if (vnoise(x, z, 4, 71) > 0.65) put(12, SNOW1)
+                    }
+                    // Hängende Seelenlaterne im Bogenscheitel (über y = 7, freie Kopfhöhe!)
+                    if (angFromPier > 16.5 && dt in 19.1..20.1 && abs(z - TZ) > 2) {
+                        put(8, CHAIN)
+                        put(7, SOUL_HANG)
+                    }
+                } else {
+                    // Verwitterter Bruch: einzelne Eisspitze auf der Bruchkante
+                    if (angFromPier < 12.0) put(9, if (h32(x, 9, z, 73) < 0.5) PACKED else DBRICK)
+                }
+            }
         }
+
+        // --- 4) Monumentale 3D-Ordensklinge & flankierende Eiskristalle hinter dem Thron ---------------------------
+        if (z in -72..-68 && abs(x) <= 8) greatBlade(x, z, ::put)
+        // Asymmetrische schräge Gletscherkristalle, die die Nord-Apsis hinter den Pfeilern umrahmen
+        for (sgn in intArrayOf(-1, 1)) {
+            val cx = 10 * sgn
+            val cz = -69
+            val hgt = if (sgn > 0) 14 else 12
+            for (y in 0 until hgt) {
+                val leanX = cx + sgn * y * 0.16
+                val leanZ = cz - y * 0.12
+                val d = hypot(x + 0.5 - (leanX + 0.5), z + 0.5 - (leanZ + 0.5))
+                val rad = 1.9 * (1.0 - y / hgt.toDouble()) + 0.45
+                if (d <= rad) put(y, if (d < rad * 0.45) BLUE else if (y == 0) PDEEP else PACKED)
+            }
+        }
+
+        // --- 5) Monumentales Südtor mit Zwillingstürmen und Klingen-Bekrönung (z -32..-28) -------------------------
+        if (z in -32..-28 && abs(x) <= 6) {
+            val ax = abs(x)
+            // Zwillingstürme links und rechts (|x| = 4..6)
+            if (ax in 4..6) {
+                val towerH = if (ax == 4) 13 else if (ax == 5) 14 else 11
+                for (y in 0 until towerH) {
+                    val corner = (ax == 6 || z == -32 || z == -28)
+                    val b = when {
+                        y == 0 -> CDEEP
+                        y == 1 -> PDEEP
+                        y == towerH - 1 -> if (ax == 5 && z == -30) GOLD else CALCITE
+                        y == towerH - 2 -> CQUARTZ
+                        ax == 4 && z == -30 -> QPILLAR
+                        ax == 5 && (z == -28 || z == -32) && y in 3..10 -> BLUE
+                        ax == 5 && z == -30 -> QPILLAR
+                        corner -> DBRICK
+                        else -> PDEEP
+                    }
+                    put(y, b)
+                }
+                if (ax == 5 && z == -30) {
+                    put(14, DBRICK_WALL)
+                    put(15, SOUL_LAMP)
+                }
+                if (ax == 4 && z == -28) put(13, QSLAB)
+                if (ax == 6 && z == -30) {
+                    put(11, DBRICK_WALL)
+                    put(12, SOUL_LAMP)
+                }
+            }
+            // Torsturz & Bekrönung über der 7 × 9 Öffnung (y >= 9)
+            if (ax <= 3 && z in -31..-29) {
+                put(9, if (x == 0 && z == -29) GOLD else if (ax == 3) PDEEP else CDEEP)
+                put(10, if (x == 0) CQUARTZ else QBRICK)
+                put(11, PDEEP)
+                if (ax <= 2 && z == -30) put(12, CALCITE)
+                // Kleine weiße Klinge über dem Torbogen (echoes Summit Sword Gate)
+                if (z == -30) {
+                    if (ax <= 2) put(13, if (ax == 2) GOLD else PDEEP)
+                    if (ax <= 1) {
+                        for (y in 14..17) put(y, if (ax == 0) BLUE else CALCITE)
+                    }
+                    if (ax == 0) {
+                        put(18, CALCITE)
+                        put(19, QSLAB)
+                    }
+                }
+            }
+        }
+        // Toröffnung garantiert frei halten (|x| <= 3, z -33..-28, y 0..8)
         if (abs(x) <= GATE_HALF_WIDTH && z in -33..-28) {
             for (y in 0 until GATE_HEIGHT) put(y, AIR)
         }
-        // Zuschauerfels im Westen (Lauffläche y 4)
+
+        // --- 6) Vorhof-Laternenpfeiler (weit abseits der LANDING-Plätze) -------------------------------------------
+        if ((abs(x) == 8 && z == -25) || (abs(x) == 9 && z == -19)) {
+            put(0, CDEEP)
+            put(1, DBRICK_WALL)
+            put(2, DBRICK_WALL)
+            put(3, SOUL_LAMP)
+        }
+
+        // --- 7) Gestufter Zuschauer-Ausguck im Westen (WATCH_UPPER = (-24.5, 4.0, -49.5)) -------------------------
         if (x in -26..-24 && z in -51..-49) {
-            for (y in 0 until 4) put(y, if (y == 3) SNOWB else if (h32(x, y, z, 33) < 0.5) STONE else PDEEP)
+            for (y in 0 until 4) {
+                put(y, when {
+                    y == 3 -> if (x == -25 && z == -50) CQUARTZ else CALCITE
+                    y == 0 -> CDEEP
+                    else -> if (h32(x, y, z, 33) < 0.5) DBRICK else PDEEP
+                })
+            }
         }
     }
 
     // --- Ereignisse --------------------------------------------------------------------------------------------------
 
-    /** Seit 1.4.2 gibt es keinen Südwall mehr, also auch keine Kluft. */
     @Suppress("UNUSED_PARAMETER")
-    fun inCleft(x: Int, y: Int, z: Int): Boolean {
-        return false
-    }
+    fun inCleft(x: Int, y: Int, z: Int): Boolean = false
 
     @Suppress("unused")
     private fun oldCleft(x: Int, y: Int, z: Int): Boolean {

@@ -486,6 +486,11 @@ class EirholmFight(
             }
             if (done) {
                 build = null
+                val st = AriusState.get(server)
+                @Suppress("SENSELESS_COMPARISON")
+                if (st.data.coreBuilt == null) st.data.coreBuilt = HashMap()
+                st.data.coreBuilt[slot.toString()] = dev.henny.hha_arius.arena.ArenaPlan.VERSION
+                st.save()
                 setPhase(Phase.INTRO)
                 enter()
             }
@@ -1123,6 +1128,7 @@ class EirholmFight(
         tasks.clear()
         director = null
         edits.restore()
+        SplitRecovery.ensureClean(server, slot)
         // Liegengebliebene Items/Geschosse in der Arena entfernen.
         val box = Box(
             (origin.x - ArenaLayout.BOUND_XZ).toDouble(), (origin.y + ArenaLayout.BOUND_Y_MIN).toDouble(), (origin.z + ArenaLayout.BOUND_Z_MIN).toDouble(),

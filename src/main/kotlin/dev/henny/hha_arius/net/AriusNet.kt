@@ -284,6 +284,9 @@ enum class FxKind {
 
     /** Tempel-Tritt: benutzerdefinierte Spieler-Schleuderanimation für e1 (a = Treffer-Stopp, b = Flugzeit, life = gesamt). */
     KICK_FLING,
+
+    /** Goldene Yang-Wiederherstellung entlang der Bergspalte (pos = Fuß, dir = Gipfel, a = Breite, life = Dauer). */
+    YANG_RESTORE,
 }
 
 /**

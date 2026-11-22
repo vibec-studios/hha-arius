@@ -101,6 +101,11 @@ object HuntScares {
             HuntFx.PORTAL_CHARGE -> HuntCine.portalCharge(p.a.toInt())
             HuntFx.BRIDGE_DROP -> RopeBridges.drop(p.a.toInt(), pos)
             HuntFx.ROPE_PROGRESS -> HuntCine.ropeProgress(p.a, p.life)
+            HuntFx.EYE_CUE -> {
+                // Bestehenden Hinweis an derselben Stelle sauber ersetzen/verlängern oder bei life <= 0 sofort beenden.
+                list.removeIf { it is EyeCue }
+                if (p.life > 0) add(EyeCue(pos, dir, p.life))
+            }
         }
     }
 
@@ -291,6 +296,58 @@ object HuntScares {
         val light = WorldRenderer.getLightmapCoordinates(world, BlockPos.ofFloored(center))
         mc.blockRenderManager.renderBlockAsEntity(state, ms, d.consumers, light, OverlayTexture.DEFAULT_UV)
         ms.pop()
+    }
+
+    /**
+     * Unmissverständlicher In-World-Hinweis am Felsspalt in der dunklen Höhle (1.13.0, Paket C):
+     * Kühle eisblaue Lichtbahnen fallen aus dem Spalt schräg auf den dunklen Höhlenboden, feiner Frostnebel zieht
+     * in den Gang hinaus, und tief im Spalt glimmt ein ruhiger blasser Lichtschein, der den Blick genau dorthin lenkt.
+     */
+    private class EyeCue(val slit: Vec3d, val into: Vec3d, life: Int) : Fx(life) {
+        private val n = into.let { if (it.lengthSquared() < 1e-6) Vec3d(1.0, 0.0, 0.0) else it.normalize() }
+        private val right = n.crossProduct(Vec3d(0.0, 1.0, 0.0)).let { if (it.lengthSquared() < 1e-4) Vec3d(0.0, 0.0, 1.0) else it.normalize() }
+        private val up = right.crossProduct(n).normalize().let { if (it.y < 0) it.negate() else it }
+
+        override fun tick(world: ClientWorld) {
+            val fx = AriusClientConfig.fx.coerceIn(0f, 1f)
+            if (fx <= 0f || age % 2 != 0) return
+            val r = rnd
+            val p = slit.add(right.multiply((r.nextDouble() - 0.5) * 1.1)).add(up.multiply((r.nextDouble() - 0.5) * 0.9))
+            val vel = n.multiply(0.05 + r.nextDouble() * 0.04).add(0.0, -0.008 + (r.nextDouble() - 0.5) * 0.01, 0.0)
+            world.addParticleClient(if (r.nextInt(3) == 0) ParticleTypes.END_ROD else ParticleTypes.SNOWFLAKE, p.x, p.y, p.z, vel.x, vel.y, vel.z)
+        }
+
+        override fun render(d: VfxDraw, t: Float) {
+            val fadeIn = (t / 10f).coerceIn(0f, 1f)
+            val fadeOut = ((life - t) / 10f).coerceIn(0f, 1f)
+            val k = fadeIn * fadeOut
+            if (k <= 0.01f) return
+            val pulse = 0.72f + 0.28f * sin(t * 0.14f)
+
+            // 1) Kalter Lichtschein tief im Spalt (ruhiges Atmen, weckt Neugier ohne aufdringlichen Marker)
+            val deep = slit.subtract(n.multiply(0.55))
+            d.billboard(AriusLayers.VFX_GLOW, deep, 2.1 + 0.35 * pulse, withAlpha(0xFF7AD6FF.toInt(), 0.42f * pulse * k))
+            d.billboard(AriusLayers.VFX_FLARE, deep.add(n.multiply(0.15)), 0.75 + 0.2 * pulse, withAlpha(0xFFE6F8FF.toInt(), 0.72f * pulse * k))
+
+            // 2) Zwei schräg in den Gang fallende eisblaue Lichtbahnen (Volumetrik vom Spalt zum Höhlenboden)
+            val beamEnd = slit.add(n.multiply(4.2)).add(0.0, -1.65, 0.0)
+            d.band(AriusLayers.VFX_FLOW, slit, beamEnd, up, 0.95, withAlpha(0xFFB4E8FF.toInt(), 0.42f * pulse * k), withAlpha(0xFF6EC8F5.toInt(), 0f), uScale = 0.25f, uOffset = -t * 0.04f)
+            d.band(AriusLayers.VFX_GLOW, slit, beamEnd, right, 0.72, withAlpha(0xFFCFF2FF.toInt(), 0.28f * pulse * k), withAlpha(0xFF6EC8F5.toInt(), 0f))
+
+            // 3) Kühle Lichtlache auf dem Gangboden genau vor dem Spalt (zieht den Blick selbst beim Vorwärtslaufen)
+            val floorSpot = slit.add(n.multiply(2.8)).add(0.0, -2.38, 0.0)
+            d.disc(AriusLayers.VFX_GLOW, floorSpot, right, n, 1.85, withAlpha(0xFF7FD6FF.toInt(), 0.22f * pulse * k))
+
+            // 4) Schlanke Frostschwaden, die aus dem Spalt in den Gang treiben
+            for (j in 0 until 4) {
+                val ph = ((t * 0.025 + j * 0.25) % 1.0)
+                val pos = slit.add(n.multiply(0.2 + ph * 3.0))
+                    .add(right.multiply(sin(t * 0.08 + j * 1.9) * 0.45))
+                    .add(0.0, -ph * 0.65 + cos(t * 0.06 + j) * 0.15, 0.0)
+                val a = (sin(ph * PI).toFloat() * 0.34f * k)
+                d.billboard(AriusLayers.VEIL, pos, 0.75 + ph * 0.95, withAlpha(0xFFD8F0FF.toInt(), a), (t * 0.8 + j * 60.0) % 360.0)
+            }
+        }
     }
 
     /**

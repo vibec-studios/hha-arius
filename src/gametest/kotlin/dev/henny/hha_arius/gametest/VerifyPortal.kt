@@ -36,6 +36,20 @@ class VerifyPortal : FabricClientGameTest {
         shot("gate")
         server { srv ->
             val p = player(srv)
+            val w = srv.overworld
+            p.teleport(w, corner.x + 1.0, corner.y + 0.5, corner.z - 2.3, emptySet(), 0f, 4f, false)
+        }
+        tick(8)
+        shot("gate_close")
+        server { srv ->
+            val p = player(srv)
+            val w = srv.overworld
+            p.teleport(w, corner.x + 3.2, corner.y + 0.5, corner.z - 3.6, emptySet(), 34f, 6f, false)
+        }
+        tick(8)
+        shot("gate_angle")
+        server { srv ->
+            val p = player(srv)
             p.inventory.clear()
             p.inventory.insertStack(ItemStack(Items.BREAD))
             val w = srv.overworld

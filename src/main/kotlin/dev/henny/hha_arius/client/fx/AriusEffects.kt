@@ -114,6 +114,7 @@ abstract class AriusFx(val life: Int) {
                     KickAnim.start(p.e1, p.a, p.b, p.life)
                     null
                 }
+                FxKind.YANG_RESTORE -> YangRestoreFx(pos, dir, p.a.toDouble().coerceAtLeast(2.0), p.life)
                 null -> null
             }
         }
@@ -724,22 +725,23 @@ class FrozenStarFx(private val ground: Vec3d, private val radius: Double, privat
 
 
 /**
- * Staub- und Schneewolke: dicke Schneeschwaden quellen auf, wirbeln und teilen sich wieder. Bei [cloudOnly] = true
- * (Bergspaltung) entstehen nur weiche, dichte Wolken- und Nebelbänke ohne schwebende Quader-Splitter.
+ * Staub- und Schneewolke: schlanke Schneeschwaden quellen auf, teilen sich rasch und verwehen sauber. Bei [cloudOnly]
+ * = true (Bergspaltung) entstehen nur feine, halbtransparente Frostschleier eng entlang der Schnittnaht — nie fette
+ * opake Wolkenklumpen.
  */
 class DebrisCloudFx(private val center: Vec3d, private val radius: Double, life: Int, private val cloudOnly: Boolean = false) : AriusFx(life) {
     private class Puff(val off: Vec3d, val drift: Vec3d, val rise: Double, val grow: Double, val spin: Double, val tint: Float)
     private class Bit(val vel: Vec3d, val size: Double, val spin: Double)
 
     private val rng = java.util.Random(center.hashCode().toLong())
-    private val puffs = List(if (cloudOnly) 30 else 16) { i ->
+    private val puffs = List(if (cloudOnly) 10 else 16) { i ->
         val a = rng.nextDouble() * PI * 2
-        val r = rng.nextDouble() * radius * (if (cloudOnly) 0.72 else 0.55)
+        val r = rng.nextDouble() * radius * (if (cloudOnly) 0.42 else 0.55)
         val side = if (i % 2 == 0) 1.0 else -1.0
-        val drift = if (cloudOnly) Vec3d(side * (0.4 + rng.nextDouble() * 0.7), 0.12 + rng.nextDouble() * 0.18, (rng.nextDouble() - 0.5) * 0.35) else Vec3d.ZERO
+        val drift = if (cloudOnly) Vec3d(side * (0.75 + rng.nextDouble() * 0.7), 0.14 + rng.nextDouble() * 0.18, (rng.nextDouble() - 0.5) * 0.25) else Vec3d.ZERO
         Puff(
-            Vec3d(cos(a) * r, (rng.nextDouble() - (if (cloudOnly) 0.2 else 0.0)) * radius * (if (cloudOnly) 0.55 else 0.3), sin(a) * r),
-            drift, 0.04 + rng.nextDouble() * 0.08, 0.4 + rng.nextDouble() * 0.55, (rng.nextDouble() - 0.5) * 3.0, rng.nextFloat(),
+            Vec3d(cos(a) * r * (if (cloudOnly) 0.55 else 1.0), (rng.nextDouble() - 0.1) * radius * (if (cloudOnly) 0.35 else 0.3), sin(a) * r),
+            drift, 0.04 + rng.nextDouble() * 0.07, 0.22 + rng.nextDouble() * 0.28, (rng.nextDouble() - 0.5) * 2.5, rng.nextFloat(),
         )
     }
     private val bits = if (cloudOnly) emptyList() else List(22) {
@@ -752,18 +754,18 @@ class DebrisCloudFx(private val center: Vec3d, private val radius: Double, life:
     override val persistent: Boolean get() = true
 
     override fun render(d: VfxDraw, matrices: MatrixStack, t: Float) {
-        val k = fadeInOut(t, if (cloudOnly) 8f else 3f, life * (if (cloudOnly) 0.38f else 0.45f))
+        val k = fadeInOut(t, if (cloudOnly) 5f else 3f, life * (if (cloudOnly) 0.48f else 0.45f))
         val s = (t / life).coerceIn(0f, 1f).toDouble()
-        val part = if (cloudOnly) ((s - 0.45) / 0.55).coerceIn(0.0, 1.0).let { it * it } else 0.0
+        val part = if (cloudOnly) ((s - 0.28) / 0.72).coerceIn(0.0, 1.0).let { it * it } else 0.0
         for ((idx, p) in puffs.withIndex()) {
             val pos = center
-                .add(p.off.multiply(1.0 + s * (if (cloudOnly) 0.55 else 0.8)))
-                .add(p.drift.multiply(part * radius * 1.15))
+                .add(p.off.multiply(1.0 + s * (if (cloudOnly) 0.45 else 0.8)))
+                .add(p.drift.multiply(part * radius * 1.6))
                 .add(0.0, p.rise * t, 0.0)
-            val size = radius * ((if (cloudOnly) 0.52 else 0.3) + p.grow * (1.0 - (1.0 - s) * (1.0 - s)))
-            val col = lerpColor(0xFFD2DCE6.toInt(), 0xFFF7FAFD.toInt(), p.tint)
-            val layer = if (cloudOnly && idx % 3 == 0) VfxLayers.SMOKE_ALPHA else VfxLayers.CLOUD_ALPHA
-            val alpha = (if (cloudOnly) 0.78f else 0.62f) * k
+            val size = radius * ((if (cloudOnly) 0.26 else 0.3) + p.grow * (1.0 - (1.0 - s) * (1.0 - s)))
+            val col = lerpColor(0xFFD2E2F0.toInt(), 0xFFF7FBFF.toInt(), p.tint)
+            val layer = if (cloudOnly && idx % 3 == 0) AriusLayers.VEIL else VfxLayers.CLOUD_ALPHA
+            val alpha = (if (cloudOnly) 0.34f else 0.62f) * k
             d.billboard(layer, pos, size, withAlpha(col, alpha), (p.spin * t) % 360.0)
         }
         for (b in bits) {
@@ -775,6 +777,76 @@ class DebrisCloudFx(private val center: Vec3d, private val radius: Double, life:
             val ay = Vec3d(0.0, b.size * 1.6, 0.0)
             val az = Vec3d(-sin(a), 0.0, cos(a)).multiply(b.size * 0.6)
             d.box(VfxLayers.SHARD_ALPHA, pos, ax, ay, az, withAlpha(0xFFCFEFFF.toInt(), 0.85f * k))
+        }
+    }
+}
+
+/**
+ * Goldene Yang-Wiederherstellung entlang der Berg- und Gipfelarena-Spalte (1.13.0, Paket C):
+ * Eine strahlende goldene Lichtfront steigt vom Bergfuß bis zur Gipfelspitze auf, während sich der gespaltene Fels
+ * und die Arena wieder schließen; goldene Runenringe, aufsteigende Lichtbänder und feine Goldfunken zeichnen die
+ * heilige Yang-Heilung deutlich gegen Schnee und Himmel ab.
+ */
+class YangRestoreFx(private val from: Vec3d, private val to: Vec3d, private val width: Double, life: Int) : AriusFx(life) {
+    override val persistent: Boolean get() = true
+
+    override fun render(d: VfxDraw, matrices: MatrixStack, t: Float) {
+        val k = fadeInOut(t, 6f, 18f)
+        if (k <= 0.01f) return
+        val riseTicks = life * 0.72f
+        val p = (t / riseTicks).coerceIn(0f, 1f)
+        val ease = p * p * (3f - 2f * p)
+        val front = from.lerp(to, ease.toDouble())
+        val baseGold = 0xFFFFD36A.toInt()
+        val warmCore = 0xFFFFF6D6.toInt()
+        val deepAmber = 0xFF9E6A12.toInt()
+
+        // 1) Durchgehende goldene Yang-Lichtnaht vom Bergfuß bis zur steigenden Wiederherstellungsfront
+        d.band(AriusLayers.INK, from, front, X, width * 0.42, withAlpha(deepAmber, 0.42f * k), withAlpha(baseGold, 0.58f * k))
+        d.band(AriusLayers.VFX_GLOW, from, front, X, width * 0.55, withAlpha(baseGold, 0.62f * k), withAlpha(warmCore, 0.88f * k))
+        d.band(AriusLayers.VFX_FLOW, from, front, X, width * 0.95, withAlpha(baseGold, 0.35f * k), withAlpha(warmCore, 0.65f * k), uScale = 0.04f, uOffset = -t * 0.14f)
+
+        // 2) Zwei goldene Lichtbänder, die die Spalte hinaufwirbeln
+        val steps = 22
+        val span = front.subtract(from)
+        for (strand in 0 until 2) {
+            val pts = ArrayList<Vec3d>(steps + 1)
+            for (i in 0..steps) {
+                val q = i / steps.toDouble()
+                val ang = q * 10.0 - t * 0.35 + strand * PI
+                val r = width * (0.45 + 0.35 * sin(q * PI))
+                pts += from.add(span.multiply(q)).add(cos(ang) * r, 0.0, sin(ang) * r * 0.45)
+            }
+            d.ribbon(AriusLayers.VFX_GLOW, pts, { q -> 0.55 + 1.1 * sin(q * PI) },
+                { q -> withAlpha(if (strand == 0) warmCore else baseGold, 0.72f * k * (0.35f + 0.65f * q)) }, uScale = 0.2f, uOffset = -t * 0.1f)
+        }
+
+        // 3) Goldene Siegelringe entlang der aufsteigenden Front (besonders deutlich über Bergflanke und Gipfelarena)
+        for (rIdx in 0 until 4) {
+            val frac = (ease - rIdx * 0.16f).coerceIn(0f, 1f)
+            if (frac <= 0.02f) continue
+            val at = from.lerp(to, frac.toDouble())
+            val ageRing = ((ease - frac) / 0.35f).coerceIn(0f, 1f)
+            val rad = width * (1.2 + 2.2 * ageRing)
+            val rf = (1f - ageRing * 0.7f) * k
+            d.ring(AriusLayers.INK, at, X, Z, rad * 0.86, rad * 1.04, withAlpha(deepAmber, 0f), withAlpha(baseGold, 0.55f * rf), segments = 48)
+            d.ring(AriusLayers.VFX_GLOW, at, X, Z, rad * 0.90, rad * 1.06, withAlpha(baseGold, 0f), withAlpha(warmCore, 0.88f * rf), segments = 48)
+            if (rIdx == 0) {
+                d.disc(AriusLayers.VFX_RUNE, at, X, Z, rad * 0.95, withAlpha(baseGold, 0.55f * rf), t * 0.04)
+            }
+        }
+
+        // 4) Leuchtender Brennpunkt an der Front + goldene Aufstiegsfunken
+        d.billboard(AriusLayers.VFX_FLARE, front, width * 2.6, withAlpha(warmCore, 0.95f * k))
+        d.billboard(AriusLayers.VFX_GLOW, front, width * 5.2, withAlpha(baseGold, 0.45f * k))
+        for (j in 0 until 16) {
+            val phase = ((t * 0.032 + j / 16.0) % 1.0)
+            if (phase > ease + 0.05) continue
+            val at = from.lerp(to, phase)
+            val ox = sin(j * 3.1 + t * 0.18) * width * 1.4
+            val oz = cos(j * 2.3 + t * 0.14) * width * 0.8
+            val mf = sin(phase * PI).toFloat() * k
+            d.billboard(AriusLayers.VFX_FLARE, at.add(ox, 0.0, oz), 1.6 + 1.2 * sin(t * 0.3 + j), withAlpha(warmCore, 0.85f * mf))
         }
     }
 }

@@ -60,6 +60,7 @@ object Encounters {
         dev.henny.hha_arius.boss.HuntGuard.init()
         dev.henny.hha_arius.arena.HighlandView.init()
         dev.henny.hha_arius.arena.RouteCheck.registerCommand()
+        SplitRecovery.init()
         ServerTickEvents.END_SERVER_TICK.register { server ->
             if (pendingArrivals.isNotEmpty()) {
                 val due = pendingArrivals.values.toList()
@@ -268,9 +269,13 @@ object Encounters {
             it !== player && !it.isSpectator && it.isAlive && it.squaredDistanceTo(player) <= 12.0 * 12.0 && !isParticipant(it)
         }
         val origin = ArenaLayout.origin(slot)
-        // Jeder Versuch prüft den ganzen Bauplan und ersetzt Abweichungen (schnell, wenn alles stimmt); nach einem
-        // Absturz wird zusätzlich das ganze Volumen geleert.
-        val dirty = slot in AriusState.get(server).data.dirtySlots
+        SplitRecovery.ensureClean(server, slot)
+        // Jeder Versuch prüft den ganzen Bauplan und ersetzt Abweichungen; nach einem Absturz oder neuer Tempel-Fassung
+        // wird zusätzlich das ganze Kernvolumen geleert und sauber neu gebaut.
+        val st = AriusState.get(server)
+        @Suppress("SENSELESS_COMPARISON")
+        if (st.data.coreBuilt == null) st.data.coreBuilt = HashMap()
+        val dirty = slot in st.data.dirtySlots || st.data.coreBuilt[slot.toString()] != dev.henny.hha_arius.arena.ArenaPlan.VERSION
         val mode = if (dirty) 2 else 1
         // Das Siegel ist der Einsatz: Es wird jetzt entnommen und bei Niederlage/Abbruch zurückgegeben.
         val stake = if (training == 0 && !seal.isEmpty) seal.copyWithCount(1).also { seal.decrement(1) } else ItemStack.EMPTY

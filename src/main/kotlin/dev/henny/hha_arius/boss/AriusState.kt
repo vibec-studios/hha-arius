@@ -59,6 +59,8 @@ class AriusState(var data: Data = Data()) : PersistentState() {
         var wonEncounters: MutableList<String> = ArrayList(),
         /** Fernlandschaft je Instanz-Slot gebaut (Slot → FarPlan.VERSION). */
         var farBuilt: MutableMap<String, Int> = HashMap(),
+        /** Kern/Heiligtum je Instanz-Slot gebaut (Slot → ArenaPlan.VERSION). */
+        var coreBuilt: MutableMap<String, Int> = HashMap(),
     )
 
     fun player(id: UUID): PlayerData = data.players.getOrPut(id.toString()) { PlayerData() }.also {
