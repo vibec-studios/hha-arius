@@ -30,31 +30,31 @@ class HorizonFx(
         val frost = withAlpha(0xFF80C8E9.toInt(), fade * 0.93f)
         val white = withAlpha(0xFFF4FCFF.toInt(), fade)
         val vc = d.buffer(AriusLayers.INK)
-        fun point(u: Double, back: Double, lift: Double): Vec3d {
+        fun point(u: Double, back: Double): Vec3d {
             val arch = sin(u * PI)
             return center.add(across.multiply((2.0 * u - 1.0) * span))
                 .add(forward.multiply(arch * (depth * 0.48 - back * depth)))
-                .add(0.0, lift * arch, 0.0)
+                .add(0.0, 0.12 * sin(back * PI) * arch, 0.0)
         }
-        fun strip(from: Double, to: Double, lift: Double, outer: Int, inner: Int) {
+        fun strip(from: Double, to: Double, outer: Int, inner: Int) {
             with(d) {
                 for (i in 0 until 32) {
                     val a = i / 32.0
                     val b = (i + 1) / 32.0
-                    vc.put(point(a, from, 0.0), 0f, 0f, outer)
-                    vc.put(point(a, to, lift), 0f, 1f, inner)
-                    vc.put(point(b, to, lift), 1f, 1f, inner)
-                    vc.put(point(b, from, 0.0), 1f, 0f, outer)
+                    vc.put(point(a, from), 0f, 0f, outer)
+                    vc.put(point(a, to), 0f, 1f, inner)
+                    vc.put(point(b, to), 1f, 1f, inner)
+                    vc.put(point(b, from), 1f, 0f, outer)
                 }
             }
         }
-        strip(0.0, 0.14, 0.09, edge, white)
-        strip(0.14, 0.38, 0.04, white, frost)
-        strip(0.38, 1.0, 0.0, frost, withAlpha(0xFF3875A1.toInt(), 0f))
+        strip(0.0, 0.14, edge, white)
+        strip(0.14, 0.38, white, frost)
+        strip(0.38, 1.0, frost, withAlpha(0xFF3875A1.toInt(), 0f))
         if (released) {
             // An icy reflection below the cut makes the impact legible from ground level.
-            d.band(AriusLayers.INK, point(0.0, 0.2, 0.0).add(0.0, -0.24, 0.0),
-                point(1.0, 0.2, 0.0).add(0.0, -0.24, 0.0), Vec3d(0.0, 1.0, 0.0),
+            d.band(AriusLayers.INK, point(0.0, 0.2).add(0.0, -0.24, 0.0),
+                point(1.0, 0.2).add(0.0, -0.24, 0.0), Vec3d(0.0, 1.0, 0.0),
                 0.23 * (1f - progress), frost, withAlpha(0xFFC8EEFF.toInt(), fade * 0.38f))
         }
     }

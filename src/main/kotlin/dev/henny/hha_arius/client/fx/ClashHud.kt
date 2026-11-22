@@ -11,19 +11,16 @@ import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.sin
 
-/**
- * Seit 1.11.0: Der Moment des Letzten Zusammenpralls und der Iai-Duelle. Ein Ring zieht sich auf das Fadenkreuz
- * zusammen, die Sekunden zählen herunter, und genau im Fenster stehen goldene Bildränder und ein großes „JETZT!“. Der
- * Server wertet; die Anzeige rechnet nur den Ping ein, damit ein Klick im goldenen Bereich rechtzeitig ankommt.
- */
+/** The shrinking cue marks when a melee strike can answer Arius's swing. The server judges the hit. */
 object ClashHud {
 
-    private const val GOLD = 0xFFFFD45A.toInt()
+    private const val ICE = 0xFFB9EBFF.toInt()
 
     /** Ein Klick wirkt auf dem Server frühestens im nächsten Tick (wie bei der Parade gemessen). */
     private const val PRESS_DELAY = 1f
 
-    private var on = false
+    var active = false
+        private set
     private var start = 0f
     private var strike = 0f
     private var before = 0
@@ -33,14 +30,14 @@ object ClashHud {
 
     fun handle(p: ClashCueS2C) {
         if (!p.on) {
-            on = false
+            active = false
             return
         }
         val client = MinecraftClient.getInstance()
         val player = client.player
         val ms = player?.let { client.networkHandler?.getPlayerListEntry(it.uuid)?.latency } ?: 0
         val rtt = (ms / 50f).coerceIn(0f, 10f)
-        on = true
+        active = true
         start = now()
         strike = start + p.ticks - rtt - PRESS_DELAY
         before = p.before
@@ -48,17 +45,17 @@ object ClashHud {
     }
 
     fun clear() {
-        on = false
+        active = false
     }
 
     fun render(ctx: DrawContext) {
-        if (!on) return
+        if (!active) return
         val client = MinecraftClient.getInstance()
         val t = now() + client.renderTickCounter.getTickProgress(true)
         val opens = strike - before
         val closes = strike + after
         if (t > closes + 6f) {
-            on = false
+            active = false
             return
         }
         val w = ctx.scaledWindowWidth
@@ -69,19 +66,19 @@ object ClashHud {
             t < opens -> {
                 val span = (opens - start).coerceAtLeast(1f)
                 val k = ((opens - t) / span).coerceIn(0f, 1f)
-                ring(ctx, cx, cy, 18f, withAlpha(GOLD, 0.6f), 1)
-                ring(ctx, cx, cy, 18f + 74f * k, withAlpha(0xFFFFFFFF.toInt(), 0.9f), 2)
+                ring(ctx, cx, cy, 18f, withAlpha(ICE, 0.6f), 1)
+                ring(ctx, cx, cy, 18f + 40f * k, withAlpha(0xFFFFFFFF.toInt(), 0.9f), 2)
                 val seconds = ceil((opens - t) / 20f).toInt().coerceAtLeast(1)
                 // Die Zahl steht im Ring am Fadenkreuz, frei von Titelkarte und Untertiteln.
                 label(ctx, Text.literal(seconds.toString()).formatted(Formatting.BOLD), cx, cy, 2.6f, withAlpha(0xFFFFFFFF.toInt(), 0.95f))
             }
             t <= closes -> {
                 val k = ((t - opens) / (closes - opens).coerceAtLeast(1f)).coerceIn(0f, 1f)
-                val edge = (h * 0.11f).toInt().coerceAtLeast(14)
-                ctx.fillGradient(0, 0, w, edge, withAlpha(GOLD, 0.75f), withAlpha(GOLD, 0f))
-                ctx.fillGradient(0, h - edge, w, h, withAlpha(GOLD, 0f), withAlpha(GOLD, 0.75f))
-                ring(ctx, cx, cy, 18f * (1f - k) + 3f, withAlpha(GOLD, 1f), 3)
-                label(ctx, Text.translatable("hha_arius.clash.now").formatted(Formatting.BOLD), cx, cy - 46, 3.6f - k, withAlpha(GOLD, 1f))
+                val half = (23f * (1f - k)).toInt()
+                ctx.fill(cx - 24, cy + 24, cx + 24, cy + 28, 0xD0113558.toInt())
+                ctx.fill(cx - half, cy + 25, cx + half, cy + 27, ICE)
+                ring(ctx, cx, cy, 18f * (1f - k) + 3f, withAlpha(ICE, 1f), 3)
+                label(ctx, Text.translatable("hha_arius.clash.now").formatted(Formatting.BOLD), cx, cy - 35, 2.3f - k * 0.3f, withAlpha(ICE, 1f))
             }
         }
     }
