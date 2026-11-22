@@ -29,6 +29,10 @@ class VerifyHunt : FabricClientGameTest {
             far()
             if (parts.size == 1) return@run
         }
+        if ("mtn" in parts) {
+            mountainCut()
+            if (parts.size == 1) return@run
+        }
         val h = reachHunt()
         if (h == null) {
             log("FEHLER: Jagd nicht erreicht, Phase ${phase()}")
@@ -94,6 +98,21 @@ class VerifyHunt : FabricClientGameTest {
             log("far $name: frame %.2f ms with mountains, %.2f ms without; %s".format(on, off, client { dev.henny.hha_arius.client.fx.HighlandViewClient.debugStats() }))
         }
         cmd("gamemode survival @p")
+    }
+
+    /** Bergschnitt und Tritt aus dem Tempel, ein Bild je 8 Ticks. */
+    private fun VerifyKit.mountainCut() {
+        server { fight()?.let { f -> f.startDirector(f.scenes.theCut()) } }
+        var i = 0
+        var t = 0
+        while (t < 840 && phase() < dev.henny.hha_arius.boss.EirholmFight.Phase.GLACIER) {
+            shot("mtn_%03d".format(i++))
+            // Der Tritt selbst dichter: Treffer, Salto, Aufprall, Aufstehen.
+            val step = if (t in 350..520) 3 else 8
+            tick(step)
+            t += step
+        }
+        log("mountain cut: $i frames, phase ${phase()}")
     }
 
     /** Mittlere Zeit eines echten Bildes (ohne Tick-Warten). */

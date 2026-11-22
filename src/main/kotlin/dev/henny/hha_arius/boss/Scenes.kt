@@ -294,7 +294,7 @@ class Scenes(private val f: EirholmFight) {
         }
         f.calls.roomShake(lookout, 6f, 200f)
         val face = stand.add(0.0, 1.5, 0.0)
-        post.line(stand.add(2.4, 0.9, 3.0), stand.add(2.7, 1.25, 3.6), face, face.add(0.0, -0.3, 2.0), 46, 46.0, 40.0)
+        post.line(stand.add(-2.4, 0.9, 3.0), stand.add(-2.8, 1.25, 3.6), face, face.add(0.0, -0.3, 2.0), 46, 46.0, 40.0)
         cue("cut.strike", stand, 3f, 0.5f)
         cue("transform.pulse", stand, 3f, 0.45f)
         shown { Vfx.crescent(f.world, Vfx.Style.HEAVEN, stand.add(0.0, 1.5, 0.0), Vec3d(0.0, 0.0, 1.0), 110f, 5f, 12) }
@@ -440,8 +440,9 @@ class Scenes(private val f: EirholmFight) {
      *    in der Luft (Treffer-Stopp).
      * 4. **Flug**: Jeder fliegt in lesbarem Bogen durch die Toröffnung (Bahn so gelegt, dass sie die Öffnung trifft, Scheitel
      *    unter dem Torsturz) auf seinen Landeplatz; die **Verfolgerkamera** hängt hinter dem eigenen Körper.
-     * 5. **Landung und Aufstehen**: Schnee stiebt, die Kamera steht vor dem Tor, dann hebt sie sich über das Plateau zum
-     *    gespaltenen Berg. Arius kehrt außerhalb des Bildes auf die stehengebliebene Stufe zurück.
+     * 5. **Aufprall und Aufstehen** ([dev.henny.hha_arius.client.fx.KickAnim], für alle sichtbar): Schnee stiebt, die Kamera
+     *    bleibt tief beim Spieler, der Blick endet zum Tempel (nicht noch einmal auf den Berg). Arius kehrt außerhalb des
+     *    Bildes auf die stehengebliebene Stufe zurück.
      */
     private fun kick(scene: CineScene): Script = script {
         val a = f.arius ?: return@script
@@ -498,7 +499,7 @@ class Scenes(private val f: EirholmFight) {
         wait(4)
         // 3) Aufprallbild: Treffer-Stopp, alle hängen in der Luft; die Musik reißt ab; benutzerdefinierte Schleuderanimation startet.
         val hitstop = 12
-        val recover = 24
+        val recover = 46
         for ((p, lp) in plan) if (f.canSequence(p)) {
             Hold.drop(p)
             Hold.allowLong(p, 90)
@@ -566,7 +567,8 @@ class Scenes(private val f: EirholmFight) {
                         f.world.spawnParticles(net.minecraft.particle.BlockStateParticleEffect(ParticleTypes.BLOCK, net.minecraft.block.Blocks.SNOW_BLOCK.defaultState), p.x, p.y + 0.2, p.z, 24, 0.6, 0.2, 0.6, 0.15)
                     }
                     cue("hold.impact", p.entityPos, 1.6f, 0.8f)
-                    p.teleport(f.world, p.x, p.y, p.z, emptySet(), 0f, -4f, false)
+                    // Der Blick endet zum Tempel: Dort geht die Szene weiter.
+                    p.teleport(f.world, p.x, p.y, p.z, emptySet(), 180f, -4f, false)
                 }
             }
         }
@@ -574,10 +576,10 @@ class Scenes(private val f: EirholmFight) {
             landings(i)
             yield(Unit)
         }
-        // 5) Landung und Aufrichten im Schnee (kein überflüssiger Schwenk mehr zurück auf den Berg).
+        // 5) Aufprall und Aufstehen, tief und nah am Spieler (kein Schwenk mehr zurück auf den Berg).
         MusicCue.play(f, "silence", 10)
-        val landFocus = lead?.entityPos?.add(0.0, 1.0, 0.0) ?: landing0.add(0.0, 1.0, 0.0)
-        scene.line(landing0.add(4.8, 1.8, -3.5), landing0.add(3.5, 1.65, -2.4), landFocus, landFocus.add(0.0, 0.15, 0.0), recover, 60.0, 54.0, lookAt = lead, lookOffset = 1.0)
+        val landFocus = lead?.entityPos?.add(0.0, 0.7, 0.0) ?: landing0.add(0.0, 0.7, 0.0)
+        scene.line(landFocus.add(3.8, 0.55, -3.0), landFocus.add(2.7, 0.75, -2.4), landFocus, landFocus.add(0.0, 0.45, 0.0), recover, 58.0, 50.0, lookAt = lead, lookOffset = 0.75)
         for (i in 0 until recover) {
             landings(flight + 2 + i)
             yield(Unit)
