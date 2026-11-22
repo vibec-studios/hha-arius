@@ -562,7 +562,12 @@ class EirholmFight(
     }
 
     fun landingSpot(player: ServerPlayerEntity): Vec3d {
-        val list = if (phase >= Phase.VAULT) ArenaLayout.VAULT_LANDING else if (phase >= Phase.GLACIER) ArenaLayout.AERIE_LANDING else listOf(ArenaLayout.ARRIVAL)
+        val list = when {
+            phase == Phase.FINALE && onSummit -> finaleSpots()
+            phase >= Phase.VAULT -> ArenaLayout.VAULT_LANDING
+            phase >= Phase.GLACIER -> ArenaLayout.AERIE_LANDING
+            else -> listOf(ArenaLayout.ARRIVAL)
+        }
         val i = fighters.keys.indexOf(player.uuid).coerceAtLeast(0)
         return abs(list[i % list.size])
     }
