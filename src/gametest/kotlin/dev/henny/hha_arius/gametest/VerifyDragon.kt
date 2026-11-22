@@ -38,6 +38,10 @@ class VerifyDragon : FabricClientGameTest {
             bladeScene()
             stopFight()
         }
+        if ("return" in scenes) {
+            summitReturn()
+            stopFight()
+        }
         if ("pickup" in scenes) {
             startStage(2)
             tick(60)
@@ -47,6 +51,25 @@ class VerifyDragon : FabricClientGameTest {
             stopFight()
         }
         if ("route" in scenes) routeScene()
+    }
+
+    /** Stage the actors on the summit immediately before filming the handoff to the blade. */
+    private fun VerifyKit.summitReturn() {
+        startFull()
+        server { srv ->
+            val f = fight() ?: return@server
+            f.startDirector(emptySequence())
+            Cine.end(f.audience())
+            f.onSummit = true
+            val c = f.arenaCenter
+            val p = player(srv)
+            p.teleport(f.world, c.x + 3.0, c.y, c.z + 6.0, emptySet(), 180f, -10f, false)
+            f.arius?.let { f.place(it, c) }
+            if (f.nivaris == null) f.spawnNivaris(c.add(0.0, 2.0, 6.0), 0f)
+        }
+        settle(240)
+        server { fight()?.let { f -> f.startDirector(f.scenes.finale()) } }
+        film("return", 190, 4)
     }
 
     /** Solvane wird wieder zur Klinge: oben um die Eisspitze wie beim Auftritt. */

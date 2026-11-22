@@ -59,11 +59,7 @@ data class RideActionS2C(val entityId: Int, val action: Int, val ticks: Int) : C
     }
 }
 
-/**
- * Griff eines Reiters auf Solvanes Rücken (seit 1.8.1) an alle Clients: [grip] 2 = beide Hände am Eisdorn, 1 = nur
- * noch eine Hand, 0 = kein Griff (abgestürzt oder abgestiegen). Die Darstellung (Haltung dritte/erste Person, Eisdorn)
- * steht in [dev.henny.hha_arius.client.fx.RideClient].
- */
+/** Rider grip strength (2 secure, 1 loose, 0 dismounted), with the takeoff point for a scripted pickup. */
 data class RideGripS2C(val entityId: Int, val grip: Int, val pickup: Vec3d? = null) : CustomPayload {
     override fun getId(): CustomPayload.Id<out CustomPayload> = ID
 
@@ -507,7 +503,7 @@ class DragonRide(private val f: EirholmFight) {
         var t = 0
         var mounted = false
         var after = 0
-        var wide = false
+        var contactShot = false
         val jumpFrom = a.entityPos
         var jump = -1
         while (true) {
@@ -517,9 +513,8 @@ class DragonRide(private val f: EirholmFight) {
                 f.fx(FxKind.THREAD, a.entityPos, life = 40, e1 = a, e2 = d)
                 cue("nivaris.roar", d.entityPos, 5f, 0.9f)
             }
-            if (t == 40) {
+            if (t == 40 && !contactShot) {
                 // Weite Seitenansicht auf die Spieler: Man sieht sie kommen.
-                wide = true
                 val look = mountAt
                 val across = Vec3d(-flat(d.entityPos, mountAt).z, 0.0, flat(d.entityPos, mountAt).x)
                 val remain = ((mountS - leadS) / 0.88).toInt().coerceAtLeast(24) + 34
@@ -541,20 +536,32 @@ class DragonRide(private val f: EirholmFight) {
                 f.face(a, perch)
                 if (k == 1.0) RideSeats.perch(f, a, d)
             }
+            if (!contactShot && leadS >= mountS - 22.0) {
+                contactShot = true
+                val pathDir = flat(DragonRail.at(lead, mountS - 5.0), DragonRail.at(lead, mountS + 5.0))
+                val across = Vec3d(-pathDir.z, 0.0, pathDir.x)
+                val player = f.players().minByOrNull { it.entityPos.squaredDistanceTo(mountAt) }
+                val launch = player?.entityPos ?: mountAt.subtract(0.0, 6.0, 0.0)
+                val focus = launch.lerp(mountAt, 0.35)
+                val to = DragonRail.at(lead, mountS + 19.0).add(0.0, 3.0, 0.0)
+                scene.line(
+                    focus.add(across.multiply(24.0)).add(0.0, 6.0, 0.0),
+                    to.add(across.multiply(20.0)).subtract(pathDir.multiply(7.0)).add(0.0, 3.0, 0.0),
+                    focus, to, 54, 62.0, 54.0,
+                )
+            }
             if (!mounted && leadS >= mountS - 4.0) {
                 mounted = true
-                if (!wide) {
-                    val across = Vec3d(-flat(d.entityPos, mountAt).z, 0.0, flat(d.entityPos, mountAt).x)
-                    scene.line(mountAt.add(across.multiply(30.0)), mountAt.add(across.multiply(24.0)).add(0.0, 2.0, 0.0), mountAt, mountAt, 34, 64.0, 60.0, lookAt = d, lookOffset = 3.0)
-                }
                 f.calls.roomShake(mountAt, 3f, 40f)
                 for ((i, p) in f.players().withIndex()) mount(d, p, i)
-                scene.once { Cine.title(it, "hha_arius.cine.hold_on", "hha_arius.cine.hold_on.sub", 50) }
             }
             if (mounted) {
                 after++
-                if (after == 24) scene.home(14)
-                if (after >= 38) break
+                if (after == 27) {
+                    scene.once { Cine.title(it, "hha_arius.cine.hold_on", "hha_arius.cine.hold_on.sub", 50) }
+                    scene.home(15)
+                }
+                if (after >= 42) break
             }
             if (leadS >= DragonRail.length(lead)) break
             yield(Unit)
@@ -852,7 +859,8 @@ class DragonRide(private val f: EirholmFight) {
             var landingShot = false
             while (true) {
                 t++
-                speed += ((if (s > length - 34.0) 0.34 else 0.60) - speed).coerceIn(-0.012, 0.012)
+                val pace = 0.35 + 0.25 * ((length - s) / 16.0).coerceIn(0.0, 1.0)
+                speed += (pace - speed).coerceIn(-0.012, 0.012)
                 s = min(length, s + speed)
                 val pos = f.abs(RideRoute.at(s))
                 val ahead = f.abs(RideRoute.at(min(length, s + 5.0)))

@@ -1745,10 +1745,10 @@ class Scenes(private val f: EirholmFight) {
                 // C) Der Strom stürzt von der Eisspitze herab in Arius' Scheide, die Eisklinge zerspringt.
                 val chest = a.entityPos.add(0.0, 1.4, 0.0)
                 val travel = RETURN_TRAVEL + 10
-                scene.line(
-                    chest.add(side.multiply(5.4)).add(toSpire.multiply(-3.6)).add(0.0, 1.8, 0.0),
+                scene.rawLine(
+                    chest.add(side.multiply(5.9)).add(toSpire.multiply(-2.4)).add(0.0, 2.2, 0.0),
                     chest.add(side.multiply(3.2)).add(toSpire.multiply(-1.6)).add(0.0, 0.6, 0.0),
-                    spireHead.lerp(chest, 0.48), chest.add(toSpire.multiply(-0.2)), travel + 26, 66.0, 50.0,
+                    chest.add(0.0, 4.0, 0.0), chest.add(toSpire.multiply(-0.2)), travel + 26, 66.0, 50.0,
                 )
                 val sheath = a.entityPos.add(0.0, 1.55, 0.0).subtract(toSpire.multiply(0.25))
                 Entrance.storyFx(f, FxKind.BLADE_STREAM, spireHead, sheath, a = travel.toFloat(), b = 1f, life = travel + 16, e1 = a)

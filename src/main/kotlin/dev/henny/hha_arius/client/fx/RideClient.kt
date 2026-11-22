@@ -202,7 +202,7 @@ object RideClient {
         actionAnims.remove(id)
     }
 
-    /** Griff des Spielers [e]: 0 = reitet nicht auf ihr, sonst 2 (beide Hände) oder 1 (eine Hand). */
+    /** Grip strength: 0 off the dragon, 1 loose, 2 secure. Both hands remain on the spike. */
     @JvmStatic
     fun grip(e: Entity?): Int {
         if (e == null || e !is PlayerEntity) return 0
@@ -502,7 +502,7 @@ object RideClient {
 
     // --- Anzeige ------------------------------------------------------------------------------------------------------
 
-    /** Kleine Anzeige oben: mit wie vielen Händen man sich hält. */
+    /** Current grip strength, above the QTE prompt. */
     fun renderHud(ctx: DrawContext) {
         if (dev.henny.hha.client.cine.CinePlayer.active) return
         val player = MinecraftClient.getInstance().player ?: return
@@ -510,7 +510,7 @@ object RideClient {
         if (g <= 0) return
         val tr = MinecraftClient.getInstance().textRenderer
         val text = Text.translatable(if (g >= 2) "hha_arius.ride.grip_two" else "hha_arius.ride.grip_one")
-        val col = if (g >= 2) 0xFFBFE6FF.toInt() else 0xFFFF8A7A.toInt()
+        val col = if (g >= 2) 0xFFBFE6FF.toInt() else 0xFFE6F6FF.toInt()
         ctx.drawText(tr, text, ctx.scaledWindowWidth / 2 - tr.getWidth(text) / 2, 22, col, true)
     }
 
