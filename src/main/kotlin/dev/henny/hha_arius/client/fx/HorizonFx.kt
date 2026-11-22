@@ -75,6 +75,8 @@ class HorizonFx(
         else renderSlash(d, t, fx)
     }
 
+    // Puffer immer erst direkt vor dem Zeichnen holen: Das Holen eines zweiten Layers schließt den vorigen Puffer, und
+    // weiteres Schreiben darauf brach mit „Not building!“ ab (Absturz beim Aufladen des Weißen Horizonts).
     private fun renderAnticipation(d: VfxDraw, t: Float, fx: Float) {
         if (owner?.isRemoved == true) return
         val progress = (t / life.coerceAtLeast(1)).coerceIn(0f, 1f)
@@ -140,8 +142,6 @@ class HorizonFx(
         val span = (width * (0.38 + 0.62 * progress)).coerceAtLeast(3.4)
         val gap = 1.05 * (1.0 - build) + 0.06
         val bandA = aScale * (0.28f + 0.68f * progress)
-        val inkVc = d.buffer(AriusLayers.INK)
-        val glowVc = d.buffer(AriusLayers.VFX_GLOW)
         for (sg in intArrayOf(-1, 1)) {
             val yOff = sg * gap
             fun drawTapered(vc: net.minecraft.client.render.VertexConsumer, halfTh: Double, col: Int) {
@@ -164,8 +164,8 @@ class HorizonFx(
                     }
                 }
             }
-            drawTapered(inkVc, 0.11 + 0.06 * build, withAlpha(NAVY_DARK, bandA * 0.80f))
-            drawTapered(glowVc, 0.055 + 0.05 * build, withAlpha(FROST_WHITE, bandA * 0.92f))
+            drawTapered(d.buffer(AriusLayers.INK), 0.11 + 0.06 * build, withAlpha(NAVY_DARK, bandA * 0.80f))
+            drawTapered(d.buffer(AriusLayers.VFX_GLOW), 0.055 + 0.05 * build, withAlpha(FROST_WHITE, bandA * 0.92f))
         }
 
         // 3) Blade core charge + intensifying horizontal gleam at the edge.
@@ -216,9 +216,6 @@ class HorizonFx(
         }
 
         if (bladeFade > 0.015f) {
-            val inkVc = d.buffer(AriusLayers.INK)
-            val glowVc = d.buffer(AriusLayers.VFX_GLOW)
-            val addVc = d.buffer(AriusLayers.VFX_ADD)
 
             fun hStrip(
                 vc: net.minecraft.client.render.VertexConsumer,
@@ -248,13 +245,13 @@ class HorizonFx(
 
             // 1) Horizontal swept crescent: ONLY a thin deep-navy contrast edge right along the leading core,
             //    followed by a brilliant near-white core and soft luminous ice-blue trailing falloff.
-            hStrip(inkVc, 0.0, 0.14, withAlpha(NAVY_DARK, bladeFade * 0.58f), withAlpha(NAVY_MID, 0f), -0.02)
+            hStrip(d.buffer(AriusLayers.INK), 0.0, 0.14, withAlpha(NAVY_DARK, bladeFade * 0.58f), withAlpha(NAVY_MID, 0f), -0.02)
             // Soft ice-blue falloff wake
-            hStrip(glowVc, 0.04, 0.34, withAlpha(ICE_LIGHT, bladeFade * 0.88f), withAlpha(ICE_BLUE, bladeFade * 0.55f))
-            hStrip(glowVc, 0.34, 0.95, withAlpha(ICE_BLUE, bladeFade * 0.55f), withAlpha(ICE_BLUE, 0f))
+            hStrip(d.buffer(AriusLayers.VFX_GLOW), 0.04, 0.34, withAlpha(ICE_LIGHT, bladeFade * 0.88f), withAlpha(ICE_BLUE, bladeFade * 0.55f))
+            hStrip(d.buffer(AriusLayers.VFX_GLOW), 0.34, 0.95, withAlpha(ICE_BLUE, bladeFade * 0.55f), withAlpha(ICE_BLUE, 0f))
             // Brilliant additive near-white leading blade core
-            hStrip(addVc, 0.0, 0.16, withAlpha(PURE_WHITE, bladeFade), withAlpha(FROST_WHITE, bladeFade * (0.75f + 0.25f * peakBoost)))
-            hStrip(addVc, 0.16, 0.52, withAlpha(ICE_LIGHT, bladeFade * (0.55f + 0.35f * peakBoost)), withAlpha(ICE_BLUE, 0f))
+            hStrip(d.buffer(AriusLayers.VFX_ADD), 0.0, 0.16, withAlpha(PURE_WHITE, bladeFade), withAlpha(FROST_WHITE, bladeFade * (0.75f + 0.25f * peakBoost)))
+            hStrip(d.buffer(AriusLayers.VFX_ADD), 0.16, 0.52, withAlpha(ICE_LIGHT, bladeFade * (0.55f + 0.35f * peakBoost)), withAlpha(ICE_BLUE, 0f))
 
             // 2) Razor-sharp, needle-tapered vertical slash profile across the entire view (1st person, 3rd person, snow/storm).
             //    Height narrows gracefully after peak ticks so ticks 0..2 are huge & blinding and ticks 3..10 stay razor-crisp.
@@ -286,26 +283,26 @@ class HorizonFx(
             }
 
             // Thin deep-navy hairline contour hugging the bright core (readable on pure white snow, NEVER a wide dark band).
-            vRazor(inkVc, 0.07, coreH * 0.72, contrastH * 1.08, withAlpha(NAVY_DARK, bladeFade * 0.84f), withAlpha(NAVY_DARK, 0f))
-            vRazor(inkVc, 0.07, -coreH * 0.72, -contrastH * 1.08, withAlpha(NAVY_DARK, bladeFade * 0.84f), withAlpha(NAVY_DARK, 0f))
+            vRazor(d.buffer(AriusLayers.INK), 0.07, coreH * 0.72, contrastH * 1.08, withAlpha(NAVY_DARK, bladeFade * 0.84f), withAlpha(NAVY_DARK, 0f))
+            vRazor(d.buffer(AriusLayers.INK), 0.07, -coreH * 0.72, -contrastH * 1.08, withAlpha(NAVY_DARK, bladeFade * 0.84f), withAlpha(NAVY_DARK, 0f))
 
             // Soft ice-blue falloff halo (alpha-glow in rich ice blue for white-snow readability + additive light bloom)
-            vRazor(glowVc, 0.055, coreH * 0.45, falloffH, withAlpha(ICE_BLUE, bladeFade * 0.82f), withAlpha(ICE_BLUE, 0f))
-            vRazor(glowVc, 0.055, -coreH * 0.45, -falloffH, withAlpha(ICE_BLUE, bladeFade * 0.82f), withAlpha(ICE_BLUE, 0f))
-            vRazor(glowVc, 0.045, 0.0, falloffH * 0.78, withAlpha(ICE_LIGHT, bladeFade * 0.78f), withAlpha(ICE_BLUE, 0f))
-            vRazor(glowVc, 0.045, 0.0, -falloffH * 0.78, withAlpha(ICE_LIGHT, bladeFade * 0.78f), withAlpha(ICE_BLUE, 0f))
-            vRazor(addVc, 0.035, 0.0, falloffH * 0.80, withAlpha(ICE_LIGHT, bladeFade * (0.55f + 0.35f * peakBoost)), withAlpha(ICE_BLUE, 0f))
-            vRazor(addVc, 0.035, 0.0, -falloffH * 0.80, withAlpha(ICE_LIGHT, bladeFade * (0.55f + 0.35f * peakBoost)), withAlpha(ICE_BLUE, 0f))
+            vRazor(d.buffer(AriusLayers.VFX_GLOW), 0.055, coreH * 0.45, falloffH, withAlpha(ICE_BLUE, bladeFade * 0.82f), withAlpha(ICE_BLUE, 0f))
+            vRazor(d.buffer(AriusLayers.VFX_GLOW), 0.055, -coreH * 0.45, -falloffH, withAlpha(ICE_BLUE, bladeFade * 0.82f), withAlpha(ICE_BLUE, 0f))
+            vRazor(d.buffer(AriusLayers.VFX_GLOW), 0.045, 0.0, falloffH * 0.78, withAlpha(ICE_LIGHT, bladeFade * 0.78f), withAlpha(ICE_BLUE, 0f))
+            vRazor(d.buffer(AriusLayers.VFX_GLOW), 0.045, 0.0, -falloffH * 0.78, withAlpha(ICE_LIGHT, bladeFade * 0.78f), withAlpha(ICE_BLUE, 0f))
+            vRazor(d.buffer(AriusLayers.VFX_ADD), 0.035, 0.0, falloffH * 0.80, withAlpha(ICE_LIGHT, bladeFade * (0.55f + 0.35f * peakBoost)), withAlpha(ICE_BLUE, 0f))
+            vRazor(d.buffer(AriusLayers.VFX_ADD), 0.035, 0.0, -falloffH * 0.80, withAlpha(ICE_LIGHT, bladeFade * (0.55f + 0.35f * peakBoost)), withAlpha(ICE_BLUE, 0f))
 
             // Blinding near-white razor core (double-layered additive + glow so it is the brightest thing on screen!)
-            vRazor(glowVc, 0.02, 0.0, coreH, withAlpha(PURE_WHITE, bladeFade), withAlpha(FROST_WHITE, 0f))
-            vRazor(glowVc, 0.02, 0.0, -coreH, withAlpha(PURE_WHITE, bladeFade), withAlpha(FROST_WHITE, 0f))
-            vRazor(addVc, 0.01, 0.0, coreH * 0.92, withAlpha(PURE_WHITE, bladeFade), withAlpha(FROST_WHITE, bladeFade * 0.25f))
-            vRazor(addVc, 0.01, 0.0, -coreH * 0.92, withAlpha(PURE_WHITE, bladeFade), withAlpha(FROST_WHITE, bladeFade * 0.25f))
+            vRazor(d.buffer(AriusLayers.VFX_GLOW), 0.02, 0.0, coreH, withAlpha(PURE_WHITE, bladeFade), withAlpha(FROST_WHITE, 0f))
+            vRazor(d.buffer(AriusLayers.VFX_GLOW), 0.02, 0.0, -coreH, withAlpha(PURE_WHITE, bladeFade), withAlpha(FROST_WHITE, 0f))
+            vRazor(d.buffer(AriusLayers.VFX_ADD), 0.01, 0.0, coreH * 0.92, withAlpha(PURE_WHITE, bladeFade), withAlpha(FROST_WHITE, bladeFade * 0.25f))
+            vRazor(d.buffer(AriusLayers.VFX_ADD), 0.01, 0.0, -coreH * 0.92, withAlpha(PURE_WHITE, bladeFade), withAlpha(FROST_WHITE, bladeFade * 0.25f))
             // Peak central incandescence on ticks 0..4
             if (peakBoost > 0.02f) {
-                vRazor(addVc, 0.0, 0.0, coreH * 0.52, withAlpha(PURE_WHITE, peakBoost * fx), withAlpha(PURE_WHITE, 0f))
-                vRazor(addVc, 0.0, 0.0, -coreH * 0.52, withAlpha(PURE_WHITE, peakBoost * fx), withAlpha(PURE_WHITE, 0f))
+                vRazor(d.buffer(AriusLayers.VFX_ADD), 0.0, 0.0, coreH * 0.52, withAlpha(PURE_WHITE, peakBoost * fx), withAlpha(PURE_WHITE, 0f))
+                vRazor(d.buffer(AriusLayers.VFX_ADD), 0.0, 0.0, -coreH * 0.52, withAlpha(PURE_WHITE, peakBoost * fx), withAlpha(PURE_WHITE, 0f))
             }
         }
 

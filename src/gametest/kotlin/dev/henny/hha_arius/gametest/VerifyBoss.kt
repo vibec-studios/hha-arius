@@ -286,6 +286,8 @@ class VerifyBoss : FabricClientGameTest {
                 p.teleport(f.world, center.x + 1.5, f.floorY, center.z + 7.5, emptySet(), 174f, 1f, false)
                 f.calls.reset()
                 f.atmos(dev.henny.hha_arius.net.AtmosMode.BLIZZARD, 4)
+                // Solvane aus dem Bild nehmen: Ihr Leib stand sonst direkt vor der Spielerkamera und verdeckte den Schnitt.
+                f.nivaris?.let { d -> f.place(d, center.add(-40.0, 0.0, 40.0)) }
                 f.startDirector(f.scenes.lastHorizon(a))
             }
             // Wait for charge pose first, then SPIN_CUT (6 ticks before horizonImpact).

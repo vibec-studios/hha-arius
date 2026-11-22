@@ -305,6 +305,14 @@ object PunishCam {
             distVel = (distVel + (wantVel - distVel).coerceIn(-limit, limit)).coerceIn(-0.20, 0.14)
             dist = (dist + distVel).coerceAtLeast(0.6)
         }
+        // Die Kamera selbst muss frei stehen: Der Strahl prüft nur die Sichtlinie und rutschte an schmalen Pfosten (Vorhof-
+        // Laternen, Mauern) vorbei, dann stand die Kamera mitten im Block (graues Bild). Dann sofort bis an freie Luft heran.
+        if (cameraBlocked(world, m.add(out.multiply(dist)))) {
+            var d = dist
+            while (d > 0.6 && cameraBlocked(world, m.add(out.multiply(d)))) d -= 0.2
+            dist = d.coerceAtLeast(0.6)
+            distVel = 0.0
+        }
         val next = m.add(out.multiply(dist))
         if (first) {
             val look = m.subtract(next)
@@ -318,6 +326,13 @@ object PunishCam {
         rigPos = next
         prevRigLook = rigLook ?: m
         rigLook = m
+    }
+
+    /** Steckt ein kleiner Würfel (±0,3) um die Kamera in einem Block mit Kollision? */
+    private fun cameraBlocked(world: net.minecraft.world.World, p: Vec3d): Boolean {
+        val r = 0.3
+        val box = net.minecraft.util.math.Box(p.x - r, p.y - r, p.z - r, p.x + r, p.y + r, p.z + r)
+        return world.getBlockCollisions(null, box).iterator().hasNext()
     }
 
     private const val FOLLOW = 0.085

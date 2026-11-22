@@ -111,41 +111,44 @@ Der Besitzer hat Videos und Screenshots geschickt. **Sie sind nicht im Repositor
 
 ## 6. Aktueller Stand und offene Arbeit
 
-Stand des Branches: Build und Standard-Clienttest bestanden. Der Continuity-Lauf mit echten Render-Mods wurde auf dem zusammengeführten Stand ausgeführt. **Es wurde kein kompletter Kampf von Hand gespielt.**
+Stand nach Runde 2 (22.11.2026). Alles wurde in stillen Test-Clients geprüft, **ohne** die echten Render-Mods des Besitzers (Sodium, NoFog, ClearViews …). Es wurde kein kompletter Kampf von Hand gespielt. **Vom Besitzer im Spiel abgenommen ist noch nichts.**
 
 ### A. Kampf
 
-| Punkt | Stand | Noch zu tun |
+| Punkt | Stand | Beleg |
 | --- | --- | --- |
-| **Kombo-Kamera** | Hauptursache behoben: `PunishCam.tick` pendelte jeden Tick zwischen zwei Blendwerten. Eine weichere Blende ist als WIP committet, **aber ungeprüft**. | Im Fall `punish` über `t=1..129` messen. Ziel: höchstens **8° Yaw** und **0,6 Blöcke pro Tick**, keine Richtungsumkehr. Vor der WIP-Blende waren es 27,8° und 1,89 Blöcke. |
-| **White Horizon** | Aufladen ist gut. Die erste Version des Schlags war ein grauer Schleier mit dunklem Balken und wurde abgelehnt. Eine neue Version ist als WIP committet, **aber nicht abgenommen**. | Fall `horizonviews`, Peak-Tick plus zwei Folgeticks in 1st Person, 3rd Person und Sturm prüfen. Gewollt ist ein messerscharfer, spitz zulaufender, fast weißer Schnitt quer durchs Bild, 2 bis 3 Ticks lang das Hellste auf dem Schirm. Keine Rechtecke, keine breite dunkle Fläche, kein matschiger Grauton. |
-| **Yang später** | Umgesetzt in `boss/Hunt.kt`, direkt vor der ersten echten Überquerung des Spalts im Spire-Massiv. Sichtbare Szene mit Arius, Sicherung gegen Reinfallen, Absturz-Wiederherstellung erhalten. | Fall `yanglater` und den angepassten Test `hunt`/`mtn` laufen lassen. `diffAfterYang` muss exakt 0 sein. |
+| **Kombo-Kamera** | erledigt (Test) | Fall `punish`, t=1..129: höchstens 0,49 Blöcke und 5,99° je Tick (Ziel 0,6 / 8°). Neu: Die Kamera rückt sofort aus Blöcken heraus (sie stand vorher in einem Vorhof-Laternenpfosten, graues Bild). Im letzten Lauf wählte sie die andere Seite, die Wandsperre wurde in der Laternen-Stellung also nicht direkt gesehen. |
+| **White Horizon** | erledigt (Test), Absturz behoben | Der WIP-Effekt stürzte beim Aufladen ab (`Not building!`, zweiter Vertex-Puffer). Behoben. Fall `horizonviews`: scharfer, fast weißer, spitz zulaufender Schnitt in 1st Person, 3rd Person und Sturm, keine dunklen Flächen. |
+| **Yang später** | erledigt (Test) | `yanglater` bestanden, `hunt`/`mtn`: `diffAfterYang=0`, Absturz-Wiederherstellung Rest 0. |
 
 ### B. Solvane-Szenen
 
-Die erste Runde ist committet. Die Prüfung der Bilder ergab diese sieben offenen Punkte. **An ihnen wurde noch nichts geändert.**
+| Punkt | Stand | Beleg |
+| --- | --- | --- |
+| 1. Silhouette im Sturm | erledigt (Test) | Neuer Wert `NivarisEntity.shade`: Körper als marineblaue Form, unabhängig vom Nebel (also auch mit NoFog). Kamera nah an der Windung, Blick gleitet zum Kopf. Etwa 2 s klar drachenförmige Silhouette, weiße Leerstrecke ca. 12 Ticks. |
+| 2. Eisspitze bei offenem Spalt | erledigt (Test) | `SplitRecovery.inCutPlane(x, y, z)`: Im Horn nur eine 1 Block breite Naht, Arena weiterhin breit gespalten. `SplitRecovery` exakt (siehe A). |
+| 3. Spitzen-Shot | teilweise | Kamera im Körper/Eis: 0 (neue Messung `camera_ticks_in_body`). Neue Krallen-Einstellung von schräg unten zeigt den Lauf am Eis, ein echtes „Greifen“ der Klauen ist nicht überzeugend modelliert. Kopf beim Brüllen weniger im Nacken, die Brüll-Animation selbst hebt den Kopf aber noch deutlich. Angelegte Schwingen stehen an der Nadel als Knochen ab (nicht angefasst). |
+| 4. Kopframme | erledigt (Test) | Seitlicher Anlauf, nahe Treffer-Aufnahme mit 5 Ticks Treffer-Stopp, 2 s hoher Flugbogen über den Kopf, mitfliegendes Festklammern von oben. Spieler im Körper: 0. Aufstieg jetzt westlich um den Tempel (vorher fast senkrecht über dem Südtor). |
+| 5. Rolle und Fall | erledigt (Test) | Rolle nah von unten, Kamera folgt dem Spieler im Fall, Landung auf freiem Boden (`clearLanding`, kein Hindernis im Umkreis 4). Spieler in Blöcken: 0. |
+| 6. Schwanz-Sprung | erledigt (Test) | Ursachen: Bahn nach Punktnummer statt Weglänge abgefahren (`DragonRail.evenSpacing`), Bodenhöhe im Flug aus der Entity statt je Glied, ruckartiger Hub über Hindernisse. Zusätzlich war die Messung fehlerhaft (siehe unten). |
+| 7. Hinterfüße bei Landung | erledigt (Test) | Vorder- und Hinterläufe bleiben beim Aufsetzen exakt stehen, nur der Schwanz legt sich langsam neu. |
 
-1. **Silhouette im Sturm:** Rund 18 Testbilder zeigen fast nur leeres Weiß. Der Sturm muss zuerst stehen, dann zieht **1,5 bis 2 Sekunden eine große, dunkle, klar drachenförmige Silhouette** hindurch, dann die Enthüllung. Leere Strecke unter 1 Sekunde.
-2. **Eisspitze bei offenem Spalt:** Der Schnitt entfernt das schmale Eishorn oberhalb von etwa `y=195`, Solvane wickelt sich dann um nichts. Das Horn soll stehen bleiben, mit nur etwa **1 Block breiter sichtbarer Naht**. Der Schnitt muss trotzdem klar durch die Gipfelarena laufen, und `SplitRecovery` muss exakt bleiben.
-3. **Spitzen-Shot:** Die Kamera steckt kurz in Flügel oder Körper, und einmal klebt sie am Eis. Ergänze eine Messung für **Kameraticks im Körper** und bringe sie auf 0. Im letzten Shot ist der Kopf nach hinten gekippt und hat einen weißen Block oben. Ergänze eine nähere Einstellung, in der die **Krallen sichtbar die Spitze greifen**.
-4. **Kopframme:** Der Treffer ist nicht zu sehen. Gewollt: kurzer Anlauf, nahe lesbare Aufnahme, in der ihr Kopf den Spieler trifft, ein Hit-Stop, Flugbogen mit folgender Kamera, dann das **sichtbare, knappe Festklammern** am Eisstachel von oben oder von der Seite.
-5. **Rolle und Fall:** Die Rolle ist zu klein im Bild, und der Spieler fällt auf oder in die blaue Eissäule in der Arenamitte. Näher inszenieren, auf **freiem Boden** landen. Messung für **Spielerticks in festen Blöcken** ergänzen und auf 0 bringen.
-6. **Schwanz-Sprung beim Abflug:** Das Schlimmste in den Messwerten. Ziel: **höchstens 2,5 Blöcke pro Tick** für jedes Segment in der ganzen Sequenz. Suche beim Start der Flugkurve in `NivarisModel` (`trail`, `takeoffOdo`).
-7. **Hinterfüße bei Landung 1:** Ziel: **höchstens 0,25 Blöcke Rutschen** bei beiden Landungen.
-
-Aktuelle Messwerte auf `wip/1.14-phase1`:
+Messwerte auf `wip/1.14-phase1` (Lauf v9):
 
 | Messung | Spalt offen | Spalt geschlossen | Ziel |
 | --- | ---: | ---: | ---: |
-| Max. Segmentbewegung pro Tick | 7,14 (`t=923`) | **10,34** (`t=921`, Segment 36) | ≤ 2,5 |
-| Körpersamples in festen Blöcken | 0 | **1** | 0 |
-| Kameraticks in festen Blöcken | 0 | 0 | 0 |
+| Max. Segmentbewegung pro Tick | 2,30 | 2,40 | ≤ 2,5 |
+| Körpersamples in festen Blöcken | 0 | 0 | 0 |
+| Kameraticks in festen Blöcken / im Körper | 0 / 0 | 0 / 0 | 0 |
 | Spieler schneidet Solvanes Körper | 0 | 0 | 0 |
-| Max. Fußrutschen (Landung 1, hinten) | **2,83** | **2,66** | ≤ 0,25 |
+| Spielerticks in festen Blöcken | 0 | 0 | 0 |
+| Max. Fußrutschen (beide Landungen) | 0,03 | 0,08 | ≤ 0,25 |
 
-Der eine Körpersample in festen Blöcken ist erst nach dem Zusammenführen aufgetaucht und muss mit behoben werden.
+**Messkorrektur im Continuity-Test:** Körperpunkte und Kamera werden jetzt direkt nach dem Rendern des Ticks gelesen. Vorher kamen sie aus einem beliebigen Zwischenbild der Spielschleife, die Bewegung zwischen zwei Proben schwankte dadurch zwischen 0 und dem Doppelten des echten Wegs. Grenzwerte wurden nicht verändert.
 
-Diese Punkte wurden in Runde 1 als erledigt gemeldet und nach den Bildern vorläufig akzeptiert. Prüfe sie beim Abschluss noch einmal mit: Schwertmodell ersetzt, Flugbahnen frei von Wänden, Übergang vom Anflug in die Landung, Arius' neuer Abstieg beim Tiefflug auf sein Podest, Bremsen mit den Flügeln bei Landung 2.
+Weitere Änderungen: Lösen von der Nadel 260 statt 220 Ticks (Spitze 2,3 Blöcke je Tick), Kopfneigung im Flug begrenzt, Sturm-Einstellung 64 Ticks, neue Krallen-Einstellung 40 Ticks. Die festen Bildfenster im Test (`i04`, `i05` …) sind dadurch gegen die Szene verschoben, die Messwerte nicht.
+
+Noch nicht geprüft: Mehrspieler (1 bis 4 Spieler), echte Render-Mods, Musik/Ton, FPS, kompletter Kampf von Hand.
 
 ## 7. Bekannte Fallen
 

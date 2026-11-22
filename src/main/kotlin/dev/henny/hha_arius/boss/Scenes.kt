@@ -922,7 +922,9 @@ class Scenes(private val f: EirholmFight) {
                     for ((idx, p) in f.players().withIndex()) {
                         if (!p.isAlive || p.isRemoved || p.uuid !in rammed) continue
                         val seatIdx = RideSeats.of(p.uuid) ?: idx
-                        val flightTicks = 23 + (seatIdx % 4) * 2
+                        // Hoher Bogen (rund 16 Blöcke über der direkten Linie, 2 Sekunden in der Luft): Ihr Kopf zieht unter dem Spieler
+                        // hindurch, dann fällt er von oben auf seinen Dorn. Mit 30 Ticks überholte ihn der Kopf genau auf Scheitelhöhe.
+                        val flightTicks = 40 + (seatIdx % 4) * 2
                         val qFuture = advanceQ(q0, flightTicks)
                         val segBack = (RideHooks.glied(seatIdx) - 3) * NivarisShape.SEGMENT
                         val qSpike = (qFuture - segBack).coerceAtLeast(0.0)
@@ -1105,14 +1107,10 @@ class Scenes(private val f: EirholmFight) {
             if (releaseTick < 0 && q0 >= dropS && d.bodyRoll >= 1.35f) {
                 releaseTick = tick
                 val land0 = f.abs(ArenaLayout.AERIE_LANDING[0])
-                // Die Kamera folgt dem ersten Spieler im freien Fall bis auf den Boden der Landeplätze.
+                // Die Kamera folgt dem ersten Spieler im freien Fall bis auf den Boden der Landeplätze (siehe unten).
                 val firstOut = f.players().firstOrNull { it.vehicle === d }
-                // Etwa auf Höhe des Abwurfs beginnen und mit ihm sinken: so liegt er im Bild statt klein vor dem Himmel.
-                scene.line(
-                    aerie.add(72.0, 21.0, 12.0), land0.add(8.0, 3.5, 9.5),
-                    pos.add(0.0, 1.5, 0.0), land0.add(0.0, 1.2, 0.0),
-                    (tPass - tick - 12).coerceIn(28, 44), 54.0, 56.0, lookAt = firstOut, lookOffset = 0.9,
-                )
+                var firstRelease: Vec3d? = null
+                var firstTarget: Vec3d? = null
                 // Bei Westflug zeigt +bodyRoll den Rücken nach links = (fwd.z, 0, -fwd.x) = Süden (+z), direkt zu AERIE_LANDING.
                 val rollOut = Vec3d(fwd.z, 0.0, -fwd.x).let { if (it.lengthSquared() < 1e-4) Vec3d(0.0, 0.0, 1.0) else it.normalize() }
                 for ((j, p) in f.players().withIndex()) {
@@ -1123,9 +1121,21 @@ class Scenes(private val f: EirholmFight) {
                     val releasePos = segPos.add(rollOut.multiply(3.4)).add(0.0, 0.5, 0.0)
                     p.stopRiding()
                     val target = clearLanding(f.abs(ArenaLayout.AERIE_LANDING[j % ArenaLayout.AERIE_LANDING.size]))
+                    if (p === firstOut) { firstRelease = releasePos; firstTarget = target }
                     RideSeats.throwRider(f, p, releasePos, target, 0.36)
                 }
                 RideSeats.syncPassengers(f, d)
+                // Nah am Spieler beginnen (seitlich vor dem Abwurfpunkt, etwas darüber) und mit ihm zum Boden sinken: So bleibt
+                // er groß im Bild, statt klein vor dem Himmel zu hängen.
+                val relFrom = firstRelease ?: pos
+                val relTo = firstTarget ?: land0
+                val away = Vec3d(relTo.x - relFrom.x, 0.0, relTo.z - relFrom.z).let { if (it.lengthSquared() < 1e-4) Vec3d(0.0, 0.0, 1.0) else it.normalize() }
+                val beside = Vec3d(-away.z, 0.0, away.x)
+                scene.line(
+                    relFrom.add(away.multiply(9.0)).add(beside.multiply(6.0)).add(0.0, 2.0, 0.0),
+                    relTo.add(away.multiply(6.5)).add(beside.multiply(5.0)).add(0.0, 2.6, 0.0),
+                    relFrom, relTo.add(0.0, 1.0, 0.0), (tPass - tick - 12).coerceIn(28, 44), 56.0, 58.0, lookAt = firstOut, lookOffset = 0.9,
+                )
                 cue("nivaris.wing", pos, 4.5f, 0.88f)
             }
 

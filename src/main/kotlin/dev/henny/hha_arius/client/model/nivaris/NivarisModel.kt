@@ -809,7 +809,8 @@ class NivarisBody {
         }
         val alt = (s.y - groundY).coerceAtLeast(0.0)
         val wantGround = if (!e.flying) 1f else 0f
-        val groundRate = if (!e.flying) dt / 12f else dt / 16f
+        // Aufsetzen über 16 Ticks: Der hoch nachgezogene Schwanz senkt sich sonst fast 3 Blöcke je Tick ab.
+        val groundRate = dt / 16f
         ground = if (ground < 0f) wantGround else approach(ground, wantGround, groundRate)
 
         // Wegstand und Tempo.
@@ -964,7 +965,9 @@ class NivarisBody {
         ups[NECK] = UP_V
 
         // Höhe: am Boden liegt jedes Glied auf der (geglätteten) Lauffläche, vorn steigt der Körper zur Rumpfmitte an.
-        val floors = DoubleArray(POINTS) { floorAt(world, pts[it].x, pts[it].z) }
+        // Im Flug zählt der Boden unter jedem Glied selbst. Die Bodenhöhe unter der Entity ([groundY]) sprang beim Überflug
+        // eines Bauwerks um bis zu 9 Blöcke, und mit ihr wurde der ganze nachgezogene Schwanz in einem Tick hochgeklemmt.
+        val floors = DoubleArray(POINTS) { if (e.flying) flightFloor(world, pts[it]) else floorAt(world, pts[it].x, pts[it].z) }
         repeat(3) {
             val c = floors.copyOf()
             for (k in 1 until POINTS - 1) floors[k] = c[k] * 0.5 + (c[k - 1] + c[k + 1]) * 0.25
@@ -984,8 +987,10 @@ class NivarisBody {
         // mit begrenzter Steigung zu den Nachbarn aus, wird geglättet (nie unter den nötigen Wert) und ändert sich je Tick
         // nur begrenzt.
         val need = DoubleArray(POINTS)
+        val groundNeed = DoubleArray(POINTS)
         for (i in NECK + 1 until POINTS) {
             var floor = floors[i] + radius(i) * 0.9
+            groundNeed[i] = max(0.0, floor - pts[i].y)
             if (air[i] > 0.35f) {
                 // Im Flug auch echtes Gelände unter dem langen Leib respektieren (Überhänge/Bögen > 8 Blöcke drüber ignorieren).
                 val realTop = world.getTopY(net.minecraft.world.Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, MathHelper.floor(pts[i].x), MathHelper.floor(pts[i].z)).toDouble()
@@ -1001,10 +1006,12 @@ class NivarisBody {
             for (k in NECK + 1 until POINTS - 1) need[k] = max(raw[k], c[k] * 0.5 + (c[k - 1] + c[k + 1]) * 0.25)
         }
         for (i in NECK + 1 until POINTS) {
-            val rate = if (need[i] > lift[i]) LIFT_UP else LIFT_DOWN
+            // Über Hindernissen im Flug (Pfosten, Eisspitzen unter der Spur) schneller heben, aber nie sprunghaft: Der hart
+            // geklemmte Hub warf den nachgezogenen Schwanz sonst in einem Tick 9 Blöcke hoch.
+            val rate = if (need[i] > lift[i]) (if (raw[i] > groundNeed[i] + 0.5) LIFT_UP_OBSTACLE else LIFT_UP) else LIFT_DOWN
             lift[i] += (need[i] - lift[i]).coerceIn(-rate * dt, rate * dt)
             // Nie mehr als einen halben Block im Boden, auch wenn die Begrenzung noch nachzieht.
-            lift[i] = max(lift[i], raw[i] - 0.5)
+            lift[i] = max(lift[i], groundNeed[i] - 0.5)
             // Am Hals eingeblendet, damit die Rumpfmitte (Entity) keinen Absatz bekommt.
             val fade = smooth(MathHelper.clamp((i - NECK) / 4f, 0f, 1f)).toDouble()
             pts[i] = Vec(pts[i].x, pts[i].y + lift[i] * fade, pts[i].z)
@@ -1178,6 +1185,12 @@ class NivarisBody {
         if (v > Math.PI) v -= 2.0 * Math.PI
         if (v < -Math.PI) v += 2.0 * Math.PI
         return v
+    }
+
+    /** Boden unter einem fliegenden Glied: die Höhenkarte an seiner Stelle, solange sie nicht weit über ihm liegt. */
+    private fun flightFloor(world: net.minecraft.world.World, p: Vec): Double {
+        val top = world.getTopY(net.minecraft.world.Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, MathHelper.floor(p.x), MathHelper.floor(p.z)).toDouble()
+        return if (top > world.bottomY + 1 && top <= p.y + 2.0) top else -1.0e9
     }
 
     /** Lauffläche unter (x, z): Höhenkarte der Welt, Säulen und Wände (deutlich über dem Boden) zählen nicht. */
@@ -1373,6 +1386,7 @@ class NivarisBody {
         /** Bodenhub: höchste Steigung je Glied (Blöcke) und Änderung je Tick nach oben/unten. */
         const val LIFT_SLOPE = 0.42
         const val LIFT_UP = 0.55
+        const val LIFT_UP_OBSTACLE = 1.4
         const val LIFT_DOWN = 0.22
 
         /** Glieder des Halses (0..NECK-1) zwischen Kopfgelenk und Rumpfmitte; Punkt NECK = Rumpfmitte. */

@@ -535,6 +535,7 @@ class VerifyDragon : FabricClientGameTest {
         var landTicks = 0
         var prevDPos: Vec3d? = null
         var prevTime = -1L
+        var aerieLandInfo = "none"
         var prevSrvU = 0f
         var prevCliU = 0f
         var maxSegMovePerGameTick = 0.0
@@ -625,6 +626,21 @@ class VerifyDragon : FabricClientGameTest {
             if (inCarry && rollStartTick < 0 && kotlin.math.abs(s.dRoll) > 0.08f) rollStartTick = seqTick
             if (inCarry && wasAriusPerched && !s.aMounted && dismountSeenTick < 0) dismountSeenTick = seqTick
             if (inCarry && aerieNearTick < 0 && s.dPos != null && s.dPos.distanceTo(s.aerie) < 55.0) aerieNearTick = seqTick
+            if (aerieLandedTick >= 0 && seqTick == aerieLandedTick + 6) {
+                aerieLandInfo = server { srv ->
+                    val f = fight() ?: return@server "no fight"
+                    val p = player(srv)
+                    var nearest = 99.0
+                    val bp = net.minecraft.util.math.BlockPos.ofFloored(p.entityPos)
+                    for (dx in -4..4) for (dz in -4..4) for (dy in 0..2) {
+                        val q = bp.add(dx, dy, dz)
+                        if (!f.world.getBlockState(q).getCollisionShape(f.world, q).isEmpty) {
+                            nearest = minOf(nearest, kotlin.math.hypot(q.x + 0.5 - p.x, q.z + 0.5 - p.z))
+                        }
+                    }
+                    "rel=${fmt(p.entityPos.subtract(f.origin.x.toDouble(), f.origin.y.toDouble(), f.origin.z.toDouble()))} nearestObstacleXZ=%.2f".format(nearest)
+                }
+            }
             if (inCarry && aerieLandedTick < 0 && !s.dFlying && s.dPos != null && s.dPos.distanceTo(s.aerie) < 6.0) aerieLandedTick = seqTick
 
             // Entscheiden, ob in diesem Tick ein Standbild für eine der 11 Prüfungen gemacht wird.
@@ -661,17 +677,12 @@ class VerifyDragon : FabricClientGameTest {
                 shotName = take("closed_i03_spire")
             }
 
-            // Ein Frame rendern (mit oder ohne Screenshot), damit DragonHits & Kamera genau diesem Tick entsprechen.
-            if (shotName != null) {
-                shot(shotName)
-            } else {
-                client { c ->
-                    c.gameRenderer.render(net.fabricmc.fabric.mixin.client.gametest.screenshot.DeltaTrackerDefaultValueAccessor.create(1f), true)
-                }
-                tick()
+            // Genau diesen Tick rendern (tickDelta 1) und Kamera und Körperglieder SOFORT auslesen. Vorher wurde erst nach dem
+            // Weiterticken gelesen; dann stammten DragonHits aus einem beliebigen Zwischenbild der Spielschleife, und die
+            // Bewegung zwischen zwei Proben schwankte je nach Bildzeitpunkt zwischen 0 und dem Doppelten des echten Wegs.
+            client { c ->
+                c.gameRenderer.render(net.fabricmc.fabric.mixin.client.gametest.screenshot.DeltaTrackerDefaultValueAccessor.create(1f), true)
             }
-
-            // Jetzt Client-Daten (Kamera + gerenderte Körperglieder aus DragonHits) auslesen und prüfen.
             val camPos = client { c -> c.gameRenderer.camera.cameraPos }
             val cliUNow = client { c -> (c.world?.getEntityById(s.dId) as? dev.henny.hha_arius.boss.NivarisEntity)?.uncoilAt(1f) ?: 0f }
             val bodyData = client { _ ->
@@ -681,6 +692,7 @@ class VerifyDragon : FabricClientGameTest {
                     if (pts != null && rad != null) pts to rad else null
                 }
             }
+            if (shotName != null) shot(shotName) else tick()
 
             // (3) Kamera in soliden Blöcken prüfen (auf Server-Welt, die garantiert geladen ist).
             server { srv ->
@@ -722,7 +734,9 @@ class VerifyDragon : FabricClientGameTest {
                             val ct = if (carryStartTick >= 0) seqTick - carryStartTick else -1
                             val cliU = cliUNow
                             val uInfo = if (s.dMode == dev.henny.hha_arius.boss.NivarisMode.UNCOIL) String.format(java.util.Locale.ROOT,
-                                " dU(srv)=%.2f dU(cli)=%.2f blocks", (s.srvUncoil - prevSrvU) * EntrancePath.LENGTH, (cliU - prevCliU) * EntrancePath.LENGTH) else ""
+                                " dU(srv)=%.2f dU(cli)=%.2f blocks head-vs-path=%.2f prevHead-vs-prevPath=%.2f", (s.srvUncoil - prevSrvU) * EntrancePath.LENGTH, (cliU - prevCliU) * EntrancePath.LENGTH,
+                                pts[0].distanceTo(EntrancePath.at(cliU * EntrancePath.LENGTH).add(s.origin.x.toDouble(), s.origin.y.toDouble(), s.origin.z.toDouble())),
+                                prevPts!![0].distanceTo(EntrancePath.at(prevCliU * EntrancePath.LENGTH).add(s.origin.x.toDouble(), s.origin.y.toDouble(), s.origin.z.toDouble()))) else ""
                             val segInfo = intArrayOf(16, 18, 20, 24, 32, 40).joinToString(" ") { i -> "s$i:${fmt(prevPts!![i])}->${fmt(pts[i])}" }
                             jumpLog.add(moves.max() to ("t=$seqTick ct=$ct gameTicks=$gameTicks$uInfo [$segInfo] mode=${s.dMode} pose=${s.dPose} fly=${s.dFlying} max=" +
                                 String.format(java.util.Locale.ROOT, "%.2f entityMove=%.2f moves=", moves.max(), ent) +
@@ -857,6 +871,7 @@ class VerifyDragon : FabricClientGameTest {
                 appendLine("Top moves > 2.2 blocks:")
                 topMoves.sortedByDescending { it.first }.take(10).forEach { appendLine("  ${it.second}") }
             }
+            appendLine("Player after aerie landing: $aerieLandInfo")
             appendLine("Carry: start=$carryStartTick fly=$carryFlyTick glide=$carryGlideTick roll=$rollStartTick dismount=$dismountSeenTick aerieNear=$aerieNearTick aerieLanded=$aerieLandedTick")
             if (jumpLog.isNotEmpty()) {
                 appendLine("Ticks over 2.5 blocks: ${jumpLog.size}; worst profiles (segment moves 0..40):")
