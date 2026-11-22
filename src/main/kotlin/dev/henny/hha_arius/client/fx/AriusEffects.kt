@@ -4,6 +4,11 @@ import dev.henny.hha.client.vfx.lerpColor
 import dev.henny.hha.client.vfx.VfxDraw
 import dev.henny.hha.client.vfx.VfxLayers
 import dev.henny.hha.client.vfx.withAlpha
+import dev.henny.hha_arius.arena.ArenaLayout
+import dev.henny.hha_arius.boss.EntrancePath
+import dev.henny.hha_arius.boss.NivarisEntity
+import dev.henny.hha_arius.boss.NivarisMode
+import dev.henny.hha_arius.boss.ReturnCoil
 import dev.henny.hha_arius.net.FxKind
 import dev.henny.hha_arius.net.FxS2C
 import net.minecraft.block.Blocks
@@ -325,10 +330,13 @@ class Thread(private val a: Entity, private val b: Entity, life: Int) : AriusFx(
     override fun render(d: VfxDraw, matrices: MatrixStack, t: Float) {
         val k = fadeInOut(t, 5f, 8f)
         val from = a.getLerpedPos(d.tickDelta).add(0.0, 1.35, 0.0)
-        val to = if (b is dev.henny.hha_arius.boss.NivarisEntity && b.mode == dev.henny.hha_arius.boss.NivarisMode.COIL) {
-            val slot = Math.floorDiv(kotlin.math.floor(b.x).toInt() + dev.henny.hha_arius.arena.ArenaLayout.SLOT_SPACING / 2, dev.henny.hha_arius.arena.ArenaLayout.SLOT_SPACING)
-            val o = dev.henny.hha_arius.arena.ArenaLayout.origin(slot)
-            Vec3d.of(o).add(dev.henny.hha_arius.boss.EntrancePath.HEAD_RAISED)
+        val to = if (b is NivarisEntity && (b.mode == NivarisMode.COIL ||
+                b.mode == NivarisMode.RETURN_COIL)) {
+            val slot = Math.floorDiv(kotlin.math.floor(b.x).toInt() + ArenaLayout.SLOT_SPACING / 2, ArenaLayout.SLOT_SPACING)
+            val o = ArenaLayout.origin(slot)
+            val head = if (b.mode == NivarisMode.RETURN_COIL) ReturnCoil.head
+                else EntrancePath.HEAD_RAISED
+            Vec3d.of(o).add(head)
         } else {
             val yaw = Math.toRadians(b.yaw.toDouble())
             val fwd = Vec3d(-sin(yaw), 0.0, cos(yaw))

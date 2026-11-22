@@ -3,6 +3,7 @@ package dev.henny.hha_arius.client.model.nivaris
 import dev.henny.hha_arius.boss.AriusTimings
 import dev.henny.hha_arius.boss.NivarisPose
 import dev.henny.hha_arius.boss.NivarisShape
+import dev.henny.hha_arius.boss.ReturnCoil
 import net.minecraft.client.model.Dilation
 import net.minecraft.client.model.ModelData
 import net.minecraft.client.model.ModelPart
@@ -150,8 +151,9 @@ class NivarisModel(root: ModelPart) : EntityModel<NivarisRenderState>(root) {
      */
     fun animateChildren(state: NivarisRenderState) {
         val p = state.p
+        val clinging = state.mode == NivarisModeC.RETURN_COIL
         val deg = MathHelper.RADIANS_PER_DEGREE
-        fun tuck(v: Float) = MathHelper.clamp(v / 1.1f, 0f, 1f)
+        fun tuck(v: Float) = if (clinging) 1f else MathHelper.clamp(v / 1.1f, 0f, 1f)
         for ((legs, k) in listOf(foreJoints to tuck(p[FORE]), hindJoints to tuck(p[HIND]))) {
             for (leg in legs) {
                 leg.getOrNull(0)?.set(pitch = -20f * deg * k)
@@ -591,6 +593,14 @@ class NivarisBody {
         val air = FloatArray(POINTS)
         val headFwd: Vec
         when (mode) {
+            NivarisModeC.RETURN_COIL -> {
+                val poly = Poly()
+                for (point in ReturnCoil.points) {
+                    poly.add(o.add(point), ReturnCoil.outward(point))
+                }
+                sample(poly, pts, ups, 0, 0.0)
+                headFwd = ReturnCoil.facing
+            }
             NivarisModeC.COIL, NivarisModeC.UNCOIL -> {
                 lastE = null
                 val target = if (mode == NivarisModeC.UNCOIL) 1f else MathHelper.clamp((p[NivarisModel.UP] - 1.3f) / 2.5f, 0f, 1f)
@@ -655,7 +665,7 @@ class NivarisBody {
 
         // Endgültige Rahmen und Werte für den Renderer (mit parallelem Transport + Fassrolle).
         val bodyRoll = e.rollAt(tickDelta).toDouble()
-        val fr = frames(pts, ups, now, air, bodyRoll)
+        val fr = frames(pts, ups, now, air, bodyRoll, mode == NivarisModeC.RETURN_COIL)
         System.arraycopy(fr, 0, s.frame, 0, fr.size)
         for (i in 0 until POINTS) {
             s.px[i] = (pts[i].x - s.x).toFloat()
@@ -1117,7 +1127,7 @@ class NivarisBody {
      * Paralleler Transport (Bishop-Rahmen) verhindert 180°-Umsprünge (Frenet-Flips) und NaN-Matrizen in engen
      * Kurven oder beim Steigen/Sinken; [bodyRoll] dreht den ganzen Leib wellenförmig (Fassrolle beim Abwurf).
      */
-    private fun frames(pts: Array<Vec>, ups: Array<Vec>, now: Float, air: FloatArray, bodyRoll: Double): FloatArray {
+    private fun frames(pts: Array<Vec>, ups: Array<Vec>, now: Float, air: FloatArray, bodyRoll: Double, clinging: Boolean): FloatArray {
         val out = FloatArray(NivarisShape.SEGMENTS * 9)
         var prevB = pts[1].subtract(pts[0]).normalizeOr(Vec(0.0, 0.0, 1.0))
         var prevU = ups[0].subtract(prevB.multiply(ups[0].dotProduct(prevB))).normalizeOr(orthoFallback(prevB))
@@ -1131,7 +1141,9 @@ class NivarisBody {
             val proj = hint.subtract(b.multiply(hint.dotProduct(b)))
             if (proj.lengthSquared() > 0.09) {
                 val targetU = proj.normalize()
-                if (targetU.dotProduct(u) > -0.15) {
+                if (clinging) {
+                    u = targetU
+                } else if (targetU.dotProduct(u) > -0.15) {
                     u = u.lerp(targetU, if (i == 0) 0.75 else 0.28).normalizeOr(u)
                     u = u.subtract(b.multiply(u.dotProduct(b))).normalizeOr(orthoFallback(b))
                 }
@@ -1141,7 +1153,7 @@ class NivarisBody {
             // Grundrollen + explizite Fassrolle (läuft wellenförmig vom Bug zum Schwanz).
             // The delay fades to zero at both ends, so every segment completes the full turn.
             val waveRoll = bodyRoll - kotlin.math.sin(bodyRoll * 0.5) * (0.019 * i)
-            val roll = waveRoll + (0.02 + 0.05 * air[i]) * kotlin.math.sin(now * 0.05 - i * 0.2)
+            val roll = if (clinging) 0.0 else waveRoll + (0.02 + 0.05 * air[i]) * kotlin.math.sin(now * 0.05 - i * 0.2)
             val cr = kotlin.math.cos(roll)
             val sr = kotlin.math.sin(roll)
             val u2 = u.multiply(cr).add(l.multiply(sr)).normalizeOr(u)

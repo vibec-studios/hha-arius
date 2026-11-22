@@ -213,6 +213,9 @@ object NivarisMode {
 
     /** Löst sich von der Nadel: [NivarisEntity.uncoil] 0..1 ist der Weg entlang [EntrancePath]. */
     const val UNCOIL = 2
+
+    /** Close perch on the spire for the return to the blade. */
+    const val RETURN_COIL = 3
 }
 
 /**
