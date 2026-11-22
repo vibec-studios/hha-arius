@@ -63,6 +63,7 @@ object AriusFxClient {
                 Atmos.tick(world)
                 Subtitles.tick()
                 ScreenFlash.tick()
+                HorizonPulse.tick()
             }
             AriusMusic.tick()
         }
@@ -86,6 +87,7 @@ object AriusFxClient {
             for (fx in effects) if (fx is WhiteHoleFx) WhiteLens.render(fx, tickDelta)
         }
         HudRenderCallback.EVENT.register { context, _ ->
+            HorizonPulse.render(context)
             ScreenFlash.render(context)
             Subtitles.render(context)
         }
@@ -152,6 +154,7 @@ object AriusFxClient {
         AriusMusic.clear()
         HoldClient.reset()
         Impacts.clear()
+        HorizonPulse.reset()
         FightClient.reset()
         dev.henny.hha_arius.gear.client.art.SwordTrails.clear()
     }
