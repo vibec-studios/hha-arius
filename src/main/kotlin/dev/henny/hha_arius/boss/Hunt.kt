@@ -1380,7 +1380,7 @@ class Hunt(private val f: EirholmFight) {
             f.atmos(HUNT_ATMOS, 16)
             if (d != null) {
                 f.task(script {
-                    try { yieldAll(rejoinRail(d)) } finally { dragonBusy = false }
+                    try { yieldAll(whileChasing(rejoinRail(d))) } finally { dragonBusy = false }
                 })
             }
         }
@@ -1462,7 +1462,7 @@ class Hunt(private val f: EirholmFight) {
             it.resonance = true
             it.play(NivarisPose.GLIDE)
             dragonBusy = true
-            f.task(script { try { yieldAll(rejoinRail(it)) } finally { dragonBusy = false } })
+            f.task(script { try { yieldAll(whileChasing(rejoinRail(it))) } finally { dragonBusy = false } })
         }
         aS = 0.0
         current = this@Hunt
@@ -2027,6 +2027,11 @@ class Hunt(private val f: EirholmFight) {
         railS = (from..to).minBy { rail.pts[it].squaredDistanceTo(d.entityPos) }.toDouble()
     }
 
+    private fun whileChasing(motion: Script): Script = script {
+        val steps = motion.iterator()
+        while (f.chasing && steps.hasNext()) yield(steps.next())
+    }
+
     /** Solvane begleitet die Spieler auf der Bahn und speit von Zeit zu Zeit Frost über den Weg vor dem Vordersten. */
     private fun tickDragon(d: NivarisEntity, leader: ServerPlayerEntity, sL: Double) {
         if (dragonBusy) return
@@ -2038,7 +2043,7 @@ class Hunt(private val f: EirholmFight) {
             dragonBusy = true
             nextDragon = f.now + 170 + rnd.nextInt(60)
             f.task(script {
-                try { yieldAll(dragonStrafe(d, sL)) } finally { dragonBusy = false }
+                try { yieldAll(whileChasing(dragonStrafe(d, sL))) } finally { dragonBusy = false }
             })
         }
     }
