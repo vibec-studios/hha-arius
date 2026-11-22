@@ -253,13 +253,13 @@ class Hunt(private val f: EirholmFight) {
         script {
             val i = HuntRoute.indexOfArc(c.a0 + u)
             val slit = beside(i, 6.2, 2.55)
-            val camFrom = safeTunnelCam(c.a0 + u - 0.9, -1.5, 2.1)
-            val camTo = safeTunnelCam(c.a0 + u - 0.4, 0.2, 2.4)
+            val camFrom = safeTunnelCam(c.a0 + u - 0.9, -2.3, 2.1)
+            val camTo = safeTunnelCam(c.a0 + u - 0.5, -1.5, 2.3)
             HuntNet.fx(f.audience(), HuntFx.LETTERBOX, slit, life = 92)
             HuntNet.fx(f.audience(), HuntFx.RUMBLE, slit, a = 0.22f, life = 30)
-            cam(camFrom, camTo, slit, slit, 84, 54.0, 38.0)
+            cam(camFrom, camTo, slit, slit, 84, 66.0, 56.0)
             wait(6)
-            eye(c, u, f.players(), 1.35f, out = 6.2)
+            eye(c, u, f.players(), 1.0f, out = 6.2)
             wait(76)
             home(12)
             wait(12)
@@ -298,8 +298,9 @@ class Hunt(private val f: EirholmFight) {
     private fun tunnelScene(d: NivarisEntity, c: HuntRoute.Cave): Script = script {
         dragonBusy = true
         try {
-            yieldAll(mini {
+            yieldAll(mini(onAbort = { f.atmos(HUNT_ATMOS, 16) }) {
                 script {
+                    f.atmos(AtmosMode.SNOW, 6)
                     val i0 = HuntRoute.indexOfArc(c.a0 + 1.0)
                     val mouth = pathAt(c.a0)
                     val valley = beside(i0, 1.0).subtract(point(i0)).let { Vec3d(it.x, 0.0, it.z) }
@@ -317,11 +318,11 @@ class Hunt(private val f: EirholmFight) {
                     d.play(NivarisPose.GLIDE)
                     val speed = 1.7
                     val pass = (102.0 / speed).toInt() + 4
-                    val camA = safeTunnelCam(c.a0 + 6.5, 0.0, 1.6)
-                    val camB = safeTunnelCam(c.a0 + 4.2, 0.2, 1.8)
+                    val camA = freeCam(listOf(safeTunnelCam(c.a0 + 1.6, 0.0, 1.7), mouth.add(out.multiply(1.5)).add(0.0, 1.8, 0.0), mouth.add(out.multiply(4.0)).add(0.0, 2.6, 0.0)), wps[3])
+                    val camB = camA.lerp(mouth.add(out.multiply(3.0)).add(0.0, 2.2, 0.0), 0.35).takeIf { airAt(it) } ?: camA
                     HuntNet.fx(f.audience(), HuntFx.LETTERBOX, camA, life = pass + 24)
                     HuntNet.fx(f.audience(), HuntFx.RUMBLE, camA, a = 0.45f, life = pass)
-                    cam(camA, camB, wps[2].add(0.0, 1.0, 0.0), wps[4].add(0.0, 1.0, 0.0), pass, 66.0, 56.0)
+                    cam(camA, camB, wps[2].add(0.0, 1.0, 0.0), wps[4].add(0.0, 1.0, 0.0), pass, 72.0, 62.0, lookAt = d, lookOffset = 2.0)
                     cue("nivaris.wing", mouth, 4f, 0.6f)
                     var n = 0
                     for (step in DragonRail.fly(f, d, wps, speed)) {
@@ -332,6 +333,7 @@ class Hunt(private val f: EirholmFight) {
                         }
                         yield(step)
                     }
+                    f.atmos(HUNT_ATMOS, 16)
                     home(12)
                     wait(12)
                 }
@@ -657,6 +659,47 @@ class Hunt(private val f: EirholmFight) {
         }
     }
 
+    /**
+     * Zellen des Geröllpfropfens. Bleibt mit ihnen kein begehbarer Umweg (Nebengang), bleibt in der Wegmitte eine schmale
+     * Lücke im Geröll: Eine Höhle schließt immer, aber niemand wird eingesperrt.
+     */
+    private fun plugCells(c: HuntRoute.Cave): List<BlockPos> {
+        val cells = caveCells(c, c.plugFrom, c.plugTo, c.theme.lane + 0.3, 1, c.theme.height)
+        if (cells.isEmpty() || keepsWay(c, cells.toHashSet())) return cells
+        val gap = caveCells(c, c.plugFrom - 0.5, c.plugTo + 0.5, 0.9, 1, 3).toHashSet()
+        return cells.filter { it !in gap }
+    }
+
+    /** Führt trotz [plug] ein Weg (2 hoch, Stufen bis 1) von vor dem Geröll dahinter? */
+    private fun keepsWay(c: HuntRoute.Cave, plug: Set<BlockPos>): Boolean {
+        val w = f.world
+        fun low(p: BlockPos): Boolean {
+            if (p in plug) return false
+            val shape = w.getBlockState(p).getCollisionShape(w, p)
+            return shape.isEmpty || shape.getMax(Direction.Axis.Y) <= 0.5
+        }
+        fun stand(p: BlockPos) = low(p) && p.up() !in plug && w.getBlockState(p.up()).getCollisionShape(w, p.up()).isEmpty &&
+            !w.getBlockState(p.down()).getCollisionShape(w, p.down()).isEmpty
+        val a = pathAt(c.a0 + 1.0)
+        val b = pathAt(c.a0 + c.plugTo + 2.0)
+        val start = BlockPos.ofFloored(a.x, a.y + 0.05, a.z)
+        val goal = BlockPos.ofFloored(b.x, b.y + 0.05, b.z)
+        val seen = hashSetOf(start)
+        val queue = ArrayDeque(listOf(start))
+        while (queue.isNotEmpty() && seen.size < 20000) {
+            val p = queue.removeFirst()
+            if (p.getSquaredDistance(goal) <= 4.0) return true
+            for (dx in -1..1) for (dz in -1..1) for (dy in -1..1) {
+                if ((dx == 0) == (dz == 0)) continue
+                val q = p.add(dx, dy, dz)
+                if (abs(q.x - start.x) > 34 || abs(q.z - start.z) > 34 || q in seen || !stand(q)) continue
+                seen.add(q)
+                queue.addLast(q)
+            }
+        }
+        return false
+    }
+
     private fun rubbleState(pos: BlockPos): net.minecraft.block.BlockState {
         val r = FarPlan.h32(pos.x, pos.y, pos.z, 1501)
         return when {
@@ -689,7 +732,7 @@ class Hunt(private val f: EirholmFight) {
         if (run.collapsing || run.sealed) return
         run.collapsing = true
         val c = run.c
-        val cells = caveCells(c, c.plugFrom, c.plugTo, c.theme.lane + 0.3, 1, c.theme.height)
+        val cells = plugCells(c)
         if (cells.isEmpty()) {
             run.sealed = true
             return
@@ -740,7 +783,7 @@ class Hunt(private val f: EirholmFight) {
         val c = run.c
         run.collapsing = true
         run.sealed = true
-        val cells = caveCells(c, c.plugFrom, c.plugTo, c.theme.lane + 0.3, 1, c.theme.height)
+        val cells = plugCells(c)
         if (cells.isEmpty()) return
         pushOutOfPlug(c, cells, players)
         val placed = ArrayList<BlockPos>(run.plug)
@@ -1279,15 +1322,13 @@ class Hunt(private val f: EirholmFight) {
                         f.fxAll(FxKind.FLASH, catchAt, a = 0.28f, life = 6)
                         Vfx.shockwave(f.world, Vfx.Style.SOUL, catchAt.add(0.0, 1.5, 0.0), 7f, 14, 1.8f)
                     }
-                    val climbCam0 = freeCam(listOf(
-                        landing.add(valley.multiply(22.0)).add(dir.multiply(6.0)).add(0.0, 8.0, 0.0),
-                        landing.add(valley.multiply(-20.0)).add(dir.multiply(6.0)).add(0.0, 9.0, 0.0),
-                        landing.add(valley.multiply(14.0)).add(dir.multiply(10.0)).add(0.0, 7.0, 0.0),
-                    ), catchAt.add(0.0, 2.0, 0.0))
+                    // Die Rettung bleibt in derselben weiten Einstellung (früher ein Schnitt dicht an den Fels).
+                    val climbCam0 = wide1
                     val climbCam1 = freeCam(listOf(
+                        wide1.add(dir.multiply(6.0)).add(0.0, 9.0, 0.0),
+                        wide1.add(0.0, 6.0, 0.0),
                         landing.add(valley.multiply(16.0)).add(dir.multiply(10.0)).add(0.0, 5.5, 0.0),
                         landing.add(valley.multiply(-15.0)).add(dir.multiply(10.0)).add(0.0, 6.5, 0.0),
-                        climbCam0.add(0.0, -1.5, 0.0),
                     ), landing.add(0.0, 1.4, 0.0))
 
                     if (d != null) {
