@@ -24,7 +24,7 @@ import net.minecraft.util.Formatting
  */
 object Subtitles {
 
-    private class Line(val speaker: Int, val text: Text, val ticks: Int) {
+    private class Line(val speaker: Int, val text: Text, val ticks: Int, val forge: Boolean) {
         var age = 0
     }
 
@@ -37,7 +37,12 @@ object Subtitles {
 
     fun handle(p: LineS2C) {
         val text = Text.translatable(p.key)
-        val line = Line(p.speaker, text, maxOf(p.ticks, readTicks(text)).coerceIn(30, 260))
+        val forge = p.key == "hha_arius.scene.forge_ice"
+        if (forge) {
+            queue.clear()
+            pendingVoice = null
+        }
+        val line = Line(p.speaker, text, maxOf(p.ticks, readTicks(text)).coerceIn(30, 260), forge)
         queue.addLast(line)
         while (queue.size > 3) queue.removeFirst()
         if (p.speaker == 1) {
@@ -104,7 +109,7 @@ object Subtitles {
         val wrapped = font.wrapLines(body, maxWidth)
         val rows = maxOf(1, font.wrapLines(Text.literal(full), maxWidth).size)
         val blockH = (rows * 10 + (if (line.speaker == 1) 12 else 0)) * scale
-        val bottom = if (cinema) h - 12f else h - 126f
+        val bottom = if (cinema) h - (if (line.forge) h * 0.11f + 5f else 12f) else h - 126f
         val top = bottom - blockH
         val a = alpha shl 24
         val m = context.matrices

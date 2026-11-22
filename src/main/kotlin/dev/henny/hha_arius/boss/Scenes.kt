@@ -220,12 +220,10 @@ class Scenes(private val f: EirholmFight) {
             }
             a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
             a.play(AriusPose.CUT_CHARGE)
-            f.fx(FxKind.REVERSE_WIND, stand.add(0.0, 2.0, 0.0), a = 30f, life = AriusTimings.CUT_WIND + 50)
             cue("cut.reverse_wind", stand, 4f)
             // Stille, Detail: Hände und Klinge, an denen sich der Wind sammelt; ganz langsam näher.
             pre.line(stand.add(-2.2, 0.75, 2.6), stand.add(-1.6, 0.85, 2.0), stand, stand, 30, 44.0, 36.0, lookAt = a, lookOffset = 1.15)
             wait(20)
-            f.fx(FxKind.EDGE, stand, life = 70, e1 = a)
             cue("cut.charge", stand, 3f)
             // Rückweg zur Spielerkamera, fertig bevor die Ansage beginnt.
             pre.home(10)
@@ -233,19 +231,11 @@ class Scenes(private val f: EirholmFight) {
         }))
         f.cutSurvivors.clear()
         f.cutSurvivors.addAll(f.players().map { it.uuid })
-        // Seit 1.5.1 (nach Crix' Bild): Er lädt eine riesige Klinge aus Licht auf, hoch über sich; der Himmel hinter ihm
-        // füllt sich mit Licht. Mit dem Schlag spaltet sie den Berg im Süden.
         for (p in f.audience()) dev.henny.hha.logic.boss.Cine.title(listOf(p), "hha_arius.feat.white_horizon", "hha_arius.feat.white_horizon.sub", 60)
         cue("cut.charge", stand, 5f, 0.6f)
         val group = f.calls.boss(pace = Telegraph.Pace.ROOM)
         val line = group.line(f.abs(ArenaLayout.CUT_FROM), f.abs(ArenaLayout.CUT_TO), ArenaLayout.CUT_WIDTH.toFloat(), AriusTimings.CUT_LINE_TICKS)
-        horizonCharge(a, f.facing(a), line.ticks)
-        wait(line.ticks - 5)
-        a.play(AriusPose.SPIN_CUT, 5)
-        wait(5)
-        horizonImpact(stand, f.facing(a), 19f)
-        f.ambient("cut.strike", stand, 5f)
-        MusicCue.sting(f, "impact")
+        wait(line.ticks)
         for (p in line.hits(f.players())) {
             f.cutSurvivors.remove(p.uuid)
             f.hurt(p, 30f, Damage.Kind.NULL_CUT)
@@ -262,7 +252,7 @@ class Scenes(private val f: EirholmFight) {
 
     /**
      * Der Weiße Horizont nach dem Schlag:
-     * 1. **Zeitlupe** nah an ihm, die Klinge am Ende des Schwungs; die Naht glimmt über den Boden davon.
+     * 1. **Totale**: Arius holt aus, die horizontale Schneide zieht einmal über den Tempel und verblasst.
      * 2. **Hoch über dem Tempel**: Blick nach Süden die Naht entlang, die aufs Massiv zurast.
      * 3. **Wolkenverhüllung (Totale von hoch außen)**: dichte, wirbelnde Schneewolken hüllen die gesamte Schnittlinie am
      *    Berg ein (ohne schwebende Block-Trümmer!), während dahinter das Massiv sauber gespalten wird.
@@ -288,27 +278,28 @@ class Scenes(private val f: EirholmFight) {
             }
         }
         MusicCue.play(f, "horizon", 10)
-        // 1) Zeitlupe auf ihm. Die Körper gehen jetzt schon an den Aussichtspunkt, das Bild zeigt noch die Altarstufe.
+        // The danger marker has resolved. Keep the actor and both tips in the same wide shot.
         vantage.move(lookout)
+        f.atmos(dev.henny.hha_arius.net.AtmosMode.CLEAR, 8)
+        val direction = Vec3d(0.0, 0.0, 1.0)
+        val focus = stand.add(0.0, 1.25, 10.5)
+        post.line(stand.add(-1.8, 26.0, 24.5), stand.add(-1.0, 25.0, 24.0),
+            focus, focus, 50, 59.0, 59.0)
+        a.play(AriusPose.CUT_CHARGE)
+        shown { horizonCharge(a, direction, 23) }
+        wait(18)
+        a.play(AriusPose.SPIN_CUT, 5)
+        wait(5)
         shown {
-            f.fxAll(FxKind.FLASH, stand, a = 0.55f, life = 10)
-            f.fxAll(FxKind.TIME_SLOW, stand, a = 1f, life = 50)
+            f.fxAll(FxKind.HORIZON, stand.add(0.0, 1.15, 0.0), direction, a = 19f, b = 2f, life = 22)
         }
-        f.calls.roomShake(lookout, 6f, 200f)
-        val face = stand.add(0.0, 1.5, 0.0)
-        post.line(stand.add(-2.4, 0.9, 3.0), stand.add(-2.8, 1.25, 3.6), face, face.add(0.0, -0.3, 2.0), 46, 46.0, 40.0)
-        cue("cut.strike", stand, 3f, 0.5f)
-        cue("transform.pulse", stand, 3f, 0.45f)
-        shown { Vfx.crescent(f.world, Vfx.Style.HEAVEN, stand.add(0.0, 1.5, 0.0), Vec3d(0.0, 0.0, 1.0), 110f, 5f, 12) }
+        cue("cut.strike", stand, 5f, 0.78f)
+        MusicCue.sting(f, "impact")
+        wait(24)
         val seamFrom = f.abs(ArenaLayout.CUT_FROM)
         val seamTo = f.abs(Vec3d(x, 0.0, foot + 6.0))
         f.fxAll(FxKind.SEAM, seamFrom.add(0.0, 0.2, 0.0), seamTo.add(0.0, 0.2, 0.0), a = 14f, life = 160)
-        for (i in 0 until 44) {
-            if (i % 4 == 0) shown { f.fxAll(FxKind.CLEAR_WAVE, seamFrom.lerp(seamTo, i / 120.0), a = 2.5f, life = 16) }
-            if (i == 22) cue("cut.reverse_wind", stand, 2f, 0.5f)
-            yield(Unit)
-        }
-        // 2) Die Zeit schnappt zurück: hoch über dem Tempel, Blick nach Süden die Naht entlang bis an den Berg.
+        // 2) Über dem Tempel folgt die Kamera der Naht bis zum Berg.
         shown { f.fxAll(FxKind.FLASH, stand, a = 0.3f, life = 6) }
         f.farSound("cut.split", seamTo, 5f, 1.2f)
         MusicCue.sting(f, "phase")
@@ -991,9 +982,6 @@ class Scenes(private val f: EirholmFight) {
         shown { f.fx(FxKind.FRAGMENTS, vault, a = 1f, life = 34, e1 = a) }
         cue("transform.shatter", vault, 4f)
         f.atmos(dev.henny.hha_arius.net.AtmosMode.WHITE, 20)
-        val fresh = newcomers("scene.transform")
-        if (fresh.isNotEmpty()) shown { f.sceneText("transform", 70, fresh) }
-        markHeard("scene.transform")
         wait(30)
         a.form = AriusForm.WHITE
         a.eyeGlow = 100
@@ -1004,10 +992,10 @@ class Scenes(private val f: EirholmFight) {
         val handShot = a.entityPos.add(0.0, 1.38, 0.0)
         val cameraFrom = f.clampToArena(handShot.add(front.multiply(4.3)).add(side.multiply(1.95)), 2.0)
         val cameraTo = f.clampToArena(handShot.add(front.multiply(3.8)).add(side.multiply(1.55)), 2.0)
-        scene?.line(cameraFrom, cameraTo, handShot, handShot.add(0.0, 0.3, 0.0), 46, 53.0, 53.0)
+        scene?.line(cameraFrom, cameraTo, handShot, handShot.add(0.0, 0.3, 0.0), 54, 53.0, 53.0)
         a.play(AriusPose.FORGE_ICE, 12)
-        shown { f.sceneText("forge_ice", 53) }
-        wait(12)
+        shown { f.sceneText("forge_ice", 54) }
+        wait(20)
         Entrance.storyFx(f, FxKind.BLADE_FORM, handShot, life = 24, e1 = a)
         cue("core.form", vault, 2.5f, 1.5f)
         wait(18)

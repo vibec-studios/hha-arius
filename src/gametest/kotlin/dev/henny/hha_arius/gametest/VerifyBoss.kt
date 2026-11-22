@@ -180,9 +180,9 @@ class VerifyBoss : FabricClientGameTest {
             f.startDirector(scene.play(body))
         }
         check(waitUntil(135, 1) { server { fight()?.arius?.pose == AriusPose.FORGE_ICE } })
-        tick(8)
+        tick(18)
         shot("forge_empty_hand")
-        tick(12)
+        tick(8)
         shot("forge_forming")
         check(waitUntil(25, 1) { server { fight()?.arius?.bladeState == AriusBlade.ICE } })
         tick(10)
@@ -217,7 +217,11 @@ class VerifyBoss : FabricClientGameTest {
             f.startDirector(f.scenes.theCut())
         }
         check(waitUntil(150, 1) { server { fight()?.arius?.pose == AriusPose.SPIN_CUT } })
-        burst("temple_horizon", 7, 2)
+        shot("temple_horizon_anticipation")
+        tick(10)
+        shot("temple_horizon_release")
+        tick(9)
+        shot("temple_horizon_fade")
     }
 
     private fun VerifyKit.vaultPace() {

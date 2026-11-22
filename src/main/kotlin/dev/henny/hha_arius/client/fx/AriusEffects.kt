@@ -110,7 +110,7 @@ abstract class AriusFx(val life: Int) {
                     CineGrade.slow(p.life, p.a)
                     null
                 }
-                FxKind.HORIZON -> HorizonFx(pos, dir, p.a.toDouble(), p.b > 0f, e1, p.life)
+                FxKind.HORIZON -> HorizonFx(pos, dir, p.a.toDouble(), p.b > 0f, e1, p.life, temple = p.b >= 2f)
                 FxKind.MACE_GRIP -> {
                     KickAnim.catchMace(p.e1, p.life)
                     null
