@@ -91,6 +91,16 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.13.0
+
+- **Combat:** the frosted attack markers are back, the parry indicator works again, and Arius stays active while Solvane leads.
+- **Mace counter:** repeated mace smashes get caught one-handed, and Arius slams the attacker into the floor.
+- **Finale:** a new climax for 1–4 players. Answer three strikes to shatter the ice blade, then land the final blow.
+- **Ice blade and Last Horizon:** a forge scene shows why Arius needs a blade of ice, and the Last Horizon has a new cut.
+- **Solvane:** reworked summon, pickup, barrel-roll drop-off, ride poses, landing, bridge rescue, tunnel flyby and return to the sword.
+- **World:** a new portal block, a redesigned temple, and a mountain split that cuts the arena before golden yang restores every block.
+- **Hunt and armor:** Solvane's eye now waits for you to look at it, and the armor's breath and tail have new effects.
+
 ### New in 1.12.0
 
 - **Combat:** thin frost markers instead of red floors, no rainbow effects, a counter stance you read from Arius alone, one-hit vanilla shields, real pathfinding, a visible ice sword and the new *The Storm Breaks* ending.
