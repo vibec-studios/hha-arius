@@ -64,14 +64,23 @@ data class RideActionS2C(val entityId: Int, val action: Int, val ticks: Int) : C
  * noch eine Hand, 0 = kein Griff (abgestürzt oder abgestiegen). Die Darstellung (Haltung dritte/erste Person, Eisdorn)
  * steht in [dev.henny.hha_arius.client.fx.RideClient].
  */
-data class RideGripS2C(val entityId: Int, val grip: Int) : CustomPayload {
+data class RideGripS2C(val entityId: Int, val grip: Int, val pickup: Vec3d? = null) : CustomPayload {
     override fun getId(): CustomPayload.Id<out CustomPayload> = ID
 
     companion object {
         val ID = CustomPayload.Id<RideGripS2C>(HhaArius.id("ride_grip"))
         val CODEC: PacketCodec<RegistryByteBuf, RideGripS2C> = PacketCodec.of(
-            { v, buf -> buf.writeVarInt(v.entityId); buf.writeVarInt(v.grip) },
-            { buf -> RideGripS2C(buf.readVarInt(), buf.readVarInt()) },
+            { v, buf ->
+                buf.writeVarInt(v.entityId)
+                buf.writeVarInt(v.grip)
+                buf.writeBoolean(v.pickup != null)
+                v.pickup?.let { buf.writeDouble(it.x); buf.writeDouble(it.y); buf.writeDouble(it.z) }
+            },
+            { buf ->
+                val id = buf.readVarInt()
+                val grip = buf.readVarInt()
+                RideGripS2C(id, grip, if (buf.readBoolean()) Vec3d(buf.readDouble(), buf.readDouble(), buf.readDouble()) else null)
+            },
         )
 
         fun register() {
@@ -152,6 +161,23 @@ object RideSeats {
     }
 
     /** Arius setzt sich auf ihren Kopf: als Mitfahrer, damit er ohne Versatz mit ihr fliegt. */
+    /** Mount and publish the takeoff point before the passenger list changes. */
+    fun pickUp(f: EirholmFight, d: NivarisEntity, p: ServerPlayerEntity) {
+        val from = p.entityPos
+        if (!p.startRiding(d, true, true)) return
+        for (watcher in f.audience()) {
+            if (ServerPlayNetworking.canSend(watcher, RideGripS2C.ID)) {
+                ServerPlayNetworking.send(watcher, RideGripS2C(p.id, 2, from))
+            }
+        }
+        syncPassengers(f, d)
+    }
+
+    fun roll(progress: Double): Float {
+        val r = progress.coerceIn(0.0, 1.0)
+        return (r * r * r * (r * (6.0 * r - 15.0) + 10.0) * 2.0 * PI).toFloat()
+    }
+
     fun perch(f: EirholmFight, a: AriusEntity, d: NivarisEntity) {
         if (a.vehicle !== d) a.startRiding(d, true, true)
         a.yaw = d.yaw
@@ -260,13 +286,13 @@ object RideRoute {
     /** Punkt bei Bogenlänge [s] (Blöcke ab dem Start), relativ. */
     fun at(s: Double): Vec3d {
         val p = points()
-        val x = (s / STEP).coerceIn(0.0, p.size - 1.0001)
-        val i = x.toInt()
+        val x = (s / STEP).coerceIn(0.0, p.lastIndex.toDouble())
+        val i = x.toInt().coerceAtMost(p.lastIndex - 1)
         return p[i].lerp(p[i + 1], x - i)
     }
 
     private fun build(): List<Vec3d> {
-        val raw = DragonRail.spline(CTRL)
+        val raw = DragonRail.spline(CTRL).toMutableList().apply { this[lastIndex] = CTRL.last() }
         val n = raw.size
         val tailFrom = (n - (TAIL / STEP).toInt()).coerceAtLeast(1)
         // Nötige Höhe: Gelände im Umkreis ihres Körpers plus Freiheit; im Endanflug gilt die gezeichnete Höhe.
@@ -428,8 +454,7 @@ class DragonRide(private val f: EirholmFight) {
         if (!Cine.muted) f.fx(FxKind.THREAD, p.entityPos, life = 26, e1 = p, e2 = d)
         cue("resonance.chime", p.entityPos, 1.6f, 1.3f + i * 0.05f)
         p.addStatusEffect(StatusEffectInstance(StatusEffects.SLOW_FALLING, 3000, 0, false, false, false))
-        p.startRiding(d, true, true)
-        send(2, p)
+        RideSeats.pickUp(f, d, p)
     }
 
     /** Wird die Szene abgebrochen, fehlt nichts für den Ritt: Die Bahn entsteht dann in [play] aus der aktuellen Lage. */
@@ -471,6 +496,8 @@ class DragonRide(private val f: EirholmFight) {
         var mounted = false
         var after = 0
         var wide = false
+        val jumpFrom = a.entityPos
+        var jump = -1
         while (true) {
             t++
             flyLead(d, 0.88)
@@ -491,8 +518,16 @@ class DragonRide(private val f: EirholmFight) {
             }
             // Arius springt ab, sobald sie an ihm vorbeistreicht, und sitzt auf ihrem Kopf, bevor die Spieler aufsteigen.
             if (a.vehicle !== d && leadS >= mountS - 16.0) {
-                RideSeats.perch(f, a, d)
-                cue("arius.wind_step", a.entityPos, 3f, 0.8f)
+                if (jump < 0) {
+                    jump = 0
+                    a.play(AriusPose.LAUNCH, 6)
+                    cue("arius.wind_step", jumpFrom, 3f, 0.8f)
+                }
+                val k = (++jump / 18.0).coerceAtMost(1.0)
+                val perch = d.entityPos.add(RideHooks.offsetFor(d, a).rotateY(-Math.toRadians(d.bodyYaw.toDouble()).toFloat()))
+                f.place(a, jumpFrom.lerp(perch, k).add(0.0, sin(k * PI) * 4.5, 0.0))
+                f.face(a, perch)
+                if (k == 1.0) RideSeats.perch(f, a, d)
             }
             if (!mounted && leadS >= mountS - 4.0) {
                 mounted = true
@@ -767,8 +802,7 @@ class DragonRide(private val f: EirholmFight) {
                 send(0, p)
                 val spot = f.abs(ArenaLayout.VAULT_LANDING[j % ArenaLayout.VAULT_LANDING.size])
                 if (!p.isAlive) continue
-                val up = Vec3d(at.x, max(at.y, spot.y + 3.0), at.z)
-                p.teleport(f.world, up.x, up.y, up.z, emptySet(), p.yaw, p.pitch, false)
+                val up = at
                 Hold.drop(p)
                 Hold.allowLong(p, 110)
                 Hold.launch(p, Ballistic.velocity(up, spot, 0.16), 100, spot, spot)
@@ -803,9 +837,10 @@ class DragonRide(private val f: EirholmFight) {
             d.play(NivarisPose.GLIDE)
             var s = from
             var ariusFrom: Vec3d? = null
-            val ariusTarget = vault.add(0.0, 7.0, 0.0)
+            val ariusTarget = vault
             var t = 0
-            while (t < TOTAL_TICKS || s < length) {
+            var settled = 0
+            while (true) {
                 t++
                 speed += ((if (s > length - 34.0) 0.34 else 0.60) - speed).coerceIn(-0.012, 0.012)
                 s = min(length, s + speed)
@@ -815,7 +850,7 @@ class DragonRide(private val f: EirholmFight) {
                 if (ahead.squaredDistanceTo(pos) > 0.01) f.face(d, ahead)
                 // Eine einzige weiche Rolle um die Längsachse (zur rechten Seite, Rücken nach unten bei der Hälfte).
                 val r = ((t - ROLL_FROM) / ROLL_TICKS.toDouble()).coerceIn(0.0, 1.0)
-                d.bodyRoll = (r * r * r * (r * (6.0 * r - 15.0) + 10.0) * 2.0 * PI).toFloat()
+                d.bodyRoll = RideSeats.roll(r)
                 if (t == ROLL_FROM + 8) {
                     cue("nivaris.roar", pos, 4.5f, 0.9f)
                     f.calls.roomShake(pos, 2.2f, 50f)
@@ -829,24 +864,29 @@ class DragonRide(private val f: EirholmFight) {
                         a.play(AriusPose.LAUNCH, 6)
                         cue("arius.wind_step", a.entityPos, 3f, 0.85f)
                     }
-                    val ak = ((t - ARIUS_TICK) / 18.0).coerceIn(0.0, 1.0)
+                    val ak = ((t - ARIUS_TICK) / 26.0).coerceIn(0.0, 1.0)
                     f.place(a, ariusFrom!!.lerp(ariusTarget, ak).add(0.0, sin(ak * PI) * 3.2, 0.0))
                     f.face(a, land0)
+                    if (t == ARIUS_TICK + 20) a.play(AriusPose.STAB_GROUND, 6)
                 }
                 if (!released) for (p in f.players()) if (p.vehicle !== d && p.uuid in grips && p.isAlive) p.startRiding(d, true, true)
                 if (t == RELEASE_TICK - 6) for (p in f.players()) if (p.vehicle === d) sendAction(p, RideAction.HIT, 10)
                 if (t == RELEASE_TICK && !released) {
                     release(pos)
-                    // B) Vom Schnee hinauf: die Reiter fallen, über ihnen dreht sich ihr Leib.
-                    val ground = land0.add(side.multiply(-9.0)).add(fwd.multiply(-11.0)).add(0.0, 1.4, 0.0)
-                    scene.line(ground, ground.add(fwd.multiply(2.5)).add(0.0, 0.6, 0.0), dropAt.add(0.0, 1.0, 0.0), land0.add(0.0, 1.0, 0.0), FALL_SHOT, 72.0, 56.0)
+                    val ground = land0.add(side.multiply(-12.0)).add(fwd.multiply(-12.0)).add(0.0, 4.0, 0.0)
+                    scene.line(ground, ground.add(fwd.multiply(6.0)).add(0.0, 0.8, 0.0),
+                        pos.lerp(land0, 0.35), ariusTarget.add(0.0, 1.2, 0.0), FALL_SHOT, 72.0, 58.0)
                 }
                 if (t == RELEASE_TICK + FALL_SHOT) {
-                    // C) Nah am Aufschlag, dann zurück zur eigenen Sicht.
-                    val c = land0.add(side.multiply(-5.0)).add(fwd.multiply(-5.0)).add(0.0, 1.8, 0.0)
-                    scene.line(c, c.add(side.multiply(-1.0)).add(0.0, 0.5, 0.0), land0.add(0.0, 0.9, 0.0), land0.add(0.0, 1.2, 0.0), 22, 52.0, 48.0)
+                    val c = ariusTarget.add(side.multiply(-7.0)).add(fwd.multiply(-7.0)).add(0.0, 2.8, 0.0)
+                    scene.line(c, c.add(fwd.multiply(3.0)), ariusTarget.add(0.0, 1.0, 0.0),
+                        ariusTarget.add(0.0, 1.4, 0.0), 50, 58.0, 50.0)
                 }
-                if (t == RELEASE_TICK + FALL_SHOT + 18) scene.home(16)
+                if (s >= length && d.flying) {
+                    d.flying = false
+                    d.play(NivarisPose.EXHAUSTED)
+                    scene.home(18)
+                }
                 if (released) for (p in f.players()) {
                     p.fallDistance = 0.0
                     if (p.uuid !in landed && (p.isOnGround || p.y <= land0.y + 0.35)) {
@@ -856,8 +896,7 @@ class DragonRide(private val f: EirholmFight) {
                         cue("hold.impact", p.entityPos, 1.6f, 0.85f)
                     }
                 }
-                if (t >= RELEASE_TICK + FALL_SHOT + 34 && s >= length) break
-                if (t > TOTAL_TICKS + 200) break
+                if (!d.flying && ++settled >= 18) break
                 yield(Unit)
             }
             d.bodyRoll = 0f
@@ -897,7 +936,6 @@ class DragonRide(private val f: EirholmFight) {
         const val RELEASE_TICK = 54
         const val ARIUS_TICK = 34
         const val FALL_SHOT = 44
-        const val TOTAL_TICKS = 150
     }
 }
 

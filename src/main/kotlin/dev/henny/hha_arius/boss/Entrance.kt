@@ -79,10 +79,10 @@ object EntrancePath {
     val HEAD_REST = near(3.5, 171.0, 144.0)
 
     private val WAYPOINTS = listOf(
-        HEAD_RAISED, near(0.5, 194.0, 134.0), near(10.0, 182.0, 114.0), near(36.0, 150.0, 92.0), near(56.0, 108.0, 68.0),
+        HEAD_RAISED, near(0.5, 195.0, 134.0), near(10.0, 182.0, 114.0), near(36.0, 150.0, 92.0), near(56.0, 108.0, 68.0),
         // Seit 1.12.0 (Crix: „sein Körper geht bei der Landung so weird nach oben“): Der 96 Blöcke lange Leib liegt zur Landung
         // auf den letzten 96 Blöcken der Bahn. Die laufen darum flach über das Plateau aus, statt steil vom Berg zu kommen.
-        near(66.0, 62.0, 52.0), Vec3d(58.0, 28.0, 30.0), Vec3d(36.0, 15.0, 26.0), Vec3d(15.0, 9.5, 16.0), Vec3d(3.0, 7.0, 5.0), Vec3d(0.5, 6.0, -4.0),
+        near(66.0, 70.0, 52.0), Vec3d(64.0, 38.0, 36.0), Vec3d(39.0, 24.0, 35.0), Vec3d(14.0, 14.0, 27.0), Vec3d(1.5, 8.0, 13.0), Vec3d(0.5, 5.5, 2.0),
     )
 
     /**
@@ -406,9 +406,9 @@ internal object Entrance {
         // 2) Sturm: Blick vom Südrand des Plateaus in das Weiß, langsame Fahrt nach vorn (70 Ticks). Der Strom kommt an,
         //    erst dann verdichtet sich der Sturm, und im Weiß legen sich die Windungen um die Nadel.
         // Seit 1.6.3 höher und auf den Gipfel gerichtet (vorher füllte die Bergflanke das ganze Bild, es wirkte wie im Berg).
-        val stormFrom = rel(f, 1.5, 22.0, 18.0)
-        val stormTo = rel(f, 1.0, 30.0, 34.0)
-        scene.line(stormFrom, stormTo, spire(f, 0.0, 150.0, 0.0), spire(f, 0.0, 185.0, 0.0), 70, 70.0, 60.0)
+        val stormFrom = spire(f, -55.0, 174.0, -70.0)
+        val stormTo = spire(f, -46.0, 183.0, -56.0)
+        scene.rawLine(stormFrom, stormTo, arrival, f.abs(EntrancePath.HEAD_RAISED), 70, 68.0, 60.0)
         wait(RELEASE_ARRIVAL - RELEASE_TICKS)
         f.atmos(AtmosMode.BLIZZARD, 36)
         sound(f, "seal.blizzard", stormTo, 2.5f, 0.7f)
@@ -443,22 +443,22 @@ internal object Entrance {
         // Der Sturm reißt so weit auf, dass man die Windung erkennt (im vollen Blizzard endet die Sicht nach 30 Blöcken).
         // 3) Von unten nach oben entlang der Windung: die Kamera steigt mit dem Leib die Nadel hinauf (56 Ticks).
         f.atmos(AtmosMode.SNOW, 22)
-        scene.line(outside(0.60, 22.0, 2.0), outside(0.68, 20.0, 4.0), coilAt(f, 0.62), coilAt(f, 0.72), 56, 56.0, 52.0)
+        scene.rawLine(outside(0.60, 24.0, 8.0), outside(0.68, 24.0, 10.0), coilAt(f, 0.62), coilAt(f, 0.72), 56, 56.0, 52.0)
         sound(f, "seal.blizzard", coilAt(f, 0.66), 3f, 0.55f)
         fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.66), 9f, 56)
         d.eyeGlow = 14
         wait(56)
 
         // 4) Weiter oben am Kristallkamm: kontinuierlicher Aufstieg bis unter den Gipfel (52 Ticks).
-        scene.line(outside(0.76, 18.0, 6.0), outside(0.84, 16.0, 9.0), coilAt(f, 0.78), coilAt(f, 0.88), 52, 54.0, 48.0)
+        scene.rawLine(outside(0.76, 23.0, 9.0), outside(0.84, 22.0, 11.0), coilAt(f, 0.78), coilAt(f, 0.88), 52, 54.0, 48.0)
         sound(f, "nivaris.wing", coilAt(f, 0.82), 2f, 0.45f)
         fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.82), 8f, 52)
         wait(52)
 
         // 5) Die Wolken reißen auf: weite Einstellung von Nordwesten (104 Ticks) auf Nadel, Windungen und Kopf.
         f.atmos(AtmosMode.REVEAL, 32)
-        val revealFrom = spire(f, -68.0, 122.0, -148.0)
-        val revealTo = spire(f, -80.0, 138.0, -158.0)
+        val revealFrom = spire(f, -68.0, 172.0, -148.0)
+        val revealTo = spire(f, -80.0, 178.0, -158.0)
         scene.line(
             revealFrom, revealTo, spire(f, 0.0, 130.0, 0.0), spire(f, 0.0, 152.0, 0.0), 104, 58.0, 54.0,
         )
@@ -488,8 +488,9 @@ internal object Entrance {
         d.flying = true
         d.play(NivarisPose.GLIDE)
         d.eyeGlow = 70
+        val exit = EntrancePath.tangent(EntrancePath.LENGTH)
         val end = f.abs(EntrancePath.entityAt(EntrancePath.LENGTH))
-        val landCamMid = rel(f, -18.0, 7.2, -16.0)
+        val landCamMid = rel(f, -23.0, 11.0, -16.0)
         val landFocusMid = end.add(0.0, 2.8, -1.0)
         fun look(t: Int, back: Double): Vec3d {
             val u = EntrancePath.distance(t.toDouble())
@@ -519,12 +520,12 @@ internal object Entrance {
             d.uncoil = (u / EntrancePath.LENGTH).toFloat()
             // Solange die Zuschauer am Gipfel stehen, bleibt die Entity am Gipfel-Proxy (nie außerhalb der Tracking-Reichweite!).
             follow(f, d, u, proxy, allowEntityMove = plateauView)
-            if (t < EntrancePath.TICKS) yield(Unit)
+            yield(Unit)
         }
 
         // 8) Nahtlose Landeeinstellung im 3/4-Profil: schließt direkt an landCamMid/landFocusMid an und zeigt das Ablegen der Windungen.
         f.place(d, end)
-        f.face(d, end.add(0.0, 0.0, -10.0))
+        f.face(d, end.add(exit))
         d.mode = NivarisMode.NORMAL
         d.uncoil = 0f
         scene.line(landCamMid, rel(f, -15.5, 4.8, -11.5), landFocusMid, spot.add(0.0, 3.6, -1.5), 42, 62.0, 56.0)
@@ -566,7 +567,6 @@ internal object Entrance {
     private fun glideAndLand(f: EirholmFight, d: NivarisEntity, from: Vec3d, spot: Vec3d, ticks: Int): Script = script {
         d.flying = true
         d.play(NivarisPose.LAND, ticks)
-        val settleAt = (ticks - 10).coerceAtLeast(1)
         for (i in 1..ticks) {
             val k = i / ticks.toDouble()
             // Erst gleiten, zuletzt steil herab (Gewicht).
@@ -574,8 +574,6 @@ internal object Entrance {
             val y = from.y + (spot.y - from.y) * (k * k * (3 - 2 * k))
             f.place(d, Vec3d(xz.x, y, xz.z))
             f.face(d, spot.add(0.0, 0.0, -10.0))
-            // Windungen legen sich schon im letzten Sinkflug weich auf das Plateau, statt steil in die Luft zu stehen.
-            if (i == settleAt) d.flying = false
             yield(Unit)
         }
         f.place(d, spot)

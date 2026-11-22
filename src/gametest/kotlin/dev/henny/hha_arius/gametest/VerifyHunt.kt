@@ -54,6 +54,10 @@ class VerifyHunt : FabricClientGameTest {
         if ("eye" in parts) caves.firstOrNull { it.first == "DARK" }?.let { eyeAndSeal(h, it.second) }
         if ("bridge" in parts) bridge(h, spans[0], "b1")
         if ("cut" in parts) cut(h, spans[0])
+        if ("solvane" in parts) {
+            cut(h, spans[0], fullScene = true)
+            caves.firstOrNull { it.first == "LAKE" }?.let { tunnel(h, it.second, it.third, fullScene = true) }
+        }
         // Der Reihe nach die Route hinauf: Wer zurückspringt, wird von der Jagd auf den sicheren Punkt gerettet.
         if ("ice" in parts) caves.firstOrNull { it.first == "CRYSTAL" }?.let { ice(h, it.second) }
         if ("arius" in parts) ariusRoute(h, spans[0].second + 40.0)
@@ -296,7 +300,7 @@ class VerifyHunt : FabricClientGameTest {
 
     private fun VerifyKit.h_down(h: Hunt, arc: Double): Vec3d = server { h.debugPoint(arc + 3.0).add(0.0, 0.0, 0.0) }
 
-    private fun VerifyKit.cut(h: Hunt, span: Pair<Double, Double>) {
+    private fun VerifyKit.cut(h: Hunt, span: Pair<Double, Double>, fullScene: Boolean = false) {
         val len = span.second - span.first
         val onBridge = span.first + len * 0.45
         val look = server { h.debugPoint(onBridge).add(0.0, 1.0, 0.0) }
@@ -314,9 +318,10 @@ class VerifyHunt : FabricClientGameTest {
         val started = waitScene(h, 60)
         ctx.getInput().releaseKey { it.sneakKey }
         log("Seilszene gestartet: $started")
-        for (k in 0 until 9) {
+        if (fullScene && started) waitUntil(650, 2) { client { dev.henny.hha.client.cine.CinePlayer.active } }
+        for (k in 0 until if (fullScene) 32 else 9) {
             shot("cut_scene_%02d".format(k))
-            tick(9)
+            tick(if (fullScene) 4 else 9)
         }
         waitNoScene(h)
         shot("cut_after")
@@ -364,14 +369,15 @@ class VerifyHunt : FabricClientGameTest {
         tick(40)
     }
 
-    private fun VerifyKit.tunnel(h: Hunt, a0: Double, a1: Double) {
+    private fun VerifyKit.tunnel(h: Hunt, a0: Double, a1: Double, fullScene: Boolean = false) {
         log("Tunnellänge %.1f".format(a1 - a0))
         tp(h, a0 + 5.0, settleTicks = 2)
         val started = waitScene(h)
         log("Tunnelszene gestartet: $started")
-        for (k in 0 until 10) {
+        if (fullScene && started) waitUntil(650, 2) { client { dev.henny.hha.client.cine.CinePlayer.active } }
+        for (k in 0 until if (fullScene) 30 else 10) {
             shot("tunnel_%02d".format(k))
-            tick(6)
+            tick(if (fullScene) 4 else 6)
         }
         waitNoScene(h)
         shot("tunnel_after")
