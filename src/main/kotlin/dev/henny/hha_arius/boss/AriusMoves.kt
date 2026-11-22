@@ -517,6 +517,7 @@ class AriusMoves(private val f: EirholmFight) {
                     nextLotus = now + 400
                     yieldAll(frostLotus(true))
                 }
+                d > 13 && a.canSee(t) -> yieldAll(nullCut(t))
                 d > 6 -> yieldAll(lunge(t, true))
                 else -> yieldAll(combo(true, false))
             }
@@ -614,7 +615,7 @@ class AriusMoves(private val f: EirholmFight) {
         } finally {
             acting = false
         }
-        yieldAll(script { footwork(if (desperate) 22 else 30, false) })
+        yieldAll(script { footwork(if (desperate) 9 else 16, false) })
     }
 
     /**
@@ -647,8 +648,9 @@ class AriusMoves(private val f: EirholmFight) {
                 val ref = dragon?.entityPos ?: f.arenaCenter
                 val away = flatDir(ref, t.entityPos)
                 val flank = f.clampToArena(t.entityPos.add(Vec3d(-away.z, 0.0, away.x).multiply(6.0)), 2.0)
+                val white = a.form == AriusForm.WHITE
                 var n = 0
-                while (n++ < 24 && !f.stepToward(a, flank, 0.34)) yield(Unit)
+                while (n++ < (if (white) 32 else 24) && !f.stepToward(a, flank, if (white) 0.48 else 0.34)) yield(Unit)
                 f.face(a, t.entityPos)
                 // Seit 1.10.0: aus der Flanke ein schneller Windschritt-Hieb, der den Ausweichweg vor Solvane abschneidet.
                 if (!f.calls.hasBossTelegraph(t) && !Hold.isHeld(t) && !Hold.inGrace(t) && flatDist(a, t) in 3.0..12.0) {
@@ -736,7 +738,8 @@ class AriusMoves(private val f: EirholmFight) {
                     wait(line.ticks)
                     f.fx(FxKind.DASH_STREAK, from, to, life = 10)
                     for (p in line.hits(f.players())) f.hurt(p, dmg)
-                    var n = 0
+                    val white = a.form == AriusForm.WHITE
+                var n = 0
                     while (n++ < 6 && !f.stepToward(a, to, AriusTimings.LUNGE_SPEED, faceIt = false)) yield(Unit)
                     f.sound("arius.slash", a.entityPos, 2f, 1.15f)
                 }

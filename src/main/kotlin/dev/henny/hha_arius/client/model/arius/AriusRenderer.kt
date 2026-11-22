@@ -41,7 +41,7 @@ class AriusRenderer(context: EntityRendererFactory.Context) :
     private val darkSeams = RenderLayers.entityTranslucentEmissive(tex("arius_dark_glow"))
     private val redEyes = RenderLayers.entityTranslucentEmissive(tex("arius_eyes"))
     private val items = context.itemModelManager
-    private val iceBlade = AriusBlade.iceStack()
+    private val iceBlades = (AriusBlade.ICE..AriusBlade.ICE_BROKEN).associateWith(AriusBlade::iceStack)
     private var bladeChain: List<ModelPart>? = null
     private var sheathChain: List<ModelPart>? = null
 
@@ -72,7 +72,7 @@ class AriusRenderer(context: EntityRendererFactory.Context) :
                 }
                 // Set the actor's current pose before sampling bones; queue submission itself defers model drawing.
                 contextModel.setAngles(state)
-                if (state.blade == AriusBlade.ICE && !state.sheathed) renderIceBlade(matrices, queue, state)
+                if (state.blade >= AriusBlade.ICE && !state.sheathed) renderIceBlade(matrices, queue, state)
                 anchors(matrices, state)
             }
         })
@@ -157,7 +157,7 @@ class AriusRenderer(context: EntityRendererFactory.Context) :
         state.form = entity.form
         state.sheathed = entity.sheathed
         state.blade = entity.bladeState
-        if (state.blade == AriusBlade.ICE) items.updateForLivingEntity(state.iceItem, iceBlade, net.minecraft.item.ItemDisplayContext.NONE, entity)
+        iceBlades[state.blade]?.let { items.updateForLivingEntity(state.iceItem, it, net.minecraft.item.ItemDisplayContext.NONE, entity) }
         state.eyeGlow = entity.eyeGlow
         state.lead = entity.lead
         state.open = entity.open

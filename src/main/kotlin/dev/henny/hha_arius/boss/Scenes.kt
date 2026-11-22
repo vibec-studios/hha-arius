@@ -235,13 +235,15 @@ class Scenes(private val f: EirholmFight) {
         f.cutSurvivors.addAll(f.players().map { it.uuid })
         // Seit 1.5.1 (nach Crix' Bild): Er lädt eine riesige Klinge aus Licht auf, hoch über sich; der Himmel hinter ihm
         // füllt sich mit Licht. Mit dem Schlag spaltet sie den Berg im Süden.
-        f.fx(FxKind.GIANT_BLADE, stand, a = 38f, b = AriusTimings.CUT_LINE_TICKS.toFloat(), life = AriusTimings.CUT_LINE_TICKS + 22, e1 = a)
         for (p in f.audience()) dev.henny.hha.logic.boss.Cine.title(listOf(p), "hha_arius.feat.white_horizon", "hha_arius.feat.white_horizon.sub", 60)
         cue("cut.charge", stand, 5f, 0.6f)
         val group = f.calls.boss(pace = Telegraph.Pace.ROOM)
         val line = group.line(f.abs(ArenaLayout.CUT_FROM), f.abs(ArenaLayout.CUT_TO), ArenaLayout.CUT_WIDTH.toFloat(), AriusTimings.CUT_LINE_TICKS)
-        wait(line.ticks)
-        a.play(AriusPose.CUT_RELEASE, 1)
+        horizonCharge(a, f.facing(a), line.ticks)
+        wait(line.ticks - 5)
+        a.play(AriusPose.SPIN_CUT, 5)
+        wait(5)
+        horizonImpact(stand, f.facing(a), 19f)
         f.ambient("cut.strike", stand, 5f)
         MusicCue.sting(f, "impact")
         for (p in line.hits(f.players())) {
@@ -997,12 +999,22 @@ class Scenes(private val f: EirholmFight) {
         a.eyeGlow = 100
         f.updateBars()
         scene?.once { dev.henny.hha.logic.boss.Cine.title(it, "hha_arius.cine.heir", "hha_arius.cine.heir.sub", 70) }
-        // Solvane ist der Drache: in seiner Hand verdichtet sich eine Klinge aus weißem Eislicht (V5).
-        Entrance.storyFx(f, FxKind.BLADE_FORM, a.entityPos.add(0.0, 1.0, 0.0), life = 24, e1 = a)
-        cue("core.form", vault, 2f, 1.5f)
-        // 6b) Seitenschwenk: die Kamera weicht zurück und dreht um ihn, Nivaris richtet sich hinter ihm auf.
-        val baseAng = Math.toDegrees(kotlin.math.atan2(front.z, front.x))
-        scene?.orbit(vault, 3.2, 1.0, baseAng + 18.0, baseAng + 62.0, 40, 52.0, 66.0, lookAt = a, lookOffset = 1.3, radiusTo = 9.5, heightTo = 3.2)
+        a.bladeState = AriusBlade.NONE
+        a.sheathed = false
+        val side = Vec3d(-front.z, 0.0, front.x)
+        val handShot = a.entityPos.add(0.0, 1.25, 0.0)
+        val cameraFrom = f.clampToArena(handShot.add(front.multiply(3.4)).add(side.multiply(1.8)), 2.0)
+        val cameraTo = f.clampToArena(handShot.add(front.multiply(2.8)).add(side.multiply(1.0)), 2.0)
+        scene?.line(cameraFrom, cameraTo, handShot, handShot.add(front.multiply(0.25)), 40, 48.0, 48.0)
+        a.play(AriusPose.FORGE_ICE, 12)
+        shown { f.sceneText("forge_ice", 53) }
+        wait(12)
+        Entrance.storyFx(f, FxKind.BLADE_FORM, handShot, life = 24, e1 = a)
+        cue("core.form", vault, 2.5f, 1.5f)
+        wait(18)
+        a.bladeState = AriusBlade.ICE
+        cue("resonance.chime", vault, 2f, 1.4f)
+        wait(10)
         cue("transform.pulse", vault, 5f)
         shown { f.fx(FxKind.CLEAR_WAVE, vault, a = 12f, life = 22) }
         shown { Vfx.shockwave(f.world, Vfx.Style.HEAVEN, vault, 12f, 20, 1.5f) }
@@ -1015,9 +1027,7 @@ class Scenes(private val f: EirholmFight) {
         f.face(d, vault)
         shown { f.fx(FxKind.THREAD, vault, life = 40, e1 = a, e2 = d) }
         cue("resonance.chime", vault, 4f, 0.9f)
-        wait(18)
-        a.bladeState = AriusBlade.ICE
-        wait(12)
+        wait(20)
         a.play(AriusPose.IDLE)
         d.play(NivarisPose.IDLE)
         // Rückweg zur Spielerkamera, bevor das Herzgewölbe beginnt.
@@ -1072,13 +1082,13 @@ class Scenes(private val f: EirholmFight) {
             }
             val leader = Runner(turn)
             var support: Runner? = null
-            var supportAt = f.now + 40
+            var supportAt = f.now + if (f.ariusLeads) 34 else 12
             while (f.ariusHp > 0f && leader.step()) {
                 if (!f.dragonDowned && f.dragonHp <= 0f) downDragon()
                 if (!f.dragonDowned) {
                     if ((support == null || support.done) && f.now >= supportAt) {
                         support = Runner(if (f.ariusLeads) f.dragon.support() else f.moves.support())
-                        supportAt = f.now + 120
+                        supportAt = f.now + if (f.ariusLeads) 100 else 42
                     }
                     support?.step()
                 }
@@ -1649,65 +1659,45 @@ class Scenes(private val f: EirholmFight) {
         a.play(AriusPose.IDLE)
     }
 
-    /**
-     * Der Letzte Horizont: Er springt an den Rand der Gipfelarena, über ihm wächst die Lichtklinge; drei Bahnen quer über
-     * die Arena, dazwischen zwei goldene Lücken. Wer in einer Bahn steht, wird zerschnitten. Danach steht er lange offen.
-     */
-    fun lastHorizon(a: AriusEntity, cross: Boolean = false): Script = script {
-        val c = f.arenaCenter.let { Vec3d(it.x, f.floorY, it.z) }
-        val r = f.arenaRadius
-        val t = f.target()
-        var axis = t?.let { flatDir(c, it.entityPos) }?.let { Vec3d(-it.z, 0.0, it.x) } ?: Vec3d(1.0, 0.0, 0.0)
-        var normal = Vec3d(-axis.z, 0.0, axis.x)
-        val edge = f.clampToArena(c.subtract(normal.multiply(r)), 1.0)
-        val from = a.entityPos
-        a.play(AriusPose.LAUNCH, 6)
-        f.ambient("arius.wind_step", from, 2.6f, 0.7f)
-        for (i in 1..12) {
-            f.place(a, from.lerp(edge, i / 12.0).add(0.0, sin(i / 12.0 * PI) * 3.0, 0.0))
+    fun horizonCharge(a: AriusEntity, dir: Vec3d, ticks: Int) {
+        f.fxAll(FxKind.HORIZON, a.entityPos.add(0.0, 1.15, 0.0), dir, a = 4.5f, life = ticks, e1 = a)
+        f.ambient("cut.charge", a.entityPos, 3f, 0.72f)
+    }
+
+    fun horizonImpact(at: Vec3d, dir: Vec3d, halfWidth: Float) {
+        f.fxAll(FxKind.HORIZON, at.add(0.0, 1.15, 0.0), dir, a = halfWidth, b = 1f, life = 19)
+        f.ambient("cut.strike", at, 4.5f, 0.78f)
+        f.calls.roomShake(at, 3.2f, 52f)
+    }
+
+    /** One horizontal sweep. The marked belt resolves as the leading edge passes through it. */
+    fun lastHorizon(a: AriusEntity, recovery: Int = 26): Script = script {
+        val center = f.arenaCenter.let { Vec3d(it.x, f.floorY, it.z) }
+        val dir = flatDir(a.entityPos, center)
+        val side = Vec3d(-dir.z, 0.0, dir.x)
+        val reach = (f.arenaRadius - 1.0).coerceAtLeast(5.0)
+        val from = center.subtract(side.multiply(reach))
+        val to = center.add(side.multiply(reach))
+        val belt = f.calls.boss(pace = Telegraph.Pace.ROOM).line(from, to, 3.4f, 50)
+        a.sheathed = false
+        a.play(AriusPose.IAI_STANCE)
+        for (p in f.audience()) Cine.title(listOf(p), "hha_arius.feat.last_horizon", "hha_arius.feat.last_horizon.sub", 48)
+        horizonCharge(a, dir, belt.ticks)
+        wait(belt.ticks - 6)
+        a.play(AriusPose.SPIN_CUT, 6)
+        wait(6)
+        horizonImpact(center.subtract(dir.multiply(2.7)), dir, reach.toFloat())
+        val hit = HashSet<java.util.UUID>()
+        for (i in 0..6) {
+            for (p in belt.hits(f.players())) {
+                val along = p.entityPos.subtract(center).dotProduct(dir)
+                if (along <= i - 3 && hit.add(p.uuid)) f.hurt(p, 11f, Damage.Kind.NULL_CUT)
+            }
             yield(Unit)
         }
-        f.face(a, c)
-        for (p in f.audience()) Cine.title(listOf(p), "hha_arius.feat.last_horizon", "hha_arius.feat.last_horizon.sub", 50)
-        // Seit 1.11.0: In der letzten Phase kommt er über Kreuz, der zweite Schnitt quer zum ersten.
-        for (swing in 0 until (if (cross) 2 else 1)) {
-        a.play(AriusPose.CUT_CHARGE)
-        val ticks = if (swing == 0) 56 else 40
-        f.fxAll(FxKind.GIANT_BLADE, a.entityPos, a = 18f, b = ticks.toFloat(), life = ticks + 20, e1 = a)
-        f.ambient("cut.charge", a.entityPos, 4f, 0.7f)
-        f.ambient("cut.reverse_wind", a.entityPos, 3f, 0.9f)
-        val group = f.calls.boss(pace = Telegraph.Pace.ROOM)
-        val lanes = listOf(-0.62, 0.0, 0.62).map { o ->
-            val m = c.add(axis.multiply(o * r))
-            group.line(f.clampToArena(m.subtract(normal.multiply(r)), 0.3), f.clampToArena(m.add(normal.multiply(r)), 0.3), 3.6f, ticks)
-        }
-        for (o in listOf(-0.31, 0.31)) {
-            val m = c.add(axis.multiply(o * r))
-            group.safeLine(f.clampToArena(m.subtract(normal.multiply(r - 1.0)), 0.5), f.clampToArena(m.add(normal.multiply(r - 1.0)), 0.5), 3.0f, ticks)
-        }
-        wait(lanes.first().ticks - 6)
-        a.play(AriusPose.CUT_RELEASE, 6)
-        wait(6)
-        f.ambient("cut.strike", c, 5f, 0.8f)
-        f.ambient("arius.null_cut", c, 4f, 0.7f)
-        f.fxAll(FxKind.FLASH, c, a = 0.4f, life = 8)
-        f.fxAll(FxKind.TIME_SLOW, c, a = 0.7f, life = 16)
-        f.calls.roomShake(c, 6f, 50f)
-        val hit = lanes.flatMap { it.hits(f.players()) }.distinct()
-        for (p in hit) if (!group.isSafe(p)) f.hurt(p, 18f, Damage.Kind.NULL_CUT)
-        for (o in listOf(-0.62, 0.0, 0.62)) {
-            val m = c.add(axis.multiply(o * r))
-            f.fx(FxKind.SEAM, m.subtract(normal.multiply(r)).add(0.0, 0.2, 0.0), m.add(normal.multiply(r)).add(0.0, 0.2, 0.0), a = 6f, life = 24)
-            Vfx.crescent(f.world, Vfx.Style.HEAVEN, m.add(0.0, 1.2, 0.0), normal, (r * 2).toFloat(), 3f, 10)
-        }
-        val turned = axis
-        axis = normal
-        normal = Vec3d(-turned.x, 0.0, -turned.z)
-        if (cross && swing == 0) wait(10)
-        }
         a.play(AriusPose.STAGGER)
-        f.openArius(60)
-        wait(60)
+        if (recovery > 0) f.openArius(recovery)
+        wait(recovery)
     }
 
     /**

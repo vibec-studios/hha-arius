@@ -12,5 +12,10 @@
   "hha_arius.feat.all_out": "Er holt alles heraus",
   "hha_arius.feat.all_out.sub": "Klingen, Atem, Monde, Horizont und das Loch",
   "hha_arius.duo.harmony": "Duo-Technik: Einklang",
-  "hha_arius.duo.harmony.sub": "Nach seinem Hieb kommt ihr Biss: geh zur Seite"
+  "hha_arius.duo.harmony.sub": "Nach seinem Hieb kommt ihr Biss: geh zur Seite",
+  "hha_arius.mace.warning": "Arius erwartet den nächsten Sturzangriff. Kämpfe am Boden!",
+  "hha_arius.finale.advance": "Geh auf Arius zu und erwidere seine Hiebe.",
+  "hha_arius.finale.answer": "Hieb %s/%s · Triff Arius, sobald JETZT erscheint.",
+  "hha_arius.finale.finish": "Die Klinge ist zerbrochen. Setze den letzten Treffer!",
+  "hha_arius.scene.forge_ice": "Solvane ist frei. Arius schmiedet eine Klinge aus Eis."
 }

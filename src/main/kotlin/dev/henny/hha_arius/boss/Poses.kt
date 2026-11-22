@@ -112,7 +112,11 @@ object AriusPose {
     /** Drehschnitt: 360°-Drehung mit gestreckter Klinge (Treffer bei windup). */
     const val SPIN_CUT = 33
 
-    const val COUNT = 34
+    const val MACE_CATCH = 34
+    const val MACE_SLAM = 35
+    const val FORGE_ICE = 36
+
+    const val COUNT = 37
 }
 
 /** Formen von Arius ([AriusEntity.form]). */

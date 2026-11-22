@@ -19,9 +19,8 @@ object KickAnim {
         val rLeg: Float, val rLegZ: Float, val lLeg: Float, val lLegZ: Float,
     )
 
-    private class Track(val hitstop: Float, val flight: Float, val total: Float) {
+    private class Track(val total: Float, val keys: List<Key>) {
         var startAge = Float.NaN
-        val keys: List<Key> = keys(hitstop, flight, (total - hitstop - flight).coerceAtLeast(10f))
     }
 
     private val tracks = HashMap<Int, Track>()
@@ -30,18 +29,18 @@ object KickAnim {
         val land = h + fl
         return listOf(
             Key(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f),
-            // Treffer: Oberkörper reißt zurück, Arme fliegen nach vorn.
-            Key(h * 0.45f, 30f, -8f, 0.05f, -0.5f, -1.5f, 0.5f, -1.7f, -0.6f, -0.5f, 0.15f, 0.35f, -0.15f),
-            Key(h, 42f, -12f, 0.08f, -0.6f, -1.9f, 0.8f, -2.1f, -0.9f, -0.7f, 0.2f, 0.45f, -0.2f),
+            // The torso recoils while the arms trail to either side.
+            Key(h * 0.45f, 30f, -8f, 0.05f, -0.5f, -0.45f, 0.48f, -0.34f, -0.57f, -0.5f, 0.15f, 0.35f, -0.15f),
+            Key(h, 42f, -12f, 0.08f, -0.6f, -0.35f, 0.76f, 0.08f, -0.68f, -0.7f, 0.2f, 0.45f, -0.2f),
             // Salto rückwärts: gehockt in der Mitte, vor dem Aufprall wieder gestreckt.
-            Key(h + fl * 0.3f, 150f, -16f, 0.1f, 0.35f, -2.5f, 0.9f, -2.3f, -1.0f, -1.5f, 0.25f, -1.25f, -0.25f),
-            Key(h + fl * 0.6f, 285f, 10f, 0.1f, 0.45f, -2.2f, 1.1f, -2.5f, -1.1f, -1.6f, 0.3f, -1.4f, -0.3f),
-            Key(h + fl * 0.88f, 405f, 6f, 0.02f, -0.1f, -2.8f, 0.7f, -2.7f, -0.7f, -0.3f, 0.3f, -0.15f, -0.3f),
+            Key(h + fl * 0.3f, 150f, -16f, 0.1f, 0.35f, -0.57f, 0.8f, -0.46f, -0.69f, -1.5f, 0.25f, -1.25f, -0.25f),
+            Key(h + fl * 0.6f, 285f, 10f, 0.1f, 0.45f, -0.27f, 0.77f, -0.56f, -0.62f, -1.6f, 0.3f, -1.4f, -0.3f),
+            Key(h + fl * 0.88f, 405f, 6f, 0.02f, -0.1f, 0.15f, 0.68f, -0.17f, -0.76f, -0.3f, 0.3f, -0.15f, -0.3f),
             // Aufprall flach auf dem Rücken, kurzes Nachfedern.
-            Key(land, 450f, 0f, -0.68f, 0.3f, -2.9f, 0.9f, -2.9f, -0.9f, 0.1f, 0.3f, 0.1f, -0.3f),
-            Key(land + rec * 0.08f, 442f, 3f, -0.5f, 0.45f, -2.6f, 1.2f, -2.6f, -1.2f, -0.35f, 0.32f, -0.2f, -0.32f),
-            Key(land + rec * 0.2f, 450f, 0f, -0.68f, 0.2f, -3.0f, 1.0f, -3.0f, -1.0f, 0.05f, 0.25f, 0.05f, -0.25f),
-            Key(land + rec * 0.32f, 449f, 0f, -0.68f, 0.3f, -2.9f, 0.8f, -2.9f, -0.8f, -0.25f, 0.2f, 0.0f, -0.2f),
+            Key(land, 450f, 0f, -0.68f, 0.3f, 0.18f, 0.92f, 0.35f, -1.13f, 0.1f, 0.3f, 0.1f, -0.3f),
+            Key(land + rec * 0.08f, 442f, 3f, -0.5f, 0.45f, -0.18f, 0.83f, 0.08f, -0.97f, -0.35f, 0.32f, -0.2f, -0.32f),
+            Key(land + rec * 0.2f, 450f, 0f, -0.68f, 0.2f, 0.12f, 0.98f, 0.28f, -1.05f, 0.05f, 0.25f, 0.05f, -0.25f),
+            Key(land + rec * 0.32f, 449f, 0f, -0.68f, 0.3f, 0.32f, 0.74f, 0.49f, -0.8f, -0.25f, 0.2f, 0.0f, -0.2f),
             // Aufsetzen, die Hände stützen hinter dem Körper.
             Key(land + rec * 0.52f, 396f, 0f, -0.66f, 0.55f, 0.75f, 0.35f, 0.8f, -0.35f, -1.5f, 0.2f, -1.2f, -0.2f),
             // Auf ein Knie, vorgebeugt.
@@ -55,7 +54,18 @@ object KickAnim {
         if (entityId < 0 || total <= 0) return
         val h = hitstop.coerceAtLeast(2f)
         val fl = flight.coerceAtLeast(6f)
-        tracks[entityId] = Track(h, fl, total.toFloat().coerceAtLeast(h + fl + 10f))
+        val duration = total.toFloat().coerceAtLeast(h + fl + 10f)
+        tracks[entityId] = Track(duration, keys(h, fl, duration - h - fl))
+    }
+
+    fun catchMace(id: Int, duration: Int) {
+        if (id < 0) return
+        val high = Key(5f, 20f, -8f, 0f, 0.25f, -0.48f, 0.19f, 0.25f, -0.6f, -0.36f, 0.16f, 0.35f, -0.12f)
+        val low = Key(19f, -52f, 8f, -0.28f, -0.3f, -0.82f, 0.28f, -0.26f, -0.83f, -0.61f, 0.22f, 0.41f, -0.25f)
+        fun Key.at(t: Float) = Key(t, pitch, roll, drop, head, rArm, rArmZ, lArm, lArmZ, rLeg, rLegZ, lLeg, lLegZ)
+        tracks[id] = Track(duration.toFloat(), listOf(high.at(0f), high.at(15f), low, low.at(23f), high.at(29f),
+            low.at(33f), low.at(37f), high.at(43f), low.at(47f),
+            Key(duration.toFloat(), 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f)))
     }
 
     fun reset() {

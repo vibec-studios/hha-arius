@@ -215,6 +215,21 @@ class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
     private val lungeLoad by lazy { coil(Keys.LUNGE_CROUCH, Keys.LUNGE_SPRINT, 0.1f, 1.5f) }
     private val wallLoad by lazy { coil(Keys.WALL_CROUCH, Keys.WALL_PRESS, 0.6f, 0.8f) }
     private val stripLoad by lazy { coil(Keys.STRIP_WIND, Keys.STRIP_HIT, 0.18f, 1.8f) }
+    private fun handPose(base: AriusKey, arm: Int, pitch: Float, yaw: Float, roll: Float, elbow: Float, lean: Float): AriusKey {
+        val v = base.v.copyOf()
+        val at = arm * 6
+        v[at] = pitch
+        v[at + 1] = yaw
+        v[at + 2] = roll
+        v[at + 6] = elbow
+        v[Keys.HIPS * 6] = lean
+        return AriusKey(v, intArrayOf())
+    }
+
+    private val maceCatch by lazy { handPose(Keys.IDLE, Keys.ARM_L, -2.45f, -0.12f, -0.24f, -0.45f, -0.10f) }
+    private val maceSlam by lazy { handPose(Keys.IDLE, Keys.ARM_L, -0.42f, -0.05f, -0.19f, -0.16f, 0.37f) }
+    private val forgeIce by lazy { handPose(Keys.IDLE_EMPTY, Keys.ARM_R, -1.36f, -0.38f, 0.25f, -0.53f, 0.04f) }
+
     private val gripLoad by lazy { coil(Keys.GRIP_AIM, Keys.GRIP_SNAP, 0.6f, 0.8f) }
     private val pommelLoad by lazy { coil(Keys.POMMEL_RAISE, Keys.POMMEL_HIT, 0.15f, 1.0f) }
     private val stabLoad by lazy { coil(Keys.STAB_RAISE, Keys.STAB_HIT, 0.1f, -0.8f) }
@@ -442,6 +457,9 @@ class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
                 // Nach dem Treffer: Bein zurückziehen (Knie anlegen), dann absetzen.
                 .to(w * 0.6f, w, Keys.PK_KICK, ::easeIn, KICK).to(w + min(0.8f, r * 0.2f), w + r * 0.4f, Keys.PK_TURN, ::easeOut, FOLLOW)
                 .to(w + r * 0.4f, w + max(r, 4f), Keys.IDLE, ::smooth, SETTLE)
+            AriusPose.MACE_CATCH -> tr.to(0f, w, maceCatch, ::easeOut, WIND)
+            AriusPose.MACE_SLAM -> tr.to(0f, w, maceSlam, ::easeIn, STRIKE)
+            AriusPose.FORGE_ICE -> tr.to(0f, w, forgeIce, ::smooth, WIND)
             AriusPose.GRIP_CAST -> attack(tr, w, r, Keys.GRIP_AIM, Keys.GRIP_SNAP, null, gripLoad, strike = 2f, stop = 1.5f)
             AriusPose.POMMEL -> attack(tr, w, r, Keys.POMMEL_RAISE, Keys.POMMEL_HIT, null, pommelLoad, strike = 3f, stop = 1f)
             AriusPose.STAB_GROUND -> slam(tr, w, Keys.STAB_RAISE, stabLoad, Keys.STAB_HIT, 3f, ::smooth)
@@ -814,7 +832,7 @@ class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
         val hand = inHand(pose, t, w, state.sheathed, m)
         solvane.visible = hand && state.blade != AriusBlade.NONE
         sheathHilt.visible = !hand && state.blade == AriusBlade.HELD
-        for (part in solvaneTree) part.hidden = state.blade == AriusBlade.ICE
+        for (part in solvaneTree) part.hidden = state.blade >= AriusBlade.ICE
 
         springs(m, v, dt)
         // Hand am Heft der Scheide: die Scheide darf dann nicht schwingen.

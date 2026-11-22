@@ -284,6 +284,8 @@ enum class FxKind {
 
     /** Tempel-Tritt: benutzerdefinierte Spieler-Schleuderanimation für e1 (a = Treffer-Stopp, b = Flugzeit, life = gesamt). */
     KICK_FLING,
+    HORIZON,
+    MACE_GRIP,
 }
 
 /**

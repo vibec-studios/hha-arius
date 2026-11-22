@@ -453,6 +453,12 @@ object ParryHud {
         fromTelegraphs.clear()
         if (!holding(client)) return
         val player = client.player ?: return
+        client.world?.let { world ->
+            val delay = rtt(client) + PRESS_DELAY
+            GroundWarnings.parryWindows(world, player.entityPos) { origin, left ->
+                fromTelegraphs.add(Cue(-1, origin.add(0.0, 1.6, 0.0), t + left - delay, GOLD, lead))
+            }
+        }
         scanTelegraphs(client, player.entityPos)
         announce(client)
     }
@@ -601,7 +607,7 @@ object ParryHud {
             when {
                 past > 1f -> {
                     val a = (1f - past / 6f).coerceIn(0f, 1f) * 0.6f
-                    if (a > 0f) ring(ctx, cx, cy, GATE, withAlpha(0xFFE04040.toInt(), a), 1)
+                    if (a > 0f) ring(ctx, cx, cy, GATE, withAlpha(0xFF6396BC.toInt(), a), 1)
                 }
                 open(c, t) -> ring(ctx, cx, cy, radius(c, t).coerceAtLeast(DOT), withAlpha(GOLD, 1f), 2)
                 else -> {

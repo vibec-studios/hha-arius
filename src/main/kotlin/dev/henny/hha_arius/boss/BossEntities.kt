@@ -181,7 +181,7 @@ class AriusEntity(type: EntityType<out AriusEntity>, world: World) : EirholmPupp
      */
     var bladeState: Int
         get() = dataTracker.get(BLADE)
-        set(value) = dataTracker.set(BLADE, value.coerceIn(AriusBlade.HELD, AriusBlade.ICE))
+        set(value) = dataTracker.set(BLADE, value.coerceIn(AriusBlade.HELD, AriusBlade.ICE_BROKEN))
 
     companion object {
         private val POSE: TrackedData<Int> = DataTracker.registerData(AriusEntity::class.java, TrackedDataHandlerRegistry.INTEGER)
@@ -218,8 +218,15 @@ object AriusBlade {
     /** Eine Klinge aus weißem Eislicht in der Hand, die Scheide ist leer (Abschnitt III). */
     const val ICE = 2
 
-    fun iceStack() = net.minecraft.item.ItemStack(net.minecraft.item.Items.BLUE_ICE).apply {
-        set(net.minecraft.component.DataComponentTypes.ITEM_MODEL, dev.henny.hha_arius.HhaArius.id("ice_blade"))
+    const val ICE_CRACKED = 3
+    const val ICE_BROKEN = 4
+
+    fun iceStack(blade: Int = ICE) = net.minecraft.item.ItemStack(net.minecraft.item.Items.BLUE_ICE).apply {
+        set(net.minecraft.component.DataComponentTypes.ITEM_MODEL, dev.henny.hha_arius.HhaArius.id(when (blade) {
+            ICE_CRACKED -> "ice_blade_cracked"
+            ICE_BROKEN -> "ice_blade_broken"
+            else -> "ice_blade"
+        }))
     }
 }
 

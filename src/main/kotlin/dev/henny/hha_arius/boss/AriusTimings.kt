@@ -36,6 +36,9 @@ object AriusTimings {
         it[AriusPose.THROW_CRYSTALS] = 14
         it[AriusPose.SPLIT_FIELD] = 30
         it[AriusPose.WHISTLE] = 12
+        it[AriusPose.MACE_CATCH] = 5
+        it[AriusPose.MACE_SLAM] = 4
+        it[AriusPose.FORGE_ICE] = 12
         it[AriusPose.SPIN_CUT] = 14
     }
 
