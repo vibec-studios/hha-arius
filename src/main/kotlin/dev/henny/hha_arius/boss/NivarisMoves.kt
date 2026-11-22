@@ -126,7 +126,8 @@ class NivarisMoves(private val f: EirholmFight) {
             }
         }
         val tMin = if (top > Int.MIN_VALUE) f.origin.y + top + 1.0 + clearance else f.floorY + 3.0
-        return maxOf(f.floorY + 3.0, tMin)
+        val pillar = if (f.phase == EirholmFight.Phase.GLACIER && DragonRail.overPillar(rx, rz)) f.floorY + DragonRail.PILLAR_TOP else 0.0
+        return maxOf(f.floorY + 3.0, tMin, pillar)
     }
 
     /**

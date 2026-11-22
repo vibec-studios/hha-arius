@@ -249,7 +249,10 @@ class VerifyDragon : FabricClientGameTest {
         film("cut", 2800, 12) { phase() in 0 until EirholmFight.Phase.GLACIER && client { c -> c.player?.hasVehicle() != true } }
         // Ritt in den Horst: Tick für Tick bis zum Abwurf, dann dichte Bilder und die Lagen im Protokoll.
         var guard = 0
-        while (guard++ < 1200 && client { c -> c.player?.hasVehicle() == true }) tick()
+        while (guard++ < 1200 && client { c -> c.player?.hasVehicle() == true }) {
+            if (guard % 20 == 1) shot("carry_%03d".format(guard / 20))
+            tick()
+        }
         for (i in 0 until 14) {
             val sv = server { srv -> val f = fight(); "arius=%s ride=%s player=%s".format(f?.arius?.entityPos?.let { fmt(it) }, f?.arius?.hasVehicle(), fmt(player(srv).entityPos)) }
             val cl = client { c -> "player=%s".format(c.player?.entityPos?.let { fmt(it) }) }

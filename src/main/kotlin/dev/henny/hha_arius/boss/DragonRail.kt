@@ -1,5 +1,6 @@
 package dev.henny.hha_arius.boss
 
+import dev.henny.hha_arius.arena.ArenaLayout
 import dev.henny.hha_arius.arena.FarPlan
 import dev.henny.hha_arius.arena.HuntRoute
 import net.minecraft.util.math.BlockPos
@@ -22,6 +23,10 @@ object DragonRail {
     const val MIN_RADIUS = 24.0
 
     const val STEP = 0.5
+
+    /** Kristallsäulen: Höhe samt Abstand über dem Boden und Umkreis, in dem sie zählen. */
+    const val PILLAR_TOP = 16.5
+    private const val PILLAR_REACH = 8.0
 
     /** Ein Wegpunkt gilt in diesem Abstand als erreicht. */
     private const val CAPTURE = 2.5
@@ -155,6 +160,7 @@ object DragonRail {
             }
             val terrainMin = if (maxTop > Int.MIN_VALUE) origin.y + maxTop + 1.0 + clearance else floorY + 2.5
             minYs[i] = max(pts[i].y, max(floorY + 2.5, terrainMin))
+            if (overPillar(rx, rz)) minYs[i] = max(minYs[i], floorY + PILLAR_TOP)
         }
         // Sanfte Steigungsbegrenzung (vorwärts & rückwärts), damit Aufstiege über Klippen weich beginnen.
         val maxStepY = STEP * 0.30
@@ -245,6 +251,12 @@ object DragonRail {
             best = max(best, FarPlan.top(cx, cz))
         }
         return best
+    }
+
+    /** Über einer Kristallsäule des Horsts? Sie steht in keiner Höhenkarte, Solvane fliegt darüber hinweg. */
+    fun overPillar(x: Int, z: Int): Boolean {
+        if (kotlin.math.hypot((x - ArenaLayout.AERIE.x).toDouble(), (z - ArenaLayout.AERIE.z).toDouble()) > 70.0) return false
+        return ArenaLayout.AERIE_PILLARS.any { kotlin.math.hypot((x - it.x).toDouble(), (z - it.z).toDouble()) < PILLAR_REACH }
     }
 
     /** Liegt die Spalte (relativ) über einem Höhlengang der Jagd? Dort ist Fels Decke, nicht Hindernis. */
