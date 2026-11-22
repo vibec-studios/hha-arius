@@ -44,12 +44,17 @@ class MaceCatch(private val f: EirholmFight) {
         val floor = start.subtract(Vec3d(0.0, (start.y - f.floorAt(a)).coerceIn(0.0, 5.0), 0.0))
         val ground = Hold.safeSpot(f.world, floor) ?: return false
         if (ground.squaredDistanceTo(floor) > 1.2 || start.y - ground.y !in 0.0..4.8) return false
-        val top = Vec3d(start.x, ground.y + 1.7, start.z)
-        val bottom = Vec3d(start.x, ground.y + 0.06, start.z)
-        for (i in 0..8) {
-            val sample = bottom.lerp(start.let { if (it.y > top.y) it else top }, i / 8.0)
-            if (!f.world.isSpaceEmpty(p, p.boundingBox.offset(sample.subtract(start)))) return false
+        val delta = start.subtract(a.entityPos)
+        val dir = Vec3d(delta.x, 0.0, delta.z).normalize()
+        val left = Vec3d(dir.z, 0.0, -dir.x)
+        val grip = a.entityPos.add(dir.multiply(1.16)).add(left.multiply(0.25))
+        val top = Vec3d(grip.x, ground.y + 1.2, grip.z)
+        val bottom = Vec3d(grip.x, ground.y + 0.06, grip.z)
+        fun clear(from: Vec3d, to: Vec3d) = (0..8).all { i ->
+            val sample = from.lerp(to, i / 8.0)
+            f.world.isSpaceEmpty(p, p.boundingBox.offset(sample.subtract(start)))
         }
+        if (!clear(start, top) || !clear(top, bottom)) return false
         record.count = 0
         record.cooldown = f.now + 240
         runner = Runner(slam(a, p, start, top, bottom))

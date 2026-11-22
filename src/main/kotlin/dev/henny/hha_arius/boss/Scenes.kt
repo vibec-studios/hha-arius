@@ -998,14 +998,13 @@ class Scenes(private val f: EirholmFight) {
         a.form = AriusForm.WHITE
         a.eyeGlow = 100
         f.updateBars()
-        scene?.once { dev.henny.hha.logic.boss.Cine.title(it, "hha_arius.cine.heir", "hha_arius.cine.heir.sub", 70) }
         a.bladeState = AriusBlade.NONE
         a.sheathed = false
         val side = Vec3d(-front.z, 0.0, front.x)
-        val handShot = a.entityPos.add(0.0, 1.25, 0.0)
-        val cameraFrom = f.clampToArena(handShot.add(front.multiply(3.4)).add(side.multiply(1.8)), 2.0)
-        val cameraTo = f.clampToArena(handShot.add(front.multiply(2.8)).add(side.multiply(1.0)), 2.0)
-        scene?.line(cameraFrom, cameraTo, handShot, handShot.add(front.multiply(0.25)), 40, 48.0, 48.0)
+        val handShot = a.entityPos.add(0.0, 1.38, 0.0)
+        val cameraFrom = f.clampToArena(handShot.add(front.multiply(4.3)).add(side.multiply(1.95)), 2.0)
+        val cameraTo = f.clampToArena(handShot.add(front.multiply(3.8)).add(side.multiply(1.55)), 2.0)
+        scene?.line(cameraFrom, cameraTo, handShot, handShot.add(0.0, 0.3, 0.0), 46, 53.0, 53.0)
         a.play(AriusPose.FORGE_ICE, 12)
         shown { f.sceneText("forge_ice", 53) }
         wait(12)
@@ -1014,7 +1013,8 @@ class Scenes(private val f: EirholmFight) {
         wait(18)
         a.bladeState = AriusBlade.ICE
         cue("resonance.chime", vault, 2f, 1.4f)
-        wait(10)
+        wait(16)
+        scene?.once { dev.henny.hha.logic.boss.Cine.title(it, "hha_arius.cine.heir", "hha_arius.cine.heir.sub", 70) }
         cue("transform.pulse", vault, 5f)
         shown { f.fx(FxKind.CLEAR_WAVE, vault, a = 12f, life = 22) }
         shown { Vfx.shockwave(f.world, Vfx.Style.HEAVEN, vault, 12f, 20, 1.5f) }
@@ -1681,7 +1681,7 @@ class Scenes(private val f: EirholmFight) {
         val belt = f.calls.boss(pace = Telegraph.Pace.ROOM).line(from, to, 3.4f, 50)
         a.sheathed = false
         a.play(AriusPose.IAI_STANCE)
-        for (p in f.audience()) Cine.title(listOf(p), "hha_arius.feat.last_horizon", "hha_arius.feat.last_horizon.sub", 48)
+        for (p in f.audience()) Cine.title(listOf(p), "hha_arius.feat.last_horizon", "hha_arius.feat.last_horizon.sub", 30)
         horizonCharge(a, dir, belt.ticks)
         wait(belt.ticks - 6)
         a.play(AriusPose.SPIN_CUT, 6)

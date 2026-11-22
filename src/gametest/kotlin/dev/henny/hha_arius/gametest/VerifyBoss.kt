@@ -184,6 +184,7 @@ class VerifyBoss : FabricClientGameTest {
         tick(12)
         shot("forge_forming")
         check(waitUntil(25, 1) { server { fight()?.arius?.bladeState == AriusBlade.ICE } })
+        tick(10)
         shot("forge_ice_blade")
     }
 
@@ -246,8 +247,22 @@ class VerifyBoss : FabricClientGameTest {
                 f.moves.summit.debugJumpToLastStand()
             }
             check(waitUntil(1200, 1) { server { fight()?.moves?.summit?.stage == 2 } })
-            faceArius(7.0)
-            burst("climax_horizon", 10, 7)
+            server { srv ->
+                val f = checkNotNull(fight())
+                val a = checkNotNull(f.arius)
+                val c = f.arenaCenter
+                val axis = Vec3d(c.x - a.x, 0.0, c.z - a.z).normalize()
+                val offset = Vec3d(-axis.z, 0.0, axis.x).multiply(7.8)
+                val at = Vec3d(c.x, f.floorY, c.z).add(offset).add(axis.multiply(4.5))
+                val yaw = (Math.toDegrees(atan2(c.z - at.z, c.x - at.x)) - 90.0).toFloat()
+                player(srv).teleport(f.world, at.x, at.y, at.z, emptySet(), yaw, 8f, false)
+                for ((i, b) in bots.withIndex()) {
+                    val bot = srv.playerManager.getPlayer(b.id) ?: continue
+                    val spot = f.clampToArena(at.add(offset.multiply(1.0 + i * 0.4)), 1.0)
+                    bot.teleport(f.world, spot.x, spot.y, spot.z, emptySet(), yaw, 0f, false)
+                }
+            }
+            burst("climax_horizon", 12, 6)
             faceArius(2.8)
             val answerFrom = Summit::class.java.getDeclaredField("answerFrom").apply { isAccessible = true }
             val answerUntil = Summit::class.java.getDeclaredField("answerUntil").apply { isAccessible = true }
@@ -264,6 +279,7 @@ class VerifyBoss : FabricClientGameTest {
             log("climax: missed first window, took damage")
             for ((i, state) in listOf(AriusBlade.ICE_CRACKED, AriusBlade.ICE_BROKEN, AriusBlade.NONE).withIndex()) {
                 check(waitUntil(170, 1) { ready() })
+                lookAtArius()
                 shot("climax_answer_${i + 1}")
                 server { srv ->
                     val f = checkNotNull(fight())
@@ -278,10 +294,12 @@ class VerifyBoss : FabricClientGameTest {
                 }
                 check(waitUntil(22, 1) { server { fight()?.arius?.bladeState == state } })
                 tick(5)
+                lookAtArius()
                 shot("climax_blade_${i + 1}")
             }
             check(waitUntil(32, 1) { server { fight()?.moves?.summit?.stage == 3 } })
             tick(18)
+            lookAtArius()
             shot("climax_kneel")
             server { srv ->
                 val f = checkNotNull(fight())
