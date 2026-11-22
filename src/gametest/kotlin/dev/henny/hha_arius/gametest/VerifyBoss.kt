@@ -59,6 +59,7 @@ class VerifyBoss : FabricClientGameTest {
                     "forge" -> forge()
                     "templehorizon" -> templeHorizon()
                     "vaultpace" -> vaultPace()
+                    "fallrecover" -> fallRecovery()
                     "kickpose" -> kickPose()
                     "clash", "laststand", "climax" -> climax()
                     "hole" -> hole(feed = true)
@@ -235,6 +236,27 @@ class VerifyBoss : FabricClientGameTest {
             } else tick(1)
         }
         log("vault: $moves non-idle pose changes, $active/260 ticks in non-idle poses")
+    }
+
+    private fun VerifyKit.fallRecovery() {
+        finaleFight()
+        server { srv ->
+            val f = checkNotNull(fight())
+            f.startDirector(script { while (true) yield(Unit) })
+            f.calls.reset()
+            f.onSummit = true
+            val center = f.arenaCenter
+            val p = player(srv)
+            p.teleport(f.world, center.x, f.floorY - 14.0, center.z, emptySet(), 0f, 0f, false)
+        }
+        check(waitUntil(60, 1) {
+            server { srv ->
+                val f = checkNotNull(fight())
+                val p = player(srv)
+                p.y >= f.floorY - 1.0 && p.entityPos.distanceTo(f.arenaCenter) <= f.arenaRadius
+            }
+        })
+        log("summit fall: fighter was returned to the summit arena")
     }
 
     private fun VerifyKit.climax() {
