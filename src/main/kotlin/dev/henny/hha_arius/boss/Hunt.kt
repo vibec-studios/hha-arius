@@ -1250,14 +1250,16 @@ class Hunt(private val f: EirholmFight) {
                 ?: fallFrom.add(0.0, -8.0, 0.0)
             val startRaw = plannedCatch.subtract(dir.multiply(42.0)).add(valley.multiply(20.0))
             val diveStart = Vec3d(startRaw.x, maxOf(fallFrom.y + 18.0, terrainTop(startRaw, 8) + 12.0), startRaw.z)
-            val pullout = plannedCatch.add(dir.multiply(12.0)).add(valley.multiply(6.0)).add(0.0, 2.0, 0.0)
-            val dropPoint = landing.add(valley.multiply(17.0)).add(0.0, 14.0, 0.0)
+            val pullout = plannedCatch.add(dir.multiply(8.0)).add(valley.multiply(18.0)).add(0.0, 4.0, 0.0)
+            val rise = pullout.add(dir.multiply(10.0)).add(valley.multiply(21.0))
+            val climb = Vec3d(rise.x, maxOf(landing.y + 22.0, terrainTop(rise, 12) + 16.0), rise.z)
+            val dropPoint = landing.add(valley.multiply(25.0)).add(0.0, 20.0, 0.0)
             val exit = dropPoint.add(dir.multiply(30.0)).add(valley.multiply(15.0)).add(0.0, 12.0, 0.0)
             val rawFlight = if (d != null) {
                 val approach = diveStart.subtract(dir.multiply(52.0)).add(valley.multiply(7.0))
                 yieldAll(DragonRail.fly(f, d, listOf(approach, diveStart), speed = 2.3))
                 val dive = d.entityPos.lerp(plannedCatch, 0.56).add(0.0, 1.0, 0.0)
-                DragonRail.spline(listOf(d.entityPos, dive, plannedCatch, pullout, dropPoint, exit))
+                DragonRail.spline(listOf(d.entityPos, dive, plannedCatch, pullout, climb, dropPoint, exit))
             } else emptyList()
             val catchIdx = rawFlight.indices.minByOrNull { rawFlight[it].squaredDistanceTo(plannedCatch) } ?: 0
             val dropIdx = rawFlight.indices.minByOrNull { rawFlight[it].squaredDistanceTo(dropPoint) } ?: 0
@@ -1287,7 +1289,7 @@ class Hunt(private val f: EirholmFight) {
                 script {
                     // Sicht über der Schlucht kurz aufklären, damit Sturz und Rettung nicht im Whiteout verschwinden.
                     f.atmos(AtmosMode.SNOW, 8)
-                    HuntNet.fx(f.audience(), HuntFx.LETTERBOX, far, life = 112)
+                    HuntNet.fx(f.audience(), HuntFx.LETTERBOX, far, life = 160)
 
                     // 1) Am Anker: die Seile reißen im Blitz, Blick über die gespannte Brücke auf Arius (16 Ticks).
                     val knot = far.add(valley.multiply(1.9)).add(0.0, 1.6, 0.0)
@@ -1350,8 +1352,8 @@ class Hunt(private val f: EirholmFight) {
                     if (d != null) {
                         for (p in f.audience()) p.sendMessage(Text.translatable("hha_arius.hunt.rope.caught").formatted(Formatting.AQUA, Formatting.BOLD), true)
                         d.play(NivarisPose.GLIDE)
-                        val rideTicks = 36
-                        val leapTicks = 17
+                        val rideTicks = kotlin.math.ceil((dropS - catchS) / 1.7).toInt().coerceAtLeast(36)
+                        val leapTicks = 26
                         a.play(AriusPose.SEATED)
                         line(climbCam0, climbCam1, catchAt.add(0.0, 2.0, 0.0), landing.add(0.0, 1.4, 0.0),
                             rideTicks + leapTicks + 10, 64.0, 54.0, lookAt = a, lookOffset = 1.3)
