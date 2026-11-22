@@ -245,19 +245,22 @@ class Hunt(private val f: EirholmFight) {
         return candidates.firstOrNull { clearAir(it, 0.65) } ?: candidates.firstOrNull { airAt(it) } ?: beside(i, 0.0, 1.8)
     }
 
-    /** Ihr Auge im Felsspalt der dunklen Höhle: Kamera steht tiefer im Gang, sodass die Felswände das Fenster einrahmen. */
+    /**
+     * Ihr Auge im Felsspalt der dunklen Höhle: Die Kamera steht an der Bergwand genau gegenüber, der Spalt liegt von Anfang
+     * an mitten im Bild und ist schwarz. Sie drückt langsam heran, während sich dahinter das Lid hebt.
+     */
     private fun eyeScene(c: HuntRoute.Cave, u: Double): Script = mini {
         script {
             val i = HuntRoute.indexOfArc(c.a0 + u)
             val slit = beside(i, 6.2, 2.55)
-            val camFrom = safeTunnelCam(c.a0 + (u - 4.8).coerceAtLeast(2.0), -2.2, 1.75)
-            val camTo = safeTunnelCam(c.a0 + (u - 2.3).coerceAtLeast(2.5), -1.8, 2.2)
-            val lookStart = beside(i, 2.2, 2.2)
-            HuntNet.fx(f.audience(), HuntFx.LETTERBOX, slit, life = 68)
-            HuntNet.fx(f.audience(), HuntFx.RUMBLE, slit, a = 0.35f, life = 26)
-            cam(camFrom, camTo, lookStart, slit, 64, 62.0, 50.0)
+            val camFrom = safeTunnelCam(c.a0 + u - 0.9, -1.5, 2.1)
+            val camTo = safeTunnelCam(c.a0 + u - 0.4, 0.2, 2.4)
+            HuntNet.fx(f.audience(), HuntFx.LETTERBOX, slit, life = 92)
+            HuntNet.fx(f.audience(), HuntFx.RUMBLE, slit, a = 0.22f, life = 30)
+            cam(camFrom, camTo, slit, slit, 84, 54.0, 38.0)
+            wait(6)
             eye(c, u, f.players(), 1.35f, out = 6.2)
-            wait(54)
+            wait(76)
             home(12)
             wait(12)
         }
@@ -288,64 +291,46 @@ class Hunt(private val f: EirholmFight) {
     }
 
     /**
-     * Solvane schießt mit eng angelegten Schwingen durch die weite Seehöhle der Dritten Wacht:
-     * 1) Kamera sicher an der Bergwand über dem Gang (nie in Wand/Decke), verfolgt ihren dramatischen Anflug über den
-     *    unterirdischen See auf der Talseite (knapper Vorbeiflug ohne Kamera-Clipping).
-     * 2) Nahtloser Umschnitt: Kamera gleitet ihr durch den Ausgang entgegen in den offenen Alpenhimmel, weiche Rückkehr.
+     * Seit 1.12.0 fliegt sie nicht mehr durch den Gang (ihr Leib passt nicht hinein, dabei schnitt er durch Fels und Kamera):
+     * Aus der Höhle sieht man durch den Eingang, wie sie draußen knapp vorbeischießt. Die Bahn liegt frei über dem Gelände.
+     * Danach füllt ihr Atem die Höhle vom Eingang her ([scare]).
      */
     private fun tunnelScene(d: NivarisEntity, c: HuntRoute.Cave): Script = script {
         dragonBusy = true
         try {
             yieldAll(mini {
                 script {
-                    val up = 3.8 // gut mittig in der 9 Blöcke hohen Seehöhle (kein Boden-/Decken-Clipping)
-                    val speed = 1.55
-                    val wps = ArrayList<Vec3d>()
-                    var u = 4.0
-                    while (u < c.length - 4.0) {
-                        val inLake = c.lakeFrom >= 0 && u in c.lakeFrom..c.lakeTo
-                        val outOff = if (inLake) 1.8 + sin(u * 0.14) * 0.4 else 0.4
-                        wps += beside(HuntRoute.indexOfArc(c.a0 + u), outOff, up)
-                        u += 8.0
+                    val i0 = HuntRoute.indexOfArc(c.a0 + 1.0)
+                    val mouth = pathAt(c.a0)
+                    val valley = beside(i0, 1.0).subtract(point(i0)).let { Vec3d(it.x, 0.0, it.z) }
+                    val out = tangentVec(i0).negate().add(valley.multiply(0.55)).normalize()
+                    val side = Vec3d(-out.z, 0.0, out.x)
+                    val raw = (-3..3).map { k ->
+                        val e = k / 3.0
+                        mouth.add(out.multiply(19.0 + 11.0 * e * e)).add(side.multiply(k * 17.0))
                     }
-                    wps += pathAt(c.a1 + 14.0).add(0.0, up + 3.0, 0.0)
-                    wps += pathAt(c.a1 + 42.0).add(0.0, up + 14.0, 0.0)
-                    val entry = pathAt(c.a0 - 20.0).add(0.0, up + 1.5, 0.0)
-                    f.place(d, entry)
-                    f.face(d, wps.first())
+                    val y = maxOf(mouth.y + 7.0, raw.maxOf { terrainTop(it, 7) + 7.0 })
+                    val wps = raw.map { Vec3d(it.x, y, it.z) }
+                    f.place(d, wps.first())
+                    f.face(d, wps[1])
                     d.flying = true
-                    d.play(NivarisPose.DIVE)
-
-                    val camU = (c.length * 0.56).coerceIn(14.0, c.length - 14.0)
-                    val camA0 = safeTunnelCam(c.a0 + camU, -2.5, 1.7)
-                    val camA1 = safeTunnelCam(c.a0 + (camU + 6.0).coerceAtMost(c.length - 6.0), -2.4, 2.0)
-                    val lookIn = beside(HuntRoute.indexOfArc(c.a0 + 6.0), 0.6, up)
-                    val pass = ((20.0 + camU + 3.0) / speed).toInt().coerceIn(22, 60)
-
-                    HuntNet.fx(f.audience(), HuntFx.LETTERBOX, camA0, life = pass + 46)
-                    HuntNet.fx(f.audience(), HuntFx.RUMBLE, camA0, a = 0.55f, life = pass)
-                    cam(camA0, camA1, lookIn, beside(HuntRoute.indexOfArc(c.a0 + camU), 1.8, up), pass, 64.0, 72.0, lookAt = d, lookOffset = 2.0)
-                    cue("nivaris.roar", camA0, 5f, 0.8f)
-                    cue("nivaris.wing", camA0, 4f, 0.6f)
-
-                    val flight = DragonRail.fly(f, d, wps, speed).iterator()
+                    d.play(NivarisPose.GLIDE)
+                    val speed = 1.7
+                    val pass = (102.0 / speed).toInt() + 4
+                    val camA = safeTunnelCam(c.a0 + 6.5, 0.0, 1.6)
+                    val camB = safeTunnelCam(c.a0 + 4.2, 0.2, 1.8)
+                    HuntNet.fx(f.audience(), HuntFx.LETTERBOX, camA, life = pass + 24)
+                    HuntNet.fx(f.audience(), HuntFx.RUMBLE, camA, a = 0.45f, life = pass)
+                    cam(camA, camB, wps[2].add(0.0, 1.0, 0.0), wps[4].add(0.0, 1.0, 0.0), pass, 66.0, 56.0)
+                    cue("nivaris.wing", mouth, 4f, 0.6f)
                     var n = 0
-                    var switched = false
-                    while (flight.hasNext()) {
-                        flight.next()
+                    for (step in DragonRail.fly(f, d, wps, speed)) {
                         n++
-                        if (n == pass - 4) {
-                            HuntNet.fx(f.audience(), HuntFx.NEAR_MISS, camA1, life = 16)
-                            cue("nivaris.wing", camA1, 5f, 0.78f)
+                        if (n == pass / 2) {
+                            cue("nivaris.roar", mouth, 5f, 0.8f)
+                            HuntNet.fx(f.audience(), HuntFx.NEAR_MISS, mouth, life = 16)
                         }
-                        if (!switched && n >= pass) {
-                            switched = true
-                            val camB0 = safeTunnelCam(c.a0 + (camU + 4.0).coerceAtMost(c.length - 10.0), -2.1, 2.2)
-                            val camB1 = safeTunnelCam(c.a0 + (c.length - 7.0).coerceAtLeast(camU + 6.0), -1.8, 3.0)
-                            val exitSky = pathAt(c.a1 + 26.0).add(0.0, up + 10.0, 0.0)
-                            cam(camB0, camB1, pathAt(c.a1 + 4.0).add(0.0, up + 1.5, 0.0), exitSky, 40, 72.0, 58.0, lookAt = d, lookOffset = 2.2)
-                        }
-                        yield(Unit)
+                        yield(step)
                     }
                     home(12)
                     wait(12)
@@ -2256,4 +2241,10 @@ class Hunt(private val f: EirholmFight) {
     fun debugInScene(): Boolean = inScene
 
     fun debugPending(): Boolean = pendingScene != null
+
+    /** Verschließt alle Höhlen sofort; liefert je Höhle Punkt davor und Punkt dahinter (Prüfung auf Sackgassen). */
+    fun debugSealAll(): List<Pair<Vec3d, Vec3d>> = caves.map { run ->
+        if (!run.sealed) sealInstant(run, emptyList())
+        pathAt(run.c.a0 + 1.0) to pathAt(run.c.a0 + run.c.plugTo + 2.0)
+    }
 }

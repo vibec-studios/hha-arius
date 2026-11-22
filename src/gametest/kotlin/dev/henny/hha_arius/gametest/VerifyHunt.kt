@@ -55,6 +55,7 @@ class VerifyHunt : FabricClientGameTest {
         if ("arius" in parts) ariusRoute(h, spans[0].second + 40.0)
         if ("tunnel" in parts) caves.firstOrNull { it.first == "LAKE" }?.let { tunnel(h, it.second, it.third) }
         if ("fan" in parts) bridge(h, spans[1], "b3")
+        if ("seal" in parts) sealedCaves(h)
         log("fertig")
     }
 
@@ -122,6 +123,37 @@ class VerifyHunt : FabricClientGameTest {
         val t0 = System.nanoTime()
         repeat(n) { c.gameRenderer.render(delta, true) }
         (System.nanoTime() - t0) / (n * 1e6)
+    }
+
+    /** Nach dem Einsturz muss von vor dem Geröll ein begehbarer Weg (2 hoch, Stufen bis 1) hinter das Geröll führen. */
+    private fun VerifyKit.sealedCaves(h: Hunt) {
+        val pairs = server { h.debugSealAll() }
+        tick(5)
+        val results = server {
+            val w = fight()!!.world
+            fun low(p: BlockPos): Boolean { val s = w.getBlockState(p).getCollisionShape(w, p); return s.isEmpty || s.getMax(net.minecraft.util.math.Direction.Axis.Y) <= 0.5 }
+            fun stand(p: BlockPos) = low(p) && w.getBlockState(p.up()).getCollisionShape(w, p.up()).isEmpty && !w.getBlockState(p.down()).getCollisionShape(w, p.down()).isEmpty
+            pairs.map { (a, b) ->
+                val goal = BlockPos.ofFloored(b.x, b.y + 0.05, b.z)
+                val start = BlockPos.ofFloored(a.x, a.y + 0.05, a.z)
+                val seen = hashSetOf(start)
+                val queue = ArrayDeque(listOf(start))
+                var found = false
+                while (queue.isNotEmpty() && seen.size < 40000 && !found) {
+                    val c = queue.removeFirst()
+                    if (c.getSquaredDistance(goal) <= 4.0) found = true
+                    for (dx in -1..1) for (dz in -1..1) for (dy in -1..1) {
+                        if ((dx == 0) == (dz == 0)) continue
+                        val q = c.add(dx, dy, dz)
+                        if (kotlin.math.abs(q.x - start.x) > 34 || kotlin.math.abs(q.z - start.z) > 34 || q in seen || !stand(q)) continue
+                        seen.add(q)
+                        queue.addLast(q)
+                    }
+                }
+                found
+            }
+        }
+        log("Eingestürzte Höhlen mit freiem Weg: ${results.count { it }} von ${results.size}: $results")
     }
 
     private fun VerifyKit.reachHunt(): Hunt? {

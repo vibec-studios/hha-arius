@@ -82,7 +82,7 @@ def lid(px, x, y, y0, upper, rng, grain):
     if not upper:
         v = 1 - v
     # v = 1 ist die Lidkante in der Mitte; zu den Seiten zieht sie sich zum Augenwinkel.
-    edge = 1.0 - 0.34 * u * u
+    edge = 0.55 + 0.45 * u * u
     if v > edge:
         px[x, y] = (0, 0, 0, 0)
         return
