@@ -1714,12 +1714,14 @@ class Scenes(private val f: EirholmFight) {
                 a.eyeGlow = 100
                 val toSpire = flatDir(a.entityPos, spireHead)
                 val side = Vec3d(-toSpire.z, 0.0, toSpire.x)
-                val eye = a.entityPos.add(0.0, 1.7, 0.0)
-                // A) Tief hinter Arius' Schulter steil hinauf zur Eisspitze, um die Solvane gewunden thront (42 Ticks).
-                scene.line(
-                    eye.add(toSpire.multiply(-6.2)).add(side.multiply(2.4)).add(0.0, -0.2, 0.0),
-                    eye.add(toSpire.multiply(-8.6)).add(side.multiply(3.2)).add(0.0, 1.2, 0.0),
-                    spireMid.add(0.0, -4.0, 0.0), spireMid, 42, 68.0, 66.0,
+                // Establish the whole perch from beyond the crown. Keep the lens
+                // outside the ice even as the framing moves toward the neck.
+                val axis = f.abs(Vec3d.of(ArenaLayout.SPIRE)).add(0.5, -ArenaLayout.SPIRE.y.toDouble(), 0.5)
+                val perchCenter = axis.add(0.0, ArenaLayout.SPIRE_TOP - 25.0, 0.0)
+                scene.rawLine(
+                    axis.add(34.0, ArenaLayout.SPIRE_TOP - 16.0, -48.0),
+                    axis.add(25.0, ArenaLayout.SPIRE_TOP - 13.0, -43.0),
+                    perchCenter, perchCenter.add(0.0, 3.0, 0.0), 42, 56.0, 51.0,
                 )
                 wait(8)
                 shown { f.say("dragon.return", 50) }
@@ -1732,10 +1734,10 @@ class Scenes(private val f: EirholmFight) {
                 cue("nivaris.inhale", spireHead, 4f, 0.65f)
                 wait(22)
                 // B) Totale auf die Eisspitze: Solvane zerfällt oben im Licht und verschwindet am Höhepunkt.
-                val spireCam0 = f.abs(Vec3d(ArenaLayout.SPIRE.x - 39.0, ArenaLayout.SPIRE_TOP - 7.0, ArenaLayout.SPIRE.z - 25.0))
-                val spireCam1 = f.abs(Vec3d(ArenaLayout.SPIRE.x - 32.0, ArenaLayout.SPIRE_TOP - 3.0, ArenaLayout.SPIRE.z - 21.0))
-                scene.rawLine(spireCam0, spireCam1, spireMid, spireMid.lerp(spireHead, 0.35), 34, 57.0, 52.0)
-                wait(8)
+                val spireCam0 = axis.add(-47.0, ArenaLayout.SPIRE_TOP - 7.0, -37.0)
+                val spireCam1 = axis.add(-37.0, ArenaLayout.SPIRE_TOP - 5.0, -31.0)
+                scene.rawLine(spireCam0, spireCam1, perchCenter, perchCenter.add(0.0, 4.0, 0.0), 46, 51.0, 48.0)
+                wait(20)
                 d.fadeOut(25)
                 Entrance.storyFx(f, FxKind.DRAGON_DISSOLVE, spireHead, spireMid, a = 8f, life = RETURN_PEAK + 34)
                 Entrance.storyFx(f, FxKind.BLIZZARD, spireMid, a = 14f, life = 36)
