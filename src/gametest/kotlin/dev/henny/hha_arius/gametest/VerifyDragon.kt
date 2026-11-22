@@ -68,7 +68,16 @@ class VerifyDragon : FabricClientGameTest {
             if (f.nivaris == null) f.spawnNivaris(c.add(0.0, 2.0, 6.0), 0f)
         }
         settle(240)
-        server { fight()?.let { f -> f.startDirector(f.scenes.finale()) } }
+        server { srv ->
+            val f = fight() ?: return@server
+            val c = f.arenaCenter
+            val p = player(srv)
+            if (p.entityPos.squaredDistanceTo(c) > 18.0 * 18.0) {
+                p.teleport(f.world, c.x + 3.0, c.y, c.z + 6.0, emptySet(), 180f, -10f, false)
+            }
+            f.arius?.let { f.place(it, c) }
+            f.startDirector(f.scenes.finale())
+        }
         film("return", 190, 4)
     }
 
