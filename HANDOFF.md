@@ -16,7 +16,7 @@ git switch wip/1.14-phase1
 ./gradlew build runClientGameTest
 ```
 
-## 2. Wie der Besitzer arbeitet und was er will
+## 2. Arbeitsweise und Wünsche des Besitzers
 
 Der Besitzer spielt den Kampf selbst, nimmt Videos auf und schreibt kurzes, direktes Feedback auf Deutsch. Beurteilt wird das Ergebnis **im Spiel**, nicht anhand von Testberichten.
 
