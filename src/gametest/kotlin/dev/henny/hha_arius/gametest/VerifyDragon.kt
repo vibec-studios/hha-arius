@@ -54,6 +54,17 @@ class VerifyDragon : FabricClientGameTest {
             stopFight()
         }
         if ("route" in scenes) routeScene()
+        if ("continuity" in scenes) {
+            val splitProp = System.getProperty("arius.verify.split", "both").lowercase()
+            if (splitProp == "open" || splitProp == "both") {
+                continuityScene(splitOpen = true, captureFrames = true)
+                stopFight()
+            }
+            if (splitProp == "closed" || splitProp == "both") {
+                continuityScene(splitOpen = false, captureFrames = splitProp == "closed")
+                stopFight()
+            }
+        }
     }
 
     /** Stage the actors on the summit immediately before filming the handoff to the blade. */
@@ -455,5 +466,314 @@ class VerifyDragon : FabricClientGameTest {
         film("ridetop", 96, 12, before = { if (n++ % 4 == 0) poseCam() })
         server { Cine.end(listOf(player(it))) }
         film("ride_end", 1500, 24) { phase() < EirholmFight.Phase.VAULT }
+    }
+
+    /**
+     * Durchgehende numerische Kontinuitätsprüfung + dichte Standbilder über die gesamte Solvane-Übergangssequenz
+     * (Auftritt/Beschwörung → Nadel → Sturzflug → Landung → Rammstoß & Eisdorn-Fang → Flug in den Horst → Fassrolle
+     * → Arius-Absprung → Bremslandung), wahlweise mit offenem oder geschlossenem Bergschnitt.
+     */
+    private fun VerifyKit.continuityScene(splitOpen: Boolean, captureFrames: Boolean) {
+        val tag = if (splitOpen) "open" else "closed"
+        startFull()
+        server { srv ->
+            val f = fight() ?: return@server
+            f.startDirector(emptySequence())
+            Cine.end(f.audience())
+            if (splitOpen) f.scenes.split(animate = false) else f.scenes.restoreSplitInstant()
+            val a = f.arius
+            if (a != null) {
+                f.place(a, f.abs(dev.henny.hha_arius.arena.ArenaLayout.WATCH_SEAT))
+                a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
+                a.bladeState = dev.henny.hha_arius.boss.AriusBlade.HELD
+                a.sheathed = false
+                a.play(dev.henny.hha_arius.boss.AriusPose.IDLE)
+            }
+            val p = player(srv)
+            val land = f.abs(dev.henny.hha_arius.arena.ArenaLayout.LANDING[0])
+            p.teleport(f.world, land.x, land.y, land.z, emptySet(), 180f, -4f, false)
+            p.onLanding()
+        }
+        tick(16)
+        settle(240)
+        server { fight()?.let { f -> f.startDirector(f.scenes.arrival()) } }
+
+        // 5 Pflicht-Kennzahlen über die gesamte Sequenz Tick für Tick:
+        var maxSegMove = 0.0
+        var maxSegInfo = "none"
+        val topMoves = ArrayList<Pair<Double, String>>()
+        var segSolidSamples = 0
+        var segSolidLogged = 0
+        var camSolidTicks = 0
+        var camSolidLogged = 0
+        var playerBodyTicks = 0
+        var playerBodyLogged = 0
+        var maxFootSlide = 0.0
+        var maxFootInfo = "none"
+
+        var prevPts: Array<Vec3d>? = null
+        var prevRadii: DoubleArray? = null
+        var prevDragonId = -1
+        var prevMode = -1
+        var planted = false
+        var landIdx = 0
+        var foreAnchor: Vec3d? = null
+        var hindAnchor: Vec3d? = null
+
+        var inCarry = false
+        var carryStartTick = -1
+        var rollStartTick = -1
+        var dismountSeenTick = -1
+        var aerieNearTick = -1
+        var aerieLandedTick = -1
+        var wasAriusPerched = false
+        val shotsTaken = HashMap<String, Int>()
+        fun take(prefix: String): String {
+            val n = shotsTaken.getOrDefault(prefix, 0)
+            shotsTaken[prefix] = n + 1
+            return "${prefix}_%03d".format(n)
+        }
+
+        fun distPointToSeg(p: Vec3d, a: Vec3d, b: Vec3d): Double {
+            val ab = b.subtract(a)
+            val len2 = ab.lengthSquared()
+            val t = if (len2 < 1e-8) 0.0 else (p.subtract(a).dotProduct(ab) / len2).coerceIn(0.0, 1.0)
+            return p.distanceTo(a.add(ab.multiply(t)))
+        }
+
+        fun isSolid(world: net.minecraft.world.World, pos: Vec3d): Pair<Boolean, String> {
+            val bp = net.minecraft.util.math.BlockPos.ofFloored(pos)
+            val st = world.getBlockState(bp)
+            if (st.isAir) return false to ""
+            val solid = !st.getCollisionShape(world, bp).isEmpty && st.isSolidBlock(world, bp)
+            return solid to st.block.translationKey
+        }
+
+        var seqTick = 0
+        val maxTicks = 1750
+        while (seqTick < maxTicks) {
+            val ph = phase()
+            if (ph >= EirholmFight.Phase.GLACIER && aerieLandedTick >= 0 && seqTick > aerieLandedTick + 32) break
+            // Aktuellen Server-Zustand (Entitäten, Welt, Herkunft) lesen.
+            data class SSnap(
+                val origin: net.minecraft.util.math.BlockPos,
+                val aerie: Vec3d,
+                val dId: Int,
+                val dMode: Int,
+                val dPose: Int,
+                val dFlying: Boolean,
+                val dRoll: Float,
+                val dPos: Vec3d?,
+                val pPos: Vec3d,
+                val pMounted: Boolean,
+                val pInvis: Boolean,
+                val aMounted: Boolean,
+            )
+            val s = server { srv ->
+                val f = fight() ?: return@server null
+                val d = f.nivaris
+                val p = player(srv)
+                val a = f.arius
+                SSnap(
+                    f.origin,
+                    f.abs(Vec3d.of(dev.henny.hha_arius.arena.ArenaLayout.AERIE)).add(0.5, 0.0, 0.5),
+                    d?.id ?: -1,
+                    d?.mode ?: -1,
+                    d?.pose ?: -1,
+                    d?.flying ?: false,
+                    d?.bodyRoll ?: 0f,
+                    d?.entityPos,
+                    p.entityPos,
+                    d != null && p.vehicle === d,
+                    p.hasStatusEffect(net.minecraft.entity.effect.StatusEffects.INVISIBILITY),
+                    d != null && a?.vehicle === d,
+                )
+            } ?: break
+
+            if (s.aMounted) wasAriusPerched = true
+            if (!inCarry && landIdx >= 1 && (s.dPose == dev.henny.hha_arius.boss.NivarisPose.TAKEOFF || s.dFlying)) {
+                inCarry = true
+                carryStartTick = seqTick
+            }
+            if (inCarry && rollStartTick < 0 && kotlin.math.abs(s.dRoll) > 0.08f) rollStartTick = seqTick
+            if (inCarry && wasAriusPerched && !s.aMounted && dismountSeenTick < 0) dismountSeenTick = seqTick
+            if (inCarry && aerieNearTick < 0 && s.dPos != null && s.dPos.distanceTo(s.aerie) < 55.0) aerieNearTick = seqTick
+            if (inCarry && aerieLandedTick < 0 && !s.dFlying && s.dPos != null && s.dPos.distanceTo(s.aerie) < 6.0) aerieLandedTick = seqTick
+
+            // Entscheiden, ob in diesem Tick ein Standbild für eine der 11 Prüfungen gemacht wird.
+            var shotName: String? = null
+            if (captureFrames) {
+                val ct = if (carryStartTick >= 0) seqTick - carryStartTick else -1
+                shotName = when {
+                    // Item 1: Schwert-Erwachen (Arius hebt Solvane, Edge FX, Blade Stream)
+                    seqTick in 44..136 && seqTick % 4 == 0 -> take("i01_sword")
+                    // Item 2: Sturm/Whiteout-Aufbau + erste Silhouette + Enthüllung
+                    seqTick in 118..226 && seqTick % 4 == 0 -> take("i02_storm")
+                    // Item 3: Nadel-Hängeschüsse (Klauen, Flügel, Kopf, Brüllen)
+                    seqTick in 228..444 && seqTick % 6 == 0 -> take("i03_spire")
+                    // Item 4: Sturzflug & Wand-Freiheit beim Auftritt
+                    seqTick in 446..636 && seqTick % 6 == 0 -> take("i04_dive")
+                    // Item 5: Anflug → Landung ohne Teleport/Snap (Übergang UNCOIL → NORMAL + Aufsetzen)
+                    !inCarry && seqTick in 620..735 && seqTick % 3 == 0 -> take("i05_land1")
+                    // Item 6: Rammstoß + Hochschleudern + verzweifelter Fang am Eisdorn
+                    ct in 0..54 && ct % 2 == 0 -> take("i06_ram")
+                    // Item 7: Abheben mit glattem Rücken (keine Buckel)
+                    ct in 16..88 && ct % 3 == 0 -> take("i07_takeoff")
+                    // Item 8: Südtor-, Obelisk-, Tempel- und Hochland-Freiheit
+                    ct in 36..156 && ct % 4 == 0 -> take("i08_wall")
+                    // Item 9: Fassrolle & freier Abwurf im Horst
+                    rollStartTick >= 0 && seqTick in (rollStartTick - 2)..(rollStartTick + 48) && (seqTick - rollStartTick) % 2 == 0 -> take("i09_roll")
+                    // Item 10: Arius' tiefer Vorbeiflug & Absprung auf sein Podest
+                    dismountSeenTick >= 0 && seqTick in (dismountSeenTick - 8)..(dismountSeenTick + 36) && (seqTick - dismountSeenTick) % 2 == 0 -> take("i10_arius")
+                    // Item 11: Bremslandung im Horst ohne Fußrutschen
+                    aerieNearTick >= 0 && (aerieLandedTick < 0 || seqTick <= aerieLandedTick + 26) && seqTick % 2 == 0 -> take("i11_land2")
+                    else -> null
+                }
+            } else if (!splitOpen && seqTick in 228..444 && seqTick % 12 == 0) {
+                // Auch bei geschlossenem Berg Nadel-Standbilder sichern (intakte Eisspitze + Klauengriff prüfen).
+                shotName = take("closed_i03_spire")
+            }
+
+            // Ein Frame rendern (mit oder ohne Screenshot), damit DragonHits & Kamera genau diesem Tick entsprechen.
+            if (shotName != null) {
+                shot(shotName)
+            } else {
+                client { c ->
+                    c.gameRenderer.render(net.fabricmc.fabric.mixin.client.gametest.screenshot.DeltaTrackerDefaultValueAccessor.create(1f), true)
+                }
+                tick()
+            }
+
+            // Jetzt Client-Daten (Kamera + gerenderte Körperglieder aus DragonHits) auslesen und prüfen.
+            val camPos = client { c -> c.gameRenderer.camera.cameraPos }
+            val bodyData = client { _ ->
+                if (s.dId < 0) null else {
+                    val pts = dev.henny.hha_arius.client.fx.DragonHits.points(s.dId)?.map { it }?.toTypedArray()
+                    val rad = dev.henny.hha_arius.client.fx.DragonHits.radii(s.dId)?.copyOf()
+                    if (pts != null && rad != null) pts to rad else null
+                }
+            }
+
+            // (3) Kamera in soliden Blöcken prüfen (auf Server-Welt, die garantiert geladen ist).
+            server { srv ->
+                val f = fight() ?: return@server
+                val w = f.world
+                val (camHit, camBlk) = isSolid(w, camPos)
+                if (camHit) {
+                    camSolidTicks++
+                    if (camSolidLogged++ < 20) {
+                        log("[$tag] CAM_SOLID t=$seqTick rel=${fmt(camPos.subtract(s.origin.x.toDouble(), s.origin.y.toDouble(), s.origin.z.toDouble()))} blk=$camBlk")
+                    }
+                }
+
+                if (bodyData != null) {
+                    val (pts, rad) = bodyData
+                    // (1) Größte Tick-Bewegung jedes Glieds 0..40 (Kopf bis Schwanzspitze) bei gleichem Drachen.
+                    if (prevPts != null && prevRadii != null && prevDragonId == s.dId) {
+                        for (i in pts.indices) {
+                            val seg = i.coerceAtMost(rad.lastIndex)
+                            if (rad[seg] <= 0.0 || prevRadii!![seg] <= 0.0) continue
+                            val dMove = pts[i].distanceTo(prevPts!![i])
+                            if (dMove > maxSegMove) {
+                                maxSegMove = dMove
+                                maxSegInfo = "t=$seqTick seg=$i mode=$prevMode->${s.dMode} pose=${s.dPose} fly=${s.dFlying} from=${fmt(prevPts!![i])} to=${fmt(pts[i])}"
+                            }
+                            if (dMove > 2.2) {
+                                topMoves.add(dMove to "t=$seqTick seg=$i mode=$prevMode->${s.dMode} pose=${s.dPose} move=%.2f".format(dMove))
+                            }
+                        }
+                    }
+
+                    // (2) Glied-Proben in soliden Blöcken (alle sichtbaren Glieder + Mittelpunkte).
+                    for (i in 0 until NivarisShape.SEGMENTS) {
+                        if (rad[i] <= 0.0) continue
+                        val a0 = pts[i]
+                        val b0 = pts[i + 1]
+                        for (q in arrayOf(a0, a0.lerp(b0, 0.5))) {
+                            val (hit, blk) = isSolid(w, q)
+                            if (hit) {
+                                segSolidSamples++
+                                if (segSolidLogged++ < 30) {
+                                    log("[$tag] SEG_SOLID t=$seqTick seg=$i mode=${s.dMode} pose=${s.dPose} rel=${fmt(q.subtract(s.origin.x.toDouble(), s.origin.y.toDouble(), s.origin.z.toDouble()))} blk=$blk")
+                                }
+                            }
+                        }
+                    }
+
+                    // (4) Spieler-Überschneidung mit Solvanes Körper (nur wenn Spieler sichtbar und nicht auf Dorn aufgesessen).
+                    if (!s.pInvis && !s.pMounted) {
+                        val probes = arrayOf(
+                            s.pPos.add(0.0, 0.25, 0.0),
+                            s.pPos.add(0.0, 0.9, 0.0),
+                            s.pPos.add(0.0, 1.55, 0.0),
+                        )
+                        var hitBody = false
+                        var hitDetail = ""
+                        outer@ for (i in 0 until NivarisShape.SEGMENTS) {
+                            if (rad[i] <= 0.0) continue
+                            val bodyR = NivarisShape.taper(i) * 6.0 * NivarisShape.SCALE / 16.0
+                            val thresh = bodyR + 0.25
+                            for (pr in probes) {
+                                val dist = distPointToSeg(pr, pts[i], pts[i + 1])
+                                if (dist < thresh) {
+                                    hitBody = true
+                                    hitDetail = "seg=$i dist=%.2f<%.2f mode=${s.dMode} pose=${s.dPose} p=${fmt(s.pPos)} s=${fmt(pts[i])}".format(dist, thresh)
+                                    break@outer
+                                }
+                            }
+                        }
+                        if (hitBody) {
+                            playerBodyTicks++
+                            if (playerBodyLogged++ < 25) log("[$tag] PLAYER_BODY t=$seqTick $hitDetail")
+                        }
+                    }
+
+                    // (5) Größtes Fußrutschen nach dem Aufsetzen (vorn = FORE_GLIED, hinten = HIND_GLIED).
+                    val grounded = s.dMode == dev.henny.hha_arius.boss.NivarisMode.NORMAL && !s.dFlying && rad[NivarisShape.FORE_GLIED] > 0.0
+                    if (grounded) {
+                        val fPos = pts[NivarisShape.FORE_GLIED]
+                        val hPos = pts[NivarisShape.HIND_GLIED]
+                        if (!planted) {
+                            planted = true
+                            landIdx++
+                            foreAnchor = fPos
+                            hindAnchor = hPos
+                        } else {
+                            val fs = hypot(fPos.x - foreAnchor!!.x, fPos.z - foreAnchor!!.z)
+                            val hs = hypot(hPos.x - hindAnchor!!.x, hPos.z - hindAnchor!!.z)
+                            val m = maxOf(fs, hs)
+                            if (m > maxFootSlide) {
+                                maxFootSlide = m
+                                maxFootInfo = "land#$landIdx t=$seqTick fore=%.3f hind=%.3f pose=${s.dPose}".format(fs, hs)
+                            }
+                        }
+                    } else {
+                        planted = false
+                    }
+
+                    prevPts = pts
+                    prevRadii = rad
+                    prevDragonId = s.dId
+                    prevMode = s.dMode
+                }
+            }
+            seqTick++
+        }
+
+        val summary = buildString {
+            appendLine("=== CONTINUITY REPORT (split=$tag, ticks=$seqTick) ===")
+            appendLine("1. max_segment_move_per_tick = %.3f blocks (%s)".format(maxSegMove, maxSegInfo))
+            appendLine("2. segment_samples_in_solid = $segSolidSamples")
+            appendLine("3. camera_ticks_in_solid = $camSolidTicks")
+            appendLine("4. player_ticks_intersecting_body = $playerBodyTicks")
+            appendLine("5. max_foot_slide_planted = %.3f blocks (%s)".format(maxFootSlide, maxFootInfo))
+            if (topMoves.isNotEmpty()) {
+                appendLine("Top moves > 2.2 blocks:")
+                topMoves.sortedByDescending { it.first }.take(10).forEach { appendLine("  ${it.second}") }
+            }
+            appendLine("Frames captured: $shotsTaken")
+        }
+        log(summary)
+        java.io.File(out, "continuity_$tag.txt").writeText(summary)
     }
 }

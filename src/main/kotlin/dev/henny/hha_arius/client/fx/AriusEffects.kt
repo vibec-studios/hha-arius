@@ -121,7 +121,8 @@ abstract class AriusFx(val life: Int) {
                     null
                 }
                 FxKind.KICK_FLING -> {
-                    KickAnim.start(p.e1, p.a, p.b, p.life)
+                    if (p.a < 0f) KickAnim.ramLaunch(p.e1, p.b, p.life)
+                    else KickAnim.start(p.e1, p.a, p.b, p.life)
                     null
                 }
                 FxKind.YANG_RESTORE -> YangRestoreFx(pos, dir, p.a.toDouble().coerceAtLeast(2.0), p.life)
@@ -164,35 +165,67 @@ class Seam(private val from: Vec3d, private val to: Vec3d, private val height: D
     }
 }
 
-/** Weiße Energie verdichtet sich an der Schneide (nicht am Körper). */
+/** Weiße Energie verdichtet sich an der echten Schneide (Klingen-Erwachen). */
 class Edge(private val e: Entity, life: Int) : AriusFx(life) {
     private fun blade(tick: Float): Pair<Vec3d, Vec3d> {
+        BladeAnchors.of(e)?.let { return it.base to it.tip }
         val pos = e.getLerpedPos(tick)
         val yaw = Math.toRadians(e.yaw.toDouble())
         val right = Vec3d(-cos(yaw), 0.0, -sin(yaw))
-        val base = pos.add(0.0, 1.9, 0.0).add(right.multiply(0.35))
-        val tip = base.add(0.0, 1.2, 0.0).add(right.multiply(0.5))
+        val base = pos.add(0.0, 2.0, 0.0).add(right.multiply(0.32))
+        val tip = base.add(0.0, 1.35, 0.0)
         return base to tip
     }
 
     override fun tick(world: ClientWorld) {
         val (base, tip) = blade(1f)
         val r = random()
-        repeat((3 * particlesAllowed()).toInt()) {
-            val target = base.lerp(tip, r.nextDouble())
-            val from = target.add(r.nextDouble() * 4 - 2, r.nextDouble() * 3 - 1, r.nextDouble() * 4 - 2)
-            val v = target.subtract(from).multiply(0.12)
-            world.addParticleClient(ParticleTypes.END_ROD, from.x, from.y, from.z, v.x, v.y, v.z)
+        val k = (age.toFloat() / life.coerceAtLeast(1)).coerceIn(0f, 1f)
+        repeat(((2 + 3 * k) * particlesAllowed()).toInt().coerceAtLeast(1)) {
+            val along = (r.nextDouble() * (0.25 + 0.75 * k)).coerceIn(0.0, 1.0)
+            val target = base.lerp(tip, along)
+            val ang = r.nextDouble() * PI * 2.0
+            val rad = 0.7 + r.nextDouble() * 1.4
+            val from = target.add(cos(ang) * rad, (r.nextDouble() - 0.5) * 0.8, sin(ang) * rad)
+            val v = target.subtract(from).multiply(0.14)
+            val type = if (r.nextInt(3) == 0) ParticleTypes.END_ROD else ParticleTypes.SNOWFLAKE
+            world.addParticleClient(type, from.x, from.y, from.z, v.x, v.y, v.z)
         }
     }
 
     override fun render(d: VfxDraw, matrices: MatrixStack, t: Float) {
-        val k = (t / life).coerceIn(0f, 1f)
+        val k = (t / life.coerceAtLeast(1)).coerceIn(0f, 1f)
+        val fade = min(1f, t / 3f).coerceIn(0f, 1f) * min(1f, (life - t) / 4f).coerceIn(0f, 1f)
+        if (fade <= 0.01f) return
         val (base, tip) = blade(d.tickDelta)
-        val glow = withAlpha(WHITE, 0.4f + 0.6f * k)
-        d.tube(AriusLayers.INK, listOf(base, tip), { 0.05 + 0.05 * k }, { withAlpha(0xFF144B78.toInt(), 0.55f * k) })
-        d.tube(AriusLayers.VFX_GLOW, listOf(base, tip), { 0.045 + 0.065 * k }, { glow })
-        d.billboard(AriusLayers.VFX_FLARE, tip.lerp(base, 0.3), 0.5 + 1.3 * k, withAlpha(ICE, 0.9f * k))
+        val axis = tip.subtract(base)
+        val len = axis.length()
+        if (len < 1e-4) return
+        val dir = axis.multiply(1.0 / len)
+        var side = dir.crossProduct(UP)
+        if (side.lengthSquared() < 1e-4) side = X
+        side = side.normalize()
+        val ortho = dir.crossProduct(side).normalize()
+        val reach = (0.22 + 0.78 * k).coerceIn(0.0, 1.0)
+        val litTip = base.lerp(tip, reach)
+        val pts = List(9) { i -> base.lerp(litTip, i / 8.0) }
+        // Schmaler, eng an der Klinge anliegender Frostglanz (kein schwebender Balken daneben).
+        d.tube(AriusLayers.VFX_GLOW, pts, { u ->
+            val taper = sin(u * PI).coerceAtLeast(0.15)
+            (0.014 + 0.022 * k) * taper
+        }, { u -> withAlpha(WHITE, fade * (0.28f + 0.62f * k) * (0.4f + 0.6f * u)) }, sides = 6)
+        // Steigender Erwachens-Funke an der Schneide entlang bis zur Spitze.
+        val glint = base.lerp(tip, (0.12 + 0.88 * k).coerceIn(0.0, 1.0))
+        d.billboard(AriusLayers.VFX_FLARE, glint, 0.28 + 0.72 * k, withAlpha(WHITE, fade * (0.55f + 0.45f * k)))
+        d.billboard(VfxLayers.GLOW_ADD, glint, 0.55 + 0.95 * k, withAlpha(ICE, fade * 0.55f * k))
+        // Feine Frostfunken, die eng um die Klinge spiralen.
+        for (i in 0 until 4) {
+            val ph = ((t * 0.09 + i * 0.25) % 1.0)
+            val ang = t * 0.35 + i * PI * 0.5
+            val rad = (0.24 - 0.14 * ph) * (1.15 - 0.5 * k)
+            val p = base.lerp(litTip, ph).add(side.multiply(cos(ang) * rad)).add(ortho.multiply(sin(ang) * rad))
+            d.billboard(AriusLayers.VFX_FLARE, p, 0.11 + 0.08 * k, withAlpha(ICE, fade * (0.4f + 0.5f * k) * sin(ph * PI).toFloat()))
+        }
     }
 }
 

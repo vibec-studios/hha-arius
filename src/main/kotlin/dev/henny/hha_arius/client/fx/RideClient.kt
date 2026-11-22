@@ -56,7 +56,7 @@ object RideClient {
     /** Letzte freie Weltposition von Spielern vor dem Aufsitzen (für weichen Aufsprung statt Pop-In). */
     private val lastFreePos = HashMap<Int, Vec3d>()
 
-    private class MountAnim(val from: Vec3d, val startTick: Int, val duration: Float)
+    private class MountAnim(val from: Vec3d, val startTick: Int, val duration: Float, val arc: Double = 3.4)
     private val mountAnims = HashMap<Int, MountAnim>()
 
     private class ActionAnim(val action: Int, val startTick: Int, val duration: Float)
@@ -102,7 +102,11 @@ object RideClient {
                 mountAnims.remove(p.entityId)
             } else {
                 grips[p.entityId] = p.grip
-                p.pickup?.let { mountAnims[p.entityId] = MountAnim(it, clientTick, MOUNT_TICKS) }
+                p.pickup?.let {
+                    // grip == 1 mit pickup: verzweifeltes Fangen im Fall (kurzes Einhaken ohne Schwebebogen).
+                    val quick = p.grip == 1
+                    mountAnims[p.entityId] = MountAnim(it, clientTick, if (quick) CATCH_TICKS else MOUNT_TICKS, if (quick) 0.25 else 3.4)
+                }
             }
         }
         ClientPlayNetworking.registerGlobalReceiver(RideSeatS2C.ID) { p, ctx ->
@@ -320,7 +324,7 @@ object RideClient {
         if (m != null && m.duration > 0.1f) {
             val k = mountProgress(passenger.id).toDouble()
             if (k < 0.999) {
-                val arc = sin(k * PI) * 3.4
+                val arc = sin(k * PI) * m.arc
                 return m.from.lerp(target, k).add(0.0, arc, 0.0)
             }
         }
@@ -516,6 +520,9 @@ object RideClient {
 
     /** So lange dauert der sichtbare Bogen, mit dem der Lichtstrom einen Spieler an seinen Dorn zieht. */
     private const val MOUNT_TICKS = 26f
+
+    /** Kurzes Einhaken beim verzweifelten Fangen im Fall (Übergang I → II). */
+    private const val CATCH_TICKS = 6f
 
     /** Plätze (Eisdorne), für die Griffpunkte gerechnet werden. */
     private const val SEATS = 8

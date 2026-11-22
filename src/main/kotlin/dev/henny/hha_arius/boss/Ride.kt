@@ -169,6 +169,57 @@ object RideSeats {
         syncPassengers(f, d)
     }
 
+    /** Verzweifeltes Fangen im Fall: Spieler hakt sich mit kurzem Ruck (grip = 1) am Eisdorn ein. */
+    fun catchSpike(f: EirholmFight, d: NivarisEntity, p: ServerPlayerEntity) {
+        val from = p.entityPos
+        Hold.drop(p)
+        if (!p.startRiding(d, true, true)) return
+        for (watcher in f.audience()) {
+            if (ServerPlayNetworking.canSend(watcher, RideGripS2C.ID)) {
+                ServerPlayNetworking.send(watcher, RideGripS2C(p.id, 1, from))
+            }
+            if (ServerPlayNetworking.canSend(watcher, RideActionS2C.ID)) {
+                ServerPlayNetworking.send(watcher, RideActionS2C(p.id, RideAction.HIT, 16))
+            }
+        }
+        syncPassengers(f, d)
+    }
+
+    /** Griff festigen (nach dem verzweifelten Fangen am Dorn). */
+    fun secureGrip(f: EirholmFight, p: ServerPlayerEntity) {
+        broadcastGrip(f, p.id, 2)
+        for (watcher in f.audience()) {
+            if (ServerPlayNetworking.canSend(watcher, RideActionS2C.ID)) {
+                ServerPlayNetworking.send(watcher, RideActionS2C(p.id, RideAction.BRACE, 14))
+            }
+        }
+    }
+
+    /**
+     * Abwurf bei der Fassrolle: setzt den Spieler an den abgerollten seitlichen Ablösepunkt (klar neben dem Körper)
+     * und schleudert ihn im selben Tick frei von Solvane Richtung [target] (kein Durchfallen durch ihren Rumpf).
+     */
+    fun throwRider(f: EirholmFight, p: ServerPlayerEntity, releasePos: Vec3d, target: Vec3d, lift: Double) {
+        Hold.drop(p)
+        if (Cine.muted) {
+            p.teleport(f.world, target.x, target.y, target.z, emptySet(), p.yaw, p.pitch, false)
+            p.onLanding()
+            return
+        }
+        p.teleport(f.world, releasePos.x, releasePos.y, releasePos.z, emptySet(), p.yaw, p.pitch, false)
+        Hold.allowLong(p, 90)
+        val vel = Ballistic.velocity(releasePos, target, lift)
+        Hold.launch(p, vel, 80, landing = target, fallback = target)
+        p.fallDistance = 0.0
+        // Im Folgetick die Geschwindigkeit noch einmal bestätigen, falls Vanilla-StopRiding sie überschreibt.
+        f.task(script {
+            yield(Unit)
+            if (!p.isAlive || p.entityWorld !== f.world || p.hasVehicle()) return@script
+            dev.henny.hha.logic.Fx.launchPlayer(p, Ballistic.velocity(p.entityPos, target, lift * 0.92))
+            p.fallDistance = 0.0
+        })
+    }
+
     /** Release the rider before sending launch velocity so the client no longer applies passenger movement. */
     fun landRider(f: EirholmFight, p: ServerPlayerEntity, target: Vec3d, lift: Double) {
         Hold.drop(p)

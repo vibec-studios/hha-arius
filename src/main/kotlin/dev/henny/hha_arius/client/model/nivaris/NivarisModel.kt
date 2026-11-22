@@ -151,13 +151,26 @@ class NivarisModel(root: ModelPart) : EntityModel<NivarisRenderState>(root) {
      */
     fun animateChildren(state: NivarisRenderState) {
         val p = state.p
-        val clinging = state.mode == NivarisModeC.RETURN_COIL
+        val returnCling = state.mode == NivarisModeC.RETURN_COIL
+        val spireGrip = state.mode == NivarisModeC.COIL
         val deg = MathHelper.RADIANS_PER_DEGREE
-        fun tuck(v: Float) = if (clinging) 1f else MathHelper.clamp(v / 1.1f, 0f, 1f)
-        for ((legs, k) in listOf(foreJoints to tuck(p[FORE]), hindJoints to tuck(p[HIND]))) {
-            for (leg in legs) {
-                leg.getOrNull(0)?.set(pitch = -20f * deg * k)
-                leg.getOrNull(1)?.set(pitch = 50f * deg * k)
+        fun tuck(v: Float) = if (returnCling) 1f else MathHelper.clamp(v / 1.1f, 0f, 1f)
+        if (spireGrip) {
+            // Klauen greifen sichtbar flach an die Eiskanten der Nadel (kein Zucken oder Baumeln).
+            for (leg in foreJoints) {
+                leg.getOrNull(0)?.set(pitch = 16f * deg)
+                leg.getOrNull(1)?.set(pitch = -14f * deg)
+            }
+            for (leg in hindJoints) {
+                leg.getOrNull(0)?.set(pitch = -14f * deg)
+                leg.getOrNull(1)?.set(pitch = 12f * deg)
+            }
+        } else {
+            for ((legs, k) in listOf(foreJoints to tuck(p[FORE]), hindJoints to tuck(p[HIND]))) {
+                for (leg in legs) {
+                    leg.getOrNull(0)?.set(pitch = -20f * deg * k)
+                    leg.getOrNull(1)?.set(pitch = 50f * deg * k)
+                }
             }
         }
         val age = state.age
@@ -345,9 +358,18 @@ class NivarisModel(root: ModelPart) : EntityModel<NivarisRenderState>(root) {
                 p[PITCH] += sin(age * 2.0f) * 0.03f * k
             }
             NivarisPose.LAND -> {
-                // Aufprall: der Kopf schwingt nach unten nach und federt gedämpft zurück, der Körper staucht.
                 val since = t - w
-                if (since >= 0f) {
+                if (since < 0f) {
+                    // Brems-Flügelschlag vor dem Aufsetzen: weit gespreizt, starker Gegenschlag, Klauen nach vorn gereckt.
+                    val k = MathHelper.clamp(t / max(w, 1f), 0f, 1f)
+                    val brake = sin(k * Math.PI.toFloat() * 2.5f)
+                    p[WING] = 1f
+                    p[FLAP] = 0.25f + brake * 0.78f
+                    p[FORE] = MathHelper.lerp(k, -0.45f, -0.72f)
+                    p[HIND] = MathHelper.lerp(k, -0.25f, -0.45f)
+                    p[REAR] += (1f - k) * 0.65f
+                } else {
+                    // Aufprall: der Kopf schwingt nach unten nach und federt gedämpft zurück, der Körper staucht.
                     val spring = exp(-since * 0.16f) * sin(since * 0.5f)
                     p[UP] -= spring * 0.9f
                     p[PITCH] += spring * 0.3f
@@ -552,6 +574,8 @@ class NivarisBody {
     private var smoothHead: Vec? = null
     private var smYaw = Float.NaN
     private var speed = 0.0
+    private var wasFlying = false
+    private var takeoffOdo = -100.0
 
     /** Aktueller Bodenhub je Punkt (siehe [normal]). */
     private val lift = DoubleArray(POINTS)
@@ -570,7 +594,7 @@ class NivarisBody {
         val origin = ArenaLayout.origin(slot)
         val o = Vec(origin.x.toDouble(), origin.y.toDouble(), origin.z.toDouble())
 
-        // Wechsel der Darstellung: weich überblenden, beim Übergang in den Kampf die Spur aus dem letzten Körper säen.
+        // Wechsel der Darstellung: weich überblenden, beim Übergang in den Kampf die Spur exakt aus dem letzten Körper säen.
         if (lastMode != -1 && mode != lastMode) {
             startFade(now)
             lastE = null
@@ -580,9 +604,21 @@ class NivarisBody {
                 var od = odo
                 ground = 0f
                 restLive = false
+                wasFlying = e.flying
+                speed = 0.75
+                lift.fill(0.0)
+                takeoffOdo = odo - 40.0
                 for (k in NECK until l.size) {
                     trail.addLast(Node(l[k], od))
                     od -= NivarisShape.SEGMENT
+                }
+                lastSpine = l[NECK]
+                if (l.size > 1) smoothHead = l[0].subtract(l[1]).normalizeOr(Vec(0.0, 0.0, -1.0))
+                if (l.size > NECK + 1) {
+                    val fwd = l[NECK].subtract(l[NECK + 1])
+                    if (fwd.x * fwd.x + fwd.z * fwd.z > 1e-4) {
+                        smYaw = (Math.toDegrees(kotlin.math.atan2(fwd.z, fwd.x)) - 90.0).toFloat()
+                    }
                 }
             }
         }
@@ -619,10 +655,12 @@ class NivarisBody {
                 coilPoly(poly, o, r.toDouble(), now)
                 sample(poly, pts, ups, 0, 0.0)
                 headFwd = if (mode == NivarisModeC.UNCOIL && u > 0.5) {
-                    EntrancePathC.tangent(u).add(0.0, -0.12, 0.0).normalize()
+                    EntrancePathC.tangent(u).add(0.0, -0.06, 0.0).normalize()
                 } else {
-                    // Blick nach Norden auf das Plateau, die Neigung aus der Pose (ruhend: auf der Windung).
-                    yawPitch(Math.PI.toFloat() + p[NivarisModel.YAW], p[NivarisModel.PITCH] + 0.15f * (1f - r))
+                    // Kopf folgt knickfrei der Halsrichtung und blickt über die Arena im Norden.
+                    val neckDir = pts[0].subtract(pts[1]).normalizeOr(Vec(0.0, 0.0, -1.0))
+                    val arenaLook = yawPitch(Math.PI.toFloat() + p[NivarisModel.YAW], (p[NivarisModel.PITCH] * 0.55f + 0.18f * (1f - r)).coerceIn(-0.45f, 0.35f))
+                    neckDir.lerp(arenaLook, 0.65).normalizeOr(arenaLook)
                 }
                 smYaw = s.bodyYaw
                 for (i in 0 until POINTS) air[i] = if (mode == NivarisModeC.UNCOIL && i * NivarisShape.SEGMENT < u) {
@@ -632,28 +670,33 @@ class NivarisBody {
             else -> headFwd = normal(e, s, p, base, dt, now, pts, ups, air)
         }
 
-        // Schräglage in Kurven (Flug) und Rückenseite am Hals nach hinten (aufgerichteter Hals zeigt den Kamm).
+        // Schräglage in Kurven (Flug) und Rückenseite am Hals nach hinten; an der Nadel bleibt die radiale Außenrichtung sauber erhalten.
+        val onSpire = mode == NivarisModeC.COIL || mode == NivarisModeC.RETURN_COIL
         for (i in 0 until POINTS) {
             var up = ups[i]
-            if (air[i] > 0.01f && i in 1 until POINTS - 1) {
-                val k = pts[i - 1].add(pts[i + 1]).subtract(pts[i].multiply(2.0))
-                // Schräglage begrenzt (höchstens ~30°): enge Kurven kippen den Körper nicht um 90°.
-                var bank = Vec(k.x, 0.0, k.z).multiply(2.0 * air[i])
-                if (bank.length() > 0.55) bank = bank.normalize().multiply(0.55)
-                up = up.add(bank)
+            if (!onSpire) {
+                if (air[i] > 0.01f && i in 1 until POINTS - 1) {
+                    val k = pts[i - 1].add(pts[i + 1]).subtract(pts[i].multiply(2.0))
+                    // Schräglage begrenzt (höchstens ~30°): enge Kurven kippen den Körper nicht um 90°.
+                    var bank = Vec(k.x, 0.0, k.z).multiply(2.0 * air[i])
+                    if (bank.length() > 0.55) bank = bank.normalize().multiply(0.55)
+                    up = up.add(bank)
+                }
+                val back = max(0f, 1f - i / 6f) * 0.5
+                ups[i] = up.subtract(headFwd.multiply(back)).normalizeOr(UP_V)
+            } else {
+                ups[i] = up.normalizeOr(UP_V)
             }
-            val back = max(0f, 1f - i / 6f) * 0.5
-            ups[i] = up.subtract(headFwd.multiply(back)).normalizeOr(UP_V)
         }
 
-        // Überblendung nach Wechsel/Sprung.
+        // Überblendung nach Wechsel/Sprung (Prüfung an der Schulter, damit lange Schwanzschwenks die Blende nicht abbrechen).
         fadeFrom?.let { from ->
             val k = (now - fadeAt) / 22f
             if (k >= 1f || from.size != POINTS) {
                 fadeFrom = null
             } else {
-                val far = (0 until POINTS).maxOf { from[it].squaredDistanceTo(pts[it]) }
-                if (far > 60.0 * 60.0) {
+                val headJump = from[NECK].squaredDistanceTo(pts[NECK])
+                if (headJump > 45.0 * 45.0) {
                     fadeFrom = null // Überspringen/Neustart: kein Geisterstreifen quer durchs Bild
                 } else {
                     val t = smooth(k).toDouble()
@@ -665,7 +708,7 @@ class NivarisBody {
 
         // Endgültige Rahmen und Werte für den Renderer (mit parallelem Transport + Fassrolle).
         val bodyRoll = e.rollAt(tickDelta).toDouble()
-        val fr = frames(pts, ups, now, air, bodyRoll, mode == NivarisModeC.RETURN_COIL)
+        val fr = frames(pts, ups, now, air, bodyRoll, onSpire)
         System.arraycopy(fr, 0, s.frame, 0, fr.size)
         for (i in 0 until POINTS) {
             s.px[i] = (pts[i].x - s.x).toFloat()
@@ -755,12 +798,8 @@ class NivarisBody {
             if (top > world.bottomY + 1) groundY = minOf(top, s.y) else if (groundY.isNaN()) groundY = s.y - 40.0
         }
         val alt = (s.y - groundY).coerceAtLeast(0.0)
-        val wantGround = when {
-            !e.flying -> 1f
-            e.pose == NivarisPose.LAND && alt < 8.0 -> MathHelper.clamp(((8.0 - alt) / 8.0).toFloat() * 0.65f, 0f, 0.65f)
-            else -> 0f
-        }
-        val groundRate = if (!e.flying || e.pose == NivarisPose.LAND) dt / 10f else dt / 16f
+        val wantGround = if (!e.flying) 1f else 0f
+        val groundRate = if (!e.flying) dt / 12f else dt / 16f
         ground = if (ground < 0f) wantGround else approach(ground, wantGround, groundRate)
 
         // Wegstand und Tempo.
@@ -768,6 +807,21 @@ class NivarisBody {
         lastSpine = spine
         odo += step
         if (dt > 1e-3f) speed += (step / dt - speed) * (1.0 - kotlin.math.exp(-dt * 0.2))
+
+        // Beim Abheben vom Boden die Flugspur exakt aus dem tatsächlich liegenden Körper säen (keine Buckel/Sprünge!).
+        if (e.flying && !wasFlying) {
+            startFade(now)
+            takeoffOdo = odo
+            last?.let { l ->
+                trail.clear()
+                var od = odo
+                for (k in NECK until l.size) {
+                    trail.addLast(Node(l[k], od))
+                    od -= NivarisShape.SEGMENT
+                }
+            }
+        }
+        wasFlying = e.flying
 
         // Spur: neu gespawnt gerade nach hinten.
         if (trail.isEmpty()) {
@@ -783,7 +837,8 @@ class NivarisBody {
         else if (spine.squaredDistanceTo(trail.first().p) > 1e-6) trail.addFirst(Node(spine, odo))
         trimTrail()
 
-        // Schlängeln im Flug: Welle je Spurpunkt nach seinem Wegstand (steht im Raum), hinter dem Hals eingeblendet.
+        // Schlängeln im Flug: Welle je Spurpunkt nach seinem Wegstand, beim Abheben erst sanft einblenden.
+        val flightWave = smooth(MathHelper.clamp(((odo - takeoffOdo) / 28.0).toFloat(), 0f, 1f)).toDouble()
         val poly = Poly()
         poly.add(spine, UP_V)
         run {
@@ -794,7 +849,7 @@ class NivarisBody {
                 if (k > 0) arc += trail[k - 1].p.distanceTo(q)
                 val tan = trail[max(0, k - 2)].p.subtract(trail[minOf(n - 1, k + 2)].p).normalizeOr(f)
                 val side = Vec(tan.z, 0.0, -tan.x).normalizeOr(Vec(1.0, 0.0, 0.0))
-                val ramp = smooth(MathHelper.clamp(((arc - 5.0) / 16.0).toFloat(), 0f, 1f)).toDouble()
+                val ramp = smooth(MathHelper.clamp(((arc - 5.0) / 16.0).toFloat(), 0f, 1f)).toDouble() * flightWave
                 val ph = trail[k].odo
                 val lat = ramp * LAT_AIR * kotlin.math.sin(ph * WAVE_LAT)
                 val ver = ramp * VER_AIR * kotlin.math.sin(ph * WAVE_VER + 1.1)
@@ -811,7 +866,9 @@ class NivarisBody {
         val nearFloor = 1.0 - (alt / 11.0).coerceIn(0.0, 1.0)
         val landFlatten = nearFloor * smooth(ground).toDouble()
         val fYaw = DoubleArray(BODY)
+        val rawYaw = DoubleArray(BODY)
         val fPitch = DoubleArray(BODY)
+        val bendLimit = MathHelper.lerp(ground.coerceIn(0f, 1f), MAX_BEND.toFloat(), MAX_BEND_GROUND.toFloat()).toDouble()
         for (k in 0 until BODY) {
             val d = tmpP[k + 1].subtract(tmpP[k])
             val flat = kotlin.math.sqrt(d.x * d.x + d.z * d.z)
@@ -820,12 +877,14 @@ class NivarisBody {
             // Bei Landung oder knapp über dem Boden: nach oben zeigende Spur abflachen, damit der Schwanz nicht in den Himmel steht.
             if (pitch > 0.0 && landFlatten > 0.01) pitch *= (1.0 - landFlatten * 0.92)
             fPitch[k] = if (k == 0) pitch else fPitch[k - 1] + (pitch - fPitch[k - 1]).coerceIn(-MAX_BEND, MAX_BEND)
-            fYaw[k] = if (k == 0) backYaw + wrapRad(yaw - backYaw).coerceIn(-0.72, 0.72)
-            else fYaw[k - 1] + wrapRad(yaw - fYaw[k - 1]).coerceIn(-MAX_BEND, MAX_BEND)
+            fYaw[k] = if (k == 0) backYaw + wrapRad(yaw - backYaw).coerceIn(-0.95, 0.95)
+            else fYaw[k - 1] + wrapRad(yaw - fYaw[k - 1]).coerceIn(-bendLimit, bendLimit)
+            rawYaw[k] = if (k == 0) backYaw + wrapRad(yaw - backYaw).coerceIn(-1.15, 1.15)
+            else rawYaw[k - 1] + wrapRad(yaw - rawYaw[k - 1]).coerceIn(-MAX_BEND_GROUND, MAX_BEND_GROUND)
         }
 
-        // Bodenform: gleitet vom aktuellen Verlauf in die vorgegebene Form.
-        updateRest(world, e, spine, f, fYaw, dt)
+        // Bodenform: gleitet vom aktuellen Verlauf in die vorgegebene Form (beim Aufsetzen exakt die echte Anflugkurve übernehmen).
+        updateRest(world, e, spine, f, rawYaw, dt)
         val w = smooth(ground).toDouble()
 
         // Endgültige Richtungen und Aufsummieren ab der Rumpfmitte (mit hartem Gelenk-Knicklimit gegen Falten).
@@ -847,10 +906,13 @@ class NivarisBody {
             val u = i / POINTS.toDouble()
             yaw += (1.0 - w) * idle * (0.012 + 0.03 * u) * kotlin.math.sin(now * 0.12 - i * 0.38)
             pitch += (1.0 - w) * idle * (0.01 + 0.02 * u) * kotlin.math.sin(now * 0.09 - i * 0.3 + 1.3)
-            yaw += w * 0.014 * kotlin.math.sin(now * 0.05 - i * 0.35)
+            // Am Boden bleiben Vorder- und Hinterläufe fest stehen; nur der Schwanz hinter den Hinterläufen wiegt sanft.
+            val tailSway = smooth(MathHelper.clamp((i - NivarisShape.HIND_GLIED) / 7f, 0f, 1f)).toDouble()
+            yaw += w * tailSway * 0.014 * kotlin.math.sin(now * 0.05 - i * 0.35)
             if (sw > 0.0) yaw += kotlin.math.sin(sw * 2.0 * Math.PI) * 0.45 * smooth(MathHelper.clamp((i - 10) / 18f, 0f, 1f))
             // Harte Winkelbegrenzung je Gelenk: Körper knickt nie zurück durch Hals oder Kopf.
-            yaw = if (k == 0) backYaw + wrapRad(yaw - backYaw).coerceIn(-0.75, 0.75)
+            val neckClamp = MathHelper.lerp(w.toFloat(), 0.95f, 1.15f).toDouble()
+            yaw = if (k == 0) backYaw + wrapRad(yaw - backYaw).coerceIn(-neckClamp, neckClamp)
             else prevYaw + wrapRad(yaw - prevYaw).coerceIn(-maxJoint, maxJoint)
             prevYaw = yaw
             val cp = kotlin.math.cos(pitch)
@@ -941,26 +1003,35 @@ class NivarisBody {
      */
     private fun updateRest(world: net.minecraft.world.World, e: dev.henny.hha_arius.boss.NivarisEntity, spine: Vec, f: Vec, fYaw: DoubleArray, dt: Float) {
         if (e.flying) {
-            // In der Luft folgt die Bodenform dem Flug, damit die Landung von der echten Lage aus beginnt.
-            if (ground <= 0.01f) {
-                System.arraycopy(fYaw, 0, restYaw, 0, BODY)
-                restLive = false
-                restAnchor = null
-            }
+            // In der Luft folgt die Bodenform immer dem echten Anflug, damit die Landung ohne Seitwärtssprung ansetzt.
+            System.arraycopy(fYaw, 0, restYaw, 0, BODY)
+            System.arraycopy(fYaw, 0, restTarget, 0, BODY)
+            restLive = false
+            restAnchor = null
             return
         }
         if (!restLive) {
             System.arraycopy(fYaw, 0, restYaw, 0, BODY)
+            System.arraycopy(fYaw, 0, restTarget, 0, BODY)
             restBase = fYaw[0]
             restLive = true
-            restAnchor = null
+            // Prüfen, ob die gelandete Lage bereits ganz auf freiem Boden liegt: dann fest verankern (0 Fußrutschen!).
+            var bad = 0
+            var x = spine.x
+            var z = spine.z
+            for (k in 0 until BODY) {
+                x += kotlin.math.cos(fYaw[k]) * NivarisShape.SEGMENT
+                z += kotlin.math.sin(fYaw[k]) * NivarisShape.SEGMENT
+                val top = world.getTopY(net.minecraft.world.Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, MathHelper.floor(x), MathHelper.floor(z)).toDouble()
+                if (top > groundY + 3.5 || top < groundY - 6.0) bad++
+            }
+            restAnchor = if (bad == 0) spine else null
         }
         val moving = speed > 0.55
         if (moving) {
             System.arraycopy(fYaw, 0, restTarget, 0, BODY)
             restAnchor = null
         } else {
-            // Seit 1.12.0 rollt sie sich nie mehr ein (Crix: „nicht so geil, wie er sich einrollt“): liegend eine ruhige Linie.
             val coiled = false
             val back = kotlin.math.atan2(-f.z, -f.x)
             val anchor = restAnchor
@@ -969,11 +1040,15 @@ class NivarisBody {
                 restAnchor = spine
                 restBase = back + wrapRad(restYaw[0] - back).coerceIn(-0.45, 0.45)
                 pickRest(world, spine, back, coiled)
+                for (k in 0 until BODY) restTarget[k] = restBase + restHeading(restKind, (k + 0.5) * NivarisShape.SEGMENT) * restSign
+            } else {
+                // Steht der Körper schon sauber auf festem Boden: nur nachziehen, wenn sie sich sehr weit wegdreht.
+                val off = wrapRad(back - restBase)
+                if (kotlin.math.abs(off) > 0.95) {
+                    restBase += off.coerceIn(-0.04 * dt, 0.04 * dt)
+                    for (k in 0 until BODY) restTarget[k] = restBase + restHeading(restKind, (k + 0.5) * NivarisShape.SEGMENT) * restSign
+                }
             }
-            // Körper-Basis immer nah hinter der Blickrichtung halten, damit der Leib nie nach vorn klappt.
-            val off = wrapRad(back - restBase)
-            if (kotlin.math.abs(off) > 0.65) restBase += off.coerceIn(-0.04 * dt, 0.04 * dt)
-            for (k in 0 until BODY) restTarget[k] = restBase + restHeading(restKind, (k + 0.5) * NivarisShape.SEGMENT) * restSign
         }
         val rate = 1.0 - kotlin.math.exp(-dt * (if (moving) 0.4 else 0.11))
         for (k in 0 until BODY) restYaw[k] += wrapRad(restTarget[k] - restYaw[k]) * rate
@@ -1059,24 +1134,29 @@ class NivarisBody {
         while (trail.size > keep) trail.removeLast()
     }
 
-    /** Hals vom Kopfgelenk (ruhend → aufgerichtet nach [raise]) zur Spitze der Helix, dann die Helix hinab. */
+    /** Hals vom Kopfgelenk (ruhend → aufgerichtet nach [raise]) knickfrei zur Schulter der Nadel-Helix, dann die Helix hinab. */
     private fun coilPoly(poly: Poly, o: Vec, raise: Double, now: Float) {
-        val axis = o.add(ArenaLayout.SPIRE.x + 0.5, 0.0, ArenaLayout.SPIRE.z + 0.5)
-        val h = o.add(EntrancePathC.HEAD_REST.lerp(EntrancePathC.HEAD_RAISED, raise)).add(0.0, kotlin.math.sin(now * 0.05) * 0.25 * (1.0 - raise), 0.0)
-        val c1 = o.add(EntrancePathC.coil(1.0))
-        val t1 = c1.subtract(o.add(EntrancePathC.coil(0.995))).normalize()
+        val spine = EntrancePathC.coilSpine()
+        val h = o.add(EntrancePathC.HEAD_REST.lerp(EntrancePathC.HEAD_RAISED, raise)).add(0.0, kotlin.math.sin(now * 0.05) * 0.18 * (1.0 - raise), 0.0)
+        val c1 = o.add(spine[0])
+        val c2 = o.add(spine[minOf(6, spine.lastIndex)])
+        // Rückwärts-Tangente an der Schulter (vom Hals die Helix hinab), so schließt der Hals ohne Haarnadel an.
+        val tBack = c2.subtract(c1).normalizeOr(Vec(0.0, -0.35, 0.94))
         val d = h.distanceTo(c1).coerceAtLeast(2.0)
-        val neckUp = Vec(0.0, 1.0, 0.6).normalize()
-        val launch = EntrancePathC.tangent(0.0)
-        val headBack = Vec(0.0, -0.20, 1.0).normalize().lerp(launch.negate(), raise).normalize()
-        bezier(poly, h, h.add(headBack.multiply(0.37 * d)), c1.add(t1.multiply(0.36 * d)), c1, neckUp, 24)
-        var sCoil = 1.0
-        while (sCoil >= 0.0) {
-            val q = o.add(EntrancePathC.coil(sCoil))
-            val radial = Vec(q.x - axis.x, 0.0, q.z - axis.z).normalizeOr(UP_V)
-            val pos = q.add(radial.multiply(0.15 * kotlin.math.sin(now * 0.05 + sCoil * 9.0)))
-            poly.add(pos, radial.multiply(0.9).add(0.0, 0.45, 0.0).normalize())
-            sCoil -= 0.002
+        val headBack = Vec(0.0, -0.22, 1.0).normalize().lerp(EntrancePathC.tangent(0.0).negate(), raise).normalize()
+        val shoulderOut = EntrancePathC.coilOutward(spine[0])
+        val headUp = Vec(-0.25, 0.85, 0.46).normalize().lerp(Vec(0.0, 0.92, 0.39).normalize(), raise).normalize()
+        val steps = 24
+        for (k in 0..steps) {
+            val t = k / steps.toDouble()
+            val m = 1.0 - t
+            val p1 = h.add(headBack.multiply(0.36 * d))
+            val p2 = c1.subtract(tBack.multiply(0.36 * d))
+            val q = h.multiply(m * m * m).add(p1.multiply(3 * m * m * t)).add(p2.multiply(3 * m * t * t)).add(c1.multiply(t * t * t))
+            poly.add(q, headUp.lerp(shoulderOut, t * t * (3.0 - 2.0 * t)).normalizeOr(UP_V))
+        }
+        for (pt in spine) {
+            poly.add(o.add(pt), EntrancePathC.coilOutward(pt))
         }
     }
 

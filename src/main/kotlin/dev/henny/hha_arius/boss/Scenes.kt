@@ -668,7 +668,7 @@ class Scenes(private val f: EirholmFight) {
      * Übergang I → II, Teil 2: Nivaris' Auftritt an der Nadel (Sturm, Enthüllung, Abflug, Landung vor den Landeplätzen,
      * eigene Szene, überspringbar), dann ihr Name und Arius' Zeilen.
      */
-    private fun arrival(): Script = script {
+    fun arrival(): Script = script {
         yieldAll(entrance(f))
         val d = f.nivaris ?: return@script
         val spot = d.entityPos
@@ -679,8 +679,8 @@ class Scenes(private val f: EirholmFight) {
         if (fresh.isNotEmpty()) f.sceneText("dragon", 70, fresh)
         markHeard("scene.dragon")
         wait(70)
-        // Seit 1.10.0: Sie ist gekommen, um sie zu holen – sie senkt sich vor ihnen nieder (der Ritt folgt in [toAerie]).
-        d.play(NivarisPose.LIE_DOWN)
+        // Sie steht gespannt vor den Spielern bereit zum Abholen (der Ritt folgt in [toAerie]).
+        d.play(NivarisPose.IDLE)
         val politeFresh = newcomers("dragon.polite")
         f.say(if (politeFresh.isNotEmpty()) "dragon.polite" else "dragon.polite_short", 80)
         markHeard("dragon.polite")
@@ -691,14 +691,15 @@ class Scenes(private val f: EirholmFight) {
     }
 
     /**
-     * Seit 1.10.0 eine durchgehende Handlung (Crix: „sie landet vor dem Tempel und fliegt eine Sekunde später in ihre
-     * Arena – das ergibt keinen Sinn“): Sie ist **gelandet, um sie zu holen**.
-     * 1. Sie liegt flach vor den Spielern ([arrival]); Arius ruft von der Altarstufe „Bring sie in deinen Horst“.
-     * 2. Ihr Lichtstrom hebt jeden Spieler auf ihren Rücken an seinen Dorn – sie liegt dabei still.
-     * 3. Sie stößt sich ab, steigt über das Plateau und streicht über den Tempel: Arius springt auf ihren Nacken.
-     * 4. Flug zum Horst, die Kamera fliegt neben ihr her; der dunkle Sturmhimmel des Horsts zieht auf.
-     * 5. Ankunft: ein weiter Kreis über dem Kessel (nie enger als ihr Körper), schwere Landung in der Mitte, die Spieler
-     *    springen ab, Arius auf seinen Felspfeiler. Titelkarte.
+     * Seit 1.10.0 eine durchgehende Handlung: Sie ist **gelandet, um sie zu holen**.
+     * 1. Kurzes Ducken und Anlauf vor den Spielern; Arius ruft von der Altarstufe „Bring sie in deinen Horst“.
+     * 2. Solvane rammt mit vollem Tempo auf die Spieler zu: der Aufprall schleudert jeden Spieler hoch in die Luft,
+     *    im Fallen fängt sich jeder verzweifelt am Eisdorn auf ihrem Rücken und hält sich fest.
+     * 3. Geschmeidiger, knickfreier Aufstieg westlich am Südtor und an allen Strukturen vorbei; Arius springt auf ihren Kopf.
+     * 4. Flug zum Horst über freies Hochland; im Horst rollt sie nach Süden weg und schleudert die Spieler klar neben
+     *    ihrem Körper auf die Landeplätze (kein Durchfallen).
+     * 5. Tiefer Vorbeiflug direkt vor Arius' Felspfeiler: er springt mit Gewicht ab und landet auf dem Podest.
+     * 6. Bremsflug mit weitem Gegenschlag der Schwingen, schweres Aufsetzen ohne Rutschen, Brüllen & Titelkarte.
      */
     private fun toAerie(): Script = script {
         val d = f.nivaris ?: return@script
@@ -706,9 +707,13 @@ class Scenes(private val f: EirholmFight) {
         val aerie = f.abs(Vec3d.of(ArenaLayout.AERIE)).add(0.5, 0.0, 0.5)
         val seat = f.abs(ArenaLayout.AERIE_SEAT)
         val finish = {
-            for (p in f.audience()) if (p.vehicle === d) p.stopRiding()
+            for (p in f.audience()) {
+                Hold.drop(p)
+                if (p.vehicle === d) p.stopRiding()
+            }
             RideSeats.unperch(f, a)
             RideSeats.clear(f)
+            d.bodyRoll = 0f
             d.flying = false
             f.place(d, aerie)
             f.face(d, aerie.add(10.0, 0.0, 0.0))
@@ -731,85 +736,146 @@ class Scenes(private val f: EirholmFight) {
         f.atmos(dev.henny.hha_arius.net.AtmosMode.AERIE, 60)
     }
 
+    /** Exakte Startgeschwindigkeit für genau [ticks] Flugzeit bis [target] unter Vanilla-Spielerphysik (Schwerkraft 0,08 / ×0,98 / ×0,91). */
+    private fun launchForTicks(from: Vec3d, target: Vec3d, ticks: Int): Vec3d {
+        val n = ticks.coerceAtLeast(8)
+        var unitY = 0.0
+        var uv = 1.0
+        var gravY = 0.0
+        var gv = 0.0
+        repeat(n) {
+            unitY += uv
+            uv *= 0.98
+            gravY += gv
+            gv = (gv - 0.08) * 0.98
+        }
+        val vy = ((target.y - from.y) - gravY) / unitY.coerceAtLeast(1e-3)
+        val reach = (1.0 - Math.pow(0.91, n.toDouble())) / 0.09
+        val vx = (target.x - from.x) / reach
+        val vz = (target.z - from.z) / reach
+        return Vec3d(vx, vy, vz)
+    }
+
     private fun carry(scene: CineScene, d: NivarisEntity, a: AriusEntity, aerie: Vec3d, seat: Vec3d): Script = script {
         val start = d.entityPos
         val perch = a.entityPos
         MusicCue.play(f, "carry", 40)
-        // 1) Sie liegt flach vor ihnen; Arius ruft von der Stufe.
+        // 1) Sie duckt sich sprungbereit vor den Spielern; Arius ruft von der Stufe.
         d.flying = false
-        d.play(NivarisPose.LIE_DOWN)
-        val toward = f.facing(d)
-        val sideD = Vec3d(-toward.z, 0.0, toward.x)
+        d.bodyRoll = 0f
+        d.play(NivarisPose.TAKEOFF, 18)
+        f.face(d, start.add(0.0, 0.0, -20.0))
         val riders = f.players()
-        val mid = if (riders.isEmpty()) start.add(toward.multiply(10.0)) else riders.map { it.entityPos }.fold(Vec3d.ZERO) { acc, v -> acc.add(v) }.multiply(1.0 / riders.size)
-        // Halbtotale von der Seite: sie flach im Schnee, davor die Spieler.
-        val look0 = start.lerp(mid, 0.4).add(0.0, 1.5, 0.0)
-        scene.line(look0.add(sideD.multiply(26.0)).add(0.0, 6.5, 0.0), look0.add(sideD.multiply(21.0)).add(0.0, 5.0, 0.0), look0, look0.add(0.0, 1.5, 0.0), 96, 62.0, 56.0)
+        val midRaw = if (riders.isEmpty()) f.abs(ArenaLayout.LANDING[0])
+            else riders.map { it.entityPos }.fold(Vec3d.ZERO) { acc, v -> acc.add(v) }.multiply(1.0 / riders.size)
+        val ramRelX = (midRaw.x - f.origin.x).coerceIn(-6.5, 6.5)
+        val ramRelZ = (midRaw.z - f.origin.z).coerceIn(-23.5, -14.5)
+        val ramPos = f.abs(Vec3d(ramRelX, 0.0, ramRelZ))
+        // Halbtotale tief von schräg vorn (frei von den Vorhof-Laternen bei (-8,-25)/(-9,-19)): Spieler im Vordergrund, Solvane duckt sich.
+        val cam0From = ramPos.add(-12.5, 4.4, 2.0)
+        val cam0To = ramPos.add(-11.5, 5.2, 3.5)
+        scene.line(cam0From, cam0To, start.lerp(ramPos, 0.45).add(0.0, 2.2, 0.0), start.lerp(ramPos, 0.65).add(0.0, 2.4, 0.0), 26, 62.0, 56.0)
         shown { f.say("dragon.carry", 60) }
         cue("resonance.chime", perch, 3f, 1.1f)
         d.eyeGlow = 100
-        wait(16)
-        // 2) Der Lichtstrom zieht jeden sichtbar im Bogen an seinen Dorn (nacheinander, von der Seite gefilmt).
-        val mounted = HashSet<java.util.UUID>()
         RideSeats.assign(f)
-        for ((i, p) in f.players().withIndex()) {
-            if (i > 0) wait(9)
-            if (!p.isAlive || p.isRemoved) continue
-            mounted.add(p.uuid)
-            shown { f.fx(FxKind.THREAD, p.entityPos, life = 34, e1 = p, e2 = d) }
-            cue("resonance.chime", p.entityPos, 1.6f, 1.3f + i * 0.05f)
-            RideSeats.pickUp(f, d, p)
-        }
-        wait(40)
-        // 3) Sie stößt sich ab, streicht über den Tempel, Arius springt auf ihren Kopf. Seit 1.11.0 ist der ganze Flug eine
-        //    einzige Bahn ([DragonRail]): über das Plateau, nach Westen, in weitem Bogen um den Kessel und von Westen herein.
-        d.play(NivarisPose.TAKEOFF, 6)
-        f.farSound("nivaris.wing", start, 5f, 0.7f)
-        f.farSound("nivaris.roar", start, 5f, 0.9f)
-        f.calls.roomShake(start, 3f, 50f)
-        wait(6)
-        d.flying = true
-        d.play(NivarisPose.GLIDE)
-        val toD = flatDir(perch, start)
-        val pickup = perch.add(0.0, 22.0, 0.0).add(toD.multiply(6.0))
-        // Seit 1.12.0 durch die Ostöffnung hinein (vorher quer über den Felsrand) und in einem weiten Bogen zur Mitte,
-        // immer südlich der Rippen.
+        wait(18)
+        f.farSound("nivaris.wing", start, 5f, 0.72f)
+        f.farSound("nivaris.roar", start, 5f, 0.92f)
+        f.calls.roomShake(start, 3.5f, 52f)
+
+        // 2) Eine durchgehende, glatte Flugbahn:
+        //    - gerader Tiefanlauf über offenen Schnee durch die Spieler (Rammstoß)
+        //    - weiter, knickfreier Linksbogen WESTLICH am Südtor, Vorhof-Laternen, Obelisk und Tempel vorbei
+        //    - hoher Vorbeiflug über dem Hochland durch die Ostöffnung in den Horst
+        //    - Abwurf-Fassrolle NÖRDLICH von AERIE_LANDING (schleudert Spieler sauber nach Süden raus)
+        //    - tiefer Vorbeiflug vor Arius' Felspfeiler (AERIE_SEAT) und Bremslandung in der Horstmitte.
+        val dropTarget = aerie.add(62.0, 18.0, -13.0)
+        val ariusPass = aerie.add(4.0, 17.5, -70.0)
+        val ariusPickup = f.abs(Vec3d(-25.0, 25.0, -56.0))
         val route = DragonRail.spline(listOf(
-            start, start.add(toward.multiply(20.0)).add(0.0, 7.0, 0.0), pickup,
-            aerie.add(176.0, 45.0, 8.0), aerie.add(123.0, 31.0, 0.0), aerie.add(88.0, 23.0, 0.0),
-            aerie.add(56.0, 19.0, 4.0), aerie.add(30.0, 18.0, 31.0),
-            aerie.add(-24.0, 16.0, 43.0), aerie.add(-56.0, 13.0, 23.0),
-            aerie.add(-53.0, 9.0, -5.0), aerie.add(-29.0, 4.0, -2.0), aerie,
+            start,
+            f.abs(Vec3d(ramRelX * 0.65, 0.5, -10.5)),
+            f.abs(Vec3d(ramRelX - 3.0, 4.2, -20.0)),
+            f.abs(Vec3d(-13.5, 11.5, -27.5)),
+            f.abs(Vec3d(-25.5, 20.0, -39.0)),
+            ariusPickup,
+            f.abs(Vec3d(-46.0, 33.0, -64.0)),
+            f.abs(Vec3d(-108.0, 42.0, -64.0)),
+            f.abs(Vec3d(-180.0, 40.0, -62.0)),
+            aerie.add(96.0, 24.0, -10.0),
+            dropTarget,
+            aerie.add(34.0, 19.0, -54.0),
+            ariusPass,
+            aerie.add(-34.0, 17.5, -60.0),
+            aerie.add(-68.0, 15.0, -16.0),
+            aerie.add(-56.0, 11.5, 20.0),
+            aerie.add(-34.0, 6.5, 10.0),
+            aerie.add(-16.0, 2.5, 2.0),
+            aerie,
         )).toMutableList().apply { this[lastIndex] = aerie }
-        val rail = DragonRail.clearTerrain(route, f.origin, f.floorY, clearance = 9.0,
-            landingTail = (149.0 / DragonRail.STEP).toInt()).toMutableList().apply { this[0] = start }
-        val dropS = rail.indices.minBy { rail[it].squaredDistanceTo(aerie.add(56.0, 19.0, 4.0)) } * DragonRail.STEP
+        // Startstrecke (Rammstoß auf flachem Schnee) und letzter Landeanflug bleiben auf Wunschhöhe; dazwischen volle Struktur-Freiheit.
+        val rail = DragonRail.clearTerrain(
+            route, f.origin, f.floorY, clearance = 8.0,
+            landingTail = (165.0 / DragonRail.STEP).toInt(),
+            structures = true,
+            takeoffHead = (20.0 / DragonRail.STEP).toInt(),
+        ).toMutableList().apply { this[0] = start }
         val len = DragonRail.length(rail)
-        fun pace(q: Double) = when {
-            q < 50.0 -> 0.42 + 0.56 * (q / 50.0)
-            q > len - 70.0 -> 0.42 + 0.56 * ((len - q) / 70.0).coerceIn(0.0, 1.0)
+        val dropS = rail.indices.minBy { rail[it].squaredDistanceTo(dropTarget) } * DragonRail.STEP
+        val passS = rail.indices.minBy { rail[it].squaredDistanceTo(ariusPass) } * DragonRail.STEP
+        val pickupS = rail.indices.minBy { rail[it].squaredDistanceTo(ariusPickup) } * DragonRail.STEP
+
+        // Geschwindigkeitsprofil: sofortiger kraftvoller Rammstoß, ruhiger Reiseflug, knackiges Abbremsen bis zum Stillstand.
+        fun pace(q: Double): Double = when {
+            q < 16.0 -> 0.85 + 0.30 * (q / 16.0)
+            q < 56.0 -> 1.15 - 0.17 * ((q - 16.0) / 40.0)
+            q > len - 24.0 -> {
+                val u = ((len - q) / 24.0).coerceIn(0.0, 1.0)
+                0.14 + 0.84 * u
+            }
             else -> 0.98
         }
-        // Dauer bis zu einer Stelle der Bahn (für die Kameraeinstellungen).
-        fun ticksTo(q: Double): Int {
+        fun advanceQ(startQ: Double, ticks: Int): Double {
+            var q = startQ
+            repeat(ticks) { q = minOf(len, q + pace(q)) }
+            return q
+        }
+        fun ticksTo(targetQ: Double): Int {
             var x = 0.0
             var n = 0
-            while (x < q) { x += pace(x); n++ }
+            while (x < targetQ) { x += pace(x); n++ }
             return n
         }
         val total = ticksTo(len)
-        var arrival = len
+        val landWindup = 26
+        val landStartTick = (total - landWindup).coerceAtLeast(1)
+        var arrivalQ = len
         run {
             var x = len
-            while (x > 0.0 && DragonRail.at(rail, x).distanceTo(aerie) < 118.0) x -= 2.0
-            arrival = x
+            while (x > 0.0 && DragonRail.at(rail, x).distanceTo(aerie) < 120.0) x -= 2.0
+            arrivalQ = x
         }
-        val tArrive = ticksTo(arrival).coerceAtMost(total - 40)
-        val sweep = (ticksTo(minOf(len, 90.0))).coerceAtMost(tArrive)
-        val sweepDir = flatDir(start, pickup)
-        val sideS = Vec3d(-sweepDir.z, 0.0, sweepDir.x)
-        scene.line(start.add(sideS.multiply(26.0)).add(0.0, 6.0, 0.0).subtract(sweepDir.multiply(4.0)), pickup.add(sideS.multiply(28.0)).add(0.0, 10.0, 0.0),
-            start.add(0.0, 3.0, 0.0), pickup, sweep, 70.0, 66.0, lookAt = d, lookOffset = 3.0)
+        val tArrive = ticksTo(arrivalQ).coerceAtMost(total - 50)
+        val tPickup = ticksTo(pickupS)
+        val tDrop = ticksTo(dropS)
+        val tPass = ticksTo(passS)
+
+        // Los geht's: Kopf tief in den Rammstoß.
+        d.flying = true
+        d.play(NivarisPose.DIVE, 6)
+        // Verfolgungskamera für Rammstoß + Hochschleudern + Fangen am Dorn + Aufstieg am Tempel vorbei.
+        val ramCamTo = f.abs(Vec3d(-36.0, 21.0, -24.0))
+        val ramDur = (tPickup + 14).coerceAtMost(tArrive - 10).coerceAtLeast(36)
+        scene.line(cam0To, ramCamTo, ramPos.add(0.0, 2.5, 0.0), ariusPickup.add(0.0, 2.0, 0.0), ramDur, 58.0, 66.0, lookAt = d, lookOffset = 2.8)
+
+        data class InFlightCatch(val player: ServerPlayerEntity, val catchTick: Int, val secureTick: Int, val target: Vec3d)
+        val rammed = HashSet<java.util.UUID>()
+        val mounted = HashSet<java.util.UUID>()
+        val catching = ArrayList<InFlightCatch>()
+        var ramImpactDone = false
+        var ramFirstTick = -1
+
         var q0 = 0.0
         var tick = 0
         var jumpAt = -1
@@ -817,42 +883,120 @@ class Scenes(private val f: EirholmFight) {
         var stormed = false
         var landing = false
         var releaseTick = -1
+        var passShot = false
         var dismountAt = -1
         var dismountFrom = Vec3d.ZERO
+        var ariusLanded = false
+        var ariusSeated = false
+        var landCamSet = false
+
         while (q0 < len) {
             q0 = minOf(len, q0 + pace(q0))
             tick++
             val pos = DragonRail.at(rail, q0)
-            val ahead = DragonRail.at(rail, q0 + 3.0)
+            val ahead = DragonRail.at(rail, minOf(len, q0 + 3.0))
+            val fwd = if (ahead.squaredDistanceTo(pos) > 1e-4) ahead.subtract(pos).normalize() else Vec3d(0.0, 0.0, -1.0)
             f.place(d, pos)
             if (ahead.squaredDistanceTo(pos) > 0.01) f.face(d, ahead)
+
+            // 2a) Rammstoß: sobald Solvanes Schnauze kurz vor dem Spieler ist (vor jeder Körperüberschneidung!),
+            //     kräftiger Kopfstoß → Spieler fliegt hoch in die Luft und fängt im Fallen seinen Eisdorn.
+            val snout = pos.add(fwd.multiply(7.5)).add(0.0, 1.2, 0.0)
+            val forceRam = q0 >= 15.5
+            for ((idx, p) in f.players().withIndex()) {
+                if (!p.isAlive || p.isRemoved || p.uuid in rammed) continue
+                val distSq = p.entityPos.squaredDistanceTo(snout)
+                if (distSq <= 4.4 * 4.4 || (ramFirstTick >= 0 && tick >= ramFirstTick + 3) || forceRam) {
+                    rammed.add(p.uuid)
+                    if (ramFirstTick < 0) ramFirstTick = tick
+                    if (!ramImpactDone) {
+                        ramImpactDone = true
+                        d.play(NivarisPose.GLIDE)
+                        f.farSound("nivaris.land", snout, 5f, 1.15f)
+                        f.farSound("nivaris.roar", snout, 4f, 1.05f)
+                        f.calls.roomShake(snout, 5.5f, 56f)
+                        shown {
+                            Vfx.shockwave(f.world, Vfx.Style.SOUL, p.entityPos.add(0.0, 1.0, 0.0), 10f, 16, 1.5f)
+                            f.fx(FxKind.CLEAR_WAVE, p.entityPos.add(0.0, 0.8, 0.0), a = 12f, life = 16)
+                            f.world.spawnParticles(
+                                net.minecraft.particle.BlockStateParticleEffect(ParticleTypes.BLOCK, net.minecraft.block.Blocks.SNOW_BLOCK.defaultState),
+                                p.x, p.y + 0.6, p.z, 28, 0.8, 0.5, 0.8, 0.22,
+                            )
+                        }
+                    }
+                    val seatIdx = RideSeats.of(p.uuid) ?: idx
+                    val flightTicks = 23 + (seatIdx % 4) * 2
+                    val qFuture = advanceQ(q0, flightTicks)
+                    val segBack = (RideHooks.glied(seatIdx) - 3) * NivarisShape.SEGMENT
+                    val qSpike = (qFuture - segBack).coerceAtLeast(0.0)
+                    // Exakter Zielpunkt direkt über der Dornspitze, damit der Spieler von oben auf den Dorn fällt (0 Rumpf-Kollision).
+                    val spikeTarget = DragonRail.at(rail, qSpike).add(0.0, NivarisShape.SPINE_UP + 2.35, 0.0)
+                    val fromP = p.entityPos.add(0.0, 0.35, 0.0)
+                    val vel = launchForTicks(fromP, spikeTarget, flightTicks)
+                    if (!Cine.muted) {
+                        Hold.drop(p)
+                        Hold.allowLong(p, flightTicks + 14)
+                        Hold.launch(p, vel, flightTicks + 6, fallback = spikeTarget)
+                        p.fallDistance = 0.0
+                        f.fxAll(FxKind.KICK_FLING, p.entityPos, a = -1f, b = flightTicks.toFloat(), life = flightTicks + 4, e1 = p)
+                    }
+                    cue("hold.impact", p.entityPos, 2.2f, 0.85f)
+                    catching.add(InFlightCatch(p, tick + flightTicks, tick + flightTicks + 13, spikeTarget))
+                }
+            }
+
+            // 2b) Verzweifeltes Fangen im Fall: am Zieltick hakt sich der Spieler am Eisdorn ein, kurz danach greift er fest.
+            for (c in catching) {
+                if (!c.player.isAlive || c.player.isRemoved) continue
+                if (tick == c.catchTick && c.player.uuid !in mounted) {
+                    mounted.add(c.player.uuid)
+                    RideSeats.catchSpike(f, d, c.player)
+                    cue("glacier.crack", c.target, 2.0f, 1.35f)
+                    cue("hold.impact", c.target, 1.4f, 1.25f)
+                    shown {
+                        f.world.spawnParticles(ParticleTypes.SNOWFLAKE, c.target.x, c.target.y + 0.8, c.target.z, 14, 0.4, 0.4, 0.4, 0.12)
+                    }
+                } else if (tick == c.secureTick && c.player.vehicle === d) {
+                    RideSeats.secureGrip(f, c.player)
+                }
+            }
             for (p in f.players()) if (releaseTick < 0 && p.uuid in mounted && p.vehicle !== d && p.isAlive) p.startRiding(d, true, true)
-            // Arius springt ab, sobald sie über ihn streicht, und setzt sich auf ihren Kopf.
-            if (!ariusUp && jumpAt < 0 && pos.distanceTo(pickup) < 16.0) {
+
+            // 3) Arius springt von der Altarstufe auf Solvanes Kopf, sobald sie westlich am Tempel vorbei hochzieht.
+            if (!ariusUp && jumpAt < 0 && pos.distanceTo(ariusPickup) < 15.0) {
                 jumpAt = tick
                 a.play(AriusPose.LAUNCH, 6)
-                cue("arius.wind_step", perch, 3f, 0.8f)
+                cue("arius.wind_step", perch, 3f, 0.85f)
             }
             if (jumpAt > 0 && !ariusUp) {
-                val kk = ((tick - jumpAt) / 10.0).coerceAtMost(1.0)
-                f.place(a, perch.lerp(d.entityPos.add(RideHooks.offsetFor(d, a).rotateY(-Math.toRadians(d.bodyYaw.toDouble()).toFloat())), kk).add(0.0, sin(kk * PI) * 3.0, 0.0))
+                val kk = ((tick - jumpAt) / 11.0).coerceAtMost(1.0)
+                val targetHead = d.entityPos.add(RideHooks.offsetFor(d, a).rotateY(-Math.toRadians(d.bodyYaw.toDouble()).toFloat()))
+                f.place(a, perch.lerp(targetHead, kk).add(0.0, sin(kk * PI) * 3.2, 0.0))
                 if (kk >= 1.0) {
                     ariusUp = true
                     RideSeats.perch(f, a, d)
                 }
             }
-            if (tick == sweep) {
-                // Die Kamera fliegt neben ihr her bis an den Kessel.
+
+            // 4) Seitenkamera über das freie Hochland bis in die Ostöffnung des Horsts.
+            if (tick == ramDur) {
                 val from = pos
-                val to = DragonRail.at(rail, arrival)
+                val to = DragonRail.at(rail, arrivalQ)
                 val dir = flatDir(from, to)
                 val side = Vec3d(-dir.z, 0.0, dir.x)
-                scene.line(from.add(side.multiply(-24.0)).add(0.0, 9.0, 0.0).subtract(dir.multiply(10.0)), to.add(side.multiply(-30.0)).add(0.0, 13.0, 0.0).subtract(dir.multiply(24.0)),
-                    from, to, (tArrive - sweep).coerceAtLeast(1), 70.0, 64.0, lookAt = d, lookOffset = 2.0)
+                scene.line(
+                    from.add(side.multiply(-24.0)).add(0.0, 9.0, 0.0).subtract(dir.multiply(10.0)),
+                    to.add(side.multiply(-28.0)).add(0.0, 12.0, 0.0).subtract(dir.multiply(22.0)),
+                    from, to, (tArrive - ramDur).coerceAtLeast(1), 68.0, 64.0, lookAt = d, lookOffset = 2.2,
+                )
             }
             if (tick == tArrive) {
-                val ang = Math.toDegrees(atan2(pos.z - aerie.z, pos.x - aerie.x)) + 30.0
-                scene.orbit(aerie, 62.0, 22.0, ang, ang + 95.0, (total - tArrive).coerceAtLeast(1) + 8, 72.0, 60.0, lookAt = d, lookOffset = 3.0, radiusTo = 40.0, heightTo = 8.0)
+                // Blick von Südosten in den Kessel: man sieht Solvane hereingleiten und zur Rolle ansetzen.
+                scene.line(
+                    aerie.add(88.0, 16.0, 26.0), aerie.add(76.0, 12.0, 22.0),
+                    pos.add(0.0, 2.0, 0.0), dropTarget.add(0.0, 1.5, 0.0),
+                    (tDrop - tArrive + 8).coerceAtLeast(12), 66.0, 60.0, lookAt = d, lookOffset = 2.4,
+                )
             }
             if (!stormed && tick > tArrive / 2) {
                 stormed = true
@@ -860,43 +1004,90 @@ class Scenes(private val f: EirholmFight) {
             }
             if (tick == tArrive / 3) f.farSound("nivaris.roar", pos, 5f, 0.85f)
             if (tick % 22 == 0) cue("nivaris.wing", pos, 4f, 0.75f)
-            if (q0 >= dropS - 26.0) d.bodyRoll = RideSeats.roll((q0 - dropS + 26.0) / 68.0)
-            if (releaseTick < 0 && q0 >= dropS) {
+
+            // 5) Abwurf-Fassrolle: Solvane fliegt NÖRDLICH der Landeplätze nach Westen und rollt ihren Rücken nach SÜDEN (+bodyRoll),
+            //    so werden die Spieler bei ~85° Drehung klar nach Süden neben ihrem Leib herausgeschleudert, während sie nach NW abdreht.
+            if (q0 >= dropS - 20.0 && q0 <= dropS + 44.0) {
+                d.bodyRoll = RideSeats.roll((q0 - (dropS - 20.0)) / 64.0)
+            } else if (q0 > dropS + 44.0) {
+                d.bodyRoll = 0f
+            }
+            if (releaseTick < 0 && q0 >= dropS && d.bodyRoll >= 1.35f) {
                 releaseTick = tick
-                val land = f.abs(ArenaLayout.AERIE_LANDING[0])
-                scene.line(pos.add(4.0, 1.0, 24.0), land.add(11.0, 7.0, 18.0),
-                    pos.add(0.0, 2.0, 0.0), land.add(0.0, 1.0, 0.0), 46, 64.0, 54.0)
+                val land0 = f.abs(ArenaLayout.AERIE_LANDING[0])
+                // Kamera südöstlich der Landeplätze: zeigt klar den freien Bogen der Spieler weg von Solvanes Leib.
+                scene.line(
+                    aerie.add(76.0, 12.0, 22.0), land0.add(14.0, 6.5, 19.0),
+                    pos.add(0.0, 1.5, 0.0), land0.add(0.0, 1.2, 0.0),
+                    (tPass - tick - 12).coerceIn(28, 44), 62.0, 54.0,
+                )
+                // Bei Westflug zeigt +bodyRoll den Rücken nach links = (fwd.z, 0, -fwd.x) = Süden (+z), direkt zu AERIE_LANDING.
+                val rollOut = Vec3d(fwd.z, 0.0, -fwd.x).let { if (it.lengthSquared() < 1e-4) Vec3d(0.0, 0.0, 1.0) else it.normalize() }
                 for ((j, p) in f.players().withIndex()) {
                     if (p.vehicle !== d) continue
+                    val seatIdx = RideSeats.of(p.uuid) ?: j
+                    val segBack = (RideHooks.glied(seatIdx) - 3) * NivarisShape.SEGMENT
+                    val segPos = DragonRail.at(rail, (q0 - segBack).coerceAtLeast(0.0)).add(0.0, NivarisShape.SPINE_UP, 0.0)
+                    val releasePos = segPos.add(rollOut.multiply(3.4)).add(0.0, 0.5, 0.0)
                     p.stopRiding()
                     val target = f.abs(ArenaLayout.AERIE_LANDING[j % ArenaLayout.AERIE_LANDING.size])
-                    RideSeats.landRider(f, p, target, 0.24)
+                    RideSeats.throwRider(f, p, releasePos, target, 0.36)
                 }
                 RideSeats.syncPassengers(f, d)
-                cue("nivaris.wing", pos, 4f, 0.9f)
+                cue("nivaris.wing", pos, 4.5f, 0.88f)
             }
-            if (releaseTick >= 0 && tick == releaseTick + 42) {
-                val towardLanding = aerie.subtract(pos)
-                val side = Vec3d(-towardLanding.z, 0.0, towardLanding.x).normalize()
-                scene.line(pos.add(side.multiply(27.0)).add(0.0, 14.0, 0.0),
-                    aerie.add(25.0, 8.0, 20.0), pos.add(0.0, 3.0, 0.0), aerie.add(0.0, 4.0, 0.0),
-                    (total - tick).coerceAtLeast(1), 66.0, 58.0, lookAt = d, lookOffset = 2.6)
+
+            // 6) Tiefer Vorbeiflug vor Arius' Felspfeiler (AERIE_SEAT): Kamera zeigt den nahen Vorbeiflug und seinen schweren Absprung.
+            if (!passShot && releaseTick >= 0 && tick >= maxOf(releaseTick + 30, tPass - 16)) {
+                passShot = true
+                scene.line(
+                    seat.add(-16.0, 5.0, 18.0), seat.add(-12.0, 3.2, 14.0),
+                    seat.add(3.0, 2.8, 5.0), seat.add(0.0, 1.4, 0.0),
+                    40, 56.0, 50.0,
+                )
             }
-            if (dismountAt < 0 && len - q0 <= 40.0) {
+            if (dismountAt < 0 && ariusUp && pos.distanceTo(ariusPass) < 12.0) {
                 dismountAt = tick
                 dismountFrom = a.entityPos
                 RideSeats.unperch(f, a)
-                a.play(AriusPose.LAUNCH, 6)
+                a.play(AriusPose.LAUNCH, 4)
+                cue("arius.wind_step", dismountFrom, 2.6f, 0.88f)
             }
-            if (dismountAt >= 0) {
-                val k = ((tick - dismountAt) / 43.0).coerceIn(0.0, 1.0)
-                f.place(a, dismountFrom.lerp(seat, k).add(0.0, sin(k * PI) * 38.0, 0.0))
-                f.face(a, aerie)
-                if (k >= 1.0 && a.pose != AriusPose.SEATED) a.play(AriusPose.SEATED)
+            if (dismountAt >= 0 && !ariusSeated) {
+                val k = ((tick - dismountAt) / 16.0).coerceIn(0.0, 1.0)
+                if (k < 1.0) {
+                    f.place(a, dismountFrom.lerp(seat, k).add(0.0, sin(k * PI) * 1.8, 0.0))
+                    f.face(a, aerie)
+                } else if (!ariusLanded) {
+                    ariusLanded = true
+                    f.place(a, seat)
+                    f.face(a, aerie)
+                    a.play(AriusPose.KNEEL)
+                    cue("hold.impact", seat, 2.2f, 0.82f)
+                    shown {
+                        f.world.spawnParticles(
+                            net.minecraft.particle.BlockStateParticleEffect(ParticleTypes.BLOCK, net.minecraft.block.Blocks.SNOW_BLOCK.defaultState),
+                            seat.x, seat.y + 0.2, seat.z, 18, 0.5, 0.15, 0.5, 0.12,
+                        )
+                    }
+                } else if (tick >= dismountAt + 26) {
+                    ariusSeated = true
+                    a.play(AriusPose.SEATED)
+                }
             }
-            if (!landing && len - q0 < 30.0) {
+
+            // 7) Landekamera & Brems-Flügelschlag: exakt landWindup Ticks vor dem Aufsetzen, bis zum völligen Stillstand.
+            if (!landCamSet && dismountAt >= 0 && tick >= dismountAt + 24) {
+                landCamSet = true
+                scene.line(
+                    aerie.add(24.0, 6.5, 22.0), aerie.add(19.0, 4.0, 15.5),
+                    pos.add(0.0, 2.5, 0.0), aerie.add(1.0, 3.2, 0.0),
+                    (total - tick + 16).coerceAtLeast(16), 62.0, 54.0, lookAt = d, lookOffset = 2.6,
+                )
+            }
+            if (!landing && tick >= landStartTick) {
                 landing = true
-                d.play(NivarisPose.LAND, 24)
+                d.play(NivarisPose.LAND, (total - tick).coerceAtLeast(8))
             }
             yield(Unit)
         }
@@ -910,10 +1101,11 @@ class Scenes(private val f: EirholmFight) {
             Vfx.shockwave(f.world, Vfx.Style.SOUL, aerie, 30f, 26, 2.6f)
             f.fx(FxKind.CLEAR_WAVE, aerie, a = 34f, life = 28)
         }
-        d.play(NivarisPose.IDLE)
         f.place(a, seat)
         f.face(a, aerie)
         a.play(AriusPose.SEATED)
+        // Kurz fest aufgesetzt stehen lassen (0 Rutschen), während die Landefederung ausschwingt.
+        wait(18)
         val landed0 = f.abs(ArenaLayout.AERIE_LANDING[0])
         scene.line(landed0.add(-20.0, 3.2, 9.0), landed0.add(-25.0, 2.8, 7.0), aerie.add(2.0, 6.0, 0.0), aerie.add(2.0, 7.5, 0.0), 44, 62.0, 54.0)
         d.play(NivarisPose.ROAR, 8)
