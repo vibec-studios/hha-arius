@@ -183,6 +183,7 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
     ) {
         val p = s.p
         val m = model
+        val clinging = s.mode == NivarisMode.RETURN_COIL
         when (i) {
             NivarisShape.WING_GLIED -> {
                 // Haltungen aus docs/NIVARIS_SERPENT.md (Grad, für wing_r; wing_l mit umgekehrtem yaw und roll):
@@ -200,18 +201,19 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
                 for (sgn in intArrayOf(1, -1)) {
                     val fold = Quaternionf().rotationZYX(sgn * foldRoll, sgn * foldYaw, 180f * deg)
                     val spread = Quaternionf().rotationZYX(sgn * flapRoll, sgn * flapYaw, 0f)
-                    val r = fold.slerp(spread, w)
+                    val r = if (clinging) Quaternionf().rotationZYX(0f, sgn * 90f * deg, 165f * deg)
+                        else fold.slerp(spread, w)
                     limb(q, matrices, if (sgn > 0) m.wingR else m.wingL, -6f * sgn, -6f, 4f, r, girth, stretch, layer, light, overlay, color)
                 }
             }
             NivarisShape.FORE_GLIED -> {
-                val fore = p[NivarisModel.FORE]
-                val swipe = p[NivarisModel.SWIPE]
+                val fore = if (clinging) 1.48f else p[NivarisModel.FORE]
+                val swipe = if (clinging) 0f else p[NivarisModel.SWIPE]
                 limb(q, matrices, m.foreR, -7f, 3f, 8f, Quaternionf().rotationZYX(-0.6f * swipe, 0.3f * swipe, fore - 0.9f * swipe), girth, stretch, layer, light, overlay, color)
                 limb(q, matrices, m.foreL, 7f, 3f, 8f, Quaternionf().rotationZYX(0f, 0f, fore), girth, stretch, layer, light, overlay, color)
             }
             NivarisShape.HIND_GLIED -> {
-                val hind = p[NivarisModel.HIND]
+                val hind = if (clinging) 1.48f else p[NivarisModel.HIND]
                 limb(q, matrices, m.hindR, -6f, 3f, 8f, Quaternionf().rotationZYX(0f, 0f, hind), girth, stretch, layer, light, overlay, color)
                 limb(q, matrices, m.hindL, 6f, 3f, 8f, Quaternionf().rotationZYX(0f, 0f, hind), girth, stretch, layer, light, overlay, color)
             }

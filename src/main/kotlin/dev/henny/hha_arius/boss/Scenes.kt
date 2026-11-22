@@ -1563,7 +1563,7 @@ class Scenes(private val f: EirholmFight) {
             if (f.onSummit) {
                 // Wie beim Drachen-Reveal hoch oben um die Eisspitze gewunden; Entity bleibt nahe am Gipfel für volle Sichtbarkeit.
                 f.place(d, f.arenaCenter.add(0.0, 2.0, 6.0))
-                d.mode = NivarisMode.COIL
+                d.mode = NivarisMode.RETURN_COIL
                 d.uncoil = 0f
                 d.showNow()
                 d.play(NivarisPose.IDLE)
@@ -1700,14 +1700,14 @@ class Scenes(private val f: EirholmFight) {
         yieldAll(scene.play(script {
             if (f.onSummit) {
                 f.atmos(dev.henny.hha_arius.net.AtmosMode.REVEAL, 20)
-                d.mode = NivarisMode.COIL
+                d.mode = NivarisMode.RETURN_COIL
                 d.uncoil = 0f
                 d.flying = false
                 d.showNow()
                 d.resonance = true
                 d.eyeGlow = 100
-                val spireHead = f.abs(EntrancePath.HEAD_RAISED)
-                val spireMid = f.abs(EntrancePath.coil(0.62))
+                val spireHead = f.abs(ReturnCoil.head)
+                val spireMid = f.abs(ReturnCoil.points[ReturnCoil.points.size / 2])
                 f.face(a, spireHead)
                 a.sheathed = false
                 a.play(AriusPose.IDLE)
@@ -1719,7 +1719,7 @@ class Scenes(private val f: EirholmFight) {
                 scene.line(
                     eye.add(toSpire.multiply(-6.2)).add(side.multiply(2.4)).add(0.0, -0.2, 0.0),
                     eye.add(toSpire.multiply(-8.6)).add(side.multiply(3.2)).add(0.0, 1.2, 0.0),
-                    a.entityPos.lerp(spireMid, 0.55), spireHead.add(0.0, -5.0, 0.0), 42, 66.0, 58.0,
+                    spireMid.add(0.0, -4.0, 0.0), spireMid, 42, 68.0, 66.0,
                 )
                 wait(8)
                 shown { f.say("dragon.return", 50) }
@@ -1732,14 +1732,16 @@ class Scenes(private val f: EirholmFight) {
                 cue("nivaris.inhale", spireHead, 4f, 0.65f)
                 wait(22)
                 // B) Totale auf die Eisspitze: Solvane zerfällt oben im Licht und verschwindet am Höhepunkt.
-                val spireCam0 = f.abs(Vec3d(ArenaLayout.SPIRE.x - 30.0, ArenaLayout.SPIRE_TOP + 12.0, ArenaLayout.SPIRE.z - 46.0))
-                val spireCam1 = f.abs(Vec3d(ArenaLayout.SPIRE.x - 22.0, ArenaLayout.SPIRE_TOP + 14.0, ArenaLayout.SPIRE.z - 37.0))
-                scene.rawLine(spireCam0, spireCam1, spireMid.lerp(spireHead, 0.62), spireHead.add(0.0, -3.0, 0.0), RETURN_PEAK + 12, 62.0, 56.0)
+                val spireCam0 = f.abs(Vec3d(ArenaLayout.SPIRE.x - 39.0, ArenaLayout.SPIRE_TOP - 7.0, ArenaLayout.SPIRE.z - 25.0))
+                val spireCam1 = f.abs(Vec3d(ArenaLayout.SPIRE.x - 32.0, ArenaLayout.SPIRE_TOP - 3.0, ArenaLayout.SPIRE.z - 21.0))
+                scene.rawLine(spireCam0, spireCam1, spireMid, spireMid.lerp(spireHead, 0.35), 34, 57.0, 52.0)
+                wait(8)
+                d.fadeOut(25)
                 Entrance.storyFx(f, FxKind.DRAGON_DISSOLVE, spireHead, spireMid, a = 8f, life = RETURN_PEAK + 34)
                 Entrance.storyFx(f, FxKind.BLIZZARD, spireMid, a = 14f, life = 36)
                 cue("transform.pulse", spireHead, 5f, 0.7f)
                 cue("seal.blizzard", spireHead, 3f, 1.3f)
-                wait(RETURN_PEAK)
+                wait(25)
                 f.dismissNivaris()
                 wait(10)
                 // C) Der Strom stürzt von der Eisspitze herab in Arius' Scheide, die Eisklinge zerspringt.

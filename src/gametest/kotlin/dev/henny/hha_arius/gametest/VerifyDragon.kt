@@ -2,6 +2,9 @@ package dev.henny.hha_arius.gametest
 
 import dev.henny.hha.logic.boss.Cine
 import dev.henny.hha_arius.boss.EirholmFight
+import dev.henny.hha_arius.boss.EntrancePath
+import dev.henny.hha_arius.boss.NivarisShape
+import dev.henny.hha_arius.boss.ReturnCoil
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext
 import net.minecraft.client.option.Perspective
@@ -78,7 +81,30 @@ class VerifyDragon : FabricClientGameTest {
             f.arius?.let { f.place(it, c) }
             f.startDirector(f.scenes.finale())
         }
+        val oldCoil = (0..500).map { EntrancePath.coil(1.0 - it / 500.0) }
+            .zipWithNext().sumOf { (a, b) -> a.distanceTo(b) }
+        val body = NivarisShape.SEGMENT * NivarisShape.SEGMENTS
+        val returnPath = ReturnCoil.length
+        check(returnPath >= body)
+        log("Return coil: body=%.2f, old helix alone=%.2f, old with neck=%.2f..%.2f, new with neck=%.2f blocks"
+            .format(body, oldCoil, oldCoil + legacyCoilNeck(0.0), oldCoil + legacyCoilNeck(1.0), returnPath))
         film("return", 190, 4)
+    }
+
+    /** Length of the previous return's neutral neck curve at the two ends of the raise blend. */
+    private fun legacyCoilNeck(raise: Double): Double {
+        val head = EntrancePath.HEAD_REST.lerp(EntrancePath.HEAD_RAISED, raise)
+        val shoulder = EntrancePath.coil(1.0)
+        val length = head.distanceTo(shoulder).coerceAtLeast(2.0)
+        val direction = Vec3d(0.0, -0.20, 1.0).normalize()
+            .lerp(EntrancePath.tangent(0.0).negate(), raise).normalize()
+        val first = head.add(direction.multiply(0.37 * length))
+        val second = shoulder.add(shoulder.subtract(EntrancePath.coil(0.995)).normalize().multiply(0.36 * length))
+        return (0..24).map { i ->
+            val t = i / 24.0
+            head.lerp(first, t).lerp(first.lerp(second, t), t)
+                .lerp(first.lerp(second, t).lerp(second.lerp(shoulder, t), t), t)
+        }.zipWithNext().sumOf { (a, b) -> a.distanceTo(b) }
     }
 
     /** Solvane wird wieder zur Klinge: oben um die Eisspitze wie beim Auftritt. */

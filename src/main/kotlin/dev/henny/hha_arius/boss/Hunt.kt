@@ -2200,7 +2200,7 @@ class Hunt(private val f: EirholmFight) {
             dragon?.let { d ->
                 d.hideNow()
                 f.place(d, center.add(0.0, 2.0, 6.0))
-                d.mode = NivarisMode.COIL
+                d.mode = NivarisMode.RETURN_COIL
                 d.uncoil = 0f
                 d.flying = false
                 d.play(NivarisPose.IDLE)
