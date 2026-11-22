@@ -29,6 +29,10 @@ class VerifyHunt : FabricClientGameTest {
             far()
             if (parts.size == 1) return@run
         }
+        if ("moon" in parts) {
+            moon()
+            if (parts.size == 1) return@run
+        }
         if ("mtn" in parts) {
             mountainCut()
             if (parts.size == 1) return@run
@@ -99,6 +103,32 @@ class VerifyHunt : FabricClientGameTest {
             log("far $name: frame %.2f ms with mountains, %.2f ms without; %s".format(on, off, client { dev.henny.hha_arius.client.fx.HighlandViewClient.debugStats() }))
         }
         cmd("gamemode survival @p")
+    }
+
+    /** Der gefrorene Mond am echten Himmel: Entstehen, voll ausgebildet, kurz vor dem Sturz. */
+    private fun VerifyKit.moon() {
+        waitUntil(900, 2) {
+            server { srv -> Cine.requestSkip(player(srv)) }
+            !client { dev.henny.hha.client.cine.CinePlayer.active }
+        }
+        cmd("gamemode creative @p")
+        val ticks = 200
+        server { srv ->
+            val p = player(srv)
+            val f = fight() ?: return@server
+            p.abilities.flying = true
+            p.sendAbilitiesUpdate()
+            val at = f.abs(Vec3d(0.5, 4.0, -60.0))
+            p.teleport(p.entityWorld as ServerWorld, at.x, at.y, at.z, emptySet(), 0f, -32f, false)
+            p.velocity = Vec3d.ZERO
+            f.fxAll(dev.henny.hha_arius.net.FxKind.FROZEN_STAR, f.abs(Vec3d(0.5, 0.0, -34.0)), a = 20f, b = ticks.toFloat(), life = ticks + 40)
+        }
+        for ((k, wait) in listOf(50, 50, 40, 30).withIndex()) {
+            tick(wait)
+            shot("moon_%d".format(k))
+        }
+        cmd("gamemode survival @p")
+        tick(60)
     }
 
     /** Bergschnitt und Tritt aus dem Tempel, ein Bild je 8 Ticks. */
