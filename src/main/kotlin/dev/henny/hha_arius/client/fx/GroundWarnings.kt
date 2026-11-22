@@ -437,7 +437,7 @@ object GroundWarnings {
         val dx = p.x - cam.x
         val dy = p.y - cam.y
         val dz = p.z - cam.z
-        return (sqrt(dx * dx + dy * dy + dz * dz) / 9.0).coerceIn(0.7, 3.2)
+        return (sqrt(dx * dx + dy * dy + dz * dz) / 9.0).coerceIn(0.42, 3.2)
     }
 
     /**
