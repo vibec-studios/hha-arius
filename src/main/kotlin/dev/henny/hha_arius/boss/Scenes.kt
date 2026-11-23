@@ -213,7 +213,7 @@ class Scenes(private val f: EirholmFight) {
             // Sprung auf die Altarstufe: Halbtotale von der Westseite der Halle, der Blick folgt ihm.
             val start = a.entityPos
             pre.line(rel(-9.0, 1.4, -50.0), rel(-8.0, 2.2, -54.5), stand, stand, 14, 62.0, 56.0, lookAt = a, lookOffset = 1.3)
-            cue("arius.wind_step", start, 2f, 0.7f)
+            cue("arius.wind_step", start, 1.8f, 0.72f)
             for (i in 1..12) {
                 val k = i / 12.0
                 f.place(a, start.lerp(stand, k).add(0.0, sin(k * PI) * 2.0, 0.0))
@@ -221,11 +221,11 @@ class Scenes(private val f: EirholmFight) {
             }
             a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
             a.play(AriusPose.HORIZON_RAISE)
-            cue("cut.reverse_wind", stand, 4f)
+            cue("cut.reverse_wind", stand, 2.8f, 0.85f)
             // Detail: Arius hebt Solvane hoch über den Kopf in der senkrechten Schnittebene.
             pre.line(stand.add(-3.0, 1.1, 3.8), stand.add(-2.3, 1.75, 3.1), stand.add(0.0, 1.6, 0.0), stand.add(0.0, 2.4, 0.0), 30, 50.0, 44.0)
             wait(20)
-            cue("cut.charge", stand, 3f)
+            cue("white_line.charge", stand, 2.6f, 0.72f)
             // Rückweg zur Spielerkamera, fertig bevor die Ansage beginnt.
             pre.home(10)
             wait(AriusTimings.CUT_LINE_AT - 20)
@@ -233,7 +233,9 @@ class Scenes(private val f: EirholmFight) {
         f.cutSurvivors.clear()
         f.cutSurvivors.addAll(f.players().map { it.uuid })
         for (p in f.audience()) dev.henny.hha.logic.boss.Cine.title(listOf(p), "hha_arius.feat.white_horizon", "hha_arius.feat.white_horizon.sub", 60)
-        cue("cut.charge", stand, 5f, 0.6f)
+        // Steigende Spannung entlang der sich sammelnden senkrechten Frostlinie.
+        cue("core.form", stand, 2.2f, 0.65f)
+        shown { f.farVanilla(net.minecraft.sound.SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME, stand, 1.4f, 0.62f) }
         val cutDir = Vec3d(0.0, 0.0, 1.0)
         val group = f.calls.boss(pace = Telegraph.Pace.ROOM)
         val line = group.line(f.abs(ArenaLayout.CUT_FROM), f.abs(ArenaLayout.CUT_TO), ArenaLayout.CUT_WIDTH.toFloat(), AriusTimings.CUT_LINE_TICKS)
@@ -241,16 +243,21 @@ class Scenes(private val f: EirholmFight) {
         a.play(AriusPose.HORIZON_RAISE)
         // Senkrechte Frostlinie vom Himmel durch die erhobene Klinge entlang x = CUT_X (b = 3f).
         f.fxAll(FxKind.HORIZON, Vec3d(stand.x, f.floorY, stand.z), cutDir, a = 56f, b = 3f, life = line.ticks, e1 = a)
-        // Ein klarer Moment der Stille direkt vor dem Niederschlag.
-        wait((line.ticks - 12).coerceAtLeast(1))
-        MusicCue.duck(f, 0.05f, 16)
+        // Spannung baut sich in der Mitte weiter auf, dann ein klarer Beat Beinahe-Stille direkt vor dem Niederschlag.
+        val midCharge = (line.ticks / 2).coerceAtLeast(1)
+        val silenceWait = (line.ticks - 12 - midCharge).coerceAtLeast(1)
+        wait(midCharge)
+        cue("cut.charge", stand, 2.8f, 0.78f)
+        wait(silenceWait)
+        MusicCue.duck(f, 0.03f, 22)
+        cue("iai.glint", stand, 1.8f, 1.25f)
         wait(6)
         a.play(AriusPose.CUT_RELEASE, 6)
         wait(6)
-        // Gewaltiger senkrechter Abwärtsschnitt exakt in der Schnittebene x = CUT_X (b = 4f).
+        // Gewaltiger senkrechter Abwärtsschnitt exakt in der Schnittebene x = CUT_X (b = 4f): EIN tiefer Einschlag.
         f.fxAll(FxKind.HORIZON, Vec3d(stand.x, f.floorY, stand.z), cutDir, a = 60f, b = 4f, life = 36)
-        cue("cut.strike", stand, 5f, 0.78f)
-        MusicCue.sting(f, "impact")
+        cue("cut.strike", stand, 4.2f, 0.58f)
+        cue("hold.impact", stand, 2.8f, 0.50f)
         for (p in line.hits(f.players())) {
             f.cutSurvivors.remove(p.uuid)
             f.hurt(p, 30f, Damage.Kind.NULL_CUT)
@@ -338,42 +345,66 @@ class Scenes(private val f: EirholmFight) {
         val lookout = f.abs(Vec3d(ArenaLayout.CUT_X - 38.0, 0.0, foot - 34.0))
         val x = ArenaLayout.CUT_X
         val spireZ = ArenaLayout.SPIRE.z.toDouble()
-        MusicCue.play(f, "horizon", 10)
+        MusicCue.play(f, "horizon", 28)
         vantage.move(lookout)
         f.atmos(dev.henny.hha_arius.net.AtmosMode.CLEAR, 8)
-        val seamFrom = f.abs(ArenaLayout.CUT_FROM)
         val seamTo = f.abs(Vec3d(x, 0.0, foot + 6.0))
         // 1) Über dem Tempel folgt die Kamera dem senkrechten Schnitt auf dem Weg in den Berg (keine Kastenwände, kein Graudunst).
         shown {
             f.fxAll(FxKind.FLASH, stand, a = 0.24f, life = 6)
             f.fxAll(FxKind.HORIZON, f.abs(Vec3d(x, 0.0, -32.0)), Vec3d(0.0, 0.0, 1.0), a = (foot + 48.0).toFloat(), b = 4f, life = 34)
+            f.farSound("white_line.release", seamTo, 3.0f, 0.65f)
         }
-        f.farSound("cut.split", seamTo, 5f, 1.2f)
-        MusicCue.sting(f, "phase")
         post.line(
             f.abs(Vec3d(x - 18.0, 42.0, -82.0)), f.abs(Vec3d(x - 14.0, 56.0, -52.0)),
             f.abs(Vec3d(x, 12.0, -4.0)), f.abs(Vec3d(x, 82.0, foot + 56.0)), 26, 68.0, 62.0,
         )
-        wait(20)
-        f.farSound("seal.blizzard", f.abs(Vec3d(x, 48.0, foot + 36.0)), 5f, 0.6f)
-        wait(6)
+        wait(26)
         // 2) Weite Totale von Fuß bis Horn: Die senkrechte Lichtklinge schneidet vom Himmel herab und spaltet Berg & Gipfelarena.
         // Alle Blickpunkte liegen strikt VOR/ÜBER der Berghaut (freie Sichtlinie), damit HHA-CinePlayer die Kamera nie einzieht.
         val mid = f.abs(Vec3d(x, 90.0, spireZ - 40.0))
-        f.farSound("glacier.collapse", mid, 8f, 0.5f)
-        f.farSound("cut.split", mid, 8f, 0.7f)
-        f.farVanilla(net.minecraft.sound.SoundEvents.ENTITY_GENERIC_EXPLODE.value(), mid, 6f, 0.4f)
-        f.farVanilla(net.minecraft.sound.SoundEvents.ENTITY_WARDEN_SONIC_BOOM, mid, 5f, 0.5f)
+        shown { f.farSound("cut.split", mid, 4.8f, 0.62f) }
         post.rawLine(
             f.abs(Vec3d(x - 62.0, 128.0, foot - 156.0)), f.abs(Vec3d(x - 48.0, 148.0, foot - 142.0)),
             f.abs(Vec3d(x, 86.0, spireZ - 110.0)), f.abs(Vec3d(x, 178.0, spireZ - 34.0)), 56, 64.0, 60.0,
         )
         // Zuerst alle Blöcke der gesamten Schnitt-Ebene (inkl. Gipfelarena, Mauer, Krone & Horn) sichern und spalten!
-        yieldAll(splitFull(animate = true, slices = 24))
+        // Gestaffeltes Fels- & Eisknirschen über die 24 Scheiben, danach langes tiefes Grollen beim Absetzen.
+        yieldAll(splitFull(animate = true, slices = 24, playSounds = false) { slice ->
+            shown {
+                when (slice) {
+                    3 -> {
+                        f.farSound("glacier.crack", mid, 3.4f, 0.68f)
+                        f.farVanilla(net.minecraft.sound.SoundEvents.BLOCK_DEEPSLATE_BREAK, mid, 3.0f, 0.52f)
+                    }
+                    8 -> {
+                        f.farSound("ridge.break", mid, 3.2f, 0.58f)
+                        f.farVanilla(net.minecraft.sound.SoundEvents.BLOCK_BASALT_BREAK, mid, 3.2f, 0.48f)
+                    }
+                    13 -> {
+                        f.farSound("glacier.crack", mid, 3.6f, 0.56f)
+                        f.farVanilla(net.minecraft.sound.SoundEvents.BLOCK_GLASS_BREAK, mid, 2.4f, 0.46f)
+                    }
+                    18 -> {
+                        f.farSound("ridge.break", mid, 3.0f, 0.66f)
+                        f.farVanilla(net.minecraft.sound.SoundEvents.BLOCK_DEEPSLATE_BREAK, mid, 2.8f, 0.44f)
+                    }
+                    23 -> {
+                        f.farSound("glacier.collapse", mid, 4.4f, 0.46f)
+                    }
+                }
+            }
+        })
         for (i in 24 until 56) {
             if (i % 14 == 0) f.calls.roomShake(lookout, 4.5f - i / 24f, 200f)
-            if (i == 30) {
-                f.farVanilla(net.minecraft.sound.SoundEvents.BLOCK_GLASS_BREAK, mid, 5f, 0.5f)
+            shown {
+                when (i) {
+                    32 -> {
+                        f.farVanilla(net.minecraft.sound.SoundEvents.BLOCK_BASALT_BREAK, mid, 2.2f, 0.40f)
+                        f.farSound("seal.blizzard", mid, 2.4f, 0.55f)
+                    }
+                    44 -> f.farSound("glacier.crack", mid, 1.9f, 0.50f)
+                }
             }
             yield(Unit)
         }
@@ -384,10 +415,13 @@ class Scenes(private val f: EirholmFight) {
             f.abs(Vec3d(x, summitY + 4.0, spireZ - 10.0)), f.abs(Vec3d(x, summitY + 12.0, spireZ + 4.0)), 44, 58.0, 54.0,
         )
         shown { f.sceneText("cut_after") }
+        // Fortschritt still vergeben (frame=task, show_toast=false -> kein Achievement-Fanfaren-Sound über der Szene).
         for (id in f.cutSurvivors) f.server.playerManager.getPlayer(id)?.let { Advancements.grant(it, "under_the_line") }
-        wait(44)
+        wait(6)
+        shown { f.farSound("glacier.crack", mid, 1.1f, 0.44f) }
+        wait(38)
         // 4) Whiteout: zurück in den Tempel.
-        f.farSound("seal.blizzard", lookout, 4f, 0.6f)
+        shown { f.farSound("seal.blizzard", lookout, 2.6f, 0.62f) }
         f.atmos(dev.henny.hha_arius.net.AtmosMode.BLIZZARD, 16)
         post.once { Cine.fade(it, 0xF2F6FA, 0.0, 1.0, 16) }
         wait(20)
@@ -401,7 +435,7 @@ class Scenes(private val f: EirholmFight) {
      * Gipfelarena, Ringmauer, Eiskrone und Horn), sichert sie absturzsicher über [SplitRecovery] und spaltet sie in
      * [slices] sauberen Scheiben von Norden nach Süden.
      */
-    fun splitFull(animate: Boolean = true, slices: Int = 24): Script = script {
+    fun splitFull(animate: Boolean = true, slices: Int = 24, playSounds: Boolean = true, onSlice: ((Int) -> Unit)? = null): Script = script {
         val z0 = (ArenaLayout.SPIRE.z - FarPlan.MASSIF_R - 6).toInt()
         val z1 = (ArenaLayout.SPIRE.z + FarPlan.MASSIF_R + 6).toInt()
         val cutX = kotlin.math.floor(ArenaLayout.CUT_X).toInt()
@@ -429,17 +463,22 @@ class Scenes(private val f: EirholmFight) {
             val footStart = f.abs(Vec3d(ArenaLayout.CUT_X, 0.0, z0.toDouble()))
             val spanZ = (z1 - z0).toFloat().coerceAtLeast(180f)
             f.fxAll(FxKind.HORIZON, footStart, Vec3d(0.0, 0.0, 1.0), a = spanZ, b = 5f, life = slices + 38)
-            f.ambient("cut.split", f.abs(Vec3d(ArenaLayout.CUT_X, 90.0, ArenaLayout.SPIRE.z.toDouble())), 8f)
-            f.ambient("glacier.collapse", footStart, 6f, 0.6f)
+            if (playSounds) {
+                f.ambient("cut.split", f.abs(Vec3d(ArenaLayout.CUT_X, 90.0, ArenaLayout.SPIRE.z.toDouble())), 4.8f, 0.62f)
+                f.ambient("glacier.collapse", footStart, 4.4f, 0.46f)
+            }
             f.calls.roomShake(footStart, 8f, 90f)
         }
         val byZ = collected.sortedBy { it.first.z }
         val step = maxOf(1, (byZ.size + slices - 1) / slices)
         var idx = 0
+        var slice = 0
         while (idx < byZ.size) {
             val end = minOf(byZ.size, idx + step)
             for (k in idx until end) f.edits.clear(byZ[k].first)
+            onSlice?.invoke(slice)
             idx = end
+            slice++
             if (slices > 1) yield(Unit)
         }
     }
