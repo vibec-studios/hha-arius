@@ -1113,7 +1113,49 @@ class VerifyBoss : FabricClientGameTest {
                 }
                 check(abs(endHeight) <= 0.05) { "Arius did not end cleanly on ground after '$name': endH=$endHeight" }
             }
-            log("macefloat PASS (${summary.size} attacks): ${summary.joinToString(" | ")}")
+            // Zusätzlich prüfen: Eine echte Explosion verursacht weiter normalen Schaden, bewegt Arius aber um 0 Blöcke.
+            val (hpBefore, posBefore) = server { srv ->
+                val f = checkNotNull(fight())
+                val a = checkNotNull(f.arius)
+                val p = player(srv)
+                val c = f.arenaCenter
+                f.calls.reset()
+                f.guardUntil = 0
+                f.ariusOpenUntil = 0
+                f.ariusVulnerable = true
+                f.ariusHp = f.ariusMax
+                f.startDirector(script { while (true) yield(Unit) })
+                val base = Vec3d(c.x, f.floorY, c.z)
+                f.place(a, base)
+                a.play(AriusPose.IDLE)
+                p.teleport(f.world, c.x + 5.0, f.floorY, c.z, emptySet(), 90f, 0f, false)
+                f.ariusHp to a.entityPos
+            }
+            tick(2)
+            server { srv ->
+                val f = checkNotNull(fight())
+                val a = checkNotNull(f.arius)
+                val p = player(srv)
+                f.world.createExplosion(p, a.x + 1.5, a.y + 0.5, a.z, 3.0f, net.minecraft.world.World.ExplosionSourceType.NONE)
+            }
+            var expMaxDrift = 0.0
+            var expMaxH = 0.0
+            for (t in 0 until 6) {
+                tick(1)
+                val (drift, h) = server {
+                    val f = checkNotNull(fight())
+                    val a = checkNotNull(f.arius)
+                    a.entityPos.distanceTo(posBefore) to (a.y - f.floorY)
+                }
+                if (drift > expMaxDrift) expMaxDrift = drift
+                if (abs(h) > abs(expMaxH)) expMaxH = h
+            }
+            val expDamage = server { hpBefore - checkNotNull(fight()).ariusHp }
+            val expLine = "explosion: dmg=%.3f maxDrift=%.4f maxH=%.4f".format(expDamage, expMaxDrift, expMaxH)
+            log("macefloat $expLine")
+            check(expDamage > 0.5f) { "Explosion dealt no damage to Arius: dmg=$expDamage" }
+            check(expMaxDrift <= 0.01 && abs(expMaxH) <= 0.01) { "Explosion moved Arius: maxDrift=$expMaxDrift maxH=$expMaxH" }
+            log("macefloat PASS (${summary.size} attacks + explosion): ${summary.joinToString(" | ")} | $expLine")
         } finally {
             server { srv -> player(srv).setStackInHand(Hand.MAIN_HAND, ItemStack(dev.henny.hha_arius.gear.GearItems.SOLVANE)) }
         }
