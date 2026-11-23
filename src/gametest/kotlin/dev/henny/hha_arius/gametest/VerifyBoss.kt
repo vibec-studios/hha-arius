@@ -215,34 +215,52 @@ class VerifyBoss : FabricClientGameTest {
             val f = checkNotNull(fight())
             val c = f.abs(dev.henny.hha_arius.arena.ArenaLayout.CUT_STAND)
             val p = player(srv)
-            p.teleport(f.world, c.x + 4.0, f.floorY, c.z + 10.0, emptySet(), 155f, 0f, false)
+            p.teleport(f.world, c.x + 5.2, f.floorY, c.z + 11.5, emptySet(), 155f, -6f, false)
             f.calls.reset()
             f.startDirector(f.scenes.theCut())
         }
-        check(waitUntil(150, 1) { server { fight()?.arius?.pose == AriusPose.SPIN_CUT } })
+        // 0) Close-up cinematic shot of Arius raising Solvane overhead in the vertical plane (before title).
+        check(waitUntil(60, 1) { server { fight()?.arius?.pose == AriusPose.HORIZON_RAISE } })
+        tick(16)
+        shot("temple_horizon_pose")
+        // 1) Overhead pose + vertical frost line forming (during HORIZON_RAISE telegraph).
+        check(waitUntil(120, 1) { server { fight()?.arius?.pose == AriusPose.HORIZON_RAISE && fight()?.calls?.hasBossTelegraph(player(it)) == true } })
+        tick(18)
+        shot("temple_horizon_charge")
+        tick(24)
+        shot("temple_horizon_silence")
+        // 2) Vertical downward cut release (CUT_RELEASE = 6 ticks before impact).
+        check(waitUntil(60, 1) { server { fight()?.arius?.pose == AriusPose.CUT_RELEASE } })
         shot("temple_horizon_anticipation")
-        tick(7)
+        tick(6)
         shot("temple_horizon_release")
-        tick(9)
-        shot("temple_horizon_fade")
+        tick(4)
+        shot("temple_horizon_travel")
+        // 3) Mountain split frames during cutAftermath (splitFull runs across 24 ticks starting ~44 ticks after release).
+        tick(46)
+        shot("temple_horizon_mountain_1")
+        tick(10)
+        shot("temple_horizon_mountain_2")
+        tick(28)
+        shot("temple_horizon_summit_split")
     }
 
     /** White Horizon peak release + 2 consecutive follow-up ticks in 1st person, 3rd person, and blizzard on white snow. */
     private fun VerifyKit.horizonViews() {
         try {
-            // 1) First-person view during live White Horizon in the temple (SPIN_CUT is 5 ticks before release)
+            // 1) First-person view during live White Horizon in the temple (CUT_RELEASE is 6 ticks before release)
             client { it.options.perspective = net.minecraft.client.option.Perspective.FIRST_PERSON }
             temple()
             server { srv ->
                 val f = checkNotNull(fight())
                 val c = f.abs(dev.henny.hha_arius.arena.ArenaLayout.CUT_STAND)
                 val p = player(srv)
-                p.teleport(f.world, c.x + 4.0, f.floorY, c.z + 10.0, emptySet(), 155f, 0f, false)
+                p.teleport(f.world, c.x + 4.0, f.floorY, c.z + 10.0, emptySet(), 155f, -4f, false)
                 f.calls.reset()
                 f.startDirector(f.scenes.theCut())
             }
-            check(waitUntil(150, 1) { server { fight()?.arius?.pose == AriusPose.SPIN_CUT } })
-            tick(5)
+            check(waitUntil(180, 1) { server { fight()?.arius?.pose == AriusPose.CUT_RELEASE } })
+            tick(6)
             shot("horizon_1p_peak")
             shot("horizon_1p_p1")
             shot("horizon_1p_p2")
@@ -260,8 +278,8 @@ class VerifyBoss : FabricClientGameTest {
                 f.calls.reset()
                 f.startDirector(f.scenes.theCut())
             }
-            check(waitUntil(150, 1) { server { fight()?.arius?.pose == AriusPose.SPIN_CUT } })
-            tick(5)
+            check(waitUntil(180, 1) { server { fight()?.arius?.pose == AriusPose.CUT_RELEASE } })
+            tick(6)
             shot("horizon_3p_peak")
             shot("horizon_3p_p1")
             shot("horizon_3p_p2")

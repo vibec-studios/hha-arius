@@ -475,8 +475,12 @@ class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
                 .to(w + 0.5f, w + max(r, 3f), Keys.IDLE, ::smooth, SETTLE)
             // Laden: in 10 Ticks in die Haltung, dann über 30 Ticks immer tiefer gespannt (Server lädt CUT_WIND = 40).
             AriusPose.CUT_CHARGE -> tr.to(0f, 10f, Keys.CUT_CHARGE, ::smooth, WIND).to(10f, 40f, cutLoad, ::sine)
-            AriusPose.CUT_RELEASE -> tr.to(0f, max(1f, w * 0.35f), Keys.CUT_TOP, ::easeOut, WIND).to(max(1f, w * 0.35f), w, Keys.CUT_STRIKE, ::easeIn, STRIKE)
-                .to(w + 1.5f, w + 6f, Keys.CUT_LOW, ::easeOut, FOLLOW)
+            // Senkrechtes Aufladen (Weißer Horizont): Klinge zweihändig gerade über dem Kopf in der Schnittebene.
+            AriusPose.HORIZON_RAISE -> tr.to(0f, 12f, Keys.SPLIT_RAISE, ::smooth, WIND).to(12f, 52f, splitLoad, ::sine)
+            // Senkrechter Niederschlag (Weißer Horizont): zieht exakt aus der erhobenen Ebene gerade nach unten durch.
+            AriusPose.CUT_RELEASE -> tr.to(0f, max(1f, w * 0.25f), splitLoad, ::easeOut, WIND)
+                .to(max(1f, w * 0.25f), w, Keys.SPLIT_HIT, ::easeIn, STRIKE)
+                .to(w + 1.5f, w + 8f, Keys.SPLIT_LOW, ::easeOut, FOLLOW)
             AriusPose.GATE_KICK -> tr.to(0f, w * 0.22f, Keys.GK_PARRY, ::easeOut).to(w * 0.25f, w * 0.45f, Keys.GK_LOAD, ::sine, WIND)
                 .to(w * 0.45f, w * 0.72f, Keys.GK_KNEE, ::easeOut, WIND).to(w * 0.72f, w, Keys.GK_KICK, ::easeIn, KICK)
                 .to(w + min(1f, r * 0.2f), w + r * 0.3f, Keys.GK_KNEE, ::easeOut, FOLLOW).to(w + r * 0.3f, w + r, Keys.IDLE, ::smooth, SETTLE)
@@ -901,7 +905,8 @@ class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
             AriusPose.IDLE, AriusPose.ARROW_CUT -> 1f
             AriusPose.GUARD, AriusPose.GRIP_CAST, AriusPose.IAI_STANCE, AriusPose.CUT_CHARGE -> 0.6f
             AriusPose.STAGGER, AriusPose.WHISTLE -> 0.5f
-            AriusPose.LUNGE, AriusPose.SEATED, AriusPose.KNEEL, AriusPose.AIR_KICK, AriusPose.BREAKTHROUGH, AriusPose.SPIN_CUT -> 0f
+            AriusPose.LUNGE, AriusPose.SEATED, AriusPose.KNEEL, AriusPose.AIR_KICK, AriusPose.BREAKTHROUGH, AriusPose.SPIN_CUT,
+            AriusPose.HORIZON_RAISE, AriusPose.CUT_RELEASE -> 0f
             else -> 0.35f
         }
         val w = state.walk * gait
@@ -950,13 +955,13 @@ class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
         val t = state.poseTime
         val w0 = windupOf(pose, state.windup)
         val holding = when (pose) {
-            AriusPose.CUT_CHARGE, AriusPose.IAI_STANCE, AriusPose.CORE_RAISE -> t > 10f
+            AriusPose.CUT_CHARGE, AriusPose.HORIZON_RAISE, AriusPose.IAI_STANCE, AriusPose.CORE_RAISE -> t > 10f
             AriusPose.STRIP_SLASH, AriusPose.SPLIT_FIELD, AriusPose.STAB_GROUND, AriusPose.NULL_CUT, AriusPose.LUNGE,
             AriusPose.COMBO_3, AriusPose.BREAKTHROUGH, AriusPose.SPIN_CUT -> t > 6f && t < w0 - 3f
             else -> false
         }
         if (holding) {
-            val build = if (pose == AriusPose.CUT_CHARGE || pose == AriusPose.IAI_STANCE) MathHelper.clamp((t - 10f) / 30f, 0f, 1f) else 0f
+            val build = if (pose == AriusPose.CUT_CHARGE || pose == AriusPose.HORIZON_RAISE || pose == AriusPose.IAI_STANCE) MathHelper.clamp((t - 10f) / 30f, 0f, 1f) else 0f
             val shake = sin(age * 2.3f) * (0.01f + 0.016f * build)
             armR.roll += shake
             armL.roll -= shake

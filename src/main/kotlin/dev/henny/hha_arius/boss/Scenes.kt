@@ -206,7 +206,8 @@ class Scenes(private val f: EirholmFight) {
         val stand = f.abs(ArenaLayout.CUT_STAND)
         val pre = CineScene(f) {
             f.place(a, stand)
-            a.play(AriusPose.CUT_CHARGE)
+            a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
+            a.play(AriusPose.HORIZON_RAISE)
         }
         yieldAll(pre.play(script {
             // Sprung auf die Altarstufe: Halbtotale von der Westseite der Halle, der Blick folgt ihm.
@@ -219,10 +220,10 @@ class Scenes(private val f: EirholmFight) {
                 yield(Unit)
             }
             a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
-            a.play(AriusPose.CUT_CHARGE)
+            a.play(AriusPose.HORIZON_RAISE)
             cue("cut.reverse_wind", stand, 4f)
-            // Stille, Detail: Hände und Klinge, an denen sich der Wind sammelt; ganz langsam näher.
-            pre.line(stand.add(-2.2, 0.75, 2.6), stand.add(-1.6, 0.85, 2.0), stand, stand, 30, 44.0, 36.0, lookAt = a, lookOffset = 1.15)
+            // Detail: Arius hebt Solvane hoch über den Kopf in der senkrechten Schnittebene.
+            pre.line(stand.add(-3.0, 1.1, 3.8), stand.add(-2.3, 1.75, 3.1), stand.add(0.0, 1.6, 0.0), stand.add(0.0, 2.4, 0.0), 30, 50.0, 44.0)
             wait(20)
             cue("cut.charge", stand, 3f)
             // Rückweg zur Spielerkamera, fertig bevor die Ansage beginnt.
@@ -236,12 +237,18 @@ class Scenes(private val f: EirholmFight) {
         val cutDir = Vec3d(0.0, 0.0, 1.0)
         val group = f.calls.boss(pace = Telegraph.Pace.ROOM)
         val line = group.line(f.abs(ArenaLayout.CUT_FROM), f.abs(ArenaLayout.CUT_TO), ArenaLayout.CUT_WIDTH.toFloat(), AriusTimings.CUT_LINE_TICKS)
-        a.play(AriusPose.CUT_CHARGE)
-        horizonCharge(a, cutDir, line.ticks)
-        wait((line.ticks - 5).coerceAtLeast(1))
-        a.play(AriusPose.SPIN_CUT, 5)
-        wait(5)
-        f.fxAll(FxKind.HORIZON, Vec3d(stand.x, f.floorY + 1.45, stand.z), cutDir, a = 19f, b = 2f, life = 36)
+        a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
+        a.play(AriusPose.HORIZON_RAISE)
+        // Senkrechte Frostlinie vom Himmel durch die erhobene Klinge entlang x = CUT_X (b = 3f).
+        f.fxAll(FxKind.HORIZON, Vec3d(stand.x, f.floorY, stand.z), cutDir, a = 56f, b = 3f, life = line.ticks, e1 = a)
+        // Ein klarer Moment der Stille direkt vor dem Niederschlag.
+        wait((line.ticks - 12).coerceAtLeast(1))
+        MusicCue.duck(f, 0.05f, 16)
+        wait(6)
+        a.play(AriusPose.CUT_RELEASE, 6)
+        wait(6)
+        // Gewaltiger senkrechter Abwärtsschnitt exakt in der Schnittebene x = CUT_X (b = 4f).
+        f.fxAll(FxKind.HORIZON, Vec3d(stand.x, f.floorY, stand.z), cutDir, a = 60f, b = 4f, life = 36)
         cue("cut.strike", stand, 5f, 0.78f)
         MusicCue.sting(f, "impact")
         for (p in line.hits(f.players())) {
@@ -331,40 +338,26 @@ class Scenes(private val f: EirholmFight) {
         val lookout = f.abs(Vec3d(ArenaLayout.CUT_X - 38.0, 0.0, foot - 34.0))
         val x = ArenaLayout.CUT_X
         val spireZ = ArenaLayout.SPIRE.z.toDouble()
-        fun seamMist(life: Int) {
-            shown {
-                val steps = 8
-                for (k in 0..steps) {
-                    val z = foot + 4.0 + (spireZ + 20.0 - (foot + 4.0)) * (k / steps.toDouble())
-                    val top = runCatching { FarPlan.top(x.toInt(), z.toInt()) }.getOrDefault(0).coerceAtLeast(0)
-                    val radius = (10f + (k % 3) * 2.5f).coerceAtMost(15f)
-                    val at = f.abs(Vec3d(x, top + 3.0, z))
-                    f.fxAll(FxKind.DEBRIS_CLOUD, at, a = radius, b = 1f, life = life)
-                }
-            }
-        }
         MusicCue.play(f, "horizon", 10)
         vantage.move(lookout)
         f.atmos(dev.henny.hha_arius.net.AtmosMode.CLEAR, 8)
         val seamFrom = f.abs(ArenaLayout.CUT_FROM)
         val seamTo = f.abs(Vec3d(x, 0.0, foot + 6.0))
-        f.fxAll(FxKind.SEAM, seamFrom.add(0.0, 0.2, 0.0), seamTo.add(0.0, 0.2, 0.0), a = 14f, life = 160)
-        // 1) Über dem Tempel folgt die Kamera der Schnittnaht bis zum Berg.
-        shown { f.fxAll(FxKind.FLASH, stand, a = 0.26f, life = 6) }
+        // 1) Über dem Tempel folgt die Kamera dem senkrechten Schnitt auf dem Weg in den Berg (keine Kastenwände, kein Graudunst).
+        shown {
+            f.fxAll(FxKind.FLASH, stand, a = 0.24f, life = 6)
+            f.fxAll(FxKind.HORIZON, f.abs(Vec3d(x, 0.0, -32.0)), Vec3d(0.0, 0.0, 1.0), a = (foot + 48.0).toFloat(), b = 4f, life = 34)
+        }
         f.farSound("cut.split", seamTo, 5f, 1.2f)
         MusicCue.sting(f, "phase")
         post.line(
-            f.abs(Vec3d(x - 18.0, 46.0, -82.0)), f.abs(Vec3d(x - 14.0, 56.0, -56.0)),
+            f.abs(Vec3d(x - 18.0, 42.0, -82.0)), f.abs(Vec3d(x - 14.0, 56.0, -52.0)),
             f.abs(Vec3d(x, 12.0, -4.0)), f.abs(Vec3d(x, 82.0, foot + 56.0)), 26, 68.0, 62.0,
         )
-        shown {
-            for (k in 0 until 5) f.fxAll(FxKind.CLEAR_WAVE, seamFrom.lerp(seamTo, 0.3 + k * 0.14), a = 5f, life = 14)
-        }
         wait(20)
-        seamMist(life = 48)
         f.farSound("seal.blizzard", f.abs(Vec3d(x, 48.0, foot + 36.0)), 5f, 0.6f)
         wait(6)
-        // 2) Weite Totale von Fuß bis Horn: Berg UND Gipfelarena spalten sich sauber vor den Augen der Spieler.
+        // 2) Weite Totale von Fuß bis Horn: Die senkrechte Lichtklinge schneidet vom Himmel herab und spaltet Berg & Gipfelarena.
         // Alle Blickpunkte liegen strikt VOR/ÜBER der Berghaut (freie Sichtlinie), damit HHA-CinePlayer die Kamera nie einzieht.
         val mid = f.abs(Vec3d(x, 90.0, spireZ - 40.0))
         f.farSound("glacier.collapse", mid, 8f, 0.5f)
@@ -380,13 +373,6 @@ class Scenes(private val f: EirholmFight) {
         for (i in 24 until 56) {
             if (i % 14 == 0) f.calls.roomShake(lookout, 4.5f - i / 24f, 200f)
             if (i == 30) {
-                shown {
-                    for (k in 0 until 5) {
-                        val z = foot + 18.0 + k * 34.0
-                        val top = runCatching { FarPlan.top(x.toInt(), z.toInt()) }.getOrDefault(0).coerceAtLeast(0)
-                        f.fxAll(FxKind.CLEAR_WAVE, f.abs(Vec3d(x, top + 4.0, z)), a = 18f, life = 24)
-                    }
-                }
                 f.farVanilla(net.minecraft.sound.SoundEvents.BLOCK_GLASS_BREAK, mid, 5f, 0.5f)
             }
             yield(Unit)
@@ -440,11 +426,12 @@ class Scenes(private val f: EirholmFight) {
         activeSplit = collected
         splitActive = true
         if (animate) {
-            val from = f.abs(Vec3d(ArenaLayout.CUT_X, 0.2, ArenaLayout.CUT_TO.z))
-            f.fxAll(FxKind.SEAM, from, f.abs(Vec3d(ArenaLayout.CUT_X, ArenaLayout.SPIRE_TOP.toDouble(), ArenaLayout.SPIRE.z.toDouble())), a = 24f, life = slices + 34)
+            val footStart = f.abs(Vec3d(ArenaLayout.CUT_X, 0.0, z0.toDouble()))
+            val spanZ = (z1 - z0).toFloat().coerceAtLeast(180f)
+            f.fxAll(FxKind.HORIZON, footStart, Vec3d(0.0, 0.0, 1.0), a = spanZ, b = 5f, life = slices + 38)
             f.ambient("cut.split", f.abs(Vec3d(ArenaLayout.CUT_X, 90.0, ArenaLayout.SPIRE.z.toDouble())), 8f)
-            f.ambient("glacier.collapse", from, 6f, 0.6f)
-            f.calls.roomShake(from, 8f, 90f)
+            f.ambient("glacier.collapse", footStart, 6f, 0.6f)
+            f.calls.roomShake(footStart, 8f, 90f)
         }
         val byZ = collected.sortedBy { it.first.z }
         val step = maxOf(1, (byZ.size + slices - 1) / slices)
