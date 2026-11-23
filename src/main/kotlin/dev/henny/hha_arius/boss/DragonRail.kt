@@ -299,7 +299,10 @@ object DragonRail {
             start.add(-8.0, 0.0, 14.0),
             start.add(0.0, 0.0, 6.0),
             start,
-        ))
+        )).toMutableList()
+        // The sampled spline stops on its last full step. Close the gap to the
+        // charge rail so each vertebra can cross distance zero continuously.
+        if (trail.last().squaredDistanceTo(start) > 1e-6) trail.add(start)
         val heights = trail.map { q ->
             val rx = floor(q.x).toInt() - f.origin.x
             val rz = floor(q.z).toInt() - f.origin.z
@@ -307,6 +310,7 @@ object DragonRail {
             max(start.y, f.origin.y + top + 1.0)
         }
         return trail.mapIndexed { i, q ->
+            if (i == trail.lastIndex) return@mapIndexed start
             val spread = 8
             val local = (i - spread).coerceAtLeast(0)..(i + spread).coerceAtMost(trail.lastIndex)
             val y = local.maxOf { j -> heights[j] - kotlin.math.abs(i - j) * STEP * 0.18 }
