@@ -115,7 +115,12 @@ abstract class AriusFx(val life: Int) {
                     CineGrade.slow(p.life, p.a)
                     null
                 }
-                FxKind.HORIZON -> HorizonFx(pos, dir, p.a.toDouble(), p.b > 0f, e1, p.life, temple = p.b >= 2f)
+                FxKind.HORIZON -> when {
+                    p.b >= 4.5f -> VerticalHorizonFx(pos, dir, p.a.toDouble(), phase = 2, owner = e1, life = p.life)
+                    p.b >= 3.5f -> VerticalHorizonFx(pos, dir, p.a.toDouble(), phase = 1, owner = e1, life = p.life)
+                    p.b >= 2.5f -> VerticalHorizonFx(pos, dir, p.a.toDouble(), phase = 0, owner = e1, life = p.life)
+                    else -> HorizonFx(pos, dir, p.a.toDouble(), p.b > 0f, e1, p.life, temple = p.b >= 2f)
+                }
                 FxKind.MACE_GRIP -> {
                     KickAnim.catchMace(p.e1, p.life)
                     null

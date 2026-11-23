@@ -55,6 +55,7 @@ class VerifyBoss : FabricClientGameTest {
                     "classic" -> classic()
                     "mace" -> mace()
                     "macecatch" -> maceCatch()
+                    "macefloat" -> maceFloat()
                     "parrycue" -> parryCue()
                     "forge" -> forge()
                     "templehorizon" -> templeHorizon()
@@ -204,8 +205,23 @@ class VerifyBoss : FabricClientGameTest {
             f.place(f.arius!!, f.abs(dev.henny.hha_arius.arena.ArenaLayout.CUT_STAND))
             f.startDirector(scene.play(body))
         }
-        check(waitUntil(120, 1) { server { Hold.isHeld(player(it)) } })
-        burst("kick_pose", 12, 4)
+        // Capture every beat of the kick anticipation + strike + launch:
+        // calm opening -> weight shift/plant foot -> knee chambered -> kick snap -> extended kick hitstop -> flight.
+        tick(16)
+        shot("kick_opening")
+        check(waitUntil(80, 1) { server { fight()?.arius?.pose == AriusPose.KICK_PREP } })
+        tick(5)
+        shot("kick_plant")
+        tick(4)
+        shot("kick_knee_up")
+        tick(4)
+        shot("kick_knee_peak")
+        tick(3)
+        shot("kick_extend")
+        tick(2)
+        shot("kick_impact")
+        tick(16)
+        shot("kick_flight")
     }
 
     private fun VerifyKit.templeHorizon() {
@@ -214,34 +230,52 @@ class VerifyBoss : FabricClientGameTest {
             val f = checkNotNull(fight())
             val c = f.abs(dev.henny.hha_arius.arena.ArenaLayout.CUT_STAND)
             val p = player(srv)
-            p.teleport(f.world, c.x + 4.0, f.floorY, c.z + 10.0, emptySet(), 155f, 0f, false)
+            p.teleport(f.world, c.x + 5.2, f.floorY, c.z + 11.5, emptySet(), 155f, -6f, false)
             f.calls.reset()
             f.startDirector(f.scenes.theCut())
         }
-        check(waitUntil(150, 1) { server { fight()?.arius?.pose == AriusPose.SPIN_CUT } })
+        // 0) Close-up cinematic shot of Arius raising Solvane overhead in the vertical plane (before title).
+        check(waitUntil(60, 1) { server { fight()?.arius?.pose == AriusPose.HORIZON_RAISE } })
+        tick(16)
+        shot("temple_horizon_pose")
+        // 1) Overhead pose + vertical frost line forming (during HORIZON_RAISE telegraph).
+        check(waitUntil(120, 1) { server { fight()?.arius?.pose == AriusPose.HORIZON_RAISE && fight()?.calls?.hasBossTelegraph(player(it)) == true } })
+        tick(18)
+        shot("temple_horizon_charge")
+        tick(24)
+        shot("temple_horizon_silence")
+        // 2) Vertical downward cut release (CUT_RELEASE = 6 ticks before impact).
+        check(waitUntil(60, 1) { server { fight()?.arius?.pose == AriusPose.CUT_RELEASE } })
         shot("temple_horizon_anticipation")
-        tick(7)
+        tick(6)
         shot("temple_horizon_release")
-        tick(9)
-        shot("temple_horizon_fade")
+        tick(4)
+        shot("temple_horizon_travel")
+        // 3) Mountain split frames during cutAftermath (splitFull runs across 24 ticks starting ~44 ticks after release).
+        tick(46)
+        shot("temple_horizon_mountain_1")
+        tick(10)
+        shot("temple_horizon_mountain_2")
+        tick(28)
+        shot("temple_horizon_summit_split")
     }
 
     /** White Horizon peak release + 2 consecutive follow-up ticks in 1st person, 3rd person, and blizzard on white snow. */
     private fun VerifyKit.horizonViews() {
         try {
-            // 1) First-person view during live White Horizon in the temple (SPIN_CUT is 5 ticks before release)
+            // 1) First-person view during live White Horizon in the temple (CUT_RELEASE is 6 ticks before release)
             client { it.options.perspective = net.minecraft.client.option.Perspective.FIRST_PERSON }
             temple()
             server { srv ->
                 val f = checkNotNull(fight())
                 val c = f.abs(dev.henny.hha_arius.arena.ArenaLayout.CUT_STAND)
                 val p = player(srv)
-                p.teleport(f.world, c.x + 4.0, f.floorY, c.z + 10.0, emptySet(), 155f, 0f, false)
+                p.teleport(f.world, c.x + 4.0, f.floorY, c.z + 10.0, emptySet(), 155f, -4f, false)
                 f.calls.reset()
                 f.startDirector(f.scenes.theCut())
             }
-            check(waitUntil(150, 1) { server { fight()?.arius?.pose == AriusPose.SPIN_CUT } })
-            tick(5)
+            check(waitUntil(180, 1) { server { fight()?.arius?.pose == AriusPose.CUT_RELEASE } })
+            tick(6)
             shot("horizon_1p_peak")
             shot("horizon_1p_p1")
             shot("horizon_1p_p2")
@@ -259,8 +293,8 @@ class VerifyBoss : FabricClientGameTest {
                 f.calls.reset()
                 f.startDirector(f.scenes.theCut())
             }
-            check(waitUntil(150, 1) { server { fight()?.arius?.pose == AriusPose.SPIN_CUT } })
-            tick(5)
+            check(waitUntil(180, 1) { server { fight()?.arius?.pose == AriusPose.CUT_RELEASE } })
+            tick(6)
             shot("horizon_3p_peak")
             shot("horizon_3p_p1")
             shot("horizon_3p_p2")
@@ -977,6 +1011,112 @@ class VerifyBoss : FabricClientGameTest {
         }
         log("ability: 10 raw magic = %.2f, 10 raw armour ability = %.2f (window factor 0.7)".format(spell, ability))
         server { srv -> player(srv).setStackInHand(Hand.MAIN_HAND, ItemStack(dev.henny.hha_arius.gear.GearItems.SOLVANE)) }
+    }
+
+    /**
+     * Prüft den Windstoß-Streitkolben-Schwebefehler über mehrere Attackentypen hinweg:
+     * Schlägt Arius mitten in verschiedenen Angriffen mit einem Wind-Burst-III-Mace (Sturzschlag),
+     * misst seine maximale Höhe über `floorY` während und nach jedem Angriff und prüft, dass er nie in der Luft
+     * hängen bleibt (und nach beabsichtigtem `skyLeap` sauber auf Bodenhöhe landet).
+     */
+    private fun VerifyKit.maceFloat() {
+        temple()
+        val attacks: List<Pair<String, (EirholmFight, ServerPlayerEntity) -> Script>> = listOf(
+            "combo" to { f, _ -> f.moves.combo(white = false, serious = false) },
+            "lunge" to { f, p -> f.moves.lunge(p, white = false) },
+            "heavenCleave" to { f, _ -> f.moves.heavenCleave(white = false, serious = false) },
+            "guard" to { f, _ -> f.moves.guard(white = false, serious = false) },
+            "frostLotus" to { f, _ -> f.moves.frostLotus(white = false) },
+            "stabGround" to { f, _ -> f.moves.stabGround() },
+            "nullCut" to { f, p -> f.moves.nullCut(p) },
+            "skyLeap" to { f, _ -> f.moves.skyLeap(white = false) },
+        )
+        val summary = ArrayList<String>()
+        try {
+            for ((name, factory) in attacks) {
+                var finished = false
+                server { srv ->
+                    val f = checkNotNull(fight())
+                    val a = checkNotNull(f.arius)
+                    val p = player(srv)
+                    val c = f.arenaCenter
+                    f.calls.reset()
+                    f.guardUntil = 0
+                    f.ariusOpenUntil = 0
+                    f.ariusVulnerable = true
+                    f.ariusHp = f.ariusMax
+                    f.place(a, Vec3d(c.x, f.floorY, c.z))
+                    a.play(AriusPose.IDLE)
+                    p.teleport(f.world, c.x + 2.4, f.floorY, c.z, emptySet(), 90f, 0f, false)
+                    p.onLanding()
+                    val inner = factory(f, p)
+                    f.startDirector(script {
+                        yieldAll(inner)
+                        finished = true
+                        while (true) yield(Unit)
+                    })
+                }
+                // Kurz anlaufen lassen, damit Arius mitten in der Attacke steckt.
+                tick(6)
+                var maxHeight = 0.0
+                var playerBounced = false
+                var hitCount = 0
+                // Zweimal während derselben Attacke mit Wind Burst III Mace treffen (simuliert Bounce-Ketten).
+                for (t in 0 until 75) {
+                    if (t == 0 || t == 14) {
+                        val hitBounce = server { srv ->
+                            val f = checkNotNull(fight())
+                            val a = checkNotNull(f.arius)
+                            val p = player(srv)
+                            val windBurst = f.world.registryManager
+                                .getOrThrow(net.minecraft.registry.RegistryKeys.ENCHANTMENT)
+                                .getOrThrow(net.minecraft.enchantment.Enchantments.WIND_BURST)
+                            val mace = ItemStack(Items.MACE).apply { addEnchantment(windBurst, 3) }
+                            f.guardUntil = 0
+                            f.ariusHp = f.ariusMax
+                            p.setStackInHand(Hand.MAIN_HAND, mace)
+                            p.teleport(f.world, a.x + 1.4, a.y + 1.6, a.z, emptySet(), 90f, 25f, false)
+                            p.fallDistance = 6.0
+                            p.isOnGround = false
+                            p.velocity = Vec3d.ZERO
+                            fullCharge(p)
+                            p.attack(a)
+                            p.velocity.y
+                        }
+                        hitCount++
+                        if (hitBounce > 0.3) playerBounced = true
+                    }
+                    tick(1)
+                    val h = server {
+                        val f = checkNotNull(fight())
+                        val a = checkNotNull(f.arius)
+                        a.y - f.floorY
+                    }
+                    if (h > maxHeight) maxHeight = h
+                    if (finished && t >= 22) break
+                }
+                // Attacke vollständig auslaufen lassen und Endhöhe messen.
+                waitUntil(120, 1) { finished }
+                tick(6)
+                val endHeight = server {
+                    val f = checkNotNull(fight())
+                    val a = checkNotNull(f.arius)
+                    a.y - f.floorY
+                }
+                val line = "$name: hits=$hitCount maxH=%.3f endH=%.3f playerWindBounce=$playerBounced".format(maxHeight, endHeight)
+                log("macefloat $line")
+                summary += line
+                if (name != "skyLeap") {
+                    check(maxHeight <= 0.10) { "Arius floated during grounded attack '$name': maxH=$maxHeight endH=$endHeight" }
+                } else {
+                    check(maxHeight >= 5.0) { "skyLeap should still jump intentionally: maxH=$maxHeight" }
+                }
+                check(abs(endHeight) <= 0.05) { "Arius did not end cleanly on ground after '$name': endH=$endHeight" }
+            }
+            log("macefloat PASS (${summary.size} attacks): ${summary.joinToString(" | ")}")
+        } finally {
+            server { srv -> player(srv).setStackInHand(Hand.MAIN_HAND, ItemStack(dev.henny.hha_arius.gear.GearItems.SOLVANE)) }
+        }
     }
 
     // --- Weißes Loch --------------------------------------------------------------------------------------------------

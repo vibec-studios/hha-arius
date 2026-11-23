@@ -11,8 +11,8 @@
     "description": {
       "translate": "advancements.hha_arius.under_the_line.description"
     },
-    "frame": "challenge",
-    "show_toast": true,
+    "frame": "task",
+    "show_toast": false,
     "announce_to_chat": true,
     "hidden": false
   },

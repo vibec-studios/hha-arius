@@ -243,6 +243,21 @@ class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
     private val spinLoad by lazy { coil(Keys.SPIN_WIND, Keys.SPIN_HIT, 0.12f, 1.2f, extraYaw = -0.25f) }
 
     /**
+     * Standbein-Haltung vor dem Tempel-Tritt: Gewichtsverlagerung und tiefes Standbein aus [Keys.GK_LOAD], aber beide
+     * Arme aus [Keys.GK_KNEE], sodass Solvane von Beginn an tief und weit hinten aus dem Weg bleibt (nie Schwert-Ausholen).
+     */
+    private val kickPlant by lazy {
+        val v = Keys.GK_LOAD.v.copyOf()
+        for (b in intArrayOf(Keys.ARM_R, Keys.FORE_R, Keys.HAND_R, Keys.ARM_L, Keys.FORE_L, Keys.HAND_L)) {
+            val o = b * 6
+            for (c in 0..5) v[o + c] = Keys.GK_KNEE.v[o + c]
+        }
+        // Gewicht klar aufs linke Standbein verlagern, Oberkörper leicht gedreht, Blick geradeaus aufs Ziel.
+        v[Keys.HIPS * 6 + 3] = 1.1f
+        AriusKey(v, Keys.GK_KNEE.hidden, Keys.GK_LOAD.plant)
+    }
+
+    /**
      * Ausholhaltung [wind], um den Anteil [k] weiter von [hit] weg: Becken (halb so stark), Bauch und Brust drehen weiter
      * ein, die Arme reiten mit (Griff und Klingenlage bleiben exakt; [arms] extrapoliert auch sie). Becken um [sink]
      * Einheiten tiefer (die Fuß-IK beugt die Knie). Der Kopf gleicht die Zusatzdrehung aus, der Blick bleibt am
@@ -475,11 +490,22 @@ class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
                 .to(w + 0.5f, w + max(r, 3f), Keys.IDLE, ::smooth, SETTLE)
             // Laden: in 10 Ticks in die Haltung, dann über 30 Ticks immer tiefer gespannt (Server lädt CUT_WIND = 40).
             AriusPose.CUT_CHARGE -> tr.to(0f, 10f, Keys.CUT_CHARGE, ::smooth, WIND).to(10f, 40f, cutLoad, ::sine)
-            AriusPose.CUT_RELEASE -> tr.to(0f, max(1f, w * 0.35f), Keys.CUT_TOP, ::easeOut, WIND).to(max(1f, w * 0.35f), w, Keys.CUT_STRIKE, ::easeIn, STRIKE)
-                .to(w + 1.5f, w + 6f, Keys.CUT_LOW, ::easeOut, FOLLOW)
+            // Senkrechtes Aufladen (Weißer Horizont): Klinge zweihändig gerade über dem Kopf in der Schnittebene.
+            AriusPose.HORIZON_RAISE -> tr.to(0f, 12f, Keys.SPLIT_RAISE, ::smooth, WIND).to(12f, 52f, splitLoad, ::sine)
+            // Senkrechter Niederschlag (Weißer Horizont): zieht exakt aus der erhobenen Ebene gerade nach unten durch.
+            AriusPose.CUT_RELEASE -> tr.to(0f, max(1f, w * 0.25f), splitLoad, ::easeOut, WIND)
+                .to(max(1f, w * 0.25f), w, Keys.SPLIT_HIT, ::easeIn, STRIKE)
+                .to(w + 1.5f, w + 8f, Keys.SPLIT_LOW, ::easeOut, FOLLOW)
             AriusPose.GATE_KICK -> tr.to(0f, w * 0.22f, Keys.GK_PARRY, ::easeOut).to(w * 0.25f, w * 0.45f, Keys.GK_LOAD, ::sine, WIND)
                 .to(w * 0.45f, w * 0.72f, Keys.GK_KNEE, ::easeOut, WIND).to(w * 0.72f, w, Keys.GK_KICK, ::easeIn, KICK)
                 .to(w + min(1f, r * 0.2f), w + r * 0.3f, Keys.GK_KNEE, ::easeOut, FOLLOW).to(w + r * 0.3f, w + r, Keys.IDLE, ::smooth, SETTLE)
+            // Tempel-Tritt: Gewichtsverlagerung aufs Standbein -> Knie hoch anziehen -> gerader Stoßtritt (Treffer bei w),
+            // danach den gestreckten Tritt über den Treffer-Stopp halten, während Solvane die ganze Zeit tief hinten bleibt.
+            AriusPose.KICK_PREP -> tr.to(0f, w * 0.42f, kickPlant, ::smooth, WIND)
+                .to(w * 0.42f, w * 0.80f, Keys.GK_KNEE, ::easeOut, WIND)
+                .to(w * 0.80f, w, Keys.GK_KICK, ::easeIn, KICK)
+                .to(w + 12f, w + 16f, Keys.GK_KNEE, ::easeOut, FOLLOW)
+                .to(w + 16f, w + max(r, 20f), Keys.IDLE, ::smooth, SETTLE)
             AriusPose.STAGGER -> tr.to(0f, 8f, Keys.STAGGER, ::easeOut)
             AriusPose.TRANSFORM -> tr.to(0f, w * 0.1f, Keys.TR_KNEEL, ::easeOut).to(w * 0.25f, w * 0.7f, Keys.TR_RISE, ::smooth, SETTLE)
                 .to(w * 0.7f, w, Keys.TR_OPEN, ::smooth, SETTLE)
@@ -534,6 +560,7 @@ class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
         AriusPose.ARROW_CUT -> 0.25f
         AriusPose.CUT_RELEASE -> 1f
         AriusPose.GATE_KICK -> 0.7f
+        AriusPose.KICK_PREP -> 0.75f
         AriusPose.LAUNCH -> 0.4f
         AriusPose.AIR_KICK -> 0.5f
         AriusPose.NULL_CUT -> 0.7f
@@ -901,7 +928,8 @@ class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
             AriusPose.IDLE, AriusPose.ARROW_CUT -> 1f
             AriusPose.GUARD, AriusPose.GRIP_CAST, AriusPose.IAI_STANCE, AriusPose.CUT_CHARGE -> 0.6f
             AriusPose.STAGGER, AriusPose.WHISTLE -> 0.5f
-            AriusPose.LUNGE, AriusPose.SEATED, AriusPose.KNEEL, AriusPose.AIR_KICK, AriusPose.BREAKTHROUGH, AriusPose.SPIN_CUT -> 0f
+            AriusPose.LUNGE, AriusPose.SEATED, AriusPose.KNEEL, AriusPose.AIR_KICK, AriusPose.BREAKTHROUGH, AriusPose.SPIN_CUT,
+            AriusPose.HORIZON_RAISE, AriusPose.CUT_RELEASE, AriusPose.KICK_PREP -> 0f
             else -> 0.35f
         }
         val w = state.walk * gait
@@ -950,13 +978,13 @@ class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
         val t = state.poseTime
         val w0 = windupOf(pose, state.windup)
         val holding = when (pose) {
-            AriusPose.CUT_CHARGE, AriusPose.IAI_STANCE, AriusPose.CORE_RAISE -> t > 10f
+            AriusPose.CUT_CHARGE, AriusPose.HORIZON_RAISE, AriusPose.IAI_STANCE, AriusPose.CORE_RAISE -> t > 10f
             AriusPose.STRIP_SLASH, AriusPose.SPLIT_FIELD, AriusPose.STAB_GROUND, AriusPose.NULL_CUT, AriusPose.LUNGE,
             AriusPose.COMBO_3, AriusPose.BREAKTHROUGH, AriusPose.SPIN_CUT -> t > 6f && t < w0 - 3f
             else -> false
         }
         if (holding) {
-            val build = if (pose == AriusPose.CUT_CHARGE || pose == AriusPose.IAI_STANCE) MathHelper.clamp((t - 10f) / 30f, 0f, 1f) else 0f
+            val build = if (pose == AriusPose.CUT_CHARGE || pose == AriusPose.HORIZON_RAISE || pose == AriusPose.IAI_STANCE) MathHelper.clamp((t - 10f) / 30f, 0f, 1f) else 0f
             val shake = sin(age * 2.3f) * (0.01f + 0.016f * build)
             armR.roll += shake
             armL.roll -= shake

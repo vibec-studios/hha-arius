@@ -60,7 +60,12 @@ class EirholmFight(
     private val buildMode: Int,
     /** Das eingesetzte Siegel (leer im Training/bei Admin-Start): Sieg verbraucht es, sonst kommt es zurück. */
     private var sealStake: net.minecraft.item.ItemStack = net.minecraft.item.ItemStack.EMPTY,
+    /** Gezieltes Einzeltest-Ziel aus `/arius test <target>`, sonst null (normaler Kampf / Stage-Training). */
+    val testTarget: AriusTestTarget? = null,
 ) {
+    /** Übung oder Einzeltest: kein Siegelverbrauch, keine Beute, keine Fortschritte, kein Ausscheiden bei k. o. */
+    val isPractice: Boolean get() = training != 0 || testTarget != null
+
     val origin: BlockPos = ArenaLayout.origin(slot)
 
     /** Eindeutige Kennung dieser Begegnung (für den gespeicherten Einsatz). */
@@ -321,7 +326,7 @@ class EirholmFight(
         for (p in invitedPlayers()) {
             p.sendMessage(Text.translatable("hha_arius.msg.forming").formatted(Formatting.AQUA), true)
         }
-        if (training == 0) {
+        if (!isPractice) {
             val state = AriusState.get(server)
             state.data.dirtySlots.add(slot)
             state.save()
@@ -352,7 +357,7 @@ class EirholmFight(
         startCount = list.size.coerceIn(1, 6)
         val arrival = abs(ArenaLayout.ARRIVAL)
         for ((i, p) in list.withIndex()) {
-            AriusState.rememberHome(p)
+            if (p.entityWorld.registryKey != Encounters.WORLD) AriusState.rememberHome(p)
             Encounters.arriving.add(p.uuid)
             val offset = Vec3d(((i % 3) - 1) * 1.5, 0.0, (i / 3) * 1.5)
             p.teleport(world, arrival.x + offset.x, arrival.y, arrival.z + offset.z, emptySet(), 180f, 0f, false)
@@ -362,11 +367,16 @@ class EirholmFight(
         spawnArius(abs(ArenaLayout.SEAT), 0f)
         arius?.play(AriusPose.SEATED)
         arius?.sheathed = false
-        when (training) {
-            0, 1 -> startDirector(scenes.intro())
-            2 -> startDirector(scenes.trainingGlacier())
-            3 -> startDirector(scenes.trainingVault())
-            else -> startDirector(scenes.trainingFinale())
+        val target = testTarget
+        if (target != null) {
+            startDirector(AriusTestRunner.scriptFor(this, target))
+        } else {
+            when (training) {
+                0, 1 -> startDirector(scenes.intro())
+                2 -> startDirector(scenes.trainingGlacier())
+                3 -> startDirector(scenes.trainingVault())
+                else -> startDirector(scenes.trainingFinale())
+            }
         }
     }
 
@@ -1016,7 +1026,7 @@ class EirholmFight(
         player.setFrozenTicks(0)
         player.addStatusEffect(StatusEffectInstance(StatusEffects.REGENERATION, 200, 1))
         player.addStatusEffect(StatusEffectInstance(StatusEffects.RESISTANCE, 100, 4))
-        if (training == 0) {
+        if (!isPractice) {
             f.ko = true
             anyKo = true
             val watch = abs(if (phase >= Phase.VAULT) ArenaLayout.WATCH_VAULT else if (phase >= Phase.GLACIER) ArenaLayout.AERIE_WATCH else ArenaLayout.WATCH_UPPER)
@@ -1084,8 +1094,8 @@ class EirholmFight(
 
     /** Sieg: Beute, Fortschritte, Siegel verbrauchen, nach 20 s nach Hause. */
     fun victory() {
-        if (ended || training != 0) {
-            if (training != 0) {
+        if (ended || isPractice) {
+            if (isPractice && !ended) {
                 hint("hha_arius.msg.training_done")
                 task(script {
                     wait(100)
@@ -1132,9 +1142,22 @@ class EirholmFight(
         if (ended) return
         ended = true
         phase = Phase.END
+        chasing = false
+        val everyone = audience()
         music(null, 40)
         MusicCue.forget(this)
-        for (p in audience()) Hold.drop(p)
+        dev.henny.hha.logic.boss.Cine.end(everyone)
+        Qte.cancelFor(fighters.keys)
+        arius?.let { RideSeats.unperch(this, it) }
+        RideSeats.clear(this)
+        Hunt.clearIf(this)
+        for (p in everyone) {
+            Hold.drop(p)
+            if (p.hasVehicle()) p.stopRiding()
+            p.removeStatusEffect(StatusEffects.SLOW_FALLING)
+            AriusNet.send(p, dev.henny.hha_arius.net.AtmosS2C(-1, 1))
+            dev.henny.hha_arius.net.HuntNet.fx(p, dev.henny.hha_arius.net.HuntFx.STATE, p.entityPos, a = 0f)
+        }
         ariusBar.clearPlayers()
         dragonBar.clearPlayers()
         moves.cleanup()
@@ -1148,15 +1171,14 @@ class EirholmFight(
         scenes.restoreSplitInstant()
         edits.restore()
         SplitRecovery.ensureClean(server, slot)
-        // Liegengebliebene Items/Geschosse in der Arena entfernen.
+        // Liegengebliebene Items/Geschosse/Darsteller in der gesamten Instanz entfernen (inkl. Horst, Berge, Gipfel).
         val box = Box(
-            (origin.x - ArenaLayout.BOUND_XZ).toDouble(), (origin.y + ArenaLayout.BOUND_Y_MIN).toDouble(), (origin.z + ArenaLayout.BOUND_Z_MIN).toDouble(),
-            // bis über den Himmelsbalkon (Abschnitt III spielt hoch an der Nadel)
-            (origin.x + ArenaLayout.BOUND_XZ).toDouble(), (origin.y + ArenaLayout.VAULT.y + 30).toDouble(), (origin.z + ArenaLayout.VAULT.z + ArenaLayout.VAULT_R + 8).toDouble(),
+            (origin.x - 520).toDouble(), (origin.y + ArenaLayout.BOUND_Y_MIN).toDouble(), (origin.z - 220).toDouble(),
+            (origin.x + 520).toDouble(), (origin.y + ArenaLayout.SPIRE_TOP + 60).toDouble(), (origin.z + 460).toDouble(),
         )
         for (e in world.getOtherEntities(null, box) { it !is PlayerEntity }) e.discard()
         forceChunks(false)
-        if (training == 0) {
+        if (!isPractice) {
             val state = AriusState.get(server)
             state.data.dirtySlots.remove(slot)
             // Niederlage oder Abbruch: Einsatz zurück (online ins Inventar, sonst beim nächsten Einloggen).

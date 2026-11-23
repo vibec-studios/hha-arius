@@ -116,7 +116,13 @@ object AriusPose {
     const val MACE_SLAM = 35
     const val FORGE_ICE = 36
 
-    const val COUNT = 37
+    /** Weißer Horizont (senkrecht): Klinge hoch über den Kopf gehoben, exakt in der Schnittebene. Gehalten. */
+    const val HORIZON_RAISE = 37
+
+    /** Tempel-Tritt: Gewichtsverlagerung auf das Standbein, Knie hochziehen, dann gerader Stoßtritt; Schwert tief hinten. */
+    const val KICK_PREP = 38
+
+    const val COUNT = 39
 }
 
 /** Formen von Arius ([AriusEntity.form]). */

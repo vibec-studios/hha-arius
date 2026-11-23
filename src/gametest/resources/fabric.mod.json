@@ -7,6 +7,7 @@
   "entrypoints": {
     "fabric-client-gametest": [
       "dev.henny.hha_arius.gametest.StartupTest",
+      "dev.henny.hha_arius.gametest.TestCommandTest",
       "dev.henny.hha_arius.gametest.TrailerCapture",
       "dev.henny.hha_arius.gametest.VerifyDragon",
       "dev.henny.hha_arius.gametest.VerifyBoss",

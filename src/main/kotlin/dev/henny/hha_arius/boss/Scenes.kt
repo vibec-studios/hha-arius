@@ -206,25 +206,26 @@ class Scenes(private val f: EirholmFight) {
         val stand = f.abs(ArenaLayout.CUT_STAND)
         val pre = CineScene(f) {
             f.place(a, stand)
-            a.play(AriusPose.CUT_CHARGE)
+            a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
+            a.play(AriusPose.HORIZON_RAISE)
         }
         yieldAll(pre.play(script {
             // Sprung auf die Altarstufe: Halbtotale von der Westseite der Halle, der Blick folgt ihm.
             val start = a.entityPos
             pre.line(rel(-9.0, 1.4, -50.0), rel(-8.0, 2.2, -54.5), stand, stand, 14, 62.0, 56.0, lookAt = a, lookOffset = 1.3)
-            cue("arius.wind_step", start, 2f, 0.7f)
+            cue("arius.wind_step", start, 1.8f, 0.72f)
             for (i in 1..12) {
                 val k = i / 12.0
                 f.place(a, start.lerp(stand, k).add(0.0, sin(k * PI) * 2.0, 0.0))
                 yield(Unit)
             }
             a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
-            a.play(AriusPose.CUT_CHARGE)
-            cue("cut.reverse_wind", stand, 4f)
-            // Stille, Detail: Hände und Klinge, an denen sich der Wind sammelt; ganz langsam näher.
-            pre.line(stand.add(-2.2, 0.75, 2.6), stand.add(-1.6, 0.85, 2.0), stand, stand, 30, 44.0, 36.0, lookAt = a, lookOffset = 1.15)
+            a.play(AriusPose.HORIZON_RAISE)
+            cue("cut.reverse_wind", stand, 2.8f, 0.85f)
+            // Detail: Arius hebt Solvane hoch über den Kopf in der senkrechten Schnittebene.
+            pre.line(stand.add(-3.0, 1.1, 3.8), stand.add(-2.3, 1.75, 3.1), stand.add(0.0, 1.6, 0.0), stand.add(0.0, 2.4, 0.0), 30, 50.0, 44.0)
             wait(20)
-            cue("cut.charge", stand, 3f)
+            cue("white_line.charge", stand, 2.6f, 0.72f)
             // Rückweg zur Spielerkamera, fertig bevor die Ansage beginnt.
             pre.home(10)
             wait(AriusTimings.CUT_LINE_AT - 20)
@@ -232,18 +233,31 @@ class Scenes(private val f: EirholmFight) {
         f.cutSurvivors.clear()
         f.cutSurvivors.addAll(f.players().map { it.uuid })
         for (p in f.audience()) dev.henny.hha.logic.boss.Cine.title(listOf(p), "hha_arius.feat.white_horizon", "hha_arius.feat.white_horizon.sub", 60)
-        cue("cut.charge", stand, 5f, 0.6f)
+        // Steigende Spannung entlang der sich sammelnden senkrechten Frostlinie.
+        cue("core.form", stand, 2.2f, 0.65f)
+        shown { f.farVanilla(net.minecraft.sound.SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME, stand, 1.4f, 0.62f) }
         val cutDir = Vec3d(0.0, 0.0, 1.0)
         val group = f.calls.boss(pace = Telegraph.Pace.ROOM)
         val line = group.line(f.abs(ArenaLayout.CUT_FROM), f.abs(ArenaLayout.CUT_TO), ArenaLayout.CUT_WIDTH.toFloat(), AriusTimings.CUT_LINE_TICKS)
-        a.play(AriusPose.CUT_CHARGE)
-        horizonCharge(a, cutDir, line.ticks)
-        wait((line.ticks - 5).coerceAtLeast(1))
-        a.play(AriusPose.SPIN_CUT, 5)
-        wait(5)
-        f.fxAll(FxKind.HORIZON, Vec3d(stand.x, f.floorY + 1.45, stand.z), cutDir, a = 19f, b = 2f, life = 36)
-        cue("cut.strike", stand, 5f, 0.78f)
-        MusicCue.sting(f, "impact")
+        a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
+        a.play(AriusPose.HORIZON_RAISE)
+        // Senkrechte Frostlinie vom Himmel durch die erhobene Klinge entlang x = CUT_X (b = 3f).
+        f.fxAll(FxKind.HORIZON, Vec3d(stand.x, f.floorY, stand.z), cutDir, a = 56f, b = 3f, life = line.ticks, e1 = a)
+        // Spannung baut sich in der Mitte weiter auf, dann ein klarer Beat Beinahe-Stille direkt vor dem Niederschlag.
+        val midCharge = (line.ticks / 2).coerceAtLeast(1)
+        val silenceWait = (line.ticks - 12 - midCharge).coerceAtLeast(1)
+        wait(midCharge)
+        cue("cut.charge", stand, 2.8f, 0.78f)
+        wait(silenceWait)
+        MusicCue.duck(f, 0.03f, 22)
+        cue("iai.glint", stand, 1.8f, 1.25f)
+        wait(6)
+        a.play(AriusPose.CUT_RELEASE, 6)
+        wait(6)
+        // Gewaltiger senkrechter Abwärtsschnitt exakt in der Schnittebene x = CUT_X (b = 4f): EIN tiefer Einschlag.
+        f.fxAll(FxKind.HORIZON, Vec3d(stand.x, f.floorY, stand.z), cutDir, a = 60f, b = 4f, life = 36)
+        cue("cut.strike", stand, 4.2f, 0.58f)
+        cue("hold.impact", stand, 2.8f, 0.50f)
         for (p in line.hits(f.players())) {
             f.cutSurvivors.remove(p.uuid)
             f.hurt(p, 30f, Damage.Kind.NULL_CUT)
@@ -331,63 +345,66 @@ class Scenes(private val f: EirholmFight) {
         val lookout = f.abs(Vec3d(ArenaLayout.CUT_X - 38.0, 0.0, foot - 34.0))
         val x = ArenaLayout.CUT_X
         val spireZ = ArenaLayout.SPIRE.z.toDouble()
-        fun seamMist(life: Int) {
-            shown {
-                val steps = 8
-                for (k in 0..steps) {
-                    val z = foot + 4.0 + (spireZ + 20.0 - (foot + 4.0)) * (k / steps.toDouble())
-                    val top = runCatching { FarPlan.top(x.toInt(), z.toInt()) }.getOrDefault(0).coerceAtLeast(0)
-                    val radius = (10f + (k % 3) * 2.5f).coerceAtMost(15f)
-                    val at = f.abs(Vec3d(x, top + 3.0, z))
-                    f.fxAll(FxKind.DEBRIS_CLOUD, at, a = radius, b = 1f, life = life)
-                }
-            }
-        }
-        MusicCue.play(f, "horizon", 10)
+        MusicCue.play(f, "horizon", 28)
         vantage.move(lookout)
         f.atmos(dev.henny.hha_arius.net.AtmosMode.CLEAR, 8)
-        val seamFrom = f.abs(ArenaLayout.CUT_FROM)
         val seamTo = f.abs(Vec3d(x, 0.0, foot + 6.0))
-        f.fxAll(FxKind.SEAM, seamFrom.add(0.0, 0.2, 0.0), seamTo.add(0.0, 0.2, 0.0), a = 14f, life = 160)
-        // 1) Über dem Tempel folgt die Kamera der Schnittnaht bis zum Berg.
-        shown { f.fxAll(FxKind.FLASH, stand, a = 0.26f, life = 6) }
-        f.farSound("cut.split", seamTo, 5f, 1.2f)
-        MusicCue.sting(f, "phase")
+        // 1) Über dem Tempel folgt die Kamera dem senkrechten Schnitt auf dem Weg in den Berg (keine Kastenwände, kein Graudunst).
+        shown {
+            f.fxAll(FxKind.FLASH, stand, a = 0.24f, life = 6)
+            f.fxAll(FxKind.HORIZON, f.abs(Vec3d(x, 0.0, -32.0)), Vec3d(0.0, 0.0, 1.0), a = (foot + 48.0).toFloat(), b = 4f, life = 34)
+            f.farSound("white_line.release", seamTo, 3.0f, 0.65f)
+        }
         post.line(
-            f.abs(Vec3d(x - 18.0, 46.0, -82.0)), f.abs(Vec3d(x - 14.0, 56.0, -56.0)),
+            f.abs(Vec3d(x - 18.0, 42.0, -82.0)), f.abs(Vec3d(x - 14.0, 56.0, -52.0)),
             f.abs(Vec3d(x, 12.0, -4.0)), f.abs(Vec3d(x, 82.0, foot + 56.0)), 26, 68.0, 62.0,
         )
-        shown {
-            for (k in 0 until 5) f.fxAll(FxKind.CLEAR_WAVE, seamFrom.lerp(seamTo, 0.3 + k * 0.14), a = 5f, life = 14)
-        }
-        wait(20)
-        seamMist(life = 48)
-        f.farSound("seal.blizzard", f.abs(Vec3d(x, 48.0, foot + 36.0)), 5f, 0.6f)
-        wait(6)
-        // 2) Weite Totale von Fuß bis Horn: Berg UND Gipfelarena spalten sich sauber vor den Augen der Spieler.
+        wait(26)
+        // 2) Weite Totale von Fuß bis Horn: Die senkrechte Lichtklinge schneidet vom Himmel herab und spaltet Berg & Gipfelarena.
         // Alle Blickpunkte liegen strikt VOR/ÜBER der Berghaut (freie Sichtlinie), damit HHA-CinePlayer die Kamera nie einzieht.
         val mid = f.abs(Vec3d(x, 90.0, spireZ - 40.0))
-        f.farSound("glacier.collapse", mid, 8f, 0.5f)
-        f.farSound("cut.split", mid, 8f, 0.7f)
-        f.farVanilla(net.minecraft.sound.SoundEvents.ENTITY_GENERIC_EXPLODE.value(), mid, 6f, 0.4f)
-        f.farVanilla(net.minecraft.sound.SoundEvents.ENTITY_WARDEN_SONIC_BOOM, mid, 5f, 0.5f)
+        shown { f.farSound("cut.split", mid, 4.8f, 0.62f) }
         post.rawLine(
             f.abs(Vec3d(x - 62.0, 128.0, foot - 156.0)), f.abs(Vec3d(x - 48.0, 148.0, foot - 142.0)),
             f.abs(Vec3d(x, 86.0, spireZ - 110.0)), f.abs(Vec3d(x, 178.0, spireZ - 34.0)), 56, 64.0, 60.0,
         )
         // Zuerst alle Blöcke der gesamten Schnitt-Ebene (inkl. Gipfelarena, Mauer, Krone & Horn) sichern und spalten!
-        yieldAll(splitFull(animate = true, slices = 24))
-        for (i in 24 until 56) {
-            if (i % 14 == 0) f.calls.roomShake(lookout, 4.5f - i / 24f, 200f)
-            if (i == 30) {
-                shown {
-                    for (k in 0 until 5) {
-                        val z = foot + 18.0 + k * 34.0
-                        val top = runCatching { FarPlan.top(x.toInt(), z.toInt()) }.getOrDefault(0).coerceAtLeast(0)
-                        f.fxAll(FxKind.CLEAR_WAVE, f.abs(Vec3d(x, top + 4.0, z)), a = 18f, life = 24)
+        // Gestaffeltes Fels- & Eisknirschen über die 24 Scheiben, danach langes tiefes Grollen beim Absetzen.
+        yieldAll(splitFull(animate = true, slices = 24, playSounds = false) { slice ->
+            shown {
+                when (slice) {
+                    3 -> {
+                        f.farSound("glacier.crack", mid, 3.4f, 0.68f)
+                        f.farVanilla(net.minecraft.sound.SoundEvents.BLOCK_DEEPSLATE_BREAK, mid, 3.0f, 0.52f)
+                    }
+                    8 -> {
+                        f.farSound("ridge.break", mid, 3.2f, 0.58f)
+                        f.farVanilla(net.minecraft.sound.SoundEvents.BLOCK_BASALT_BREAK, mid, 3.2f, 0.48f)
+                    }
+                    13 -> {
+                        f.farSound("glacier.crack", mid, 3.6f, 0.56f)
+                        f.farVanilla(net.minecraft.sound.SoundEvents.BLOCK_GLASS_BREAK, mid, 2.4f, 0.46f)
+                    }
+                    18 -> {
+                        f.farSound("ridge.break", mid, 3.0f, 0.66f)
+                        f.farVanilla(net.minecraft.sound.SoundEvents.BLOCK_DEEPSLATE_BREAK, mid, 2.8f, 0.44f)
+                    }
+                    23 -> {
+                        f.farSound("glacier.collapse", mid, 4.4f, 0.46f)
                     }
                 }
-                f.farVanilla(net.minecraft.sound.SoundEvents.BLOCK_GLASS_BREAK, mid, 5f, 0.5f)
+            }
+        })
+        for (i in 24 until 56) {
+            if (i % 14 == 0) f.calls.roomShake(lookout, 4.5f - i / 24f, 200f)
+            shown {
+                when (i) {
+                    32 -> {
+                        f.farVanilla(net.minecraft.sound.SoundEvents.BLOCK_BASALT_BREAK, mid, 2.2f, 0.40f)
+                        f.farSound("seal.blizzard", mid, 2.4f, 0.55f)
+                    }
+                    44 -> f.farSound("glacier.crack", mid, 1.9f, 0.50f)
+                }
             }
             yield(Unit)
         }
@@ -398,10 +415,13 @@ class Scenes(private val f: EirholmFight) {
             f.abs(Vec3d(x, summitY + 4.0, spireZ - 10.0)), f.abs(Vec3d(x, summitY + 12.0, spireZ + 4.0)), 44, 58.0, 54.0,
         )
         shown { f.sceneText("cut_after") }
+        // Fortschritt still vergeben (frame=task, show_toast=false -> kein Achievement-Fanfaren-Sound über der Szene).
         for (id in f.cutSurvivors) f.server.playerManager.getPlayer(id)?.let { Advancements.grant(it, "under_the_line") }
-        wait(44)
+        wait(6)
+        shown { f.farSound("glacier.crack", mid, 1.1f, 0.44f) }
+        wait(38)
         // 4) Whiteout: zurück in den Tempel.
-        f.farSound("seal.blizzard", lookout, 4f, 0.6f)
+        shown { f.farSound("seal.blizzard", lookout, 2.6f, 0.62f) }
         f.atmos(dev.henny.hha_arius.net.AtmosMode.BLIZZARD, 16)
         post.once { Cine.fade(it, 0xF2F6FA, 0.0, 1.0, 16) }
         wait(20)
@@ -415,7 +435,7 @@ class Scenes(private val f: EirholmFight) {
      * Gipfelarena, Ringmauer, Eiskrone und Horn), sichert sie absturzsicher über [SplitRecovery] und spaltet sie in
      * [slices] sauberen Scheiben von Norden nach Süden.
      */
-    fun splitFull(animate: Boolean = true, slices: Int = 24): Script = script {
+    fun splitFull(animate: Boolean = true, slices: Int = 24, playSounds: Boolean = true, onSlice: ((Int) -> Unit)? = null): Script = script {
         val z0 = (ArenaLayout.SPIRE.z - FarPlan.MASSIF_R - 6).toInt()
         val z1 = (ArenaLayout.SPIRE.z + FarPlan.MASSIF_R + 6).toInt()
         val cutX = kotlin.math.floor(ArenaLayout.CUT_X).toInt()
@@ -440,19 +460,25 @@ class Scenes(private val f: EirholmFight) {
         activeSplit = collected
         splitActive = true
         if (animate) {
-            val from = f.abs(Vec3d(ArenaLayout.CUT_X, 0.2, ArenaLayout.CUT_TO.z))
-            f.fxAll(FxKind.SEAM, from, f.abs(Vec3d(ArenaLayout.CUT_X, ArenaLayout.SPIRE_TOP.toDouble(), ArenaLayout.SPIRE.z.toDouble())), a = 24f, life = slices + 34)
-            f.ambient("cut.split", f.abs(Vec3d(ArenaLayout.CUT_X, 90.0, ArenaLayout.SPIRE.z.toDouble())), 8f)
-            f.ambient("glacier.collapse", from, 6f, 0.6f)
-            f.calls.roomShake(from, 8f, 90f)
+            val footStart = f.abs(Vec3d(ArenaLayout.CUT_X, 0.0, z0.toDouble()))
+            val spanZ = (z1 - z0).toFloat().coerceAtLeast(180f)
+            f.fxAll(FxKind.HORIZON, footStart, Vec3d(0.0, 0.0, 1.0), a = spanZ, b = 5f, life = slices + 38)
+            if (playSounds) {
+                f.ambient("cut.split", f.abs(Vec3d(ArenaLayout.CUT_X, 90.0, ArenaLayout.SPIRE.z.toDouble())), 4.8f, 0.62f)
+                f.ambient("glacier.collapse", footStart, 4.4f, 0.46f)
+            }
+            f.calls.roomShake(footStart, 8f, 90f)
         }
         val byZ = collected.sortedBy { it.first.z }
         val step = maxOf(1, (byZ.size + slices - 1) / slices)
         var idx = 0
+        var slice = 0
         while (idx < byZ.size) {
             val end = minOf(byZ.size, idx + step)
             for (k in idx until end) f.edits.clear(byZ[k].first)
+            onSlice?.invoke(slice)
             idx = end
+            slice++
             if (slices > 1) yield(Unit)
         }
     }
@@ -548,32 +574,35 @@ class Scenes(private val f: EirholmFight) {
         val center = if (plan.isEmpty()) f.abs(Vec3d(0.5, 0.0, launchZ)) else plan.map { it.second.first }.fold(Vec3d.ZERO) { acc, v -> acc.add(v) }.multiply(1.0 / plan.size)
         val ground = Vec3d(center.x, y0, center.z)
         val north = flatDir(ground, stand)
-        // 1) Aufbau über die Schultern.
-        scene.once { Cine.fade(it, 0xF2F6FA, 1.0, 0.0, 20) }
+        // 1) Aufbau über die Schultern: Arius steht ruhig mit gesenkter Klinge auf der Altarstufe (kein Schwert-Aufladen).
+        scene.once { Cine.fade(it, 0xF2F6FA, 1.0, 0.0, 18) }
         f.face(a, ground)
-        a.play(AriusPose.CUT_CHARGE)
+        a.play(AriusPose.IDLE)
         val shoulder = ground.subtract(north.multiply(3.2)).add(1.4, 1.75, 0.0)
-        scene.line(shoulder, ground.subtract(north.multiply(2.2)).add(1.1, 1.8, 0.0), stand.add(0.0, 1.5, 0.0), stand.add(0.0, 1.6, 0.0), 40, 62.0, 48.0)
-        cue("cut.reverse_wind", stand, 3.5f, 0.8f)
-        shown { f.fx(FxKind.REVERSE_WIND, stand.add(0.0, 1.0, 0.0), a = 9f, life = 50) }
-        wait(12)
+        scene.line(shoulder, ground.subtract(north.multiply(2.4)).add(1.1, 1.75, 0.0), stand.add(0.0, 1.5, 0.0), stand.add(0.0, 1.55, 0.0), 24, 62.0, 52.0)
+        wait(8)
         shown { f.say("kick", 40) }
-        cue("cut.charge", stand, 2.5f, 1.4f)
-        wait(28)
-        // 2) Windschritt: Schnitt halbhoch aus dem Gang, er reißt in einer Lichtspur vor sie.
-        val front = ground.add(north.multiply(2.6))
-        scene.line(front.add(north.multiply(5.0)).add(-1.6, 2.6, 0.0), front.add(north.multiply(4.2)).add(-1.3, 2.3, 0.0), front.add(0.0, 1.0, 0.0), ground.add(0.0, 1.0, 0.0), 8, 70.0, 64.0)
+        wait(16)
+        // 2) Windschritt direkt vor die Spieler, dann klare Ganzkörper-Einstellung für die Tritt-Ausholbewegung:
+        //    Gewicht verlagern -> Standbein pflanzen -> Knie hochziehen -> gerader Stoßtritt (Schwert bleibt tief hinten).
+        val front = ground.add(north.multiply(2.4))
+        scene.line(front.add(north.multiply(4.6)).add(-1.8, 2.3, 0.0), front.add(-3.0, 1.35, 2.1), front.add(0.0, 1.0, 0.0), front.add(0.0, 1.05, 0.35), 6, 66.0, 58.0)
         a.play(AriusPose.LUNGE, 4)
-        cue("arius.wind_step", stand, 3f, 1.2f)
+        cue("arius.wind_step", stand, 2.6f, 1.15f)
         shown { f.fx(FxKind.DASH_STREAK, stand, front, life = 10) }
         for (i in 1..4) {
             f.place(a, stand.lerp(front, i / 4.0).let { Vec3d(it.x, stand.y + (y0 - stand.y) * (i / 4.0), it.z) })
             yield(Unit)
         }
         f.face(a, ground)
-        a.play(AriusPose.SPIN_CUT, 4)
-        wait(4)
-        // 3) Aufprallbild: Treffer-Stopp, alle hängen in der Luft; die Musik reißt ab; benutzerdefinierte Schleuderanimation startet.
+        wait(2)
+        // Dreiviertel-Seitenansicht auf Arius' ganzen Körper (Standbein, anziehendes rechtes Knie, gesenkte Klinge hinten).
+        scene.line(front.add(-3.0, 1.35, 2.1), front.add(-2.75, 1.25, 1.75), front.add(0.0, 1.05, 0.35), front.add(0.0, 1.05, 0.55), 16, 58.0, 50.0)
+        a.play(AriusPose.KICK_PREP, 16)
+        wait(5)
+        cue("frost_step", front, 1.6f, 0.78f)
+        wait(11)
+        // 3) Aufprallbild: Treffer-Stopp, Arius hält das gestreckte Trittbein; alle hängen in der Luft; Schleuderanimation startet.
         val hitstop = 12
         val recover = 46
         for ((p, lp) in plan) if (f.canSequence(p)) {
@@ -585,22 +614,19 @@ class Scenes(private val f: EirholmFight) {
             Entrance.storyFx(f, FxKind.KICK_FLING, start, a = hitstop.toFloat(), b = fl.toFloat(), life = hitstop + fl + recover, e1 = p)
         }
         MusicCue.duck(f, 0f, 14)
-        MusicCue.sting(f, "impact")
         val south = north.negate()
         shown {
-            f.fxAll(FxKind.FLASH, front, a = 0.5f, life = 6)
+            f.fxAll(FxKind.FLASH, front, a = 0.45f, life = 6)
             f.fxAll(FxKind.TIME_SLOW, front, a = 0.9f, life = 14)
-            f.fx(FxKind.SLASH_ARC, front.add(0.0, 1.1, 0.0), south, a = 7f, b = 0.05f, life = 16)
             f.fx(FxKind.GALE, front.add(0.0, 1.0, 0.0), south.multiply(16.0), a = 1f, life = 16)
             Vfx.shockwave(f.world, Vfx.Style.HEAVEN, front, 7f, 16, 2.4f)
             f.fx(FxKind.CLEAR_WAVE, front, a = 9f, life = 16)
         }
-        cue("hold.impact", front, 3f, 0.6f)
-        cue("cut.strike", front, 4f, 0.7f)
-        cue("arius.kick", front, 3f, 0.6f)
+        cue("hold.impact", front, 3.2f, 0.62f)
+        cue("arius.kick", front, 3.4f, 0.68f)
         f.calls.hitShake(front, 5f, 30f)
-        val above = front.add(north.multiply(3.4)).add(-1.2, 4.2, 0.0)
-        scene.line(above, above.add(north.multiply(0.4)).add(0.0, 0.3, 0.0), ground.add(0.0, 1.0, 0.0), ground.add(south.multiply(1.0)).add(0.0, 1.2, 0.0), hitstop, 58.0, 54.0)
+        val above = front.add(north.multiply(2.8)).add(-2.0, 2.8, 0.0)
+        scene.line(above, above.add(north.multiply(0.35)).add(0.0, 0.25, 0.0), front.add(0.0, 1.0, 0.8), ground.add(south.multiply(0.8)).add(0.0, 1.15, 0.0), hitstop, 58.0, 54.0)
         wait(hitstop)
         // 4) Flug durch die Toröffnung, jeder mit Verfolgerkamera hinter sich.
         var flight = 24
@@ -1890,9 +1916,9 @@ class Scenes(private val f: EirholmFight) {
      * beim Drachen-Reveal), löst sich dort oben in Licht auf und stürzt als leuchtender Strom herab in Arius' Scheide;
      * die temporäre Eisklinge zerfällt. Endzustand: kein Drache, [AriusBlade.HELD], Solvane in der Scheide ([settleReturn]).
      */
-    private fun bladeReturn(a: AriusEntity): Script = script {
+    private fun bladeReturn(a: AriusEntity, forcePlay: Boolean = false): Script = script {
         val d = f.nivaris
-        if (d == null || f.training != 0) {
+        if (d == null || (f.training != 0 && !forcePlay)) {
             settleReturn(a)
             return@script
         }
@@ -2153,13 +2179,308 @@ class Scenes(private val f: EirholmFight) {
         yieldAll(vaultFight())
     }
 
-    fun trainingFinale(): Script = script {
+    fun trainingFinale(summit: Boolean = false): Script = script {
         yieldAll(waitForFar())
+        if (summit) {
+            restoreSplitInstant()
+            prepareSummit(withDragon = false)
+            f.dragonDowned = true
+            f.say("echo", 60)
+            wait(60)
+            yieldAll(finale())
+        } else {
+            prepareVault()
+            f.dragonDowned = true
+            f.say("echo", 60)
+            wait(60)
+            yieldAll(finale())
+        }
+    }
+
+    // --- Test command entry points (/arius test <target>) ---------------------------------------------------------------
+
+    private fun prepareSummit(withDragon: Boolean, blade: Int = AriusBlade.HELD, sheathed: Boolean = true) {
+        val a = f.arius ?: return
+        f.onSummit = true
+        f.setPhase(P.FINALE)
+        val center = f.arenaCenter
+        val spots = f.finaleSpots()
+        f.place(a, center)
+        a.form = AriusForm.WHITE
+        a.bladeState = blade
+        a.sheathed = sheathed
+        a.eyeGlow = 80
+        a.play(if (sheathed) AriusPose.IAI_STANCE else AriusPose.IDLE)
+        for ((i, p) in f.players().withIndex()) {
+            val s = f.abs(spots[i % spots.size])
+            val yaw = (Math.toDegrees(atan2(center.z - s.z, center.x - s.x)) - 90.0).toFloat()
+            p.teleport(f.world, s.x, s.y, s.z, emptySet(), yaw, 0f, false)
+            p.onLanding()
+        }
+        f.target()?.let { f.face(a, it.entityPos) }
+        if (withDragon) {
+            f.spawnNivaris(center.add(0.0, 2.0, 6.0), 180f) { d ->
+                d.mode = NivarisMode.RETURN_COIL
+                d.uncoil = 0f
+                d.flying = false
+                d.resonance = true
+                d.eyeGlow = 100
+                d.showNow()
+                d.play(NivarisPose.IDLE)
+            }
+        } else {
+            f.dismissNivaris()
+        }
+    }
+
+    fun testEnsureFarAndSplit(splitActive: Boolean): Script = script {
+        yieldAll(waitForFar())
+        if (splitActive) ensureSplitImmediate() else restoreSplitInstant()
+    }
+
+    fun testIntro(): Script = script {
+        val a = f.arius ?: return@script
+        yieldAll(waitForFar())
+        restoreSplitInstant()
+        f.ariusVulnerable = false
+        yieldAll(establish(a))
+        f.say("intro.seal", 60); wait(66)
+        a.play(AriusPose.RISE); wait(24)
+        f.say("intro.reason", 70); wait(76)
+        f.say("intro.test", 80); wait(50)
+        yieldAll(temple())
+    }
+
+    fun testPhase1(): Script = script {
+        val a = f.arius ?: return@script
+        restoreSplitInstant()
+        a.play(AriusPose.IDLE)
+        yieldAll(temple())
+    }
+
+    fun testWhiteHorizon(): Script = script {
+        yieldAll(waitForFar())
+        restoreSplitInstant()
+        val a = f.arius ?: return@script
+        f.setPhase(P.TEMPLE)
+        f.place(a, f.abs(ArenaLayout.DAIS_FRONT))
+        a.form = AriusForm.SERIOUS
+        a.bladeState = AriusBlade.HELD
+        a.sheathed = false
+        a.eyeGlow = 85
+        a.play(AriusPose.IDLE)
+        yieldAll(theCut())
+    }
+
+    fun testKick(): Script = script {
+        yieldAll(waitForFar())
+        ensureSplitImmediate()
+        val a = f.arius ?: return@script
+        f.setPhase(P.CUT)
+        f.place(a, f.abs(ArenaLayout.CUT_STAND))
+        a.form = AriusForm.SERIOUS
+        a.bladeState = AriusBlade.HELD
+        a.sheathed = false
+        a.eyeGlow = 100
+        a.play(AriusPose.IDLE)
+        val scene = CineScene(f) {
+            f.place(a, f.abs(ArenaLayout.WATCH_SEAT))
+            a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
+            a.play(AriusPose.IDLE)
+            for ((i, p) in f.players().withIndex()) {
+                val land = f.abs(ArenaLayout.LANDING[i % ArenaLayout.LANDING.size])
+                p.teleport(f.world, land.x, land.y, land.z, emptySet(), 180f, -4f, false)
+                p.onLanding()
+            }
+        }
+        yieldAll(scene.play(script { yieldAll(kick(scene)) }))
+        f.victory()
+    }
+
+    fun testSolvaneReveal(): Script = script {
+        yieldAll(waitForFar())
+        ensureSplitImmediate()
+        val a = f.arius ?: return@script
+        f.setPhase(P.CUT)
+        f.place(a, f.abs(ArenaLayout.WATCH_SEAT))
+        a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
+        a.form = AriusForm.DARK
+        a.bladeState = AriusBlade.HELD
+        a.sheathed = false
+        a.play(AriusPose.IDLE)
+        for ((i, p) in f.players().withIndex()) {
+            val land = f.abs(ArenaLayout.LANDING[i % ArenaLayout.LANDING.size])
+            p.teleport(f.world, land.x, land.y, land.z, emptySet(), 180f, -4f, false)
+            p.onLanding()
+        }
+        yieldAll(arrival())
+    }
+
+    fun testPickupFlight(): Script = script {
+        yieldAll(waitForFar())
+        ensureSplitImmediate()
+        val a = f.arius ?: return@script
+        f.setPhase(P.CUT)
+        for ((i, p) in f.players().withIndex()) {
+            val land = f.abs(ArenaLayout.LANDING[i % ArenaLayout.LANDING.size])
+            p.teleport(f.world, land.x, land.y, land.z, emptySet(), 0f, 0f, false)
+            p.onLanding()
+        }
+        Entrance.landed(f, f.abs(Vec3d(0.5, 0.0, 2.0)))
+        a.form = AriusForm.DARK
+        a.bladeState = AriusBlade.NONE
+        yieldAll(toAerie())
+        f.victory()
+    }
+
+    private fun prepareAerieForRide() {
+        val a = f.arius ?: return
+        f.setPhase(P.GLACIER)
+        f.place(a, f.abs(ArenaLayout.AERIE_SEAT))
+        a.form = AriusForm.DARK
+        a.bladeState = AriusBlade.NONE
+        a.sheathed = false
+        a.play(AriusPose.SEATED)
+        for ((i, p) in f.players().withIndex()) {
+            val s = clearLanding(f.abs(ArenaLayout.AERIE_LANDING[i % ArenaLayout.AERIE_LANDING.size]))
+            p.teleport(f.world, s.x, s.y, s.z, emptySet(), 90f, 0f, false)
+            p.onLanding()
+        }
+        f.spawnNivaris(f.abs(Vec3d.of(ArenaLayout.AERIE)).add(0.5, 0.0, 0.5), -90f)
+        f.nivaris?.play(NivarisPose.EXHAUSTED)
+    }
+
+    fun testRideIntro(): Script = script {
+        yieldAll(waitForFar())
+        ensureSplitImmediate()
+        prepareAerieForRide()
+        val flight = DragonRide(f)
+        val intro = CineScene(f) { flight.settleIntro() }
+        yieldAll(intro.play(flight.intro(intro)))
+        yieldAll(flight.play())
+        f.victory()
+    }
+
+    fun testDragonRide(): Script = script {
+        yieldAll(waitForFar())
+        ensureSplitImmediate()
+        prepareAerieForRide()
+        f.setPhase(P.COLLAPSE)
+        val flight = DragonRide(f)
+        yieldAll(flight.play())
+        f.victory()
+    }
+
+    fun testTransform(): Script = script {
+        yieldAll(waitForFar())
+        ensureSplitImmediate()
+        val a = f.arius ?: return@script
+        f.setPhase(P.COLLAPSE)
+        val vault = f.abs(Vec3d.of(ArenaLayout.VAULT)).add(0.5, 0.0, 0.5)
+        f.place(a, vault.add(0.0, 12.0, 0.0))
+        a.form = AriusForm.DARK
+        a.bladeState = AriusBlade.NONE
+        a.sheathed = false
+        a.play(AriusPose.STAB_GROUND)
+        f.spawnNivaris(f.abs(ArenaLayout.VAULT_REST), 180f) { d ->
+            d.flying = false
+            d.play(NivarisPose.EXHAUSTED)
+        }
+        for ((i, p) in f.players().withIndex()) {
+            val s = f.abs(ArenaLayout.VAULT_LANDING[i % ArenaLayout.VAULT_LANDING.size])
+            p.teleport(f.world, s.x, s.y, s.z, emptySet(), 180f, 0f, false)
+            p.onLanding()
+        }
+        f.face(a, f.abs(ArenaLayout.VAULT_LANDING[0]))
+        val scene = CineScene(f) {}
+        yieldAll(scene.play(script { yieldAll(transformBody(scene)) }))
+        f.victory()
+    }
+
+    fun testWhiteHole(): Script = script {
+        yieldAll(waitForFar())
+        ensureSplitImmediate()
         prepareVault()
-        f.dragonDowned = true
-        f.say("echo", 60)
-        wait(60)
-        yieldAll(finale())
+        f.ariusMax = BossConfig.health(640f, f.startCount)
+        f.ariusHp = f.ariusMax * 0.5f
+        f.dragonMax = BossConfig.health(500f, f.startCount)
+        f.dragonHp = f.dragonMax
+        f.dragonDowned = false
+        f.ariusVulnerable = true
+        f.dragonVulnerable = true
+        MusicCue.play(f, "white_hole", 20)
+        yieldAll(WhiteHoleBlast(f).run())
+        f.victory()
+    }
+
+    fun testPrepareForHunt(splitActive: Boolean): Script = script {
+        yieldAll(waitForFar())
+        if (splitActive) ensureSplitImmediate() else restoreSplitInstant()
+        prepareVault()
+        f.ariusMax = BossConfig.health(640f, f.startCount)
+        f.ariusHp = f.ariusMax * 0.4f
+        f.dragonMax = BossConfig.health(500f, f.startCount)
+        f.dragonHp = f.dragonMax * 0.5f
+        f.dragonDowned = false
+        f.ariusVulnerable = false
+        f.dragonVulnerable = false
+    }
+
+    fun testHuntArrive(): Script = script {
+        yieldAll(testPrepareForHunt(splitActive = false))
+        val hunt = Hunt(f)
+        yieldAll(hunt.arrive())
+        f.victory()
+    }
+
+    fun testBladeReturn(): Script = script {
+        yieldAll(waitForFar())
+        restoreSplitInstant()
+        prepareSummit(withDragon = true, blade = AriusBlade.ICE, sheathed = false)
+        val a = f.arius ?: return@script
+        yieldAll(bladeReturn(a, forcePlay = true))
+        f.victory()
+    }
+
+    fun testLastHorizon(): Script = script {
+        yieldAll(waitForFar())
+        restoreSplitInstant()
+        prepareSummit(withDragon = false, blade = AriusBlade.HELD, sheathed = false)
+        val a = f.arius ?: return@script
+        f.ariusMax = BossConfig.health(480f, f.startCount)
+        f.ariusHp = f.ariusMax * 0.45f
+        f.ariusVulnerable = true
+        f.music("music.summit", 20)
+        yieldAll(lastHorizon(a))
+        f.victory()
+    }
+
+    fun testClimax(): Script = script {
+        yieldAll(waitForFar())
+        restoreSplitInstant()
+        prepareSummit(withDragon = false, blade = AriusBlade.HELD, sheathed = false)
+        val a = f.arius ?: return@script
+        f.ariusMax = BossConfig.health(480f, f.startCount)
+        f.ariusHp = f.ariusMax * 0.45f
+        f.ariusVulnerable = true
+        f.moves.resetStance(AriusMoves.Stance.FLOW, 200)
+        f.music("music.summit", 20)
+        MusicCue.play(f, "summit_final", 20)
+        f.moves.summit.debugJumpToLastStand()
+        f.updateBars()
+        while (f.ariusHp > 0f) {
+            runWhile(f.moves.turnFinale(true)) { f.ariusHp > 0f }
+        }
+        f.ariusVulnerable = false
+        f.calls.reset()
+        yieldAll(ending())
+    }
+
+    fun testEnding(): Script = script {
+        yieldAll(waitForFar())
+        restoreSplitInstant()
+        prepareSummit(withDragon = false, blade = AriusBlade.HELD, sheathed = true)
+        yieldAll(ending())
     }
 
     private companion object {
