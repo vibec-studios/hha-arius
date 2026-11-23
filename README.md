@@ -91,6 +91,15 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.14.0
+
+- **Combo camera:** the punish camera glides smoothly and never ends up inside walls or posts.
+- **White Horizon:** a new sharp, near-white tapered cut that stays readable in first person, third person and in the storm.
+- **Golden yang** now restores the split mountain later, when you cross into the hunt.
+- **Solvane's summon:** a dark dragon silhouette inside the storm, a claw shot on the ice spike, and a clean seam through the horn when the mountain is split.
+- **Head ram and drop-off:** a side run-up with a hit stop, a high arc over her head, a close barrel roll and a safe landing on open ground.
+- **Smoother body:** no more tail jumps during takeoff, and her feet stay planted when she lands.
+
 ### New in 1.13.0
 
 - **Combat:** the frosted attack markers are back, the parry indicator works again, and Arius stays active while Solvane leads.
