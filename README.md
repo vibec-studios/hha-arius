@@ -91,6 +91,10 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.15.1
+
+- **Launcher fix:** the Vibe Launcher no longer mistakes this mod for an unrelated CurseForge mod. Gameplay is unchanged from 1.15.0.
+
 ### New in 1.15.0
 
 - **Test command:** `/arius test <target>` starts any phase, cutscene, quick-time event or hunt section on its own (operators only). `/arius test list` shows every target and `/arius test stop` ends the test.
