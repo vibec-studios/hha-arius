@@ -627,7 +627,7 @@ class NivarisBody {
         val pts = Array(POINTS) { Vec.ZERO }
         val ups = Array(POINTS) { UP_V }
         val air = FloatArray(POINTS)
-        val headFwd: Vec
+        var headFwd: Vec
         val carry = dev.henny.hha_arius.client.fx.RideClient.carrySpine(e.id, tickDelta)
         if (carry != null) {
             if (!hadCarryFrame) startFade(now)
@@ -748,6 +748,14 @@ class NivarisBody {
         // The rear half is still sinking from the descent when the front feet stop.
         // Feed the settled shape in continuously even if the terrain under the tail steps down.
         if (carry == null && mode == NivarisModeC.NORMAL && now - entranceLandingAge in 0f..74f) {
+            // The rendered muzzle extends ahead of the sampled head joint. Keep the jaw
+            // above the snow while she lowers it toward the people on the plateau.
+            val jawClearance = (base.y + 2.7 - pts[0].y).coerceAtLeast(0.0)
+            for (i in 0 until NECK) pts[i] = pts[i].add(0.0, jawClearance * (1.0 - i.toDouble() / NECK), 0.0)
+            if (headFwd.y < -0.22) {
+                val flat = Vec(headFwd.x, 0.0, headFwd.z).normalizeOr(Vec(0.0, 0.0, -1.0))
+                headFwd = flat.add(0.0, -0.22, 0.0).normalize()
+            }
             val step = 2.30 * dt
             last?.let { before ->
                 for (i in NivarisShape.HIND_GLIED + 1 until POINTS) {
