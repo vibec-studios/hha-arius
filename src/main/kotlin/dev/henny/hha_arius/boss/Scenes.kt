@@ -747,7 +747,7 @@ class Scenes(private val f: EirholmFight) {
         val pickupQ = distance(pickup)
         val dropQ = distance(drop)
         val passQ = distance(pass)
-        val landQ = length - 26.0
+        val landQ = length - 18.0
 
         fun direction(q: Double): Vec3d = at(q + 1.0).subtract(at(q - 1.0)).normalize()
         fun spine(q: Double, settle: Double = 0.0): List<Vec3d> = DragonRail.carrySpine(rail, runIn, q, settle)
@@ -760,7 +760,19 @@ class Scenes(private val f: EirholmFight) {
             f.place(d, pos)
             f.face(d, pos.add(direction(q)))
             d.bodyRoll = roll
-            val points = spine(q, settle)
+            val points = spine(q, settle).toMutableList()
+            if (settle > 0.0) {
+                val shoulder = points[NivarisShape.FORE_GLIED]
+                val facing = flatDir(shoulder, positions?.firstOrNull() ?: aerie.add(58.0, 0.0, 0.0))
+                val look = facing.rotateY((0.30 * sin(PI * settle)).toFloat())
+                // A short glance across the arena settles on the lead player, with the jaw kept above the ice.
+                for (i in 0 until NivarisShape.FORE_GLIED) {
+                    val forward = NivarisShape.FORE_GLIED - i
+                    val level = shoulder.add(look.multiply(forward * NivarisShape.SEGMENT))
+                    val neckLift = (0.72 * sin(PI * settle) + 0.65 * settle) * forward / NivarisShape.FORE_GLIED
+                    points[i] = Vec3d(level.x, points[i].y + neckLift, level.z)
+                }
+            }
             val actors = riders.mapIndexedNotNull { i, p ->
                 if (!p.isAlive || p.isRemoved || p.entityWorld !== f.world) return@mapIndexedNotNull null
                 val location = positions?.get(i) ?: return@mapIndexedNotNull null
@@ -873,7 +885,9 @@ class Scenes(private val f: EirholmFight) {
             scene.line(look0.add(offset), look1.add(offset), look0, look1,
                 kotlin.math.ceil((to - from) / cruise).toInt(), fov)
         }
-        travelCamera(q, approachEnd, Vec3d(0.0, 12.0, 28.0), 65.0)
+        val riderShotStart = distance(f.abs(Vec3d(-103.0, 40.0, -77.0)))
+        val riderShotEnd = riderShotStart + 64.0
+        travelCamera(q, riderShotStart, Vec3d(0.0, 12.0, 28.0), 65.0)
         for (p in riders) ownFor(p, 80)
         var nextHold = 65
         var travelTicks = 0
@@ -899,6 +913,14 @@ class Scenes(private val f: EirholmFight) {
                     ariusMounted = true
                 }
             }
+            if (q in riderShotStart..<riderShotEnd) {
+                val from = CarryGrip.at(spine(q), 0, 0f).feet
+                val to = CarryGrip.at(spine(q + cruise), 0, 0f).feet
+                val offset = Vec3d(3.2, 2.8, 9.0)
+                scene.track(from.add(offset), to.add(offset), from.add(0.0, 0.8, 0.0), to.add(0.0, 0.8, 0.0), 49.0)
+            } else if (q >= riderShotEnd && q - cruise < riderShotEnd) {
+                travelCamera(q, approachEnd, Vec3d(0.0, 12.0, 28.0), 65.0)
+            }
             if (!approachShot && q >= approachEnd) {
                 approachShot = true
                 f.atmos(dev.henny.hha_arius.net.AtmosMode.AERIE, 50)
@@ -919,28 +941,31 @@ class Scenes(private val f: EirholmFight) {
         val targets = riders.indices.map { clearLanding(f.abs(ArenaLayout.AERIE_LANDING[it])) }
         val fallTicks = 34
         val fallLead = targets.firstOrNull() ?: aerie
-        val fallMid = ballistic(releaseLead, fallLead, 15, fallTicks, 0.065)
-        val fallMidCam = fallMid.add(4.9, 1.5, 6.7)
-        val throwSide = Vec3d(5.8, 1.0, 7.2)
-        scene.line(releaseLead.add(throwSide).add(9.0, 1.0, -1.0), releaseLead.add(throwSide),
-            at(rollFrom).add(3.0, 1.8, 0.0), releaseLead.add(0.0, 0.9, 0.0), releaseAt, 60.0, 54.0)
+        fun rollAt(t: Int): Float = if (t >= rollTicks) 0f else RideSeats.roll(t / rollTicks.toDouble())
+        fun throwSubject(t: Int): Vec3d {
+            val distance = rollFrom + cruise * t
+            if (t <= releaseAt) return CarryGrip.at(spine(distance), 0, rollAt(t)).feet
+            return ballistic(releaseLead, fallLead, (t - releaseAt).coerceAtMost(fallTicks), fallTicks, 0.065)
+        }
+        fun throwCamera(subject: Vec3d, t: Int): Vec3d {
+            val u = ((t - releaseAt).toDouble() / fallTicks).coerceIn(0.0, 1.0)
+            return subject.add(3.4 + 1.1 * u, (fallLead.y + 1.75 - subject.y).coerceAtLeast(-0.45), 8.6 + 0.9 * u)
+        }
         for (p in riders) ownFor(p, rollTicks + fallTicks + 42)
         for (t in 1..(releaseAt + fallTicks + 22)) {
             q = rollFrom + cruise * t
-            val roll = RideSeats.roll((t / rollTicks.toDouble()).coerceAtMost(1.0)).let { if (t >= rollTicks) 0f else it }
+            val roll = rollAt(t)
+            val subject = throwSubject(t)
+            val next = throwSubject(t + 1)
+            scene.track(throwCamera(subject, t), throwCamera(next, t + 1),
+                subject.add(0.0, 0.85, 0.0), next.add(0.0, 0.85, 0.0), 52.0)
             if (t == releaseAt) {
                 cue("nivaris.wing", at(q), 4.5f, 0.88f)
-                scene.line(releaseLead.add(throwSide), fallMidCam,
-                    releaseLead.add(0.0, 0.9, 0.0), fallMid.add(0.0, 0.8, 0.0), 15, 53.0, 52.0, lookAt = lead, lookOffset = 0.85)
                 for (p in riders) shown {
-                    f.fxAll(FxKind.KICK_FLING, p.entityPos, a = 2f, b = (fallTicks - 6).toFloat(), life = fallTicks + 18, e1 = p)
+                    f.fxAll(FxKind.KICK_FLING, p.entityPos, a = 0f, b = (fallTicks - 6).toFloat(), life = fallTicks + 18, e1 = p)
                 }
             }
             val falling = t - releaseAt
-            if (falling == 15) {
-                scene.line(fallMidCam, fallLead.add(5.4, 2.3, 6.9),
-                    fallMid.add(0.0, 0.8, 0.0), fallLead.add(0.0, 0.8, 0.0), fallTicks + 7, 52.0, 51.0, lookAt = lead, lookOffset = 0.85)
-            }
             val positions = if (falling <= 0) passengerPositions(q, roll)
                 else release.indices.map { ballistic(release[it], targets[it], falling.coerceAtMost(fallTicks), fallTicks, 0.065) }
             val grip = (1f - falling / 5f).coerceIn(0f, 1f)
@@ -977,29 +1002,45 @@ class Scenes(private val f: EirholmFight) {
         cue("hold.impact", seat, 2.2f, 0.82f)
         for (p in riders) Hold.drop(p)
         ownsAnchor.clear()
-        var landingLead = 0
-        while (q < landQ) {
+        fun landingProfile(from: Double, to: Double, fov: Double) {
+            fun view(distance: Double): Pair<Vec3d, Vec3d> {
+                val points = spine(distance)
+                val focus = points[0].lerp(points[3], 0.53).add(0.0, 0.55, 0.0)
+                val tangent = points[0].subtract(points[3])
+                val forward = Vec3d(tangent.x, 0.0, tangent.z).normalize()
+                val inside = Vec3d(forward.z, 0.0, -forward.x)
+                return focus.add(inside.multiply(12.5)).add(forward.multiply(3.5)).add(0.0, 1.8, 0.0) to focus
+            }
+            val (startCam, startLook) = view(from)
+            val (endCam, endLook) = view(to)
+            scene.track(startCam, endCam, startLook, endLook, fov)
+        }
+        repeat(6) {
             q = minOf(landQ, q + cruise)
             frame(q, positions = targets)
-            if (++landingLead == 10) {
-                d.wingTuck = 0f
-                a.play(AriusPose.SEATED)
-                scene.line(aerie.add(-10.0, 19.5, 28.0), aerie.add(4.0, 11.0, 29.0),
-                    at(q), at(landQ), ((landQ - q) / cruise).toInt().coerceAtLeast(1), 65.0, 60.0, lookAt = d, lookOffset = 2.0)
-            }
+            yield(Unit)
+        }
+        d.wingTuck = 0f
+        a.play(AriusPose.SEATED)
+        val landingSpeed = 1.18
+        while (q < landQ) {
+            q = minOf(landQ, q + landingSpeed)
+            landingProfile(q, minOf(landQ, q + landingSpeed), 60.0)
+            frame(q, positions = targets)
             yield(Unit)
         }
 
-        // The forward travel stops before the foot plants. Only the vertical settle continues.
-        val brakeTicks = 44
-        val landCam = aerie.add(15.0, 5.2, 21.0)
-        scene.line(landCam.add(0.0, 2.0, 10.0), landCam, at(landQ).add(0.0, 2.3, 0.0),
-            aerie.add(4.0, 2.8, 0.0), brakeTicks + 23, 61.0, 53.0)
+        // Brake into the same profile shot so the wings and forefeet stay in view.
+        val brakeTicks = 30
+        fun brakeDistance(t: Int): Double {
+            val u = t.coerceAtMost(brakeTicks) / brakeTicks.toDouble()
+            return landQ + (length - landQ) * (1.0 - (1.0 - u) * (1.0 - u))
+        }
         d.play(NivarisPose.LAND, brakeTicks)
         f.farSound("nivaris.wing", at(landQ), 4.8f, 0.60f)
         for (t in 1..brakeTicks) {
-            val u = t / brakeTicks.toDouble()
-            q = landQ + (length - landQ) * (1.0 - (1.0 - u) * (1.0 - u))
+            q = brakeDistance(t)
+            landingProfile(q, brakeDistance(t + 1), 57.0)
             frame(q, positions = targets)
             yield(Unit)
         }
@@ -1009,6 +1050,9 @@ class Scenes(private val f: EirholmFight) {
         f.farSound("nivaris.land", aerie, 5f, 0.8f)
         f.calls.roomShake(aerie, 4f, 60f)
         scene.once { Cine.title(it, "hha_arius.cine.aerie", "hha_arius.cine.aerie.sub", 55) }
+        val finishCam = aerie.add(11.0, 3.7, -10.0)
+        scene.rawLine(finishCam, aerie.add(13.5, 3.3, -8.0), aerie.add(3.8, 2.6, 0.0),
+            aerie.add(5.5, 2.2, 0.0), 24, 53.0, 48.0)
         repeat(24) { t ->
             frame(length, settle = (t + 1) / 24.0, positions = targets)
             yield(Unit)

@@ -53,7 +53,7 @@ object RideClient {
     private var carryPrevious: CarryFrameS2C? = null
     private var carryCurrent: CarryFrameS2C? = null
 
-    class CarryPose(val feet: Vec3d, val grip: Float, val anchor: CarryGrip.Anchor?)
+    class CarryPose(val feet: Vec3d, val grip: Float, val anchor: CarryGrip.Anchor?, val lettingGo: Boolean)
 
     fun carrySpine(dragon: Int, tickDelta: Float): Pair<List<Vec3d>, Float>? {
         val frame = carryCurrent?.takeIf { it.dragon == dragon } ?: return null
@@ -71,7 +71,7 @@ object RideClient {
         val anchor = if (grip > 0f) carrySpine(frame.dragon, tickDelta)?.let { (points, roll) ->
             CarryGrip.at(points, rider.seat, roll)
         } else null
-        return CarryPose(previous.feet.lerp(rider.feet, tickDelta.toDouble()), grip, anchor)
+        return CarryPose(previous.feet.lerp(rider.feet, tickDelta.toDouble()), grip, anchor, rider.grip < previous.grip)
     }
 
     /** Model origin at the requested partial tick, also available when the figure is off-camera. */
@@ -478,12 +478,13 @@ object RideClient {
         val pi = PI.toFloat()
         model.rightArm.yScale = ARM_LENGTH
         model.leftArm.yScale = ARM_LENGTH
-        model.rightArm.pitch = -pi - 0.24f
+        val closedGrip = if (carry?.lettingGo == true) carry.grip else 1f
+        model.rightArm.pitch = MathHelper.lerp(closedGrip, -0.8f, -pi - 0.24f)
         model.leftArm.pitch = model.rightArm.pitch
         model.rightArm.yaw = 0f
         model.leftArm.yaw = 0f
-        model.rightArm.roll = 0.2f
-        model.leftArm.roll = -0.2f
+        model.rightArm.roll = MathHelper.lerp(closedGrip, 0.85f, 0.2f)
+        model.leftArm.roll = -model.rightArm.roll
         val vehicle = e.vehicle as? NivarisEntity
         val wind = vehicle?.let { winds[it.id] }
         val seat = vehicle?.let { seatOf(it, e) }?.takeIf { it in 0 until SEATS } ?: 0

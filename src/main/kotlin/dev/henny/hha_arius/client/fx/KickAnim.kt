@@ -55,7 +55,12 @@ object KickAnim {
         val h = hitstop.coerceAtLeast(2f)
         val fl = flight.coerceAtLeast(6f)
         val duration = total.toFloat().coerceAtLeast(h + fl + 10f)
-        tracks[entityId] = Track(duration, keys(h, fl, duration - h - fl))
+        val timeline = keys(h, fl, duration - h - fl)
+        // Solvane's rider is already airborne. Start with the arms thrown out as the
+        // hands leave the spike, then use the same tumble and ground recovery.
+        val release = Key(0f, 36f, -12f, 0.04f, -0.4f, -0.8f, 0.85f, -0.75f, -0.85f,
+            -0.65f, 0.25f, 0.4f, -0.22f)
+        tracks[entityId] = Track(duration, if (hitstop == 0f) listOf(release) + timeline.drop(2) else timeline)
     }
 
     /** Hochgeschleudert vom Kopfstoß Solvanes: Rückstoß → Überschlag hoch in der Luft → verzweifeltes Greifen im Fall. */

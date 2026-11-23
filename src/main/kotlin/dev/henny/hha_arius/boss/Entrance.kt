@@ -505,7 +505,7 @@ internal object Entrance {
         d.eyeGlow = 70
         val exit = EntrancePath.tangent(EntrancePath.LENGTH)
         val end = f.abs(EntrancePath.entityAt(EntrancePath.LENGTH))
-        val landCamMid = rel(f, -20.0, 9.5, -14.0)
+        val landCamMid = rel(f, -13.0, 6.2, -10.0)
         val landFocusMid = end.add(0.0, 2.5, -1.5)
         fun look(t: Int, back: Double): Vec3d {
             val u = EntrancePath.distance(t.toDouble())
@@ -520,15 +520,21 @@ internal object Entrance {
                     look(0, 18.0), look(56, 18.0), 56, 63.0, 67.0)
                 56 -> scene.rawLine(axis.add(-55.0, 219.0, -63.0), axis.add(-67.0, 173.0, -78.0),
                     look(56, 18.0), look(cut1, 20.0), cut1 - 56, 67.0, 73.0)
-                cut1 -> scene.rawLine(rel(f, -86.0, 172.0, 160.0), rel(f, -76.0, 86.0, 88.0),
-                    look(cut1, 28.0), look(cut2 - 4, 26.0), cut2 - cut1, 71.0, 75.0)
                 cut2 -> {
-                    // Die Kamera ist zurück am Plateau (freier Westblick): Körper ebenfalls zurück. Exakt 55 Ticks bis zur Landung.
                     vantage.restore()
                     plateauView = true
                     proxy = f.abs(EntrancePath.PROXY)
-                    scene.line(rel(f, -24.0, 10.5, -18.0), landCamMid, look(cut2, 20.0), landFocusMid, EntrancePath.TICKS - cut2, 68.0, 60.0)
                 }
+            }
+            if (t >= cut1) {
+                fun camera(tick: Int): Vec3d {
+                    val headPoint = look(tick, 0.0)
+                    if (t < cut2) return headPoint.add(-32.0, 8.0, 9.0)
+                    val u = (tick - cut2).toDouble() / (EntrancePath.TICKS - cut2)
+                    return headPoint.add(-24.0, 7.0, -8.0).lerp(landCamMid, u * u)
+                }
+                val next = minOf(t + 1, EntrancePath.TICKS)
+                scene.track(camera(t), camera(next), look(t, 8.0), look(next, 8.0), if (t < cut2) 65.0 else 60.0)
             }
             when (t) {
                 EntrancePath.scaled(4) -> sound(f, "nivaris.wing", head, 6f, 0.5f)
@@ -548,10 +554,13 @@ internal object Entrance {
         f.place(d, end)
         f.face(d, end.add(exit))
         d.mode = NivarisMode.NORMAL
-        scene.line(landCamMid, rel(f, -16.5, 5.0, -9.5), landFocusMid, spot.add(0.0, 3.2, -1.5), 54, 60.0, 54.0)
+        val landCamClose = rel(f, -9.5, 4.0, -9.8)
+        scene.rawLine(landCamMid, landCamClose, landFocusMid, spot.add(0.0, 2.0, -3.4), 36, 60.0, 58.0)
         yieldAll(glideAndLand(f, d, end, spot, 36))
-        // Fest aufgesetzt kurz stehen lassen, während die Flügel sich anlegen (0 Rutschen).
-        wait(18)
+        d.play(NivarisPose.LIE_DOWN, 14)
+        scene.rawLine(landCamClose, rel(f, -8.0, 3.4, -11.5), spot.add(0.0, 2.0, -3.4),
+            spot.add(0.0, 2.3, -5.0), 22, 58.0, 53.0)
+        wait(22)
         d.uncoil = 0f
         d.showNow()
         f.atmos(AtmosMode.SNOW, 80)
@@ -683,6 +692,11 @@ class CineScene(private val f: EirholmFight, private val onAbort: () -> Unit) {
             val k = ease(age / ticks.coerceAtLeast(1).toDouble())
             Triple(from.lerp(to, k), lookAt?.takeIf { !it.isRemoved }?.entityPos?.add(0.0, lookOffset, 0.0) ?: lookFrom.lerp(lookTo, k), fovFrom + (fovTo - fovFrom) * k)
         }
+    }
+
+    /** Advance one sample of a moving shot. Each packet covers the interval to the next sample. */
+    fun track(from: Vec3d, to: Vec3d, lookFrom: Vec3d, lookTo: Vec3d, fov: Double) {
+        if (!Cine.muted) rawLine(from, to, lookFrom, lookTo, 1, fov)
     }
 
     /** Gerade Kamerafahrt (siehe [Cine.camera]); merkt sich den Verlauf für [home]. */
