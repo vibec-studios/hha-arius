@@ -2045,9 +2045,9 @@ class Scenes(private val f: EirholmFight) {
      * beim Drachen-Reveal), löst sich dort oben in Licht auf und stürzt als leuchtender Strom herab in Arius' Scheide;
      * die temporäre Eisklinge zerfällt. Endzustand: kein Drache, [AriusBlade.HELD], Solvane in der Scheide ([settleReturn]).
      */
-    private fun bladeReturn(a: AriusEntity): Script = script {
+    private fun bladeReturn(a: AriusEntity, forcePlay: Boolean = false): Script = script {
         val d = f.nivaris
-        if (d == null || f.training != 0) {
+        if (d == null || (f.training != 0 && !forcePlay)) {
             settleReturn(a)
             return@script
         }
@@ -2308,13 +2308,308 @@ class Scenes(private val f: EirholmFight) {
         yieldAll(vaultFight())
     }
 
-    fun trainingFinale(): Script = script {
+    fun trainingFinale(summit: Boolean = false): Script = script {
         yieldAll(waitForFar())
+        if (summit) {
+            restoreSplitInstant()
+            prepareSummit(withDragon = false)
+            f.dragonDowned = true
+            f.say("echo", 60)
+            wait(60)
+            yieldAll(finale())
+        } else {
+            prepareVault()
+            f.dragonDowned = true
+            f.say("echo", 60)
+            wait(60)
+            yieldAll(finale())
+        }
+    }
+
+    // --- Test command entry points (/arius test <target>) ---------------------------------------------------------------
+
+    private fun prepareSummit(withDragon: Boolean, blade: Int = AriusBlade.HELD, sheathed: Boolean = true) {
+        val a = f.arius ?: return
+        f.onSummit = true
+        f.setPhase(P.FINALE)
+        val center = f.arenaCenter
+        val spots = f.finaleSpots()
+        f.place(a, center)
+        a.form = AriusForm.WHITE
+        a.bladeState = blade
+        a.sheathed = sheathed
+        a.eyeGlow = 80
+        a.play(if (sheathed) AriusPose.IAI_STANCE else AriusPose.IDLE)
+        for ((i, p) in f.players().withIndex()) {
+            val s = f.abs(spots[i % spots.size])
+            val yaw = (Math.toDegrees(atan2(center.z - s.z, center.x - s.x)) - 90.0).toFloat()
+            p.teleport(f.world, s.x, s.y, s.z, emptySet(), yaw, 0f, false)
+            p.onLanding()
+        }
+        f.target()?.let { f.face(a, it.entityPos) }
+        if (withDragon) {
+            f.spawnNivaris(center.add(0.0, 2.0, 6.0), 180f) { d ->
+                d.mode = NivarisMode.RETURN_COIL
+                d.uncoil = 0f
+                d.flying = false
+                d.resonance = true
+                d.eyeGlow = 100
+                d.showNow()
+                d.play(NivarisPose.IDLE)
+            }
+        } else {
+            f.dismissNivaris()
+        }
+    }
+
+    fun testEnsureFarAndSplit(splitActive: Boolean): Script = script {
+        yieldAll(waitForFar())
+        if (splitActive) ensureSplitImmediate() else restoreSplitInstant()
+    }
+
+    fun testIntro(): Script = script {
+        val a = f.arius ?: return@script
+        yieldAll(waitForFar())
+        restoreSplitInstant()
+        f.ariusVulnerable = false
+        yieldAll(establish(a))
+        f.say("intro.seal", 60); wait(66)
+        a.play(AriusPose.RISE); wait(24)
+        f.say("intro.reason", 70); wait(76)
+        f.say("intro.test", 80); wait(50)
+        yieldAll(temple())
+    }
+
+    fun testPhase1(): Script = script {
+        val a = f.arius ?: return@script
+        restoreSplitInstant()
+        a.play(AriusPose.IDLE)
+        yieldAll(temple())
+    }
+
+    fun testWhiteHorizon(): Script = script {
+        yieldAll(waitForFar())
+        restoreSplitInstant()
+        val a = f.arius ?: return@script
+        f.setPhase(P.TEMPLE)
+        f.place(a, f.abs(ArenaLayout.DAIS_FRONT))
+        a.form = AriusForm.SERIOUS
+        a.bladeState = AriusBlade.HELD
+        a.sheathed = false
+        a.eyeGlow = 85
+        a.play(AriusPose.IDLE)
+        yieldAll(theCut())
+    }
+
+    fun testKick(): Script = script {
+        yieldAll(waitForFar())
+        ensureSplitImmediate()
+        val a = f.arius ?: return@script
+        f.setPhase(P.CUT)
+        f.place(a, f.abs(ArenaLayout.CUT_STAND))
+        a.form = AriusForm.SERIOUS
+        a.bladeState = AriusBlade.HELD
+        a.sheathed = false
+        a.eyeGlow = 100
+        a.play(AriusPose.IDLE)
+        val scene = CineScene(f) {
+            f.place(a, f.abs(ArenaLayout.WATCH_SEAT))
+            a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
+            a.play(AriusPose.IDLE)
+            for ((i, p) in f.players().withIndex()) {
+                val land = f.abs(ArenaLayout.LANDING[i % ArenaLayout.LANDING.size])
+                p.teleport(f.world, land.x, land.y, land.z, emptySet(), 180f, -4f, false)
+                p.onLanding()
+            }
+        }
+        yieldAll(scene.play(script { yieldAll(kick(scene)) }))
+        f.victory()
+    }
+
+    fun testSolvaneReveal(): Script = script {
+        yieldAll(waitForFar())
+        ensureSplitImmediate()
+        val a = f.arius ?: return@script
+        f.setPhase(P.CUT)
+        f.place(a, f.abs(ArenaLayout.WATCH_SEAT))
+        a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
+        a.form = AriusForm.DARK
+        a.bladeState = AriusBlade.HELD
+        a.sheathed = false
+        a.play(AriusPose.IDLE)
+        for ((i, p) in f.players().withIndex()) {
+            val land = f.abs(ArenaLayout.LANDING[i % ArenaLayout.LANDING.size])
+            p.teleport(f.world, land.x, land.y, land.z, emptySet(), 180f, -4f, false)
+            p.onLanding()
+        }
+        yieldAll(arrival())
+    }
+
+    fun testPickupFlight(): Script = script {
+        yieldAll(waitForFar())
+        ensureSplitImmediate()
+        val a = f.arius ?: return@script
+        f.setPhase(P.CUT)
+        for ((i, p) in f.players().withIndex()) {
+            val land = f.abs(ArenaLayout.LANDING[i % ArenaLayout.LANDING.size])
+            p.teleport(f.world, land.x, land.y, land.z, emptySet(), 0f, 0f, false)
+            p.onLanding()
+        }
+        Entrance.landed(f, f.abs(Vec3d(0.5, 0.0, 2.0)))
+        a.form = AriusForm.DARK
+        a.bladeState = AriusBlade.NONE
+        yieldAll(toAerie())
+        f.victory()
+    }
+
+    private fun prepareAerieForRide() {
+        val a = f.arius ?: return
+        f.setPhase(P.GLACIER)
+        f.place(a, f.abs(ArenaLayout.AERIE_SEAT))
+        a.form = AriusForm.DARK
+        a.bladeState = AriusBlade.NONE
+        a.sheathed = false
+        a.play(AriusPose.SEATED)
+        for ((i, p) in f.players().withIndex()) {
+            val s = clearLanding(f.abs(ArenaLayout.AERIE_LANDING[i % ArenaLayout.AERIE_LANDING.size]))
+            p.teleport(f.world, s.x, s.y, s.z, emptySet(), 90f, 0f, false)
+            p.onLanding()
+        }
+        f.spawnNivaris(f.abs(Vec3d.of(ArenaLayout.AERIE)).add(0.5, 0.0, 0.5), -90f)
+        f.nivaris?.play(NivarisPose.EXHAUSTED)
+    }
+
+    fun testRideIntro(): Script = script {
+        yieldAll(waitForFar())
+        ensureSplitImmediate()
+        prepareAerieForRide()
+        val flight = DragonRide(f)
+        val intro = CineScene(f) { flight.settleIntro() }
+        yieldAll(intro.play(flight.intro(intro)))
+        yieldAll(flight.play())
+        f.victory()
+    }
+
+    fun testDragonRide(): Script = script {
+        yieldAll(waitForFar())
+        ensureSplitImmediate()
+        prepareAerieForRide()
+        f.setPhase(P.COLLAPSE)
+        val flight = DragonRide(f)
+        yieldAll(flight.play())
+        f.victory()
+    }
+
+    fun testTransform(): Script = script {
+        yieldAll(waitForFar())
+        ensureSplitImmediate()
+        val a = f.arius ?: return@script
+        f.setPhase(P.COLLAPSE)
+        val vault = f.abs(Vec3d.of(ArenaLayout.VAULT)).add(0.5, 0.0, 0.5)
+        f.place(a, vault.add(0.0, 12.0, 0.0))
+        a.form = AriusForm.DARK
+        a.bladeState = AriusBlade.NONE
+        a.sheathed = false
+        a.play(AriusPose.STAB_GROUND)
+        f.spawnNivaris(f.abs(ArenaLayout.VAULT_REST), 180f) { d ->
+            d.flying = false
+            d.play(NivarisPose.EXHAUSTED)
+        }
+        for ((i, p) in f.players().withIndex()) {
+            val s = f.abs(ArenaLayout.VAULT_LANDING[i % ArenaLayout.VAULT_LANDING.size])
+            p.teleport(f.world, s.x, s.y, s.z, emptySet(), 180f, 0f, false)
+            p.onLanding()
+        }
+        f.face(a, f.abs(ArenaLayout.VAULT_LANDING[0]))
+        val scene = CineScene(f) {}
+        yieldAll(scene.play(script { yieldAll(transformBody(scene)) }))
+        f.victory()
+    }
+
+    fun testWhiteHole(): Script = script {
+        yieldAll(waitForFar())
+        ensureSplitImmediate()
         prepareVault()
-        f.dragonDowned = true
-        f.say("echo", 60)
-        wait(60)
-        yieldAll(finale())
+        f.ariusMax = BossConfig.health(640f, f.startCount)
+        f.ariusHp = f.ariusMax * 0.5f
+        f.dragonMax = BossConfig.health(500f, f.startCount)
+        f.dragonHp = f.dragonMax
+        f.dragonDowned = false
+        f.ariusVulnerable = true
+        f.dragonVulnerable = true
+        MusicCue.play(f, "white_hole", 20)
+        yieldAll(WhiteHoleBlast(f).run())
+        f.victory()
+    }
+
+    fun testPrepareForHunt(splitActive: Boolean): Script = script {
+        yieldAll(waitForFar())
+        if (splitActive) ensureSplitImmediate() else restoreSplitInstant()
+        prepareVault()
+        f.ariusMax = BossConfig.health(640f, f.startCount)
+        f.ariusHp = f.ariusMax * 0.4f
+        f.dragonMax = BossConfig.health(500f, f.startCount)
+        f.dragonHp = f.dragonMax * 0.5f
+        f.dragonDowned = false
+        f.ariusVulnerable = false
+        f.dragonVulnerable = false
+    }
+
+    fun testHuntArrive(): Script = script {
+        yieldAll(testPrepareForHunt(splitActive = false))
+        val hunt = Hunt(f)
+        yieldAll(hunt.arrive())
+        f.victory()
+    }
+
+    fun testBladeReturn(): Script = script {
+        yieldAll(waitForFar())
+        restoreSplitInstant()
+        prepareSummit(withDragon = true, blade = AriusBlade.ICE, sheathed = false)
+        val a = f.arius ?: return@script
+        yieldAll(bladeReturn(a, forcePlay = true))
+        f.victory()
+    }
+
+    fun testLastHorizon(): Script = script {
+        yieldAll(waitForFar())
+        restoreSplitInstant()
+        prepareSummit(withDragon = false, blade = AriusBlade.HELD, sheathed = false)
+        val a = f.arius ?: return@script
+        f.ariusMax = BossConfig.health(480f, f.startCount)
+        f.ariusHp = f.ariusMax * 0.45f
+        f.ariusVulnerable = true
+        f.music("music.summit", 20)
+        yieldAll(lastHorizon(a))
+        f.victory()
+    }
+
+    fun testClimax(): Script = script {
+        yieldAll(waitForFar())
+        restoreSplitInstant()
+        prepareSummit(withDragon = false, blade = AriusBlade.HELD, sheathed = false)
+        val a = f.arius ?: return@script
+        f.ariusMax = BossConfig.health(480f, f.startCount)
+        f.ariusHp = f.ariusMax * 0.45f
+        f.ariusVulnerable = true
+        f.moves.resetStance(AriusMoves.Stance.FLOW, 200)
+        f.music("music.summit", 20)
+        MusicCue.play(f, "summit_final", 20)
+        f.moves.summit.debugJumpToLastStand()
+        f.updateBars()
+        while (f.ariusHp > 0f) {
+            runWhile(f.moves.turnFinale(true)) { f.ariusHp > 0f }
+        }
+        f.ariusVulnerable = false
+        f.calls.reset()
+        yieldAll(ending())
+    }
+
+    fun testEnding(): Script = script {
+        yieldAll(waitForFar())
+        restoreSplitInstant()
+        prepareSummit(withDragon = false, blade = AriusBlade.HELD, sheathed = true)
+        yieldAll(ending())
     }
 
     private companion object {

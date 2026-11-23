@@ -1,21 +1,39 @@
 package dev.henny.hha_arius.boss
 
 import com.mojang.brigadier.arguments.IntegerArgumentType
+import com.mojang.brigadier.arguments.StringArgumentType
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback
+import net.minecraft.command.CommandSource
 import net.minecraft.item.ItemStack
 import net.minecraft.server.command.CommandManager
 import net.minecraft.server.command.ServerCommandSource
 import net.minecraft.text.Text
+import net.minecraft.util.Formatting
 
 /**
  * Admin-Befehle (OP 2): `/hhaarius start` (echter Kampf ohne Siegel), `/hhaarius stage <1-4>` (Training eines
  * Abschnitts), `/hhaarius stop`, `/hhaarius info`, `/hhaarius skip` (aktuellen Abschnitt beenden),
- * `/hhaarius test [on|off]` (Testmodus der Ausrüstung: unendliche Resonanz, kaum Abklingzeit).
+ * `/hhaarius test [on|off]` (Testmodus der Ausrüstung: unendliche Resonanz, kaum Abklingzeit), sowie
+ * `/arius test <target|list|stop>` zum gezielten Testen einzelner Phasen, Cutscenes, QTEs und Jagdabschnitte.
  */
 object AriusCommands {
 
     fun init() {
         CommandRegistrationCallback.EVENT.register { dispatcher, _, _ ->
+            dispatcher.register(
+                CommandManager.literal("arius")
+                    .requires(CommandManager.requirePermissionLevel<ServerCommandSource>(CommandManager.GAMEMASTERS_CHECK))
+                    .then(
+                        CommandManager.literal("test")
+                            .then(CommandManager.literal("list").executes { ctx -> listTargets(ctx.source) })
+                            .then(CommandManager.literal("stop").executes { ctx -> stopTarget(ctx.source) })
+                            .then(
+                                CommandManager.argument("target", StringArgumentType.word())
+                                    .suggests { _, builder -> CommandSource.suggestMatching(AriusTestTarget.ids(), builder) }
+                                    .executes { ctx -> startTarget(ctx.source, StringArgumentType.getString(ctx, "target")) },
+                            ),
+                    ),
+            )
             dispatcher.register(
                 CommandManager.literal("hhaarius")
                     .requires(CommandManager.requirePermissionLevel<ServerCommandSource>(CommandManager.GAMEMASTERS_CHECK))
@@ -53,6 +71,41 @@ object AriusCommands {
                     }),
             )
         }
+    }
+
+    private fun listTargets(source: ServerCommandSource): Int {
+        source.sendFeedback({ Text.translatable("hha_arius.test.list_header", AriusTestTarget.entries.size).formatted(Formatting.AQUA, Formatting.BOLD) }, false)
+        for (target in AriusTestTarget.entries) {
+            source.sendFeedback({
+                Text.literal("  ")
+                    .append(Text.literal(target.id).formatted(Formatting.WHITE))
+                    .append(Text.literal(" — ").formatted(Formatting.DARK_GRAY))
+                    .append(Text.translatable(target.descKey).formatted(Formatting.GRAY))
+            }, false)
+        }
+        return AriusTestTarget.entries.size
+    }
+
+    private fun startTarget(source: ServerCommandSource, id: String): Int {
+        val player = source.playerOrThrow
+        val target = AriusTestTarget.byId(id)
+        if (target == null) {
+            source.sendError(Text.translatable("hha_arius.test.unknown", id))
+            return 0
+        }
+        if (!Encounters.requestTest(player, target)) return 0
+        source.sendFeedback({ Text.translatable("hha_arius.test.started", target.id, Text.translatable(target.descKey)).formatted(Formatting.AQUA) }, true)
+        return 1
+    }
+
+    private fun stopTarget(source: ServerCommandSource): Int {
+        val player = source.playerOrThrow
+        if (!Encounters.stopTest(player)) {
+            source.sendFeedback({ Text.translatable("hha_arius.test.none_running").formatted(Formatting.GRAY) }, false)
+            return 0
+        }
+        source.sendFeedback({ Text.translatable("hha_arius.test.stopped").formatted(Formatting.AQUA) }, true)
+        return 1
     }
 
     private fun test(source: ServerCommandSource, on: Boolean?): Int {

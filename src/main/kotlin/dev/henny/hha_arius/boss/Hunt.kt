@@ -1695,12 +1695,36 @@ class Hunt(private val f: EirholmFight) {
     // --- Ablauf -----------------------------------------------------------------------------------------------------
 
     /** Die ganze Jagd: Zorn-Szene, Verfolgung bis zum Tor. Danach übernimmt [arrive]. */
-    fun run(): Script = script {
+    fun run(): Script = runFrom(startArc = 0.0, skipRage = false)
+
+    /**
+     * Jagd ab einer bestimmten Bogenlänge [startArc] (für `/arius test hunt_*`).
+     * Bei [skipRage] = false läuft die normale Zorn-Szene am Feld; bei true werden Spieler und Arius
+     * sauber auf [startArc] bzw. knapp dahinter abgesetzt.
+     */
+    fun runFrom(startArc: Double, skipRage: Boolean = true): Script = script {
         val a = f.arius ?: return@script
         buildRoute()
         buildRail()
-        val rage = CineScene(f) { f.atmos(HUNT_ATMOS, 20) }
-        yieldAll(rage.play(script { yieldAll(rageScene(rage, a)) }))
+        if (!skipRage) {
+            val rage = CineScene(f) { f.atmos(HUNT_ATMOS, 20) }
+            yieldAll(rage.play(script { yieldAll(rageScene(rage, a)) }))
+        } else {
+            val pArc = startArc.coerceIn(0.0, HuntRoute.arc(HuntRoute.size - 1) - 10.0)
+            val pPos = pathAt(pArc)
+            val pTan = tangentAt(pArc)
+            val yaw = (Math.toDegrees(atan2(pTan.z, pTan.x)) - 90.0).toFloat()
+            for ((i, p) in f.players().withIndex()) {
+                val off = (i - 0) * 0.8
+                val spot = pathAt((pArc - off).coerceAtLeast(0.0))
+                p.teleport(f.world, spot.x, spot.y, spot.z, emptySet(), yaw, 0f, false)
+                p.onLanding()
+            }
+            val ariusArc = (pArc - 16.0).coerceAtLeast(0.0)
+            aS = ariusArc
+            f.place(a, pathAt(ariusArc))
+            f.face(a, pPos)
+        }
         f.chasing = true
         a.eyeGlow = 100
         a.form = AriusForm.WHITE
@@ -1720,10 +1744,14 @@ class Hunt(private val f: EirholmFight) {
             it.flying = true
             it.resonance = true
             it.play(NivarisPose.GLIDE)
+            if (skipRage) {
+                val railAt = rail.pts.minByOrNull { q -> q.squaredDistanceTo(pathAt(startArc)) } ?: rail.pts.first()
+                f.place(it, railAt)
+            }
             dragonBusy = true
             f.task(script { try { yieldAll(whileChasing(rejoinRail(it))) } finally { dragonBusy = false } })
         }
-        aS = 0.0
+        if (!skipRage) aS = 0.0
         current = this@Hunt
         nextAttack = f.now + 70
         nextDragon = f.now + 140
@@ -2400,6 +2428,7 @@ class Hunt(private val f: EirholmFight) {
      */
     fun arrive(): Script = script {
         val a = f.arius ?: return@script
+        if (!::route.isInitialized) buildRoute()
         if (f.scenes.isSplitActive) f.scenes.restoreSplitInstant()
         f.chasing = false
         f.calls.reset()
@@ -2522,6 +2551,47 @@ class Hunt(private val f: EirholmFight) {
         @JvmStatic
         var current: Hunt? = null
             private set
+
+        /** Löscht [current], falls sie zur beendeten Begegnung [fight] gehört. */
+        fun clearIf(fight: EirholmFight) {
+            if (current?.f === fight) current = null
+        }
+
+        /** Start-Bogenlänge für jeden einzelnen Jagd-Abschnitt (`/arius test hunt_*`). */
+        fun sectionArc(section: String): Double {
+            fun cave(theme: HuntRoute.Theme, firstHalf: Boolean? = null): HuntRoute.Cave? =
+                HuntRoute.caves.firstOrNull {
+                    it.theme == theme && when (firstHalf) {
+                        true -> it.i0 <= HuntRoute.size / 2
+                        false -> it.i0 > HuntRoute.size / 2
+                        null -> true
+                    }
+                }
+            fun crossingArc(): Double {
+                val zMin = ArenaLayout.SPIRE.z - FarPlan.MASSIF_R - 6
+                for (i in 0 until HuntRoute.size) {
+                    val rz = floor(HuntRoute.z(i)).toInt()
+                    val ry = floor(HuntRoute.y(i)).toInt()
+                    if (rz >= zMin && abs(HuntRoute.x(i) - ArenaLayout.CUT_X) <= SplitRecovery.cutHalfWidth(ry) + 1.5) {
+                        return HuntRoute.arc(i)
+                    }
+                }
+                return HuntRoute.arc(HuntRoute.size - 1)
+            }
+            return when (section) {
+                "dark_cave" -> ((cave(HuntRoute.Theme.DARK, firstHalf = true)?.a0 ?: 40.0) - 8.0).coerceAtLeast(0.0)
+                "crawl_cave" -> ((cave(HuntRoute.Theme.CRAWL)?.a0 ?: 90.0) - 8.0).coerceAtLeast(0.0)
+                "bridge1" -> ((HuntRoute.ropeSpans.firstOrNull()?.a0 ?: 150.0) - 10.0).coerceAtLeast(0.0)
+                "crystal_cave" -> ((cave(HuntRoute.Theme.CRYSTAL, firstHalf = true)?.a0 ?: 220.0) - 8.0).coerceAtLeast(0.0)
+                "avalanche" -> ((cave(HuntRoute.Theme.CRYSTAL, firstHalf = true)?.a1 ?: 260.0) + 4.0)
+                "fall_cave" -> ((cave(HuntRoute.Theme.FALL)?.a0 ?: 300.0) - 8.0).coerceAtLeast(0.0)
+                "lake_cave" -> ((cave(HuntRoute.Theme.LAKE)?.a0 ?: 380.0) - 18.0).coerceAtLeast(0.0)
+                "bridge3" -> ((HuntRoute.ropeSpans.lastOrNull()?.a0 ?: 480.0) - 10.0).coerceAtLeast(0.0)
+                "yang_repair" -> (crossingArc() - 32.0).coerceAtLeast(0.0)
+                "wind_tunnel" -> ((cave(HuntRoute.Theme.WIND)?.a0 ?: 600.0) - 8.0).coerceAtLeast(0.0)
+                else -> 0.0
+            }
+        }
     }
 
     // --- Nur für die Sichtprüfung (VerifyHunt) ---------------------------------------------------------------------------

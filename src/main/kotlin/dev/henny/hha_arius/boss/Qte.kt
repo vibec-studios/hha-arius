@@ -84,4 +84,11 @@ object Qte {
         for (u in round.players) round.results.putIfAbsent(u, false)
         rounds.remove(round.id)
     }
+
+    /** Beendet alle offenen Runden, an denen einer der Spieler in [uuids] beteiligt ist (z. B. beim Test-Abbruch). */
+    fun cancelFor(uuids: Set<UUID>) {
+        if (uuids.isEmpty()) return
+        val toClose = rounds.values.filter { r -> r.players.any { it in uuids } }
+        for (r in toClose) close(r)
+    }
 }

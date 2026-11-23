@@ -54,6 +54,9 @@ object Encounters {
      */
     private val explorers = HashMap<UUID, Int>()
 
+    /** Slots, deren Kern in dieser Sitzung bereits vollständig geprüft wurde (schneller Testwechsel). */
+    private val verifiedTestSlots = HashSet<Int>()
+
     fun init() {
         dev.henny.hha_arius.net.HuntNet.init()
         dev.henny.hha_arius.portal.Portals.init()
@@ -135,6 +138,7 @@ object Encounters {
         ServerLifecycleEvents.SERVER_STOPPING.register { _ ->
             for (fight in fights.values.toList()) fight.finish(false)
             fights.clear()
+            verifiedTestSlots.clear()
         }
     }
 
@@ -181,6 +185,83 @@ object Encounters {
     fun requestStart(player: ServerPlayerEntity, seal: ItemStack): Boolean = start(player, 0, seal)
 
     fun requestTraining(player: ServerPlayerEntity, stage: Int): Boolean = start(player, stage.coerceIn(1, 4), ItemStack.EMPTY)
+
+    /**
+     * Startet ein gezieltes Testziel (`/arius test <target>`). Läuft bereits ein Kampf/Test für diesen Spieler,
+     * wird dieser zuvor sauber beendet, ohne den ursprünglichen Heimatort außerhalb von Eirholm zu überschreiben.
+     */
+    fun requestTest(player: ServerPlayerEntity, target: AriusTestTarget): Boolean {
+        val server = player.entityWorld.server ?: return false
+        val world: ServerWorld = server.getWorld(WORLD) ?: run {
+            player.sendMessage(Text.translatable("hha_arius.msg.no_dimension").formatted(Formatting.RED), false)
+            HhaArius.LOGGER.error("Arena-Dimension {} fehlt (Datapack nicht geladen?)", WORLD.value)
+            return false
+        }
+        // Heimatort merken, solange der Spieler noch außerhalb von Eirholm ist.
+        if (player.entityWorld.registryKey != WORLD) AriusState.rememberHome(player)
+        // Laufenden Kampf / laufenden Test dieses Spielers sauber beenden.
+        val existing = fights.values.filter { !it.ended && it.isParticipant(player) }
+        for (old in existing) old.finish(false)
+        explorers.remove(player.uuid)
+        pendingArrivals.remove(player.uuid)
+        Hold.drop(player)
+        if (player.hasVehicle()) player.stopRiding()
+        dev.henny.hha.logic.boss.Cine.end(listOf(player))
+        player.removeStatusEffect(net.minecraft.entity.effect.StatusEffects.SLOW_FALLING)
+        player.fallDistance = 0.0
+        player.health = player.maxHealth
+        player.setFrozenTicks(0)
+
+        val occupied = world.players.filter { it.uuid != player.uuid }.map { slotOf(it.x) }.toSet() + explorers.values
+        val slot = (0 until BossConfig.maxInstances()).firstOrNull { it !in fights && it !in occupied } ?: run {
+            player.sendMessage(Text.translatable("hha_arius.msg.full").formatted(Formatting.RED), true)
+            return false
+        }
+        val origin = ArenaLayout.origin(slot)
+        SplitRecovery.ensureClean(server, slot)
+        val st = AriusState.get(server)
+        @Suppress("SENSELESS_COMPARISON")
+        if (st.data.coreBuilt == null) st.data.coreBuilt = HashMap()
+        val dirty = slot in st.data.dirtySlots || st.data.coreBuilt[slot.toString()] != dev.henny.hha_arius.arena.ArenaPlan.VERSION
+        val mode = when {
+            dirty -> 2
+            slot in verifiedTestSlots -> 0
+            else -> 1
+        }
+        dev.henny.hha_arius.portal.Portals.extinguishReturn(world, origin)
+        val fight = EirholmFight(world, slot, player, emptyList(), target.trainingSlot, mode, ItemStack.EMPTY, testTarget = target)
+        fights[slot] = fight
+        fight.begin()
+        verifiedTestSlots.add(slot)
+        return true
+    }
+
+    /** Beendet den laufenden Test des Spielers (oder holt ihn sauber aus Eirholm heim). */
+    fun stopTest(player: ServerPlayerEntity): Boolean {
+        val existing = fights.values.filter { !it.ended && it.isParticipant(player) }
+        val inWorld = player.entityWorld.registryKey == WORLD
+        val wasExplorer = explorers.remove(player.uuid) != null
+        pendingArrivals.remove(player.uuid)
+        if (existing.isEmpty() && !inWorld && !wasExplorer) return false
+        for (fight in existing) {
+            val everyone = fight.audience()
+            fight.finish(false)
+            for (p in everyone) {
+                explorers.remove(p.uuid)
+                if (p.entityWorld.registryKey == WORLD) AriusState.sendHome(p)
+            }
+        }
+        if (player.entityWorld.registryKey == WORLD) {
+            Hold.drop(player)
+            if (player.hasVehicle()) player.stopRiding()
+            dev.henny.hha.logic.boss.Cine.end(listOf(player))
+            dev.henny.hha_arius.net.AriusNet.send(player, dev.henny.hha_arius.net.MusicS2C("", 20))
+            dev.henny.hha_arius.net.AriusNet.send(player, dev.henny.hha_arius.net.AtmosS2C(-1, 1))
+            dev.henny.hha_arius.net.HuntNet.fx(player, dev.henny.hha_arius.net.HuntFx.STATE, player.entityPos, a = 0f)
+            AriusState.sendHome(player)
+        }
+        return true
+    }
 
     /**
      * Gleicht Einsatz und Ansprüche ab und zahlt aus (nur außerhalb der Arena):
