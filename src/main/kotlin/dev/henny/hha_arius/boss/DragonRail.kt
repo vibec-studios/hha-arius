@@ -240,6 +240,106 @@ object DragonRail {
         return List(pts.size) { i -> Vec3d(pts[i].x, max(smooth[i], floorY), pts[i].z) }
     }
 
+    /** Route from the plateau charge to the low pass on the north side of the Aerie. */
+    fun carryRail(
+        f: EirholmFight, start: Vec3d, hit: Vec3d, pickup: Vec3d, drop: Vec3d, pass: Vec3d, aerie: Vec3d,
+    ): List<Vec3d> {
+        val route = spline(listOf(
+            start,
+            start.lerp(hit, 0.50),
+            hit,
+            hit.add(-7.0, 3.5, -5.0),
+            f.abs(Vec3d(-18.0, 7.0, -30.0)),
+            f.abs(Vec3d(-28.5, 13.0, -44.0)),
+            pickup,
+            f.abs(Vec3d(-47.0, 31.0, -75.0)),
+            f.abs(Vec3d(-95.0, 40.0, -77.0)),
+            f.abs(Vec3d(-185.0, 40.0, -66.0)),
+            aerie.add(117.0, 30.0, -12.0),
+            aerie.add(93.0, 26.0, -13.0),
+            drop,
+            aerie.add(34.0, 22.0, -48.0),
+            pass,
+            aerie.add(-30.0, 18.0, -69.0),
+            aerie.add(-58.0, 15.0, -48.0),
+            aerie.add(-64.0, 12.0, -18.0),
+            aerie.add(-58.0, 8.0, -4.0),
+            aerie.add(-38.0, 4.0, 0.0),
+            aerie.add(-14.0, 1.0, 0.0),
+            aerie,
+        ))
+        val cleared = clearTerrain(
+            route, f.origin, f.floorY, clearance = 8.0,
+            takeoffHead = (57.0 / STEP).toInt(), landingTail = (201.0 / STEP).toInt(),
+            structures = true, structureClearance = 5.0,
+        )
+        // Carry the height correction across the joins at both ends of the terrain scan.
+        // A height jump there shows up twice: at the snout and as a kick to the rider.
+        val heights = DoubleArray(cleared.size) { cleared[it].y }
+        val grade = 0.49 * STEP
+        for (i in 1 until heights.size) heights[i] = max(heights[i], heights[i - 1] - grade)
+        for (i in heights.lastIndex - 1 downTo 0) heights[i] = max(heights[i], heights[i + 1] - grade)
+        val smooth = cleared.mapIndexed { i, p ->
+            val span = (i - 12).coerceAtLeast(0)..(i + 12).coerceAtMost(cleared.lastIndex)
+            val y = max(heights[i], span.sumOf { heights[it] } / span.count())
+            Vec3d(p.x, y, p.z)
+        }
+        return evenSpacing(smooth).toMutableList().apply {
+            this[0] = start
+            this[lastIndex] = aerie
+        }
+    }
+
+    /** The resting tail runs back into the same western clearing used by the arrival. */
+    fun carryRunIn(f: EirholmFight, start: Vec3d): List<Vec3d> {
+        val trail = spline(listOf(
+            f.abs(Vec3d(-66.0, 0.0, 74.0)),
+            f.abs(Vec3d(-48.0, 0.0, 48.0)),
+            f.abs(Vec3d(-27.0, 0.0, 29.0)),
+            start.add(-8.0, 0.0, 14.0),
+            start.add(0.0, 0.0, 6.0),
+            start,
+        ))
+        val heights = trail.map { q ->
+            val rx = floor(q.x).toInt() - f.origin.x
+            val rz = floor(q.z).toInt() - f.origin.z
+            val top = FarPlan.top(rx, rz)
+            max(start.y, f.origin.y + top + 1.0)
+        }
+        return trail.mapIndexed { i, q ->
+            val spread = 8
+            val local = (i - spread).coerceAtLeast(0)..(i + spread).coerceAtMost(trail.lastIndex)
+            val y = local.maxOf { j -> heights[j] - kotlin.math.abs(i - j) * STEP * 0.18 }
+            Vec3d(q.x, y, q.z)
+        }
+    }
+
+    /** Every vertebra follows the same arc-length parametrization, all the way to the tail. */
+    fun carrySpine(rail: List<Vec3d>, runIn: List<Vec3d>, distance: Double, settle: Double): List<Vec3d> {
+        val end = length(rail)
+        val shoulder = at(rail, distance).add(0.0, NivarisShape.SPINE_UP, 0.0)
+        val charge = at(rail, 9.0).subtract(rail.first())
+        val groundForward = Vec3d(charge.x, 0.0, charge.z).normalize()
+        val flight = ((distance - 18.0) / 18.0).coerceIn(0.0, 1.0)
+        val blend = flight * flight * (3.0 - 2.0 * flight)
+        val finalTangent = rail.last().subtract(at(rail, end - 3.0)).normalize()
+        val landY = rail.last().y + NivarisShape.SPINE_UP
+        return List(NivarisShape.SEGMENTS + 1) { i ->
+            val offset = (3 - i) * NivarisShape.SEGMENT
+            val s = distance + offset
+            val p = when {
+                i < 3 -> {
+                    val ground = shoulder.add(groundForward.multiply(offset)).add(0.0, -0.5 * (3 - i) / 3, 0.0)
+                    val ahead = if (s <= end) at(rail, s) else rail.last().add(finalTangent.multiply(s - end))
+                    ground.lerp(ahead.add(0.0, NivarisShape.SPINE_UP + 0.5 * (3 - i) / 3, 0.0), blend)
+                }
+                s < 0.0 -> at(runIn, length(runIn) + s).add(0.0, NivarisShape.SPINE_UP, 0.0)
+                else -> at(rail, minOf(s, end)).add(0.0, NivarisShape.SPINE_UP, 0.0)
+            }
+            Vec3d(p.x, p.y + (landY - p.y) * settle, p.z)
+        }
+    }
+
     /**
      * Glatte Bahn durch [ctrl] (zentripetaler Catmull-Rom, gleichmäßig alle [STEP] Blöcke): keine Schleifen, keine Spitzen
      * an den Stützpunkten. Für lange, von Hand gelegte Routen wie den Ritt.

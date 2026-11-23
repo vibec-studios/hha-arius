@@ -2,6 +2,7 @@ package dev.henny.hha_arius.client.model.nivaris
 
 import dev.henny.hha_arius.HhaArius
 import dev.henny.hha_arius.boss.AriusTimings
+import dev.henny.hha_arius.boss.EntrancePath
 import dev.henny.hha_arius.boss.NivarisEntity
 import dev.henny.hha_arius.boss.NivarisMode
 import dev.henny.hha_arius.boss.NivarisShape
@@ -75,6 +76,12 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
         state.resonance = entity.resonance
         state.mode = entity.mode
         state.wingTuck = entity.wingTuckAt(tickDelta)
+        val release = (entity.uncoilAt(tickDelta) * EntrancePath.LENGTH / 20.0).toFloat().coerceIn(0f, 1f)
+        state.spireGrip = when (state.mode) {
+            NivarisMode.COIL -> 1f
+            NivarisMode.UNCOIL -> 1f - release * release * (3f - 2f * release)
+            else -> 0f
+        }
         state.shade = entity.shadeAt(tickDelta)
         // Flug-Überblendung: etwa 10 Ticks von Boden zu Luft und zurück.
         val now = entity.age + tickDelta
@@ -196,7 +203,7 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
         val p = s.p
         val m = model
         val returnCling = s.mode == NivarisMode.RETURN_COIL
-        val spireCoil = s.mode == NivarisMode.COIL
+        val spireGrip = s.spireGrip
         when (i) {
             NivarisShape.WING_GLIED -> {
                 // Haltungen aus docs/NIVARIS_SERPENT.md (Grad, für wing_r; wing_l mit umgekehrtem yaw und roll):
@@ -212,36 +219,37 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
                 val foldYaw = (84f - 4f * tight) * deg
                 val foldRoll = (-45f - 25f * tight) * deg
                 for (sgn in intArrayOf(1, -1)) {
-                    val fold = if (spireCoil) Quaternionf().rotationZYX(0f, sgn * 88f * deg, 168f * deg)
-                        else Quaternionf().rotationZYX(sgn * foldRoll, sgn * foldYaw, 180f * deg)
+                    val fold = Quaternionf().rotationZYX(sgn * foldRoll, sgn * foldYaw, 180f * deg)
+                    if (spireGrip > 0f) fold.slerp(Quaternionf().rotationZYX(0f, sgn * 88f * deg, 168f * deg), spireGrip)
                     val spread = Quaternionf().rotationZYX(sgn * flapRoll, sgn * flapYaw, 0f)
                     val r = if (returnCling) Quaternionf().rotationZYX(0f, sgn * 90f * deg, 165f * deg)
                         else fold.slerp(spread, w)
-                    val memFold = if (returnCling) 1f else if (spireCoil) (1f - w).coerceIn(0f, 1f) else 0f
+                    val memFold = if (returnCling) 1f else spireGrip * (1f - w)
                     limb(q, matrices, if (sgn > 0) m.wingR else m.wingL, -6f * sgn, -6f, 4f, r, girth, stretch, layer, light, overlay, color, foldAmount = memFold)
                 }
             }
             NivarisShape.FORE_GLIED -> {
-                if (spireCoil) {
-                    // Beide Vorderklauen umfassen sichtbar die Eisnadel (leicht abgespreizt in Roll, stabil ohne Zucken).
-                    limb(q, matrices, m.foreR, -7f, 3f, 8f, Quaternionf().rotationZYX(0.32f, 0.12f, 0.22f), girth, stretch, layer, light, overlay, color)
-                    limb(q, matrices, m.foreL, 7f, 3f, 8f, Quaternionf().rotationZYX(-0.32f, -0.12f, 0.22f), girth, stretch, layer, light, overlay, color)
-                } else {
-                    val fore = if (returnCling) 1.48f else p[NivarisModel.FORE]
-                    val swipe = if (returnCling) 0f else p[NivarisModel.SWIPE]
-                    limb(q, matrices, m.foreR, -7f, 3f, 8f, Quaternionf().rotationZYX(-0.6f * swipe, 0.3f * swipe, fore - 0.9f * swipe), girth, stretch, layer, light, overlay, color)
-                    limb(q, matrices, m.foreL, 7f, 3f, 8f, Quaternionf().rotationZYX(0f, 0f, fore), girth, stretch, layer, light, overlay, color)
+                val fore = if (returnCling) 1.48f else p[NivarisModel.FORE]
+                val swipe = if (returnCling) 0f else p[NivarisModel.SWIPE]
+                val right = Quaternionf().rotationZYX(-0.6f * swipe, 0.3f * swipe, fore - 0.9f * swipe)
+                val left = Quaternionf().rotationZYX(0f, 0f, fore)
+                if (spireGrip > 0f) {
+                    right.slerp(Quaternionf().rotationZYX(0.48f, 0.12f, 0.28f), spireGrip)
+                    left.slerp(Quaternionf().rotationZYX(-0.48f, -0.12f, 0.28f), spireGrip)
                 }
+                limb(q, matrices, m.foreR, -7f, 3f, 8f, right, girth, stretch, layer, light, overlay, color)
+                limb(q, matrices, m.foreL, 7f, 3f, 8f, left, girth, stretch, layer, light, overlay, color)
             }
             NivarisShape.HIND_GLIED -> {
-                if (spireCoil) {
-                    limb(q, matrices, m.hindR, -6f, 3f, 8f, Quaternionf().rotationZYX(0.30f, 0.10f, 0.28f), girth, stretch, layer, light, overlay, color)
-                    limb(q, matrices, m.hindL, 6f, 3f, 8f, Quaternionf().rotationZYX(-0.30f, -0.10f, 0.28f), girth, stretch, layer, light, overlay, color)
-                } else {
-                    val hind = if (returnCling) 1.48f else p[NivarisModel.HIND]
-                    limb(q, matrices, m.hindR, -6f, 3f, 8f, Quaternionf().rotationZYX(0f, 0f, hind), girth, stretch, layer, light, overlay, color)
-                    limb(q, matrices, m.hindL, 6f, 3f, 8f, Quaternionf().rotationZYX(0f, 0f, hind), girth, stretch, layer, light, overlay, color)
+                val hind = if (returnCling) 1.48f else p[NivarisModel.HIND]
+                val right = Quaternionf().rotationZYX(0f, 0f, hind)
+                val left = Quaternionf().rotationZYX(0f, 0f, hind)
+                if (spireGrip > 0f) {
+                    right.slerp(Quaternionf().rotationZYX(0.36f, 0.10f, 0.28f), spireGrip)
+                    left.slerp(Quaternionf().rotationZYX(-0.36f, -0.10f, 0.28f), spireGrip)
                 }
+                limb(q, matrices, m.hindR, -6f, 3f, 8f, right, girth, stretch, layer, light, overlay, color)
+                limb(q, matrices, m.hindL, 6f, 3f, 8f, left, girth, stretch, layer, light, overlay, color)
             }
         }
     }

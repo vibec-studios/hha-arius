@@ -116,7 +116,7 @@ object KickAnim {
     /** Ganzkörper-Neigung und Absenken am Ende von PlayerEntityRenderer.setupTransforms. */
     @JvmStatic
     fun applyTransform(state: PlayerEntityRenderState, matrices: MatrixStack) {
-        if (state.hasVehicle) return
+        if (state.hasVehicle || RideClient.hasCarryGrip(state)) return
         val (a, b, k) = sample(state) ?: return
         matrices.translate(0f, mix(a.drop, b.drop, k), 0f)
         matrices.translate(0f, 0.9f, 0f)
@@ -128,7 +128,7 @@ object KickAnim {
     /** Gliedmaßen-Haltung am Ende von PlayerEntityModel.setAngles. */
     @JvmStatic
     fun applyPose(model: PlayerEntityModel, state: PlayerEntityRenderState) {
-        if (state.hasVehicle) return
+        if (state.hasVehicle || RideClient.hasCarryGrip(state)) return
         val (a, b, k) = sample(state) ?: return
         model.head.pitch = mix(a.head, b.head, k)
         model.head.yaw = 0f

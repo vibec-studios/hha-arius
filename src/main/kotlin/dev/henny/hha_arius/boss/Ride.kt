@@ -59,6 +59,81 @@ data class RideActionS2C(val entityId: Int, val action: Int, val ticks: Int) : C
     }
 }
 
+/**
+ * A carry shot uses one world-space frame for the spine and every rider. The analogue passenger
+ * offsets used by the interactive ride cannot identify a point on a curved, rolling spine.
+ */
+data class CarryFrameS2C(val dragon: Int, val spine: List<Vec3d>, val roll: Float, val riders: List<Rider>) : CustomPayload {
+    data class Rider(val id: Int, val feet: Vec3d, val seat: Int, val grip: Float)
+
+    override fun getId(): CustomPayload.Id<CarryFrameS2C> = ID
+
+    companion object {
+        val ID = CustomPayload.Id<CarryFrameS2C>(HhaArius.id("carry_frame"))
+        private fun write(buf: RegistryByteBuf, v: Vec3d) {
+            buf.writeDouble(v.x)
+            buf.writeDouble(v.y)
+            buf.writeDouble(v.z)
+        }
+        private fun read(buf: RegistryByteBuf) = Vec3d(buf.readDouble(), buf.readDouble(), buf.readDouble())
+        val CODEC: PacketCodec<RegistryByteBuf, CarryFrameS2C> = PacketCodec.of(
+            { v, buf ->
+                buf.writeVarInt(v.dragon)
+                buf.writeBoolean(v.spine.isNotEmpty())
+                if (v.spine.isNotEmpty()) {
+                    v.spine.forEach { write(buf, it) }
+                    buf.writeFloat(v.roll)
+                    buf.writeVarInt(v.riders.size)
+                    for (rider in v.riders) {
+                        buf.writeVarInt(rider.id)
+                        write(buf, rider.feet)
+                        buf.writeVarInt(rider.seat)
+                        buf.writeFloat(rider.grip)
+                    }
+                }
+            },
+            { buf ->
+                val dragon = buf.readVarInt()
+                if (!buf.readBoolean()) CarryFrameS2C(dragon, emptyList(), 0f, emptyList())
+                else CarryFrameS2C(
+                    dragon, List(NivarisShape.SEGMENTS + 1) { read(buf) }, buf.readFloat(),
+                    List(buf.readVarInt()) { Rider(buf.readVarInt(), read(buf), buf.readVarInt(), buf.readFloat()) },
+                )
+            },
+        )
+
+        fun send(f: EirholmFight, frame: CarryFrameS2C) {
+            if (Cine.muted && frame.spine.isNotEmpty()) return
+            for (p in f.audience()) if (ServerPlayNetworking.canSend(p, ID)) ServerPlayNetworking.send(p, frame)
+        }
+    }
+}
+
+/** Grip geometry shared by the carry rail and the model's player transform. */
+object CarryGrip {
+    const val REACH = 2.55
+    const val BELOW = 0.22
+
+    class Anchor(val grip: Vec3d, val head: Vec3d, val back: Vec3d) {
+        val figureUp: Vec3d = head.multiply(kotlin.math.cos(0.22)).subtract(back.multiply(sin(0.22))).normalize()
+        val figureBack: Vec3d = back.multiply(kotlin.math.cos(0.22)).add(head.multiply(sin(0.22))).normalize()
+        val feet: Vec3d = grip.subtract(figureUp.multiply(REACH)).subtract(figureBack.multiply(BELOW))
+    }
+
+    fun at(spine: List<Vec3d>, seat: Int, roll: Float): Anchor {
+        val i = RideHooks.glied(seat)
+        val head = spine[i].subtract(spine[i + 1]).normalize()
+        val up = Vec3d(0.0, 1.0, 0.0).subtract(head.multiply(head.y)).normalize()
+        val left = head.negate().crossProduct(up)
+        val angle = roll.toDouble()
+        val back = up.multiply(kotlin.math.cos(angle)).add(left.multiply(sin(angle)))
+        val scale = NivarisShape.SCALE * NivarisShape.taper(i) / 16.0
+        val grip = spine[i].add(back.multiply(15.454 * scale))
+            .subtract(head.multiply((15.039 * 1.03 / 16.0) * spine[i].distanceTo(spine[i + 1])))
+        return Anchor(grip, head, back)
+    }
+}
+
 /** Rider grip strength (2 secure, 1 loose, 0 dismounted), with the takeoff point for a scripted pickup. */
 data class RideGripS2C(val entityId: Int, val grip: Int, val pickup: Vec3d? = null) : CustomPayload {
     override fun getId(): CustomPayload.Id<out CustomPayload> = ID
@@ -81,6 +156,7 @@ data class RideGripS2C(val entityId: Int, val grip: Int, val pickup: Vec3d? = nu
 
         fun register() {
             PayloadTypeRegistry.playS2C().register(ID, CODEC)
+            PayloadTypeRegistry.playS2C().register(CarryFrameS2C.ID, CarryFrameS2C.CODEC)
             PayloadTypeRegistry.playS2C().register(RideSeatS2C.ID, RideSeatS2C.CODEC)
             PayloadTypeRegistry.playS2C().register(RideActionS2C.ID, RideActionS2C.CODEC)
         }

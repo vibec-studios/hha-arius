@@ -7,6 +7,8 @@ import dev.henny.hha_arius.boss.Qte
 import dev.henny.hha_arius.boss.RideAction
 import dev.henny.hha_arius.boss.RideActionS2C
 import dev.henny.hha_arius.boss.RideGripS2C
+import dev.henny.hha_arius.boss.CarryFrameS2C
+import dev.henny.hha_arius.boss.CarryGrip
 import dev.henny.hha_arius.boss.RideHooks
 import dev.henny.hha_arius.boss.RideSeatS2C
 import dev.henny.hha_arius.boss.RideSeats
@@ -47,6 +49,38 @@ import kotlin.math.sin
  *   [NivarisEntity]); steigt jemand ab, verschwinden Haltung, Armlänge und Griff bei allen Clients.
  */
 object RideClient {
+
+    private var carryPrevious: CarryFrameS2C? = null
+    private var carryCurrent: CarryFrameS2C? = null
+
+    class CarryPose(val feet: Vec3d, val grip: Float, val anchor: CarryGrip.Anchor?)
+
+    fun carrySpine(dragon: Int, tickDelta: Float): Pair<List<Vec3d>, Float>? {
+        val frame = carryCurrent?.takeIf { it.dragon == dragon } ?: return null
+        val previous = carryPrevious?.takeIf { it.dragon == dragon } ?: frame
+        val points = frame.spine.mapIndexed { i, p -> previous.spine[i].lerp(p, tickDelta.toDouble()) }
+        val turn = frame.roll.takeUnless { it == 0f && previous.roll > 3f } ?: (2f * PI.toFloat())
+        return points to MathHelper.lerp(tickDelta, previous.roll, turn)
+    }
+
+    private fun carryPose(id: Int, tickDelta: Float): CarryPose? {
+        val frame = carryCurrent ?: return null
+        val rider = frame.riders.firstOrNull { it.id == id } ?: return null
+        val previous = carryPrevious?.riders?.firstOrNull { it.id == id } ?: rider
+        val grip = MathHelper.lerp(tickDelta, previous.grip, rider.grip)
+        val anchor = if (grip > 0f) carrySpine(frame.dragon, tickDelta)?.let { (points, roll) ->
+            CarryGrip.at(points, rider.seat, roll)
+        } else null
+        return CarryPose(previous.feet.lerp(rider.feet, tickDelta.toDouble()), grip, anchor)
+    }
+
+    /** Model origin at the requested partial tick, also available when the figure is off-camera. */
+    fun carryFeet(id: Int, tickDelta: Float): Vec3d? = carryPose(id, tickDelta)?.feet
+
+    fun hasCarryGrip(state: PlayerEntityRenderState): Boolean {
+        val entity = MinecraftClient.getInstance().world?.getEntityById(state.id) ?: return false
+        return (carryPose(state.id, (state.age - entity.age).coerceIn(0f, 1f))?.grip ?: 0f) > 0f
+    }
 
     private val grips = HashMap<Int, Int>()
 
@@ -95,6 +129,16 @@ object RideClient {
     private val anchors = HashMap<Int, Array<Anchor?>>()
 
     fun init() {
+        ClientPlayNetworking.registerGlobalReceiver(CarryFrameS2C.ID) { frame, _ ->
+            if (frame.spine.isEmpty()) {
+                carryPrevious = null
+                carryCurrent = null
+            } else {
+                carryPrevious = carryCurrent
+                carryCurrent = frame
+            }
+        }
+
         ClientPlayNetworking.registerGlobalReceiver(RideGripS2C.ID) { p, ctx ->
             if (p.grip <= 0) {
                 grips.remove(p.entityId)
@@ -125,10 +169,16 @@ object RideClient {
         }
         ClientTickEvents.END_CLIENT_TICK.register { client ->
             if (!client.isPaused) clientTick++
+            if (!dev.henny.hha.client.cine.CinePlayer.active) {
+                carryPrevious = null
+                carryCurrent = null
+            }
             val world = client.world ?: return@register
             reconcile(world)
         }
         ClientPlayConnectionEvents.DISCONNECT.register { _, _ ->
+            carryPrevious = null
+            carryCurrent = null
             grips.clear()
             anchors.clear()
             seats.clear()
@@ -344,6 +394,29 @@ object RideClient {
      */
     @JvmStatic
     fun transform(state: PlayerEntityRenderState, matrices: MatrixStack): Boolean {
+        val player = MinecraftClient.getInstance().world?.getEntityById(state.id)
+        if (player != null) {
+            val carry = carryPose(state.id, (state.age - player.age).coerceIn(0f, 1f))
+            if (carry != null) {
+                val delta = carry.feet.subtract(state.x, state.y, state.z)
+                matrices.translate(delta.x.toFloat(), delta.y.toFloat(), delta.z.toFloat())
+                carry.anchor?.let { anchor ->
+                    val head = anchor.figureUp
+                    val back = anchor.figureBack
+                    val right = head.crossProduct(back).normalize()
+                    m3.set(
+                        right.x.toFloat(), right.y.toFloat(), right.z.toFloat(),
+                        head.x.toFloat(), head.y.toFloat(), head.z.toFloat(),
+                        back.x.toFloat(), back.y.toFloat(), back.z.toFloat(),
+                    )
+                    rot.setFromNormalized(m3)
+                    upright.rotationY((PI - Math.toRadians(state.bodyYaw.toDouble())).toFloat())
+                    matrices.multiply(upright.slerp(rot, carry.grip))
+                    return true
+                }
+                return false
+            }
+        }
         if (!state.hasVehicle) return false
         val world = MinecraftClient.getInstance().world ?: return false
         val e = world.getEntityById(state.id) ?: return false
@@ -383,9 +456,15 @@ object RideClient {
         // Immer zuerst zurücksetzen, damit kein Spieler nach dem Absteigen gestreckte Reit-Arme behält!
         model.rightArm.yScale = 1f
         model.leftArm.yScale = 1f
-        if (!state.hasVehicle) return
         val e = MinecraftClient.getInstance().world?.getEntityById(state.id) ?: return
-        val grip = grip(e)
+        val carry = carryPose(state.id, (state.age - e.age).coerceIn(0f, 1f))
+        val grip = if (carry != null) {
+            if (carry.grip <= 0f) return
+            1
+        } else {
+            if (!state.hasVehicle) return
+            grip(e)
+        }
         if (grip <= 0) return
         val t = state.age
         val (act, aw) = actionWeight(e.id)
@@ -440,7 +519,7 @@ object RideClient {
      */
     @JvmStatic
     fun updateState(e: Entity, state: PlayerEntityRenderState) {
-        if (grip(e) > 0) {
+        if (grip(e) > 0 || carryCurrent?.riders?.any { it.id == state.id } == true) {
             state.leftHandItemState.clear()
             state.rightHandItemState.clear()
             state.leftHandItem = ItemStack.EMPTY

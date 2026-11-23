@@ -57,11 +57,11 @@ class VerifyDragon : FabricClientGameTest {
         if ("continuity" in scenes) {
             val splitProp = System.getProperty("arius.verify.split", "both").lowercase()
             if (splitProp == "open" || splitProp == "both") {
-                continuityScene(splitOpen = true, captureFrames = true)
+                continuityScene(splitOpen = true)
                 stopFight()
             }
             if (splitProp == "closed" || splitProp == "both") {
-                continuityScene(splitOpen = false, captureFrames = splitProp == "closed")
+                continuityScene(splitOpen = false)
                 stopFight()
             }
         }
@@ -473,7 +473,7 @@ class VerifyDragon : FabricClientGameTest {
      * (Auftritt/Beschwörung → Nadel → Sturzflug → Landung → Rammstoß & Eisdorn-Fang → Flug in den Horst → Fassrolle
      * → Arius-Absprung → Bremslandung), wahlweise mit offenem oder geschlossenem Bergschnitt.
      */
-    private fun VerifyKit.continuityScene(splitOpen: Boolean, captureFrames: Boolean) {
+    private fun VerifyKit.continuityScene(splitOpen: Boolean) {
         val tag = if (splitOpen) "open" else "closed"
         startFull()
         server { srv ->
@@ -515,6 +515,13 @@ class VerifyDragon : FabricClientGameTest {
         var camBodyLogged = 0
         var maxFootSlide = 0.0
         var maxFootInfo = "none"
+        val footSlideByLanding = linkedMapOf<Int, Double>()
+
+        var previousPlayer: Vec3d? = null
+        var previousVelocity: Vec3d? = null
+        var previousPlayerTime = -1L
+        val playerMoves = ArrayList<Pair<Int, Double>>()
+        val playerVelocityChanges = ArrayList<Pair<Int, Double>>()
 
         var prevPts: Array<Vec3d>? = null
         var prevRadii: DoubleArray? = null
@@ -643,39 +650,7 @@ class VerifyDragon : FabricClientGameTest {
             }
             if (inCarry && aerieLandedTick < 0 && !s.dFlying && s.dPos != null && s.dPos.distanceTo(s.aerie) < 6.0) aerieLandedTick = seqTick
 
-            // Entscheiden, ob in diesem Tick ein Standbild für eine der 11 Prüfungen gemacht wird.
-            var shotName: String? = null
-            if (captureFrames) {
-                val ct = if (carryStartTick >= 0) seqTick - carryStartTick else -1
-                shotName = when {
-                    // Item 1: Schwert-Erwachen (Arius hebt Solvane, Edge FX, Blade Stream)
-                    seqTick in 44..136 && seqTick % 4 == 0 -> take("i01_sword")
-                    // Item 2: Sturm/Whiteout-Aufbau + erste Silhouette + Enthüllung
-                    seqTick in 118..226 && seqTick % 4 == 0 -> take("i02_storm")
-                    // Item 3: Nadel-Hängeschüsse (Klauen, Flügel, Kopf, Brüllen)
-                    seqTick in 228..444 && seqTick % 6 == 0 -> take("i03_spire")
-                    // Item 4: Sturzflug & Wand-Freiheit beim Auftritt
-                    seqTick in 446..636 && seqTick % 6 == 0 -> take("i04_dive")
-                    // Item 5: Anflug → Landung ohne Teleport/Snap (Übergang UNCOIL → NORMAL + Aufsetzen)
-                    !inCarry && seqTick in 620..735 && seqTick % 3 == 0 -> take("i05_land1")
-                    // Item 6: Rammstoß + Hochschleudern + verzweifelter Fang am Eisdorn
-                    ct in 0..54 && ct % 2 == 0 -> take("i06_ram")
-                    // Item 7: Abheben mit glattem Rücken (keine Buckel)
-                    ct in 16..88 && ct % 3 == 0 -> take("i07_takeoff")
-                    // Item 8: Südtor-, Obelisk-, Tempel- und Hochland-Freiheit
-                    ct in 36..156 && ct % 4 == 0 -> take("i08_wall")
-                    // Item 9: Fassrolle & freier Abwurf im Horst
-                    rollStartTick >= 0 && seqTick in (rollStartTick - 2)..(rollStartTick + 48) && (seqTick - rollStartTick) % 2 == 0 -> take("i09_roll")
-                    // Item 10: Arius' tiefer Vorbeiflug & Absprung auf sein Podest
-                    dismountSeenTick >= 0 && seqTick in (dismountSeenTick - 8)..(dismountSeenTick + 36) && (seqTick - dismountSeenTick) % 2 == 0 -> take("i10_arius")
-                    // Item 11: Bremslandung im Horst ohne Fußrutschen
-                    aerieNearTick >= 0 && (aerieLandedTick < 0 || seqTick <= aerieLandedTick + 26) && seqTick % 2 == 0 -> take("i11_land2")
-                    else -> null
-                }
-            } else if (!splitOpen && seqTick in 228..444 && seqTick % 12 == 0) {
-                // Auch bei geschlossenem Berg Nadel-Standbilder sichern (intakte Eisspitze + Klauengriff prüfen).
-                shotName = take("closed_i03_spire")
-            }
+            val shotName = if (seqTick % 4 == 0) take(if (inCarry) "${tag}_carry" else "${tag}_reveal") else null
 
             // Genau diesen Tick rendern (tickDelta 1) und Kamera und Körperglieder SOFORT auslesen. Vorher wurde erst nach dem
             // Weiterticken gelesen; dann stammten DragonHits aus einem beliebigen Zwischenbild der Spielschleife, und die
@@ -683,6 +658,29 @@ class VerifyDragon : FabricClientGameTest {
             client { c ->
                 c.gameRenderer.render(net.fabricmc.fabric.mixin.client.gametest.screenshot.DeltaTrackerDefaultValueAccessor.create(1f), true)
             }
+            val playerRenderPos = client { c ->
+                c.player?.let { p ->
+                    dev.henny.hha_arius.client.fx.RideClient.carryFeet(p.id, 1f) ?: p.getLerpedPos(1f)
+                }
+            }
+            val visiblePlayer = playerRenderPos?.takeUnless { s.pInvis }
+            if (visiblePlayer != null && s.time > previousPlayerTime) {
+                previousPlayer?.let { previous ->
+                    val elapsed = s.time - previousPlayerTime
+                    val velocity = visiblePlayer.subtract(previous).multiply(1.0 / elapsed)
+                    playerMoves.add(seqTick to velocity.length())
+                    previousVelocity?.let {
+                        playerVelocityChanges.add(seqTick to velocity.subtract(it).length())
+                    }
+                    previousVelocity = velocity
+                }
+                previousPlayer = visiblePlayer
+                previousPlayerTime = s.time
+            } else if (visiblePlayer == null) {
+                previousPlayer = null
+                previousVelocity = null
+            }
+
             val camPos = client { c -> c.gameRenderer.camera.cameraPos }
             val cliUNow = client { c -> (c.world?.getEntityById(s.dId) as? dev.henny.hha_arius.boss.NivarisEntity)?.uncoilAt(1f) ?: 0f }
             val bodyData = client { _ ->
@@ -708,7 +706,7 @@ class VerifyDragon : FabricClientGameTest {
 
                 // (4b) Spieler in festen Blöcken (Füße knapp über der Sohle, Brust, Kopf), solange er nicht reitet.
                 if (!s.pMounted && !s.pInvis) {
-                    val hit = arrayOf(0.15, 0.9, 1.6).map { isSolid(w, s.pPos.add(0.0, it, 0.0)) }.firstOrNull { it.first }
+                    val hit = arrayOf(0.15, 0.9, 1.6).map { isSolid(w, (playerRenderPos ?: s.pPos).add(0.0, it, 0.0)) }.firstOrNull { it.first }
                     if (hit != null) {
                         playerSolidTicks++
                         if (playerSolidLogged++ < 20) log("[$tag] PLAYER_SOLID t=$seqTick p=${fmt(s.pPos.subtract(s.origin.x.toDouble(), s.origin.y.toDouble(), s.origin.z.toDouble()))} blk=${hit.second}")
@@ -775,9 +773,9 @@ class VerifyDragon : FabricClientGameTest {
                     // (4) Spieler-Überschneidung mit Solvanes Körper (nur wenn Spieler sichtbar und nicht auf Dorn aufgesessen).
                     if (!s.pInvis && !s.pMounted) {
                         val probes = arrayOf(
-                            s.pPos.add(0.0, 0.25, 0.0),
-                            s.pPos.add(0.0, 0.9, 0.0),
-                            s.pPos.add(0.0, 1.55, 0.0),
+                            (playerRenderPos ?: s.pPos).add(0.0, 0.25, 0.0),
+                            (playerRenderPos ?: s.pPos).add(0.0, 0.9, 0.0),
+                            (playerRenderPos ?: s.pPos).add(0.0, 1.55, 0.0),
                         )
                         var hitBody = false
                         var hitDetail = ""
@@ -833,6 +831,7 @@ class VerifyDragon : FabricClientGameTest {
                             val fs = hypot(fPos.x - foreAnchor!!.x, fPos.z - foreAnchor!!.z)
                             val hs = hypot(hPos.x - hindAnchor!!.x, hPos.z - hindAnchor!!.z)
                             val m = maxOf(fs, hs)
+                            footSlideByLanding[landIdx] = maxOf(footSlideByLanding.getOrDefault(landIdx, 0.0), m)
                             if (landTicks++ < 40 && landTicks % 2 == 1) landLog.add(String.format(java.util.Locale.ROOT, "land#%d t=%d hind=(%.2f,%.2f) fore=%.2f tip=%.2f", landIdx, seqTick, hPos.x - hindAnchor!!.x, hPos.z - hindAnchor!!.z, fs, pts[NivarisShape.SEGMENTS].distanceTo(prevPts?.get(NivarisShape.SEGMENTS) ?: pts[NivarisShape.SEGMENTS])))
                             if (m > maxFootSlide) {
                                 maxFootSlide = m
@@ -867,6 +866,21 @@ class VerifyDragon : FabricClientGameTest {
             appendLine("4. player_ticks_intersecting_body = $playerBodyTicks")
             appendLine("4b. player_ticks_in_solid = $playerSolidTicks")
             appendLine("5. max_foot_slide_planted = %.3f blocks (%s)".format(maxFootSlide, maxFootInfo))
+            appendLine("   By landing: " + footSlideByLanding.entries.joinToString { (landing, slide) -> "#%d=%.3f".format(landing, slide) })
+            fun peaks(samples: List<Pair<Int, Double>>, from: Int, until: Int): String =
+                samples.filter { it.first in from..until }.maxByOrNull { it.second }
+                    ?.let { "%.3f at t=%d".format(java.util.Locale.ROOT, it.second, it.first) } ?: "no samples"
+            appendLine("6. rendered_player_max_move = " + peaks(playerMoves, 0, seqTick) + " blocks/tick")
+            appendLine("6b. rendered_player_max_velocity_change = " + peaks(playerVelocityChanges, 0, seqTick) + " blocks/tick?")
+            val beats = listOf(
+                Triple("hit", carryStartTick + 24, carryStartTick + 40),
+                Triple("catch", carryStartTick + 65, carryStartTick + 87),
+                Triple("release", rollStartTick, rollStartTick + 22),
+                Triple("player landing", rollStartTick + 36, rollStartTick + 57),
+            )
+            for ((beat, from, until) in beats) {
+                appendLine("  $beat: move=${peaks(playerMoves, from, until)}, dv=${peaks(playerVelocityChanges, from, until)}")
+            }
             if (topMoves.isNotEmpty()) {
                 appendLine("Top moves > 2.2 blocks:")
                 topMoves.sortedByDescending { it.first }.take(10).forEach { appendLine("  ${it.second}") }
