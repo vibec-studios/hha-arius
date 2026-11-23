@@ -91,6 +91,16 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.15.0
+
+- **Test command:** `/arius test <target>` starts any phase, cutscene, quick-time event or hunt section on its own (operators only). `/arius test list` shows every target and `/arius test stop` ends the test.
+- **White Horizon cutscene:** Arius raises the blade straight overhead, charges one vertical line of frost, and cuts down through the mountain.
+- **Mountain split audio:** a new sound sequence, and the achievement fanfare is gone.
+- **Temple kick:** a clear kick wind-up replaces the pose that looked like a sword charge.
+- **Wind Burst mace:** Arius no longer gets stuck floating in mid-air during his attacks.
+- **Solvane's reveal:** re-staged from the storm silhouette to her landing in front of you.
+- **Pickup and drop-off:** she rams you into the air, you catch her ice spike as you fall, and a close barrel roll throws you clear onto open ground.
+
 ### New in 1.14.0
 
 - **Combo camera:** the punish camera glides smoothly and never ends up inside walls or posts.
