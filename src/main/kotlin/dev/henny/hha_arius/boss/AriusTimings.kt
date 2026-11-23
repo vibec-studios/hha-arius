@@ -40,6 +40,7 @@ object AriusTimings {
         it[AriusPose.MACE_SLAM] = 4
         it[AriusPose.FORGE_ICE] = 12
         it[AriusPose.SPIN_CUT] = 14
+        it[AriusPose.KICK_PREP] = 16
     }
 
     /** Nachlauf je [AriusPose] nach dem Treffer, bis IDLE (Haltungen: 0 = gehalten). */
@@ -69,6 +70,7 @@ object AriusTimings {
         it[AriusPose.SPLIT_FIELD] = 30
         it[AriusPose.WHISTLE] = 10
         it[AriusPose.SPIN_CUT] = 12
+        it[AriusPose.KICK_PREP] = 20
     }
 
     /** Standard-Ausholen je [NivarisPose]. */

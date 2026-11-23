@@ -574,32 +574,35 @@ class Scenes(private val f: EirholmFight) {
         val center = if (plan.isEmpty()) f.abs(Vec3d(0.5, 0.0, launchZ)) else plan.map { it.second.first }.fold(Vec3d.ZERO) { acc, v -> acc.add(v) }.multiply(1.0 / plan.size)
         val ground = Vec3d(center.x, y0, center.z)
         val north = flatDir(ground, stand)
-        // 1) Aufbau über die Schultern.
-        scene.once { Cine.fade(it, 0xF2F6FA, 1.0, 0.0, 20) }
+        // 1) Aufbau über die Schultern: Arius steht ruhig mit gesenkter Klinge auf der Altarstufe (kein Schwert-Aufladen).
+        scene.once { Cine.fade(it, 0xF2F6FA, 1.0, 0.0, 18) }
         f.face(a, ground)
-        a.play(AriusPose.CUT_CHARGE)
+        a.play(AriusPose.IDLE)
         val shoulder = ground.subtract(north.multiply(3.2)).add(1.4, 1.75, 0.0)
-        scene.line(shoulder, ground.subtract(north.multiply(2.2)).add(1.1, 1.8, 0.0), stand.add(0.0, 1.5, 0.0), stand.add(0.0, 1.6, 0.0), 40, 62.0, 48.0)
-        cue("cut.reverse_wind", stand, 3.5f, 0.8f)
-        shown { f.fx(FxKind.REVERSE_WIND, stand.add(0.0, 1.0, 0.0), a = 9f, life = 50) }
-        wait(12)
+        scene.line(shoulder, ground.subtract(north.multiply(2.4)).add(1.1, 1.75, 0.0), stand.add(0.0, 1.5, 0.0), stand.add(0.0, 1.55, 0.0), 24, 62.0, 52.0)
+        wait(8)
         shown { f.say("kick", 40) }
-        cue("cut.charge", stand, 2.5f, 1.4f)
-        wait(28)
-        // 2) Windschritt: Schnitt halbhoch aus dem Gang, er reißt in einer Lichtspur vor sie.
-        val front = ground.add(north.multiply(2.6))
-        scene.line(front.add(north.multiply(5.0)).add(-1.6, 2.6, 0.0), front.add(north.multiply(4.2)).add(-1.3, 2.3, 0.0), front.add(0.0, 1.0, 0.0), ground.add(0.0, 1.0, 0.0), 8, 70.0, 64.0)
+        wait(16)
+        // 2) Windschritt direkt vor die Spieler, dann klare Ganzkörper-Einstellung für die Tritt-Ausholbewegung:
+        //    Gewicht verlagern -> Standbein pflanzen -> Knie hochziehen -> gerader Stoßtritt (Schwert bleibt tief hinten).
+        val front = ground.add(north.multiply(2.4))
+        scene.line(front.add(north.multiply(4.6)).add(-1.8, 2.3, 0.0), front.add(-3.0, 1.35, 2.1), front.add(0.0, 1.0, 0.0), front.add(0.0, 1.05, 0.35), 6, 66.0, 58.0)
         a.play(AriusPose.LUNGE, 4)
-        cue("arius.wind_step", stand, 3f, 1.2f)
+        cue("arius.wind_step", stand, 2.6f, 1.15f)
         shown { f.fx(FxKind.DASH_STREAK, stand, front, life = 10) }
         for (i in 1..4) {
             f.place(a, stand.lerp(front, i / 4.0).let { Vec3d(it.x, stand.y + (y0 - stand.y) * (i / 4.0), it.z) })
             yield(Unit)
         }
         f.face(a, ground)
-        a.play(AriusPose.SPIN_CUT, 4)
-        wait(4)
-        // 3) Aufprallbild: Treffer-Stopp, alle hängen in der Luft; die Musik reißt ab; benutzerdefinierte Schleuderanimation startet.
+        wait(2)
+        // Dreiviertel-Seitenansicht auf Arius' ganzen Körper (Standbein, anziehendes rechtes Knie, gesenkte Klinge hinten).
+        scene.line(front.add(-3.0, 1.35, 2.1), front.add(-2.75, 1.25, 1.75), front.add(0.0, 1.05, 0.35), front.add(0.0, 1.05, 0.55), 16, 58.0, 50.0)
+        a.play(AriusPose.KICK_PREP, 16)
+        wait(5)
+        cue("frost_step", front, 1.6f, 0.78f)
+        wait(11)
+        // 3) Aufprallbild: Treffer-Stopp, Arius hält das gestreckte Trittbein; alle hängen in der Luft; Schleuderanimation startet.
         val hitstop = 12
         val recover = 46
         for ((p, lp) in plan) if (f.canSequence(p)) {
@@ -611,22 +614,19 @@ class Scenes(private val f: EirholmFight) {
             Entrance.storyFx(f, FxKind.KICK_FLING, start, a = hitstop.toFloat(), b = fl.toFloat(), life = hitstop + fl + recover, e1 = p)
         }
         MusicCue.duck(f, 0f, 14)
-        MusicCue.sting(f, "impact")
         val south = north.negate()
         shown {
-            f.fxAll(FxKind.FLASH, front, a = 0.5f, life = 6)
+            f.fxAll(FxKind.FLASH, front, a = 0.45f, life = 6)
             f.fxAll(FxKind.TIME_SLOW, front, a = 0.9f, life = 14)
-            f.fx(FxKind.SLASH_ARC, front.add(0.0, 1.1, 0.0), south, a = 7f, b = 0.05f, life = 16)
             f.fx(FxKind.GALE, front.add(0.0, 1.0, 0.0), south.multiply(16.0), a = 1f, life = 16)
             Vfx.shockwave(f.world, Vfx.Style.HEAVEN, front, 7f, 16, 2.4f)
             f.fx(FxKind.CLEAR_WAVE, front, a = 9f, life = 16)
         }
-        cue("hold.impact", front, 3f, 0.6f)
-        cue("cut.strike", front, 4f, 0.7f)
-        cue("arius.kick", front, 3f, 0.6f)
+        cue("hold.impact", front, 3.2f, 0.62f)
+        cue("arius.kick", front, 3.4f, 0.68f)
         f.calls.hitShake(front, 5f, 30f)
-        val above = front.add(north.multiply(3.4)).add(-1.2, 4.2, 0.0)
-        scene.line(above, above.add(north.multiply(0.4)).add(0.0, 0.3, 0.0), ground.add(0.0, 1.0, 0.0), ground.add(south.multiply(1.0)).add(0.0, 1.2, 0.0), hitstop, 58.0, 54.0)
+        val above = front.add(north.multiply(2.8)).add(-2.0, 2.8, 0.0)
+        scene.line(above, above.add(north.multiply(0.35)).add(0.0, 0.25, 0.0), front.add(0.0, 1.0, 0.8), ground.add(south.multiply(0.8)).add(0.0, 1.15, 0.0), hitstop, 58.0, 54.0)
         wait(hitstop)
         // 4) Flug durch die Toröffnung, jeder mit Verfolgerkamera hinter sich.
         var flight = 24

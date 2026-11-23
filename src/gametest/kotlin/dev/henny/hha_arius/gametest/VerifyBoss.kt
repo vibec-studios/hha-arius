@@ -205,8 +205,23 @@ class VerifyBoss : FabricClientGameTest {
             f.place(f.arius!!, f.abs(dev.henny.hha_arius.arena.ArenaLayout.CUT_STAND))
             f.startDirector(scene.play(body))
         }
-        check(waitUntil(120, 1) { server { Hold.isHeld(player(it)) } })
-        burst("kick_pose", 12, 4)
+        // Capture every beat of the kick anticipation + strike + launch:
+        // calm opening -> weight shift/plant foot -> knee chambered -> kick snap -> extended kick hitstop -> flight.
+        tick(16)
+        shot("kick_opening")
+        check(waitUntil(80, 1) { server { fight()?.arius?.pose == AriusPose.KICK_PREP } })
+        tick(5)
+        shot("kick_plant")
+        tick(4)
+        shot("kick_knee_up")
+        tick(4)
+        shot("kick_knee_peak")
+        tick(3)
+        shot("kick_extend")
+        tick(2)
+        shot("kick_impact")
+        tick(16)
+        shot("kick_flight")
     }
 
     private fun VerifyKit.templeHorizon() {
