@@ -243,6 +243,16 @@ class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
     private val spinLoad by lazy { coil(Keys.SPIN_WIND, Keys.SPIN_HIT, 0.12f, 1.2f, extraYaw = -0.25f) }
 
     /**
+     * Senkrechtes Überkopf-Heben (Weißer Horizont): beide Hände mittig über dem Kopf, Solvane steht exakt senkrecht
+     * gerade nach oben (Klingenspitze in den Himmel, Schneide nach Süden in der Schnittebene).
+     */
+    private val horizonRaise = key(
+        "-0.03,0,0,0,-0.3971,0.5,-0.06,0,0,0,0,0,-0.1,0,0,0,0,0,-0.22,0,0,0,0,0,0.287,0,0,0,0,0,0,0,0,0,0,0,-0.4589,-0.8607,-2.1202,0,0,0,-0.6752,0,0,0,0,0,2.0076,1.2234,-0.0056,0,0,0,-1.6182,0.9807,0.3262,0,0,0,-1.5299,0,0,0,0,0,1.9526,-0.0058,0.0172,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.087,0.182,0.0967,0,0,0,0.077,0,0,0,0,0,-0.4164,0,-0.0903,0,0,0,-0.1743,-0.1787,-0.0123,0,0,0,0.077,0,0,0,0,0,0.129,0,0.0068,0,0,0,0.017,0,0.1122,0,0,0,0.0112,0,-0.0785,0,0,0,-0.2443,0,-0.0405,0,0,0,0.2332,0,0.0294,0,0,0,0.257,0,0.1122,0,0,0,-0.1928,0,-0.0806,0,0,0,0.08,0,-0.0405,0,0,0,-0.0425,0,0.0283,0,0,0,0.0305,0,0.1745,0,0,0",
+        intArrayOf(13, 14),
+    )
+    private val horizonLoad by lazy { coil(horizonRaise, Keys.SPLIT_HIT, 0.08f, -0.5f) }
+
+    /**
      * Standbein-Haltung vor dem Tempel-Tritt: Gewichtsverlagerung und tiefes Standbein aus [Keys.GK_LOAD], aber beide
      * Arme aus [Keys.GK_KNEE], sodass Solvane von Beginn an tief und weit hinten aus dem Weg bleibt (nie Schwert-Ausholen).
      */
@@ -491,9 +501,9 @@ class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
             // Laden: in 10 Ticks in die Haltung, dann über 30 Ticks immer tiefer gespannt (Server lädt CUT_WIND = 40).
             AriusPose.CUT_CHARGE -> tr.to(0f, 10f, Keys.CUT_CHARGE, ::smooth, WIND).to(10f, 40f, cutLoad, ::sine)
             // Senkrechtes Aufladen (Weißer Horizont): Klinge zweihändig gerade über dem Kopf in der Schnittebene.
-            AriusPose.HORIZON_RAISE -> tr.to(0f, 12f, Keys.SPLIT_RAISE, ::smooth, WIND).to(12f, 52f, splitLoad, ::sine)
+            AriusPose.HORIZON_RAISE -> tr.to(0f, 12f, horizonRaise, ::smooth, WIND).to(12f, 52f, horizonLoad, ::sine)
             // Senkrechter Niederschlag (Weißer Horizont): zieht exakt aus der erhobenen Ebene gerade nach unten durch.
-            AriusPose.CUT_RELEASE -> tr.to(0f, max(1f, w * 0.25f), splitLoad, ::easeOut, WIND)
+            AriusPose.CUT_RELEASE -> tr.to(0f, max(1f, w * 0.25f), horizonLoad, ::easeOut, WIND)
                 .to(max(1f, w * 0.25f), w, Keys.SPLIT_HIT, ::easeIn, STRIKE)
                 .to(w + 1.5f, w + 8f, Keys.SPLIT_LOW, ::easeOut, FOLLOW)
             AriusPose.GATE_KICK -> tr.to(0f, w * 0.22f, Keys.GK_PARRY, ::easeOut).to(w * 0.25f, w * 0.45f, Keys.GK_LOAD, ::sine, WIND)

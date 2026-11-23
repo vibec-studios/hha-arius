@@ -12,7 +12,6 @@ import net.minecraft.entity.mob.MobEntity
 import net.minecraft.server.world.ServerWorld
 import net.minecraft.util.math.Vec3d
 import net.minecraft.world.World
-import net.minecraft.world.explosion.Explosion
 import kotlin.math.hypot
 
 /**
@@ -88,8 +87,6 @@ abstract class EirholmPuppet(type: EntityType<out EirholmPuppet>, world: World) 
             poseChangedAge = age
         }
     }
-
-    override fun isImmuneToExplosion(explosion: Explosion): Boolean = true
 
     override fun addVelocity(deltaX: Double, deltaY: Double, deltaZ: Double) {}
 
