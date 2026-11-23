@@ -222,8 +222,10 @@ class Scenes(private val f: EirholmFight) {
             a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
             a.play(AriusPose.HORIZON_RAISE)
             cue("cut.reverse_wind", stand, 2.8f, 0.85f)
-            // Detail: Arius hebt Solvane hoch über den Kopf in der senkrechten Schnittebene.
-            pre.line(stand.add(-3.0, 1.1, 3.8), stand.add(-2.3, 1.75, 3.1), stand.add(0.0, 1.6, 0.0), stand.add(0.0, 2.4, 0.0), 30, 50.0, 44.0)
+            // Senkrechte Frostlinie zündet bereits beim Heben der Klinge, damit Pose & Linie sofort zusammen lesbar sind.
+            shown { f.fxAll(FxKind.HORIZON, Vec3d(stand.x, f.floorY, stand.z), Vec3d(0.0, 0.0, 1.0), a = 32f, b = 3f, life = 32, e1 = a) }
+            // Detail: Arius hebt Solvane gerade senkrecht über den Kopf in der Schnittebene (ganze Klinge im Bild).
+            pre.line(stand.add(-3.4, 0.95, 4.4), stand.add(-2.8, 1.85, 3.9), stand.add(0.0, 2.1, 0.0), stand.add(0.0, 2.95, 0.0), 30, 58.0, 50.0)
             wait(20)
             cue("white_line.charge", stand, 2.6f, 0.72f)
             // Rückweg zur Spielerkamera, fertig bevor die Ansage beginnt.
@@ -232,7 +234,7 @@ class Scenes(private val f: EirholmFight) {
         }))
         f.cutSurvivors.clear()
         f.cutSurvivors.addAll(f.players().map { it.uuid })
-        for (p in f.audience()) dev.henny.hha.logic.boss.Cine.title(listOf(p), "hha_arius.feat.white_horizon", "hha_arius.feat.white_horizon.sub", 60)
+        // Titel erst NACH dem Schnitt zeigen, damit Arius und die senkrechte Ladelinie beim Aufladen vollständig frei bleiben.
         // Steigende Spannung entlang der sich sammelnden senkrechten Frostlinie.
         cue("core.form", stand, 2.2f, 0.65f)
         shown { f.farVanilla(net.minecraft.sound.SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME, stand, 1.4f, 0.62f) }
@@ -351,6 +353,7 @@ class Scenes(private val f: EirholmFight) {
         val seamTo = f.abs(Vec3d(x, 0.0, foot + 6.0))
         // 1) Über dem Tempel folgt die Kamera dem senkrechten Schnitt auf dem Weg in den Berg (keine Kastenwände, kein Graudunst).
         shown {
+            for (p in f.audience()) dev.henny.hha.logic.boss.Cine.title(listOf(p), "hha_arius.feat.white_horizon", "hha_arius.feat.white_horizon.sub", 44)
             f.fxAll(FxKind.FLASH, stand, a = 0.24f, life = 6)
             f.fxAll(FxKind.HORIZON, f.abs(Vec3d(x, 0.0, -32.0)), Vec3d(0.0, 0.0, 1.0), a = (foot + 48.0).toFloat(), b = 4f, life = 34)
             f.farSound("white_line.release", seamTo, 3.0f, 0.65f)

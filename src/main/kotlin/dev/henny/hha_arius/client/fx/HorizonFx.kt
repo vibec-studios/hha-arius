@@ -575,46 +575,88 @@ class VerticalHorizonFx(
             }
         }
 
-        // 2) DIE EINE dünne SENKRECHTE Frostlinie vom Himmel herab durch Arius' erhobene Klinge und hinaus zum Berg.
-        val tighten = 1.0 - 0.42 * inSilence
-        val lineA = aScale * (0.50f + 0.50f * progress)
-        val coreW = (0.075 + 0.085 * build) * tighten
-        val haloW = (0.28 + 0.30 * build) * tighten
-        val inkW = (0.16 + 0.16 * build) * tighten
-        // Vom Boden über die Klinge hoch in den Himmel: eine durchgehende, messerscharfe Vertikale.
-        drawTaperedLine(d, lineBase, skyTop, vSide, inkW, AriusLayers.INK, withAlpha(NAVY_DARK, lineA * 0.78f), segments = 24)
-        drawTaperedLine(d, lineBase, skyTop, vSide, haloW, AriusLayers.VFX_GLOW, withAlpha(ICE_BLUE, lineA * 0.85f), segments = 24)
-        drawTaperedLine(d, lineBase, skyTop, vSide, coreW * 1.45, AriusLayers.VFX_GLOW, withAlpha(FROST_WHITE, lineA * 0.96f), segments = 24)
-        drawTaperedLine(d, lineBase, skyTop, vSide, coreW, AriusLayers.VFX_ADD, withAlpha(PURE_WHITE, lineA), segments = 24)
+        // 2) DIE EINE dünne, messerscharfe SENKRECHTE Frostlinie vom Himmel durch Arius' erhobene Klinge bis auf den Boden.
+        //    Wichtig: NICHT mit sin(u*PI) über 170 Blöcke ausblenden (sonst wäre u ≈ 0.02 auf Augenhöhe fast unsichtbar!).
+        //    Stattdessen volle Schärfe vom Boden (origin.y + 0.05) über Klinge & Halle bis hoch in den Himmel, erst ganz oben weich auslaufend.
+        fun drawSkyBeam(
+            from: Vec3d,
+            to: Vec3d,
+            side: Vec3d,
+            halfWidth: Double,
+            layer: net.minecraft.client.render.RenderLayer,
+            color: Int,
+            segments: Int = 28,
+        ) {
+            val baseA = (color ushr 24) / 255f
+            if (baseA <= 0.01f) return
+            val vc = d.buffer(layer)
+            fun profile(u: Double): Double = when {
+                u < 0.008 -> (u / 0.008).coerceIn(0.25, 1.0)
+                u > 0.78 -> ((1.0 - u) / 0.22).coerceIn(0.0, 1.0)
+                else -> 1.0
+            }
+            with(d) {
+                for (i in 0 until segments) {
+                    val u0 = i / segments.toDouble()
+                    val u1 = (i + 1) / segments.toDouble()
+                    val w0 = profile(u0)
+                    val w1 = profile(u1)
+                    val p0 = from.lerp(to, u0)
+                    val p1 = from.lerp(to, u1)
+                    val h0 = halfWidth * (0.20 + 0.80 * w0)
+                    val h1 = halfWidth * (0.20 + 0.80 * w1)
+                    val c0 = withAlpha(color, baseA * w0.toFloat())
+                    val c1 = withAlpha(color, baseA * w1.toFloat())
+                    vc.put(p0.add(side.multiply(-h0)), 0f, 0f, c0)
+                    vc.put(p0.add(side.multiply(h0)), 0f, 1f, c0)
+                    vc.put(p1.add(side.multiply(h1)), 1f, 1f, c1)
+                    vc.put(p1.add(side.multiply(-h1)), 1f, 0f, c1)
+                }
+            }
+        }
 
-        // Feine Boden-/Luft-Leitlinie exakt in der Schnittebene (x = CUT_X) nach Süden Richtung Berg.
-        val pathLen = (reach * (0.35 + 0.65 * progress)).coerceAtLeast(18.0)
+        val tighten = 1.0 - 0.40 * inSilence
+        val lineA = aScale * (0.68f + 0.32f * progress)
+        val coreW = (0.11 + 0.06 * build) * tighten
+        val haloW = (0.34 + 0.14 * build) * tighten
+        val inkW = (0.23 + 0.09 * build) * tighten
+        // Leicht vor Arius' Klingenebene auf x = CUT_X vom Hallenboden gerade durch die Klinge hoch in den Himmel.
+        val floorLineBase = Vec3d(planeX, origin.y + 0.05, origin.z + 0.15)
+        val skyLineTop = Vec3d(planeX, origin.y + 170.0, origin.z + 0.15)
+        // Tief-Marineblau-Kontrastkante macht die helle Frostlinie auch vor weißem Quarz/Eis und Schnee glasklar lesbar.
+        drawSkyBeam(floorLineBase, skyLineTop, vSide, inkW, AriusLayers.INK, withAlpha(NAVY_DARK, lineA * 0.90f), segments = 28)
+        drawSkyBeam(floorLineBase, skyLineTop, vSide, haloW, AriusLayers.VFX_GLOW, withAlpha(ICE_BLUE, lineA * 0.92f), segments = 28)
+        drawSkyBeam(floorLineBase, skyLineTop, vSide, coreW * 1.55, AriusLayers.VFX_GLOW, withAlpha(FROST_WHITE, lineA), segments = 28)
+        drawSkyBeam(floorLineBase, skyLineTop, vSide, coreW, AriusLayers.VFX_ADD, withAlpha(PURE_WHITE, lineA), segments = 28)
+
+        // Feine Boden-Leitlinie exakt in der Schnittebene (x = CUT_X) nach Süden Richtung Berg (volle Sichtbarkeit im Gang).
+        val pathLen = (reach * (0.45 + 0.55 * progress)).coerceAtLeast(22.0)
         val pathFrom = Vec3d(planeX, origin.y + 0.12, origin.z)
         val pathTo = Vec3d(planeX, origin.y + 0.12, origin.z + pathLen)
         val pathSide = camBillSide(d, forward)
-        drawTaperedLine(d, pathFrom, pathTo, pathSide, 0.13 * tighten, AriusLayers.INK, withAlpha(NAVY_DARK, lineA * 0.68f), segments = 20)
-        drawTaperedLine(d, pathFrom, pathTo, pathSide, 0.22 * tighten, AriusLayers.VFX_GLOW, withAlpha(ICE_BLUE, lineA * 0.78f), segments = 20)
-        drawTaperedLine(d, pathFrom, pathTo, pathSide, 0.075 * tighten, AriusLayers.VFX_ADD, withAlpha(PURE_WHITE, lineA * 0.96f), segments = 20)
+        drawSkyBeam(pathFrom, pathTo, pathSide, 0.22 * tighten, AriusLayers.INK, withAlpha(NAVY_DARK, lineA * 0.85f), segments = 20)
+        drawSkyBeam(pathFrom, pathTo, pathSide, 0.32 * tighten, AriusLayers.VFX_GLOW, withAlpha(ICE_BLUE, lineA * 0.88f), segments = 20)
+        drawSkyBeam(pathFrom, pathTo, pathSide, 0.11 * tighten, AriusLayers.VFX_ADD, withAlpha(PURE_WHITE, lineA), segments = 20)
 
         // Senkrechte Himmelslinie über dem fernen Berg (exakt auf x = CUT_X), die das Ziel bereits markiert.
         val mtnFoot = Vec3d(planeX, origin.y + 18.0, origin.z + 235.0)
         val mtnSky = Vec3d(planeX, origin.y + 270.0, origin.z + 315.0)
-        val mtnA = lineA * (0.38f + 0.62f * build)
-        drawTaperedLine(d, mtnFoot, mtnSky, vSide, 0.75 * tighten, AriusLayers.INK, withAlpha(NAVY_DARK, mtnA * 0.62f), segments = 16)
-        drawTaperedLine(d, mtnFoot, mtnSky, vSide, 1.55 * tighten, AriusLayers.VFX_GLOW, withAlpha(ICE_BLUE, mtnA * 0.78f), segments = 16)
-        drawTaperedLine(d, mtnFoot, mtnSky, vSide, 0.50 * tighten, AriusLayers.VFX_ADD, withAlpha(PURE_WHITE, mtnA), segments = 16)
+        val mtnA = lineA * (0.45f + 0.55f * build)
+        drawSkyBeam(mtnFoot, mtnSky, vSide, 0.95 * tighten, AriusLayers.INK, withAlpha(NAVY_DARK, mtnA * 0.72f), segments = 16)
+        drawSkyBeam(mtnFoot, mtnSky, vSide, 1.85 * tighten, AriusLayers.VFX_GLOW, withAlpha(ICE_BLUE, mtnA * 0.85f), segments = 16)
+        drawSkyBeam(mtnFoot, mtnSky, vSide, 0.60 * tighten, AriusLayers.VFX_ADD, withAlpha(PURE_WHITE, mtnA), segments = 16)
 
-        // 3) Klingen-Kern und hochgezogener vertikaler Lichtstern an der erhobenen Klinge.
+        // 3) Klingen-Kern und hochgezogener vertikaler Lichtstern an der gerade nach oben gerichteten Klinge.
         val bladeSide = camBillSide(d, tip.subtract(base))
-        val edgeA = aScale * (0.6f + 0.4f * progress)
-        d.band(AriusLayers.INK, base, tip, bladeSide, 0.13 + 0.09 * build, withAlpha(NAVY_DARK, edgeA * 0.82f), withAlpha(NAVY_MID, edgeA * 0.82f))
-        d.band(AriusLayers.VFX_GLOW, base, tip, bladeSide, 0.10 + 0.10 * build, withAlpha(ICE_BLUE, edgeA * 0.9f), withAlpha(FROST_WHITE, edgeA))
-        d.band(AriusLayers.VFX_ADD, base, tip, bladeSide, 0.045 + 0.05 * build, withAlpha(PURE_WHITE, edgeA), withAlpha(PURE_WHITE, edgeA))
+        val edgeA = aScale * (0.72f + 0.28f * progress)
+        d.band(AriusLayers.INK, base, tip, bladeSide, 0.15 + 0.08 * build, withAlpha(NAVY_DARK, edgeA * 0.88f), withAlpha(NAVY_MID, edgeA * 0.88f))
+        d.band(AriusLayers.VFX_GLOW, base, tip, bladeSide, 0.12 + 0.10 * build, withAlpha(ICE_BLUE, edgeA * 0.94f), withAlpha(FROST_WHITE, edgeA))
+        d.band(AriusLayers.VFX_ADD, base, tip, bladeSide, 0.06 + 0.05 * build, withAlpha(PURE_WHITE, edgeA), withAlpha(PURE_WHITE, edgeA))
 
-        val gleamH = 1.6 + 6.5 * build * tighten
-        drawTaperedLine(d, bladeMid.add(0.0, -gleamH * 0.45, 0.0), bladeMid.add(0.0, gleamH, 0.0), vSide, 0.09 * tighten, AriusLayers.VFX_ADD, withAlpha(PURE_WHITE, edgeA), segments = 12)
-        d.billboard(AriusLayers.VFX_ADD_FLARE, bladeMid, (0.9 + 2.4 * build) * (1.0 + 0.45 * inSilence), withAlpha(PURE_WHITE, edgeA))
-        d.billboard(AriusLayers.VFX_GLOW, bladeMid, (1.5 + 3.0 * build) * tighten, withAlpha(ICE_LIGHT, edgeA * 0.55f))
+        val gleamH = 2.4 + 7.5 * build * tighten
+        drawTaperedLine(d, bladeMid.add(0.0, -gleamH * 0.45, 0.0), bladeMid.add(0.0, gleamH, 0.0), vSide, 0.12 * tighten, AriusLayers.VFX_ADD, withAlpha(PURE_WHITE, edgeA), segments = 12)
+        d.billboard(AriusLayers.VFX_ADD_FLARE, tip, (1.1 + 2.6 * build) * (1.0 + 0.50 * inSilence), withAlpha(PURE_WHITE, edgeA))
+        d.billboard(AriusLayers.VFX_GLOW, bladeMid, (1.6 + 2.8 * build) * tighten, withAlpha(ICE_LIGHT, edgeA * 0.58f))
         // Hoher Himmels-Scheitelpunkt der Linie
         if (build > 0.25f) {
             d.billboard(AriusLayers.VFX_GLOW, skyMid, 3.5 * build * tighten, withAlpha(ICE_LIGHT, aScale * 0.35f * build))
