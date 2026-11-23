@@ -652,17 +652,30 @@ class VerifyDragon : FabricClientGameTest {
 
             val shotName = if (seqTick % 4 == 0) take(if (inCarry) "${tag}_carry" else "${tag}_reveal") else null
 
-            // Genau diesen Tick rendern (tickDelta 1) und Kamera und Körperglieder SOFORT auslesen. Vorher wurde erst nach dem
-            // Weiterticken gelesen; dann stammten DragonHits aus einem beliebigen Zwischenbild der Spielschleife, und die
-            // Bewegung zwischen zwei Proben schwankte je nach Bildzeitpunkt zwischen 0 und dem Doppelten des echten Wegs.
-            client { c ->
+            // Render and read one frame on the client thread. A normal render can run between
+            // separate client calls and replace DragonHits with a different partial tick.
+            data class Rendered(
+                val player: Vec3d?, val camera: Vec3d, val uncoil: Float,
+                val body: Pair<Array<Vec3d>, DoubleArray>?,
+            )
+            val rendered = client { c ->
                 c.gameRenderer.render(net.fabricmc.fabric.mixin.client.gametest.screenshot.DeltaTrackerDefaultValueAccessor.create(1f), true)
-            }
-            val playerRenderPos = client { c ->
-                c.player?.let { p ->
+                val player = c.player?.let { p ->
                     dev.henny.hha_arius.client.fx.RideClient.carryFeet(p.id, 1f) ?: p.getLerpedPos(1f)
                 }
+                val dragon = c.world?.getEntityById(s.dId) as? dev.henny.hha_arius.boss.NivarisEntity
+                val points = dev.henny.hha_arius.client.fx.DragonHits.points(s.dId)?.copyOf()
+                val radii = dev.henny.hha_arius.client.fx.DragonHits.radii(s.dId)?.copyOf()
+                val body = if (points != null && radii != null) points to radii else null
+                if (shotName != null) {
+                    val file = java.io.File(out, "$shotName.png")
+                    net.minecraft.client.util.ScreenshotRecorder.takeScreenshot(c.framebuffer) { img ->
+                        img.use { it.writeTo(file) }
+                    }
+                }
+                Rendered(player, c.gameRenderer.camera.cameraPos, dragon?.uncoilAt(1f) ?: 0f, body)
             }
+            val playerRenderPos = rendered.player
             val visiblePlayer = playerRenderPos?.takeUnless { s.pInvis }
             if (visiblePlayer != null && s.time > previousPlayerTime) {
                 previousPlayer?.let { previous ->
@@ -681,16 +694,10 @@ class VerifyDragon : FabricClientGameTest {
                 previousVelocity = null
             }
 
-            val camPos = client { c -> c.gameRenderer.camera.cameraPos }
-            val cliUNow = client { c -> (c.world?.getEntityById(s.dId) as? dev.henny.hha_arius.boss.NivarisEntity)?.uncoilAt(1f) ?: 0f }
-            val bodyData = client { _ ->
-                if (s.dId < 0) null else {
-                    val pts = dev.henny.hha_arius.client.fx.DragonHits.points(s.dId)?.map { it }?.toTypedArray()
-                    val rad = dev.henny.hha_arius.client.fx.DragonHits.radii(s.dId)?.copyOf()
-                    if (pts != null && rad != null) pts to rad else null
-                }
-            }
-            if (shotName != null) shot(shotName) else tick()
+            val camPos = rendered.camera
+            val cliUNow = rendered.uncoil
+            val bodyData = rendered.body
+            if (shotName != null) ctx.waitTick() else tick()
 
             // (3) Kamera in soliden Blöcken prüfen (auf Server-Welt, die garantiert geladen ist).
             server { srv ->
