@@ -231,8 +231,8 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
             NivarisShape.FORE_GLIED -> {
                 val fore = if (returnCling) 1.48f else p[NivarisModel.FORE]
                 val swipe = if (returnCling) 0f else p[NivarisModel.SWIPE]
-                val right = Quaternionf().rotationZYX(-0.6f * swipe, 0.3f * swipe, fore - 0.9f * swipe)
-                val left = Quaternionf().rotationZYX(0f, 0f, fore)
+                val right = Quaternionf().rotationZYX(-0.6f * swipe, 0.3f * swipe, NivarisLegs.upper(fore - 0.9f * swipe, s.foreFold))
+                val left = Quaternionf().rotationZYX(0f, 0f, NivarisLegs.upper(fore, s.foreFold))
                 if (spireGrip > 0f) {
                     right.slerp(Quaternionf().rotationZYX(0.48f, 0.12f, 0.28f), spireGrip)
                     left.slerp(Quaternionf().rotationZYX(-0.48f, -0.12f, 0.28f), spireGrip)
@@ -242,8 +242,8 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
             }
             NivarisShape.HIND_GLIED -> {
                 val hind = if (returnCling) 1.48f else p[NivarisModel.HIND]
-                val right = Quaternionf().rotationZYX(0f, 0f, hind)
-                val left = Quaternionf().rotationZYX(0f, 0f, hind)
+                val right = Quaternionf().rotationZYX(0f, 0f, NivarisLegs.upper(hind, s.hindFold))
+                val left = Quaternionf().rotationZYX(0f, 0f, NivarisLegs.upper(hind, s.hindFold))
                 if (spireGrip > 0f) {
                     right.slerp(Quaternionf().rotationZYX(0.36f, 0.10f, 0.28f), spireGrip)
                     left.slerp(Quaternionf().rotationZYX(-0.36f, -0.10f, 0.28f), spireGrip)

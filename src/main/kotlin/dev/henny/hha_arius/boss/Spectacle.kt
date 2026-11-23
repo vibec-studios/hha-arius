@@ -12,7 +12,6 @@ import net.minecraft.entity.decoration.DisplayEntity
 import net.minecraft.entity.effect.StatusEffectInstance
 import net.minecraft.entity.effect.StatusEffects
 import net.minecraft.server.network.ServerPlayerEntity
-import net.minecraft.sound.SoundCategory
 import net.minecraft.sound.SoundEvent
 import net.minecraft.util.math.AffineTransformation
 import net.minecraft.util.math.Vec3d
@@ -350,22 +349,41 @@ class GlacierCollapse(private val f: EirholmFight, private val cutX: Double, pri
 }
 
 /**
+ * Szenenklang an alle Zuschauer, gehört an der **Szenenkamera** statt am Körper: Minecraft dämpft um den Hörer (die
+ * Kamera), der Server schickt `world.playSound` aber nur nach dem Abstand der Körper. Filmt die Kamera weit weg (Bergspaltung,
+ * Flug), war der Klang stumm. Der Client ([dev.henny.hha_arius.client.fx.SceneSound]) rückt zu ferne Quellen zur Kamera
+ * heran. Beim Vorspulen still.
+ */
+fun EirholmFight.sceneSound(event: SoundEvent, at: Vec3d, volume: Float, pitch: Float = 1f) {
+    if (Cine.muted) return
+    val payload = dev.henny.hha_arius.net.SceneSoundS2C(event.id(), at.x, at.y, at.z, volume, pitch)
+    for (p in audience()) dev.henny.hha_arius.net.AriusNet.send(p, payload)
+}
+
+/** Wie [sceneSound] für einen eigenen Klang ([id] ohne Namensraum), samt Drachenschichten ([EirholmFight.layerIds]). */
+fun EirholmFight.sceneSound(id: String, at: Vec3d, volume: Float, pitch: Float = 1f) {
+    if (Cine.muted) return
+    val event = soundEvent(id) ?: return
+    sceneSound(event, at, volume, pitch)
+    for (x in layerIds(id)) soundEvent(x)?.let { sceneSound(it, at, volume * 1.2f, pitch) }
+}
+
+/**
  * Szenenklang, der die Zuschauer erreicht, auch wenn die Szenenkamera weit vom Körper der Spieler entfernt ist (die
- * Lautstärke wächst mit der Entfernung, Minecraft dämpft linear bis 16 × Lautstärke). Beim Vorspulen still.
+ * Lautstärke wächst mit der Entfernung und damit die Hörweite, Minecraft dämpft linear bis 16 × Lautstärke). Geht über
+ * [sceneSound], damit er an der Kamera ankommt. Beim Vorspulen still.
  */
 fun EirholmFight.farSound(id: String, at: Vec3d, volume: Float, pitch: Float = 1f) {
     if (Cine.muted) return
-    val event = soundEvent(id) ?: return
     val far = audience().maxOfOrNull { sqrt(it.squaredDistanceTo(at)) } ?: 0.0
     val v = max(volume.toDouble(), far / 15.0 + 0.5).toFloat()
-    world.playSound(null, at.x, at.y, at.z, event, SoundCategory.HOSTILE, v, pitch)
-    layers(id, at, v, pitch)
+    sceneSound(id, at, v, pitch)
 }
 
-/** Vanilla-Klang als Schicht unter eigenen Klängen (Aufprall, Bruch), Lautstärke wie [farSound]. */
+/** Vanilla-Klang als Schicht unter eigenen Klängen (Aufprall, Bruch), Lautstärke und Weg wie [farSound]. */
 fun EirholmFight.farVanilla(event: SoundEvent, at: Vec3d, volume: Float, pitch: Float = 1f) {
     if (Cine.muted) return
     val far = audience().maxOfOrNull { sqrt(it.squaredDistanceTo(at)) } ?: 0.0
     val v = max(volume.toDouble(), far / 15.0 + 0.5).toFloat()
-    world.playSound(null, at.x, at.y, at.z, event, SoundCategory.HOSTILE, v, pitch)
+    sceneSound(event, at, v, pitch)
 }

@@ -91,6 +91,15 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.15.2
+
+- **Solvane's reveal:** the storm, the climb along her coils and the parting clouds from 1.13 are back. The blizzard now stands before she takes shape, and she forms as a dark silhouette in the snow.
+- **Smooth flight shots:** Solvane's body and the cameras that follow her no longer stutter during cutscene flights.
+- **White Horizon charge:** no endless sky beam any more. Light and frost are drawn from all around into the raised blade, with a quiet aura and contracting rings at Arius' feet, one unbroken charge up to the strike.
+- **Cameras:** cutscene cameras no longer pass through the far mountain or the ice horn.
+- **Landings:** after Solvane lands you face her instead of having to turn around, and her legs and belly stay on top of the snow.
+- **Sound:** the mountain split, the kick out of the temple, Solvane's roll and the landings in the snow are audible again.
+
 ### New in 1.15.1
 
 - **Launcher fix:** the Vibe Launcher no longer mistakes this mod for an unrelated CurseForge mod. Gameplay is unchanged from 1.15.0.

@@ -62,6 +62,17 @@ class Scenes(private val f: EirholmFight) {
     /** Szenenklang (still beim Vorspulen). */
     private fun cue(id: String, at: Vec3d, volume: Float = 3f, pitch: Float = 1f) = shown { f.ambient(id, at, volume, pitch) }
 
+    /**
+     * Dumpfer Aufschlag eines Spielers im Schnee (Tritt aus dem Tempel, Abwurf von Solvane), über die Szenenkamera hörbar.
+     * Beim Abwurf hält Hold den Körper und setzt die Fallhöhe jeden Tick auf 0, darum gibt es dort keinen Vanilla-Aufprallklang;
+     * beim Tritt war der alte Aufschlag (hold.impact, 1,6) zu leise. Still beim Vorspulen.
+     */
+    private fun landThud(at: Vec3d) {
+        f.sceneSound("hold.impact", at, 2.6f, 0.78f)
+        f.sceneSound(net.minecraft.sound.SoundEvents.BLOCK_SNOW_BREAK, at, 2.2f, 0.6f)
+        f.sceneSound(net.minecraft.sound.SoundEvents.ENTITY_PLAYER_BIG_FALL, at, 1.6f, 0.9f)
+    }
+
     fun intro(): Script = script {
         val a = f.arius ?: return@script
         f.ariusVulnerable = false
@@ -204,6 +215,7 @@ class Scenes(private val f: EirholmFight) {
         f.music(null, 30)
         MusicCue.play(f, "cut", 30)
         val stand = f.abs(ArenaLayout.CUT_STAND)
+        var chargeShown = false
         val pre = CineScene(f) {
             f.place(a, stand)
             a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
@@ -222,8 +234,12 @@ class Scenes(private val f: EirholmFight) {
             a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
             a.play(AriusPose.HORIZON_RAISE)
             cue("cut.reverse_wind", stand, 2.8f, 0.85f)
-            // Senkrechte Frostlinie zündet bereits beim Heben der Klinge, damit Pose & Linie sofort zusammen lesbar sind.
-            shown { f.fxAll(FxKind.HORIZON, Vec3d(stand.x, f.floorY, stand.z), Vec3d(0.0, 0.0, 1.0), a = 32f, b = 3f, life = 32, e1 = a) }
+            // Das Aufladen beginnt mit dem Heben der Klinge und läuft ohne Neustart bis zum Schlag (vorher zwei Effekte
+            // nacheinander: das Licht fiel nach der Kamerafahrt zurück auf null und baute sich neu auf).
+            shown {
+                f.fxAll(FxKind.HORIZON, Vec3d(stand.x, f.floorY, stand.z), Vec3d(0.0, 0.0, 1.0), a = 56f, b = 3f, life = AriusTimings.CUT_LINE_AT + AriusTimings.CUT_LINE_TICKS, e1 = a)
+                chargeShown = true
+            }
             // Detail: Arius hebt Solvane gerade senkrecht über den Kopf in der Schnittebene (ganze Klinge im Bild).
             pre.line(stand.add(-3.4, 0.95, 4.4), stand.add(-2.8, 1.85, 3.9), stand.add(0.0, 2.1, 0.0), stand.add(0.0, 2.95, 0.0), 30, 58.0, 50.0)
             wait(20)
@@ -243,8 +259,8 @@ class Scenes(private val f: EirholmFight) {
         val line = group.line(f.abs(ArenaLayout.CUT_FROM), f.abs(ArenaLayout.CUT_TO), ArenaLayout.CUT_WIDTH.toFloat(), AriusTimings.CUT_LINE_TICKS)
         a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
         a.play(AriusPose.HORIZON_RAISE)
-        // Senkrechte Frostlinie vom Himmel durch die erhobene Klinge entlang x = CUT_X (b = 3f).
-        f.fxAll(FxKind.HORIZON, Vec3d(stand.x, f.floorY, stand.z), cutDir, a = 56f, b = 3f, life = line.ticks, e1 = a)
+        // Aufladen (b = 3f) nur, falls es nicht schon mit dem Heben der Klinge begonnen hat (Szene übersprungen).
+        if (!chargeShown) f.fxAll(FxKind.HORIZON, Vec3d(stand.x, f.floorY, stand.z), cutDir, a = 56f, b = 3f, life = line.ticks, e1 = a)
         // Spannung baut sich in der Mitte weiter auf, dann ein klarer Beat Beinahe-Stille direkt vor dem Niederschlag.
         val midCharge = (line.ticks / 2).coerceAtLeast(1)
         val silenceWait = (line.ticks - 12 - midCharge).coerceAtLeast(1)
@@ -366,7 +382,11 @@ class Scenes(private val f: EirholmFight) {
         // 2) Weite Totale von Fuß bis Horn: Die senkrechte Lichtklinge schneidet vom Himmel herab und spaltet Berg & Gipfelarena.
         // Alle Blickpunkte liegen strikt VOR/ÜBER der Berghaut (freie Sichtlinie), damit HHA-CinePlayer die Kamera nie einzieht.
         val mid = f.abs(Vec3d(x, 90.0, spireZ - 40.0))
-        shown { f.farSound("cut.split", mid, 4.8f, 0.62f) }
+        shown {
+            f.farSound("cut.split", mid, 4.8f, 0.62f)
+            // Tiefes Grollen unter dem Spalten: Fels und Eis geben nach.
+            f.farVanilla(net.minecraft.sound.SoundEvents.AMBIENT_BASALT_DELTAS_ADDITIONS.value(), mid, 4.0f, 0.5f)
+        }
         post.rawLine(
             f.abs(Vec3d(x - 62.0, 128.0, foot - 156.0)), f.abs(Vec3d(x - 48.0, 148.0, foot - 142.0)),
             f.abs(Vec3d(x, 86.0, spireZ - 110.0)), f.abs(Vec3d(x, 178.0, spireZ - 34.0)), 56, 64.0, 60.0,
@@ -625,8 +645,12 @@ class Scenes(private val f: EirholmFight) {
             Vfx.shockwave(f.world, Vfx.Style.HEAVEN, front, 7f, 16, 2.4f)
             f.fx(FxKind.CLEAR_WAVE, front, a = 9f, life = 16)
         }
-        cue("hold.impact", front, 3.2f, 0.62f)
-        cue("arius.kick", front, 3.4f, 0.68f)
+        // Szenenklänge über die Kamera (sceneSound): Bis 1.14 trug ein Stinger plus cut.strike den Treffer, beides fiel mit
+        // dem Umbau des Tritts weg; jetzt wieder ein schwerer Körper unter Tritt und Aufprall.
+        f.sceneSound("hold.impact", front, 3.2f, 0.62f)
+        f.sceneSound("arius.kick", front, 3.4f, 0.68f)
+        f.sceneSound("cut.strike", front, 3.0f, 0.72f)
+        f.sceneSound(net.minecraft.sound.SoundEvents.ENTITY_PLAYER_ATTACK_KNOCKBACK, front, 2.4f, 0.6f)
         f.calls.hitShake(front, 5f, 30f)
         val above = front.add(north.multiply(2.8)).add(-2.0, 2.8, 0.0)
         scene.line(above, above.add(north.multiply(0.35)).add(0.0, 0.25, 0.0), front.add(0.0, 1.0, 0.8), ground.add(south.multiply(0.8)).add(0.0, 1.15, 0.0), hitstop, 58.0, 54.0)
@@ -644,6 +668,10 @@ class Scenes(private val f: EirholmFight) {
             launched += p
         }
         MusicCue.play(f, "silence", 1)
+        // Luftzug der Weggetretenen beim Abflug (an der Verfolgerkamera hörbar), dann der Windstoß durchs Tor.
+        val whoosh = ground.add(0.0, 1.2, 0.0)
+        f.sceneSound("arius.wind_step", whoosh, 2.6f, 0.55f)
+        f.sceneSound(net.minecraft.sound.SoundEvents.ENTITY_BREEZE_WIND_BURST.value(), whoosh, 2.2f, 0.7f)
         cue("arius.wind_step", gate, 3f, 0.6f)
         if (!Cine.muted) for (i in 0 until 40) {
             val gx = gate.x + rnd.nextInt(5) - 2
@@ -671,7 +699,7 @@ class Scenes(private val f: EirholmFight) {
                         f.fx(FxKind.CLEAR_WAVE, p.entityPos, a = 3.5f, life = 14)
                         f.world.spawnParticles(net.minecraft.particle.BlockStateParticleEffect(ParticleTypes.BLOCK, net.minecraft.block.Blocks.SNOW_BLOCK.defaultState), p.x, p.y + 0.2, p.z, 24, 0.6, 0.2, 0.6, 0.15)
                     }
-                    cue("hold.impact", p.entityPos, 1.6f, 0.8f)
+                    landThud(p.entityPos)
                     // Der Blick endet zum Tempel: Dort geht die Szene weiter.
                     p.teleport(f.world, p.x, p.y, p.z, emptySet(), 180f, -4f, false)
                 }
@@ -988,8 +1016,14 @@ class Scenes(private val f: EirholmFight) {
             val next = throwSubject(t + 1)
             scene.track(throwCamera(subject, t), throwCamera(next, t + 1),
                 subject.add(0.0, 0.85, 0.0), next.add(0.0, 0.85, 0.0), 52.0)
+            if (t == 1) {
+                // Die Rolle setzt ein: schwerer Flügelschlag und Luftzug um die Reiter (über die Szenenkamera hörbar).
+                f.sceneSound("nivaris.wing", at(q), 4.5f, 0.72f)
+                f.sceneSound("arius.wind_step", subject, 2.6f, 0.6f)
+            }
             if (t == releaseAt) {
-                cue("nivaris.wing", at(q), 4.5f, 0.88f)
+                f.sceneSound("nivaris.wing", at(q), 4.5f, 0.88f)
+                f.sceneSound(net.minecraft.sound.SoundEvents.ENTITY_BREEZE_WIND_BURST.value(), subject, 2.2f, 0.75f)
                 for (p in riders) shown {
                     f.fxAll(FxKind.KICK_FLING, p.entityPos, a = 0f, b = (fallTicks - 6).toFloat(), life = fallTicks + 18, e1 = p)
                 }
@@ -1001,7 +1035,7 @@ class Scenes(private val f: EirholmFight) {
             frame(q, grip, roll, positions = positions)
             if (t == releaseAt + fallTicks) for (p in riders) {
                 p.onLanding()
-                cue("hold.impact", p.entityPos, 2.4f, 0.85f)
+                landThud(p.entityPos)
             }
             yield(Unit)
         }
@@ -1086,6 +1120,8 @@ class Scenes(private val f: EirholmFight) {
             frame(length, settle = (t + 1) / 24.0, positions = targets)
             yield(Unit)
         }
+        // Vor dem Rückweg zur Spielerkamera alle zu ihrem Kopf drehen: Die Kamera endet auf Solvane, nicht im Rücken.
+        Entrance.faceAudience(f, spine(length, 1.0)[0])
         scene.home(18)
         repeat(18) {
             frame(length, settle = 1.0, positions = targets)

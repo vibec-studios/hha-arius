@@ -17,6 +17,27 @@ object FightNet {
         PayloadTypeRegistry.playS2C().register(SilenceS2C.ID, SilenceS2C.CODEC)
         PayloadTypeRegistry.playS2C().register(ParryCueS2C.ID, ParryCueS2C.CODEC)
         PayloadTypeRegistry.playS2C().register(ClashCueS2C.ID, ClashCueS2C.CODEC)
+        PayloadTypeRegistry.playS2C().register(SceneSoundS2C.ID, SceneSoundS2C.CODEC)
+    }
+}
+
+/**
+ * Szenenklang [sound] bei ([x],[y],[z]) mit [volume]/[pitch]. Der Client hört ihn an der Szenenkamera (dem Hörer), nicht
+ * am Körper: Liegt die Quelle außerhalb der Hörweite der Kamera, rückt er sie auf der Linie Kamera → Quelle heran
+ * (Richtung bleibt, siehe dev.henny.hha_arius.client.fx.SceneSound).
+ */
+data class SceneSoundS2C(val sound: net.minecraft.util.Identifier, val x: Double, val y: Double, val z: Double, val volume: Float, val pitch: Float) : CustomPayload {
+    override fun getId(): CustomPayload.Id<out CustomPayload> = ID
+
+    companion object {
+        val ID = CustomPayload.Id<SceneSoundS2C>(HhaArius.id("scene_sound"))
+        val CODEC: PacketCodec<RegistryByteBuf, SceneSoundS2C> = PacketCodec.of(
+            { v, buf ->
+                buf.writeIdentifier(v.sound); buf.writeDouble(v.x); buf.writeDouble(v.y); buf.writeDouble(v.z)
+                buf.writeFloat(v.volume); buf.writeFloat(v.pitch)
+            },
+            { buf -> SceneSoundS2C(buf.readIdentifier(), buf.readDouble(), buf.readDouble(), buf.readDouble(), buf.readFloat(), buf.readFloat()) },
+        )
     }
 }
 

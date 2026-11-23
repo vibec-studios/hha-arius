@@ -307,8 +307,11 @@ internal object Entrance {
     /** Ticks nach Beginn von [release], bis der Lichtstrom am Ziel ankommt (nach dem Ende des Drehbuchs). */
     const val RELEASE_ARRIVAL = 94
 
-    /** Länge der Sturm-Einstellung: Ankunft des Stroms, kurzes Verdichten, dann fast 2 Sekunden Silhouette. */
-    private const val STORM_TICKS = 66
+    /** Länge der Sturm-Einstellung: Ankunft des Stroms nach 10 Ticks, dann entsteht die Silhouette im Weiß. */
+    private const val STORM_TICKS = 70
+
+    /** Ticks, in denen der Körper nach der Ankunft des Stroms Glied für Glied vom Kopf aus entsteht ([NivarisEntity.fadeIn]). */
+    private const val FORM_TICKS = 60
 
     private const val FORM_TICKS_SHORT = 30
 
@@ -361,6 +364,23 @@ internal object Entrance {
         // Schneesturm-Whiteout früh aufbauen, damit er VOR Solvanes erstem Erscheinen voll steht.
         if (stormAhead) f.atmos(AtmosMode.BLIZZARD, 22)
         wait(RELEASE_TICKS - RELEASE_AT - 24)
+    }
+
+    /**
+     * Dreht alle Zuschauer an ihrem Platz zu [target] (Blickrichtung und leichte Neigung), bevor eine Szene mit
+     * [CineScene.home] in ihre Augen zurückfährt; so endet der Rückweg auf dem, was die Szene gezeigt hat.
+     */
+    fun faceAudience(f: EirholmFight, target: Vec3d) {
+        for (p in f.audience()) {
+            if (p.isSpectator || p.entityWorld !== f.world) continue
+            val dx = target.x - p.x
+            val dz = target.z - p.z
+            val flat = sqrt(dx * dx + dz * dz)
+            if (flat < 0.5) continue
+            val yaw = (Math.toDegrees(atan2(dz, dx)) - 90.0).toFloat()
+            val pitch = (-Math.toDegrees(atan2(target.y - p.eyeY, flat))).toFloat().coerceIn(-25f, 25f)
+            p.teleport(f.world, p.x, p.y, p.z, emptySet(), yaw, pitch, false)
+        }
     }
 
     /** Zuschauer-Klang: laut genug, dass er die Spieler (am Plateau) erreicht, gehört wird er an der Kamera. */
@@ -446,55 +466,72 @@ internal object Entrance {
         val summitTop = f.abs(Vec3d(ArenaLayout.SPIRE.x - 20.0, dev.henny.hha_arius.arena.FarPlan.SHOULDER_Y + 1.0, ArenaLayout.SPIRE.z - 14.0))
         vantage.move(summitTop)
 
-        // The blade stream leads into an opaque white beat before a dragon can enter the frame.
+        // Inszenierung wie in 1.13.0 (Crix: „die war mal richtig geil, nur der Nebel kam zu spät“): Sturm, die Kamera
+        // steigt an den Windungen die Nadel hinauf, die Wolken reißen auf, Brüllen nah am Kopf. Neu seit 1.15.2: Der
+        // Schneesturm steht schon voll, bevor die Kamera an die Nadel schneidet ([release] mit stormAhead), und der Körper
+        // entsteht erst im Weiß, als dunkle Silhouette; ihre Farbe kommt erst, wenn die Wolken aufreißen.
         val axis = f.abs(Vec3d(ArenaLayout.SPIRE.x + 0.5, 0.0, ArenaLayout.SPIRE.z + 0.5))
         val head = f.abs(EntrancePath.HEAD_RAISED)
-        val wide = axis.add(-39.0, 218.0, -44.0)
-        val medium = axis.add(-27.0, 218.0, -31.0)
-        val wideTarget = axis.add(-3.0, 204.0, 0.0)
-        val revealTarget = f.abs(EntrancePath.coilSpine().first()).add(0.0, 2.5, 0.0)
-        scene.once { Cine.fade(it, 0xF3F8FC, 0.0, 1.0, 12) }
-        sound(f, "seal.blizzard", wide, 2.5f, 0.7f)
-        fxAll(f, FxKind.BLIZZARD, arrival, 18f, STORM_TICKS)
-        wait(12)
-        // Lift the distance fog under the opaque wipe. The snow and the screen veil stay
-        // in front of her, so gusts cannot bleach the dark model back to white.
-        f.atmos(AtmosMode.WHITE, 8)
-        val silhouette = head.add(-14.0, -2.0, -13.0)
-        scene.rawLine(silhouette.add(-5.0, -1.0, 3.0), silhouette, arrival.add(0.0, -1.0, 0.0),
-            head.add(0.0, -3.0, 0.0), STORM_TICKS - 12, 70.0, 66.0)
+        fun outside(s: Double, out: Double, up: Double): Vec3d {
+            val c = EntrancePath.coil(s)
+            return f.abs(c.add(EntrancePath.coilOutward(c).multiply(out)).add(0.0, up, 0.0))
+        }
 
-        // Dark body and a rising head read together against the snow through the veil.
-        // Locate the tracked entity in this shot, rather than near the spectators below the
-        // ice. The model extends far out of the proxy bounds and can otherwise be culled.
+        // 2) Sturm (70 Ticks): nah genug an der Nadel, dass man die Windungen durch das Weiß ahnt; langsame Fahrt heran.
+        //    Der Strom kommt an (10 Ticks), im Ankunftsblitz legt sie sich um die Nadel und entsteht Glied für Glied.
+        val storm = head.add(-14.0, -2.0, -13.0)
+        scene.rawLine(storm.add(-6.0, -1.0, -4.0), storm, arrival.add(0.0, -2.0, 0.0), head.add(0.0, -3.0, 0.0), STORM_TICKS, 70.0, 64.0)
+        f.atmos(AtmosMode.BLIZZARD, 10)
+        sound(f, "seal.blizzard", storm, 2.5f, 0.7f)
+        wait(RELEASE_ARRIVAL - RELEASE_TICKS)
+        sound(f, "nivaris.inhale", arrival, 2f, 0.45f)
+        fxAll(f, FxKind.BLIZZARD, arrival, 14f, 60)
+        // Die Entity steht in dieser Einstellung an der Nadel, nicht beim Plateau-Stellvertreter: Der Client zeichnet sie
+        // nur, wenn ihr Abschnitt in Sichtweite der Kamera liegt.
         var proxy = if (!Cine.muted) arrival else f.abs(EntrancePath.PROXY)
         val d = coil(f, proxy) ?: return@script
         d.wingTuck = 1f
         d.eyeGlow = 0
-        d.play(NivarisPose.IDLE)
-        d.fadeIn(7)
-        wait(8)
-        scene.once { Cine.fade(it, 0xF3F8FC, 1.0, 0.43, 12) }
-        sound(f, "nivaris.inhale", arrival, 2.2f, 0.45f)
-        wait(STORM_TICKS - 20)
+        d.fadeIn(FORM_TICKS)
+        wait(STORM_TICKS - (RELEASE_ARRIVAL - RELEASE_TICKS))
 
-        // The same view opens onto the ice grip and pushes in toward the roar.
-        f.atmos(AtmosMode.REVEAL, 22)
-        scene.once { Cine.fade(it, 0xF3F8FC, 0.43, 0.0, 14) }
+        // 3) Der Sturm lichtet sich so weit, dass man die Windung erkennt: Von unten nach oben entlang des Leibs, die
+        //    Kamera steigt mit ihm die Nadel hinauf (56 Ticks), deutlich außerhalb der Windung.
+        f.atmos(AtmosMode.SNOW, 22)
+        scene.line(outside(0.60, 24.0, 8.0), outside(0.68, 24.0, 10.0), coilAt(f, 0.62), coilAt(f, 0.72), 56, 56.0, 52.0)
+        sound(f, "seal.blizzard", coilAt(f, 0.66), 3f, 0.55f)
+        fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.66), 9f, 56)
+        d.eyeGlow = 14
+        wait(56)
+
+        // 4) Weiter oben am Kristallkamm: kontinuierlicher Aufstieg bis unter den Gipfel (52 Ticks).
+        scene.line(outside(0.76, 23.0, 9.0), outside(0.84, 22.0, 11.0), coilAt(f, 0.78), coilAt(f, 0.88), 52, 54.0, 48.0)
+        sound(f, "nivaris.wing", coilAt(f, 0.82), 2f, 0.45f)
+        fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.82), 8f, 52)
+        wait(52)
+
+        // 5) Die Wolken reißen auf: weite Einstellung von Nordwesten (104 Ticks) auf Nadel, Windungen und Kopf. Erst jetzt
+        //    kommt ihre Farbe (die Silhouette blendet weich aus).
+        f.atmos(AtmosMode.REVEAL, 32)
         d.shade = 0f
-        d.eyeGlow = 65
-        scene.rawLine(wide, medium, wideTarget, revealTarget, 50, 58.0, 51.0)
-        sound(f, "glacier.crack", arrival, 2.5f, 0.60f)
-        wait(50)
-        scene.rawLine(medium, head.add(-10.5, 0.5, -12.5), revealTarget, head.add(0.0, 2.5, -1.2), 58, 51.0, 48.0)
+        scene.line(spire(f, -68.0, 172.0, -148.0), spire(f, -80.0, 178.0, -158.0), spire(f, 0.0, 140.0, 0.0), spire(f, 0.0, 158.0, 0.0), 104, 58.0, 54.0)
+        sound(f, "glacier.crack", arrival, 3f, 0.5f)
+        wait(28)
+        d.play(NivarisPose.IDLE)
+        d.eyeGlow = 40
+        sound(f, "nivaris.inhale", head, 2f, 0.55f)
+        wait(76)
+
+        // 6) Nah am Kopf über dem Gipfel (gleiche Nordwest-Achse wie Einstellung 5): Brüllen, Augen glühen, Name (60 Ticks).
+        scene.line(head.add(-15.0, -5.5, -15.5), head.add(-11.0, -2.5, -11.5), head.add(0.0, -1.5, -2.0), head.add(0.0, 0.5, -1.5), 60, 62.0, 54.0)
         d.play(NivarisPose.ROAR)
         val windup = AriusTimings.NIVARIS_WINDUP[NivarisPose.ROAR]
         wait(windup)
         d.eyeGlow = 100
         sound(f, "nivaris.roar", head, 4f, 0.8f)
-        scene.once { Cine.title(it, "entity.hha_arius.nivaris", "hha_arius.cine.nivaris", 64) }
+        scene.once { Cine.title(it, "entity.hha_arius.nivaris", "hha_arius.cine.nivaris", 70) }
         MusicCue.sting(f, "reveal")
-        wait(58 - windup)
+        wait(60 - windup)
 
         // 7) Sie löst sich vom Fels und gleitet über den freien Westkorridor zum Plateau (220 Ticks, drei freie Kamerafahrten).
         f.atmos(AtmosMode.REVEAL, 20)
@@ -564,6 +601,9 @@ internal object Entrance {
         d.uncoil = 0f
         d.showNow()
         f.atmos(AtmosMode.SNOW, 80)
+        // Die Spieler stehen nördlich von ihr mit dem Blick zum Tempel: vor dem Rückweg zu ihnen drehen (Crix: „wenn sie
+        // landet, muss man sich erst 180 Grad umdrehen“), damit die Kamera auf ihr endet.
+        faceAudience(f, spot.add(0.0, 2.6, -4.0))
         scene.home(18)
         wait(18)
     }
@@ -588,6 +628,7 @@ internal object Entrance {
         yieldAll(glideAndLand(f, d, start, spot, 40))
         wait(12)
         d.showNow()
+        faceAudience(f, spot.add(0.0, 2.6, -4.0))
         scene.home(18)
         wait(18)
     }
@@ -694,9 +735,38 @@ class CineScene(private val f: EirholmFight, private val onAbort: () -> Unit) {
         }
     }
 
-    /** Advance one sample of a moving shot. Each packet covers the interval to the next sample. */
+    /** Laufende Anhebung der Folgekamera ([track]) über Gelände; steigt sofort, sinkt langsam (kein Springen). */
+    private var trackLift = 0.0
+    private var trackTick = Int.MIN_VALUE
+
+    /** Wie hoch muss [p] mindestens, damit die Kamera samt Nahebene frei ist ([CineSafety.solid])? */
+    private fun liftOutOf(p: Vec3d): Double {
+        var up = 0.0
+        while (up <= 30.0) {
+            val q = p.add(0.0, up, 0.0)
+            if (!CineSafety.solid(f.world, f.origin, q) && !CineSafety.solid(f.world, f.origin, q.add(0.0, -0.8, 0.0))) return up
+            up += 1.0
+        }
+        return up
+    }
+
+    /**
+     * Advance one sample of a moving shot. Each packet covers the interval to the next sample.
+     * Seit 1.15.2 mit Geländeschutz (Crix: „die Kamera geht teilweise immer noch durch den Berg“): Läuft die Fahrt durch
+     * Fels oder Eis, wird sie weich darüber angehoben.
+     */
     fun track(from: Vec3d, to: Vec3d, lookFrom: Vec3d, lookTo: Vec3d, fov: Double) {
-        if (!Cine.muted) rawLine(from, to, lookFrom, lookTo, 1, fov)
+        if (Cine.muted) return
+        val now = f.server.ticks
+        if (now - trackTick > 2) trackLift = 0.0
+        trackTick = now
+        val liftFrom = trackLift
+        val liftTo = maxOf(liftOutOf(to), trackLift - 0.35, 0.0)
+        trackLift = liftTo
+        // Die HHA-Einstellung bleibt für Sichtfeld, Nachzügler und Clients ohne Abtast-Strom; die Lage selbst spielt der
+        // Client gepuffert auf der Zeitachse der Darsteller ab ([TrackCamS2C]), ohne Anhalten zwischen den Ticks.
+        rawLine(from.add(0.0, liftFrom, 0.0), to.add(0.0, liftTo, 0.0), lookFrom, lookTo, 1, fov)
+        CineSafety.track(watchers(), now, from.add(0.0, liftFrom, 0.0), lookFrom)
     }
 
     /** Gerade Kamerafahrt (siehe [Cine.camera]); merkt sich den Verlauf für [home]. */

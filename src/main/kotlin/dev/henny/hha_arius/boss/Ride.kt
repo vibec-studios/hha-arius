@@ -62,8 +62,13 @@ data class RideActionS2C(val entityId: Int, val action: Int, val ticks: Int) : C
 /**
  * A carry shot uses one world-space frame for the spine and every rider. The analogue passenger
  * offsets used by the interactive ride cannot identify a point on a curved, rolling spine.
+ *
+ * [tick] is the server tick the frame belongs to (stamped in [send]). The client plays the frames on the
+ * same buffered timeline as [MotionS2C] instead of blending between packets as they happen to arrive.
  */
-data class CarryFrameS2C(val dragon: Int, val spine: List<Vec3d>, val roll: Float, val riders: List<Rider>) : CustomPayload {
+data class CarryFrameS2C(
+    val dragon: Int, val spine: List<Vec3d>, val roll: Float, val riders: List<Rider>, val tick: Int = 0,
+) : CustomPayload {
     data class Rider(val id: Int, val feet: Vec3d, val seat: Int, val grip: Float)
 
     override fun getId(): CustomPayload.Id<CarryFrameS2C> = ID
@@ -79,6 +84,7 @@ data class CarryFrameS2C(val dragon: Int, val spine: List<Vec3d>, val roll: Floa
         val CODEC: PacketCodec<RegistryByteBuf, CarryFrameS2C> = PacketCodec.of(
             { v, buf ->
                 buf.writeVarInt(v.dragon)
+                buf.writeVarInt(v.tick)
                 buf.writeBoolean(v.spine.isNotEmpty())
                 if (v.spine.isNotEmpty()) {
                     v.spine.forEach { write(buf, it) }
@@ -94,17 +100,21 @@ data class CarryFrameS2C(val dragon: Int, val spine: List<Vec3d>, val roll: Floa
             },
             { buf ->
                 val dragon = buf.readVarInt()
-                if (!buf.readBoolean()) CarryFrameS2C(dragon, emptyList(), 0f, emptyList())
+                val tick = buf.readVarInt()
+                if (!buf.readBoolean()) CarryFrameS2C(dragon, emptyList(), 0f, emptyList(), tick)
                 else CarryFrameS2C(
                     dragon, List(NivarisShape.SEGMENTS + 1) { read(buf) }, buf.readFloat(),
                     List(buf.readVarInt()) { Rider(buf.readVarInt(), read(buf), buf.readVarInt(), buf.readFloat()) },
+                    tick,
                 )
             },
         )
 
         fun send(f: EirholmFight, frame: CarryFrameS2C) {
             if (Cine.muted && frame.spine.isNotEmpty()) return
-            for (p in f.audience()) if (ServerPlayNetworking.canSend(p, ID)) ServerPlayNetworking.send(p, frame)
+            // Same tick stamp as MotionSync uses for the entity positions of this server tick.
+            val stamped = frame.copy(tick = f.server.ticks)
+            for (p in f.audience()) if (ServerPlayNetworking.canSend(p, ID)) ServerPlayNetworking.send(p, stamped)
         }
     }
 }
@@ -945,7 +955,9 @@ class DragonRide(private val f: EirholmFight) {
         var released = false
         fun release(pos: Vec3d) {
             released = true
-            cue("nivaris.wing", pos, 4.5f, 0.95f)
+            // Über die Szenenkamera (sceneSound), die hier weit seitlich bzw. am Boden steht.
+            f.sceneSound("nivaris.wing", pos, 4.5f, 0.95f)
+            f.sceneSound(net.minecraft.sound.SoundEvents.ENTITY_BREEZE_WIND_BURST.value(), pos, 2.4f, 0.75f)
             for ((j, p) in f.players().withIndex()) {
                 if (p.vehicle !== d) continue
                 p.stopRiding()
@@ -1001,6 +1013,11 @@ class DragonRide(private val f: EirholmFight) {
                 // Eine einzige weiche Rolle um die Längsachse (zur rechten Seite, Rücken nach unten bei der Hälfte).
                 val r = ((t - ROLL_FROM) / ROLL_TICKS.toDouble()).coerceIn(0.0, 1.0)
                 d.bodyRoll = RideSeats.roll(r)
+                if (t == ROLL_FROM) {
+                    // Die Rolle setzt ein: schwerer Flügelschlag und Luftzug.
+                    f.sceneSound("nivaris.wing", pos, 4.5f, 0.72f)
+                    f.sceneSound("arius.wind_step", pos, 2.6f, 0.6f)
+                }
                 if (t == ROLL_FROM + 8) {
                     cue("nivaris.roar", pos, 4.5f, 0.9f)
                     f.calls.roomShake(pos, 2.2f, 50f)
@@ -1051,7 +1068,11 @@ class DragonRide(private val f: EirholmFight) {
                         landed += p.uuid
                         p.onLanding()
                         f.world.spawnParticles(BlockStateParticleEffect(ParticleTypes.BLOCK, Blocks.SNOW_BLOCK.defaultState), p.x, p.y + 0.2, p.z, 26, 0.7, 0.2, 0.7, 0.14)
-                        cue("hold.impact", p.entityPos, 1.6f, 0.85f)
+                        // Die Fallhöhe wird hier jeden Tick genullt (kein Vanilla-Aufprallklang): eigener dumpfer Aufschlag im
+                        // Schnee, über die Szenenkamera hörbar (sie steht beim Sturz gut 15 Blöcke entfernt).
+                        f.sceneSound("hold.impact", p.entityPos, 2.6f, 0.78f)
+                        f.sceneSound(net.minecraft.sound.SoundEvents.BLOCK_SNOW_BREAK, p.entityPos, 2.2f, 0.6f)
+                        f.sceneSound(net.minecraft.sound.SoundEvents.ENTITY_PLAYER_BIG_FALL, p.entityPos, 1.6f, 0.9f)
                     }
                 }
                 if (!d.flying && ++settled >= 18) break

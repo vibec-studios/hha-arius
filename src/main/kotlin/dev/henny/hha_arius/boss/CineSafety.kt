@@ -31,6 +31,32 @@ data class ChaseCamS2C(val target: Int, val ticks: Int, val dist: Float, val hei
 }
 
 /**
+ * Ein Abtastpunkt einer mitfahrenden Szenenkamera ([dev.henny.hha_arius.boss.CineScene.track]) mit Server-Tick-Stempel.
+ * Seit 1.15.2: HHAs Kameraspieler beginnt jede Einstellung neu und weich (ease-in/out); bei einer neuen Ein-Tick-Einstellung
+ * je Tick stand die Kamera zwischen den Paketen still, und der Drache darunter schien zu ruckeln (Crix: „Solvanes Körper
+ * ruckelt beim Fliegen in den Cutscenes“). Der Client spielt diese Punkte auf derselben Zeitachse wie die Darsteller ab.
+ */
+data class TrackCamS2C(
+    val tick: Int, val x: Double, val y: Double, val z: Double, val lx: Double, val ly: Double, val lz: Double,
+) : CustomPayload {
+    override fun getId(): CustomPayload.Id<out CustomPayload> = ID
+
+    companion object {
+        val ID = CustomPayload.Id<TrackCamS2C>(HhaArius.id("track_cam"))
+        val CODEC: PacketCodec<RegistryByteBuf, TrackCamS2C> = PacketCodec.of(
+            { v, buf ->
+                buf.writeVarInt(v.tick)
+                buf.writeDouble(v.x); buf.writeDouble(v.y); buf.writeDouble(v.z)
+                buf.writeDouble(v.lx); buf.writeDouble(v.ly); buf.writeDouble(v.lz)
+            },
+            { buf ->
+                TrackCamS2C(buf.readVarInt(), buf.readDouble(), buf.readDouble(), buf.readDouble(), buf.readDouble(), buf.readDouble(), buf.readDouble())
+            },
+        )
+    }
+}
+
+/**
  * Kollisionssichere Szenenkameras (seit 1.10.0, Crix: „die Kamera ist halb im Riss“, „halb im Berg“). Jede Fahrt
  * ([CineScene.line], [CineScene.orbit]) wird vor dem Senden an neun Punkten geprüft: Steht die Kamera in festem
  * Block oder ist die Sicht von ihr zum Blickpunkt verdeckt (bis 3 Blöcke vor dem Ziel, das selbst an einer Felswand
@@ -42,6 +68,7 @@ object CineSafety {
 
     fun init() {
         PayloadTypeRegistry.playS2C().register(ChaseCamS2C.ID, ChaseCamS2C.CODEC)
+        PayloadTypeRegistry.playS2C().register(TrackCamS2C.ID, TrackCamS2C.CODEC)
         MusicCue.register()
     }
 
@@ -49,6 +76,12 @@ object CineSafety {
     fun chase(players: Collection<ServerPlayerEntity>, ticks: Int, dist: Double, height: Double, side: Double = 0.0, target: net.minecraft.entity.Entity? = null) {
         val payload = ChaseCamS2C(target?.id ?: -1, ticks, dist.toFloat(), height.toFloat(), side.toFloat())
         for (p in players) if (!p.isDisconnected && ServerPlayNetworking.canSend(p, ChaseCamS2C.ID)) ServerPlayNetworking.send(p, payload)
+    }
+
+    /** Abtastpunkt einer mitfahrenden Kamera an [players] (siehe [TrackCamS2C]). */
+    fun track(players: Collection<ServerPlayerEntity>, tick: Int, cam: Vec3d, look: Vec3d) {
+        val payload = TrackCamS2C(tick, cam.x, cam.y, cam.z, look.x, look.y, look.z)
+        for (p in players) if (!p.isDisconnected && ServerPlayNetworking.canSend(p, TrackCamS2C.ID)) ServerPlayNetworking.send(p, payload)
     }
 
     /** Ist [p] fest (Block mit Kollisionsform, Berg-Kluft oder im/unter dem hohlen Berg-Relief)? */

@@ -49,6 +49,10 @@ class NivarisRenderState : LivingEntityRenderState() {
     var wingTuck = 0f
     var spireGrip = 0f
 
+    /** Läufe am Boden angelegt 0..1 (vorn, hinten): so weit, dass die Füße auf dem Boden statt darin stehen ([NivarisLegs]). */
+    var foreFold = 0f
+    var hindFold = 0f
+
     /** Sturm-Silhouette 0..1: Körper als dunkle marineblaue Form (Auftritt im Schneesturm). */
     var shade = 0f
 
@@ -88,6 +92,77 @@ class NivarisRenderState : LivingEntityRenderState() {
 
 /** Eine Schlüsselhaltung: ein Wert je Kanal (siehe [NivarisModel.FWD] …). */
 class NivarisKey(val v: FloatArray)
+
+/**
+ * Ground fold of the legs. The authored leg poses stand almost straight down (about 2.7 blocks below the spine at the
+ * forelegs, 2.9 at the hind legs), but a lying or landed body rests only about one block above the snow. The fold
+ * swings the upper leg back along the flank, straightens the knee and keeps the sole flat, by exactly as much as the
+ * ground under the leg requires ([NivarisBody] solves the amount, model and renderer apply it).
+ * Lengths in model units of the leg parts (NivarisModelData), angles of the joints as offsets to the model's own.
+ */
+internal object NivarisLegs {
+    /** Upper leg in the full fold (rotation about the segment's x axis, + = back). */
+    const val FOLD_UPPER = 1.54f
+    private val FOLD_UPPER_DEG = Math.toDegrees(FOLD_UPPER.toDouble()).toFloat()
+
+    /** Built-in pitch of the lower leg (degrees); the foot carries the opposite angle. */
+    private fun knee(fore: Boolean) = if (fore) -40f else 30f
+
+    fun upper(authored: Float, fold: Float): Float = MathHelper.lerp(fold, authored, FOLD_UPPER)
+
+    /** Lower leg offset: straight in line with the upper leg at full fold. */
+    fun lower(fore: Boolean, authoredDeg: Float, fold: Float): Float = MathHelper.lerp(fold, authoredDeg, -knee(fore))
+
+    /** Foot offset: sole level with the ground at full fold. */
+    fun foot(fore: Boolean, authoredDeg: Float, fold: Float): Float = MathHelper.lerp(fold, authoredDeg, knee(fore) - FOLD_UPPER_DEG)
+
+    /** Leg pivots on their segment (model units, x = outward, y = down, z = back). */
+    fun pivotX(fore: Boolean) = if (fore) 7.0 else 6.0
+    const val PIVOT_Y = 3.0
+    const val PIVOT_Z = 8.0
+
+    /**
+     * Height of the lowest point of the leg outline relative to its pivot (leg units, world up). [upY] and [upZ] are
+     * the world-up components of the segment's model y (belly) and z (back) axes. Upper leg at [upper] rad, joint
+     * offsets in degrees as passed to the model.
+     */
+    fun lowest(fore: Boolean, upper: Float, lowerDeg: Float, footDeg: Float, upY: Double, upZ: Double): Double {
+        val a0 = upper.toDouble()
+        val a1 = a0 + Math.toRadians((knee(fore) + lowerDeg).toDouble())
+        val a2 = a0 + Math.toRadians((lowerDeg + footDeg).toDouble())
+        var best = Double.MAX_VALUE
+        fun at(y: Double, z: Double) {
+            val v = upY * y + upZ * z
+            if (v < best) best = v
+        }
+        fun rot(y: Double, z: Double, a: Double, oy: Double, oz: Double, out: (Double, Double) -> Unit) {
+            val c = kotlin.math.cos(a)
+            val s = kotlin.math.sin(a)
+            out(oy + y * c - z * s, oz + y * s + z * c)
+        }
+        val upperBottom = 8.0
+        val upperHalf = if (fore) 3.0 else 3.5
+        val kneeY = if (fore) 7.5 else 8.0
+        val kneeZ = if (fore) 0.0 else 0.5
+        val lowerBottom = if (fore) 7.5 else 8.5
+        val lowerHalf = if (fore) 2.0 else 1.75
+        val ankle = if (fore) 7.0 else 8.0
+        val toe = if (fore) -7.5 else -8.0
+        val heel = if (fore) 2.0 else 2.5
+        rot(upperBottom, upperHalf, a0, 0.0, 0.0) { y, z -> at(y, z) }
+        rot(upperBottom, -upperHalf, a0, 0.0, 0.0) { y, z -> at(y, z) }
+        rot(kneeY, kneeZ, a0, 0.0, 0.0) { ky, kz ->
+            rot(lowerBottom, lowerHalf, a1, ky, kz) { y, z -> at(y, z) }
+            rot(lowerBottom, -lowerHalf, a1, ky, kz) { y, z -> at(y, z) }
+            rot(ankle, 0.0, a1, ky, kz) { fy, fz ->
+                rot(2.0, -4.0, a2, fy, fz) { y, z -> at(y, z) }
+                rot(2.0, heel, a2, fy, fz) { y, z -> at(y, z) }
+                rot(3.0, toe, a2, fy, fz) { y, z -> at(y, z) }
+            }
+        }
+        return best
+    }
+}
 
 /**
  * Nivaris als Schlangendrache. Die Teile des Modells (tools/assets/nivaris_model.py → [NivarisModelData]) hängen alle
@@ -163,9 +238,10 @@ class NivarisModel(root: ModelPart) : EntityModel<NivarisRenderState>(root) {
             val fore = legs === foreJoints
             val elbow = if (fore) 16f else -14f
             val toe = if (fore) -14f else 12f
+            val fold = if (fore) state.foreFold else state.hindFold
             for (leg in legs) {
-                leg.getOrNull(0)?.set(pitch = MathHelper.lerp(spireGrip, -20f * k, elbow) * deg)
-                leg.getOrNull(1)?.set(pitch = MathHelper.lerp(spireGrip, 50f * k, toe) * deg)
+                leg.getOrNull(0)?.set(pitch = NivarisLegs.lower(fore, MathHelper.lerp(spireGrip, -20f * k, elbow), fold) * deg)
+                leg.getOrNull(1)?.set(pitch = NivarisLegs.foot(fore, MathHelper.lerp(spireGrip, 50f * k, toe), fold) * deg)
             }
         }
         val age = state.age
@@ -635,6 +711,7 @@ class NivarisBody {
                 pts[i] = carry.first[i]
                 air[i] = s.fly
             }
+            carryGround(world, pts, dt)
             val tangent = pts[0].subtract(pts[1]).normalize()
             headFwd = tangent.add(0.0, -0.22 * (1.0 - s.fly), 0.0).normalize()
             smYaw = s.bodyYaw
@@ -783,6 +860,11 @@ class NivarisBody {
             s.girth[i] = NivarisShape.taper(i) * breathe
             s.stretch[i] = MathHelper.clamp((pts[i].distanceTo(pts[i + 1]) / NivarisShape.SEGMENT).toFloat(), 0.5f, 1.8f)
         }
+        // Landed or lying, the legs rest on the snow instead of standing in it (see NivarisLegs).
+        // At the spire the claws hold the ice (spireGrip / return coil own the legs).
+        val legsOwned = mode == NivarisModeC.RETURN_COIL || s.spireGrip > 0f
+        s.foreFold = legFold(world, s, pts, true, legsOwned, dt)
+        s.hindFold = legFold(world, s, pts, false, legsOwned, dt)
         // Kopf: Blick headFwd, oben = Weltoben ohne Blickanteil, dreht bei der Fassrolle mit.
         var hu = UP_V.subtract(headFwd.multiply(headFwd.dotProduct(UP_V))).normalizeOr(Vec(0.0, 0.0, 1.0))
         var hl = headFwd.negate().crossProduct(hu).normalizeOr(Vec(1.0, 0.0, 0.0))
@@ -1043,7 +1125,9 @@ class NivarisBody {
         val need = DoubleArray(POINTS)
         val groundNeed = DoubleArray(POINTS)
         for (i in NECK + 1 until POINTS) {
-            var floor = floors[i] + radius(i) * 0.9
+            // The belly plates reach 7 model units below the axis. With 0.9 × the 6-unit radius the front of a lying
+            // body (rest height REST_UP) sank up to a quarter block into the snow.
+            var floor = floors[i] + belly(i)
             groundNeed[i] = max(0.0, floor - pts[i].y)
             if (air[i] > 0.35f) {
                 // Im Flug auch echtes Gelände unter dem langen Leib respektieren (Überhänge/Bögen > 8 Blöcke drüber ignorieren).
@@ -1247,6 +1331,87 @@ class NivarisBody {
         return if (top > world.bottomY + 1 && top <= p.y + 2.0) top else -1.0e9
     }
 
+    /**
+     * Scripted carry frames: the rail clears the terrain in flight, but the settle at the Aerie lowers every point to
+     * the height of the landing spot. Where the snow under the long body is higher, lift it onto the surface with the
+     * same soft, rate-limited envelope as [normal] (never more than half a block in the ground while it catches up).
+     */
+    private fun carryGround(world: net.minecraft.world.World, pts: Array<Vec>, dt: Float) {
+        val need = DoubleArray(POINTS)
+        for (i in 0 until POINTS) need[i] = max(0.0, flightFloor(world, pts[i]) + belly(i) - pts[i].y)
+        val raw = need.copyOf()
+        for (i in 1 until POINTS) need[i] = max(need[i], need[i - 1] - LIFT_SLOPE)
+        for (i in POINTS - 2 downTo 0) need[i] = max(need[i], need[i + 1] - LIFT_SLOPE)
+        repeat(3) {
+            val c = need.copyOf()
+            for (k in 1 until POINTS - 1) need[k] = max(raw[k], c[k] * 0.5 + (c[k - 1] + c[k + 1]) * 0.25)
+        }
+        for (i in 0 until POINTS) {
+            val rate = if (need[i] > lift[i]) LIFT_UP_OBSTACLE else LIFT_DOWN
+            lift[i] += (need[i] - lift[i]).coerceIn(-rate * dt, rate * dt)
+            lift[i] = max(lift[i], raw[i] - 0.5)
+            pts[i] = Vec(pts[i].x, pts[i].y + lift[i], pts[i].z)
+        }
+    }
+
+    /** Current leg folds (fore, hind); −1 = not yet set. */
+    private var foreFold = -1f
+    private var hindFold = -1f
+
+    /** Fold of one leg pair for this frame: as much as the ground under it requires, changed smoothly. */
+    private fun legFold(world: net.minecraft.world.World, s: NivarisRenderState, pts: Array<Vec>, fore: Boolean, owned: Boolean, dt: Float): Float {
+        val target = if (owned) 0f else foldNeeded(world, s, pts, fore)
+        val current = if (fore) foreFold else hindFold
+        // Fold quickly when the body comes down on the legs, unfold more slowly when it rises again.
+        val next = if (current < 0f) target else approach(current, target, dt * (if (target > current) 0.3f else 0.12f))
+        if (fore) foreFold = next else hindFold = next
+        return next
+    }
+
+    /** Smallest fold that keeps both legs of the pair above the ground below their pivots (0 = authored pose). */
+    private fun foldNeeded(world: net.minecraft.world.World, s: NivarisRenderState, pts: Array<Vec>, fore: Boolean): Float {
+        val i = if (fore) NivarisShape.FORE_GLIED else NivarisShape.HIND_GLIED
+        val f = s.frame
+        val at = i * 9
+        val xAxis = Vec(f[at].toDouble(), f[at + 1].toDouble(), f[at + 2].toDouble())
+        val yAxis = Vec(f[at + 3].toDouble(), f[at + 4].toDouble(), f[at + 5].toDouble())
+        val zAxis = Vec(f[at + 6].toDouble(), f[at + 7].toDouble(), f[at + 8].toDouble())
+        // Same placement as NivarisRenderer.limb: pivot in the tapered segment space, the leg itself untapered.
+        val across = NivarisShape.SCALE * s.girth[i] / 16.0
+        val along = NivarisShape.SCALE * s.stretch[i] * 1.03 / 16.0
+        val unit = NivarisShape.SCALE / 16.0
+        var clear = Double.MAX_VALUE
+        for (sgn in intArrayOf(1, -1)) {
+            val pivot = pts[i].add(xAxis.multiply(sgn * NivarisLegs.pivotX(fore) * across))
+                .add(yAxis.multiply(NivarisLegs.PIVOT_Y * across)).add(zAxis.multiply(NivarisLegs.PIVOT_Z * along))
+            val floor = legFloor(world, pivot)
+            if (!floor.isNaN()) clear = minOf(clear, pivot.y - floor)
+        }
+        if (clear == Double.MAX_VALUE) return 0f
+        val authored = s.p[if (fore) NivarisModel.FORE else NivarisModel.HIND]
+        val k = MathHelper.clamp(authored / 1.1f, 0f, 1f)
+        fun margin(fold: Float): Double = clear - LEG_MARGIN + unit * NivarisLegs.lowest(
+            fore, NivarisLegs.upper(authored, fold), NivarisLegs.lower(fore, -20f * k, fold), NivarisLegs.foot(fore, 50f * k, fold),
+            yAxis.y, zAxis.y,
+        )
+        var previous = margin(0f)
+        if (previous >= 0.0) return 0f
+        val steps = 16
+        for (n in 1..steps) {
+            val fold = n / steps.toFloat()
+            val m = margin(fold)
+            if (m >= 0.0) return fold - (1f - (-previous / (m - previous)).toFloat()) / steps
+            previous = m
+        }
+        return 1f
+    }
+
+    /** Snow surface under a leg pivot; NaN when there is none within reach (open air, overhang). */
+    private fun legFloor(world: net.minecraft.world.World, p: Vec): Double {
+        val top = world.getTopY(net.minecraft.world.Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, MathHelper.floor(p.x), MathHelper.floor(p.z)).toDouble()
+        return if (top > world.bottomY + 1 && top <= p.y + 1.5) top else Double.NaN
+    }
+
     /** Lauffläche unter (x, z): Höhenkarte der Welt, Säulen und Wände (deutlich über dem Boden) zählen nicht. */
     private fun floorAt(world: net.minecraft.world.World, x: Double, z: Double): Double {
         val gy = groundY
@@ -1432,6 +1597,9 @@ class NivarisBody {
 
     private fun radius(i: Int): Double = NivarisShape.taper(i.coerceAtMost(NivarisShape.SEGMENTS - 1)) * 6.0 * NivarisShape.SCALE / 16.0
 
+    /** Depth of the belly below the spine axis: the segment box reaches 6 units down, the belly plates 7. */
+    private fun belly(i: Int): Double = NivarisShape.taper(i.coerceAtMost(NivarisShape.SEGMENTS - 1)) * 7.0 * NivarisShape.SCALE / 16.0
+
     /** Blickrichtung aus Gier (rad, Minecraft-Konvention) und Neigung (+ = nach unten). */
     private fun yawPitch(yawRad: Float, pitch: Float): Vec {
         val cp = kotlin.math.cos(pitch.toDouble())
@@ -1458,6 +1626,9 @@ class NivarisBody {
 
         /** Rumpfmitte über der Lauffläche, wenn der Körper liegt. */
         const val REST_UP = 1.0
+
+        /** Lowest point of a leg above the snow (blocks). */
+        const val LEG_MARGIN = 0.03
 
         /** Glieder von der Rumpfmitte bis zur Schwanzspitze. */
         const val BODY = POINTS - NECK - 1

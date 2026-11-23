@@ -957,18 +957,20 @@ class EirholmFight(
      * Schichten aus Vanilla-Klängen (Enderdrache, Wärter, Verwüster, Brise), gemeinsam mit dem eigenen Klang abgespielt.
      */
     fun layers(id: String, at: Vec3d, volume: Float, pitch: Float) {
-        val extra = when (id) {
-            "nivaris.roar" -> listOf("nivaris.roar_body", "nivaris.roar_low")
-            "nivaris.wing" -> listOf("nivaris.wing_body")
-            "nivaris.breath" -> listOf("nivaris.breath_body")
-            "nivaris.inhale" -> listOf("nivaris.inhale_body")
-            "nivaris.land", "nivaris.crash", "nivaris.tail", "nivaris.claw" -> listOf("nivaris.hit_body")
-            else -> return
-        }
-        for (x in extra) {
+        for (x in layerIds(id)) {
             val e = soundEvent(x) ?: continue
             world.playSound(null, at.x, at.y, at.z, e, SoundCategory.HOSTILE, volume * 1.2f, pitch)
         }
+    }
+
+    /** Die Vanilla-Schichten zu [id] (siehe [layers]); leer für Klänge ohne Schicht. */
+    fun layerIds(id: String): List<String> = when (id) {
+        "nivaris.roar" -> listOf("nivaris.roar_body", "nivaris.roar_low")
+        "nivaris.wing" -> listOf("nivaris.wing_body")
+        "nivaris.breath" -> listOf("nivaris.breath_body")
+        "nivaris.inhale" -> listOf("nivaris.inhale_body")
+        "nivaris.land", "nivaris.crash", "nivaris.tail", "nivaris.claw" -> listOf("nivaris.hit_body")
+        else -> emptyList()
     }
 
     /** Laufende Kampfmusik (für Wiedereinsteiger). */

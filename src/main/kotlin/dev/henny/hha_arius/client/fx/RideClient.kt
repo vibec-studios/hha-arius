@@ -50,28 +50,77 @@ import kotlin.math.sin
  */
 object RideClient {
 
-    private var carryPrevious: CarryFrameS2C? = null
-    private var carryCurrent: CarryFrameS2C? = null
+    /**
+     * Carry frames by server tick. They used to be blended from the previous to the latest packet with the
+     * vanilla tickDelta, but packets do not arrive on client tick boundaries: every arrival pushed the whole body
+     * one tick ahead and the next client tick pulled it back again, so the spine jumped back and forth on every tick.
+     * The frames now play on the buffered [MotionClient] timeline (the one the dragon entity uses as well).
+     */
+    private val carryFrames = ArrayDeque<CarryFrameS2C>()
+
+    /** Server tick of the end marker (empty frame); the stream stops once playback reaches it. */
+    private var carryEnd = Int.MAX_VALUE
+    private var carrySeen = 0
 
     class CarryPose(val feet: Vec3d, val grip: Float, val anchor: CarryGrip.Anchor?, val lettingGo: Boolean)
 
+    /** The two frames around the playback time and the blend between them. */
+    private class CarrySample(val a: CarryFrameS2C, val b: CarryFrameS2C, val u: Float)
+
+    private fun carryClear() {
+        carryFrames.clear()
+        carryEnd = Int.MAX_VALUE
+    }
+
+    private fun carryReceive(frame: CarryFrameS2C) {
+        if (frame.spine.isEmpty()) {
+            if (carryFrames.isNotEmpty()) carryEnd = frame.tick
+            return
+        }
+        val newest = carryFrames.lastOrNull()
+        if (newest != null && (newest.dragon != frame.dragon || carryEnd != Int.MAX_VALUE || frame.tick < newest.tick - 200)) carryClear()
+        while (carryFrames.isNotEmpty() && carryFrames.last().tick >= frame.tick) carryFrames.removeLast()
+        carryFrames.addLast(frame)
+        while (carryFrames.size > CARRY_KEEP) carryFrames.removeFirst()
+        carrySeen = clientTick
+    }
+
+    private fun carrySample(tickDelta: Float): CarrySample? {
+        val newest = carryFrames.lastOrNull() ?: return null
+        val time = MotionClient.time(tickDelta)
+        // No timeline yet (no motion packet seen): show the latest frame as it is.
+        if (time.isNaN()) return CarrySample(newest, newest, 0f)
+        if (time >= carryEnd) return null
+        val first = carryFrames.first()
+        // The stream has not started at the playback time: the dragon is still in its previous state.
+        if (time < first.tick) return null
+        // Ahead of the data (server stalled): hold the last frame instead of guessing.
+        if (time >= newest.tick) return CarrySample(newest, newest, 0f)
+        var k = 0
+        while (k < carryFrames.size - 2 && carryFrames[k + 1].tick <= time) k++
+        val a = carryFrames[k]
+        val b = carryFrames[k + 1]
+        val span = (b.tick - a.tick).coerceAtLeast(1)
+        return CarrySample(a, b, ((time - a.tick) / span).toFloat().coerceIn(0f, 1f))
+    }
+
     fun carrySpine(dragon: Int, tickDelta: Float): Pair<List<Vec3d>, Float>? {
-        val frame = carryCurrent?.takeIf { it.dragon == dragon } ?: return null
-        val previous = carryPrevious?.takeIf { it.dragon == dragon } ?: frame
-        val points = frame.spine.mapIndexed { i, p -> previous.spine[i].lerp(p, tickDelta.toDouble()) }
-        val turn = frame.roll.takeUnless { it == 0f && previous.roll > 3f } ?: (2f * PI.toFloat())
-        return points to MathHelper.lerp(tickDelta, previous.roll, turn)
+        val s = carrySample(tickDelta)?.takeIf { it.b.dragon == dragon } ?: return null
+        val previous = if (s.a.dragon == dragon) s.a else s.b
+        val points = s.b.spine.mapIndexed { i, p -> previous.spine[i].lerp(p, s.u.toDouble()) }
+        val turn = s.b.roll.takeUnless { it == 0f && previous.roll > 3f } ?: (2f * PI.toFloat())
+        return points to MathHelper.lerp(s.u, previous.roll, turn)
     }
 
     private fun carryPose(id: Int, tickDelta: Float): CarryPose? {
-        val frame = carryCurrent ?: return null
-        val rider = frame.riders.firstOrNull { it.id == id } ?: return null
-        val previous = carryPrevious?.riders?.firstOrNull { it.id == id } ?: rider
-        val grip = MathHelper.lerp(tickDelta, previous.grip, rider.grip)
-        val anchor = if (grip > 0f) carrySpine(frame.dragon, tickDelta)?.let { (points, roll) ->
+        val s = carrySample(tickDelta) ?: return null
+        val rider = s.b.riders.firstOrNull { it.id == id } ?: return null
+        val previous = s.a.riders.firstOrNull { it.id == id } ?: rider
+        val grip = MathHelper.lerp(s.u, previous.grip, rider.grip)
+        val anchor = if (grip > 0f) carrySpine(s.b.dragon, tickDelta)?.let { (points, roll) ->
             CarryGrip.at(points, rider.seat, roll)
         } else null
-        return CarryPose(previous.feet.lerp(rider.feet, tickDelta.toDouble()), grip, anchor, rider.grip < previous.grip)
+        return CarryPose(previous.feet.lerp(rider.feet, s.u.toDouble()), grip, anchor, rider.grip < previous.grip)
     }
 
     /** Model origin at the requested partial tick, also available when the figure is off-camera. */
@@ -129,15 +178,7 @@ object RideClient {
     private val anchors = HashMap<Int, Array<Anchor?>>()
 
     fun init() {
-        ClientPlayNetworking.registerGlobalReceiver(CarryFrameS2C.ID) { frame, _ ->
-            if (frame.spine.isEmpty()) {
-                carryPrevious = null
-                carryCurrent = null
-            } else {
-                carryPrevious = carryCurrent
-                carryCurrent = frame
-            }
-        }
+        ClientPlayNetworking.registerGlobalReceiver(CarryFrameS2C.ID) { frame, _ -> carryReceive(frame) }
 
         ClientPlayNetworking.registerGlobalReceiver(RideGripS2C.ID) { p, ctx ->
             if (p.grip <= 0) {
@@ -169,16 +210,17 @@ object RideClient {
         }
         ClientTickEvents.END_CLIENT_TICK.register { client ->
             if (!client.isPaused) clientTick++
-            if (!dev.henny.hha.client.cine.CinePlayer.active) {
-                carryPrevious = null
-                carryCurrent = null
+            if (carryFrames.isNotEmpty()) {
+                // Played past the end marker, or a stale stream after the scene ended without one.
+                val played = MotionClient.time(0f).let { !it.isNaN() && it >= carryEnd }
+                val stale = !dev.henny.hha.client.cine.CinePlayer.active && clientTick - carrySeen > CARRY_STALE
+                if (played || stale) carryClear()
             }
             val world = client.world ?: return@register
             reconcile(world)
         }
         ClientPlayConnectionEvents.DISCONNECT.register { _, _ ->
-            carryPrevious = null
-            carryCurrent = null
+            carryClear()
             grips.clear()
             anchors.clear()
             seats.clear()
@@ -520,7 +562,7 @@ object RideClient {
      */
     @JvmStatic
     fun updateState(e: Entity, state: PlayerEntityRenderState) {
-        if (grip(e) > 0 || carryCurrent?.riders?.any { it.id == state.id } == true) {
+        if (grip(e) > 0 || carryFrames.lastOrNull()?.riders?.any { it.id == state.id } == true) {
             state.leftHandItemState.clear()
             state.rightHandItemState.clear()
             state.leftHandItem = ItemStack.EMPTY
@@ -638,4 +680,10 @@ object RideClient {
 
     /** Kopfmitte über den Füßen entlang der Körperachse. */
     private const val HEAD = 1.64
+
+    /** Carry frames kept for playback (two seconds, far more than the playback delay). */
+    private const val CARRY_KEEP = 40
+
+    /** Client ticks without a carry frame after which a stream outside a scene counts as stale. */
+    private const val CARRY_STALE = 6
 }

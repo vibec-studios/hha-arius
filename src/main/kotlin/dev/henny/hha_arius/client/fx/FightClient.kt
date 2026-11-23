@@ -56,6 +56,7 @@ object FightClient {
         ClientPlayNetworking.registerGlobalReceiver(SilenceS2C.ID) { p, _ -> SilenceLens.set(p.strength, p.fade) }
         ClientPlayNetworking.registerGlobalReceiver(ParryCueS2C.ID) { p, _ -> ParryHud.onCue(p) }
         ClientPlayNetworking.registerGlobalReceiver(dev.henny.hha_arius.net.ClashCueS2C.ID) { p, _ -> ClashHud.handle(p) }
+        ClientPlayNetworking.registerGlobalReceiver(dev.henny.hha_arius.net.SceneSoundS2C.ID) { p, ctx -> SceneSound.play(p, ctx.client()) }
         ClientTickEvents.END_CLIENT_TICK.register { client ->
             if (client.isPaused) return@register
             PunishCam.tick(client)

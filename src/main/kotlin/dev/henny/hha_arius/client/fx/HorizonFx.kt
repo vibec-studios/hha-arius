@@ -461,6 +461,29 @@ class VerticalHorizonFx(
         }
     } else emptyList()
 
+    /** Ein Lichtfunke beim Aufladen: startet auf einer weiten Schale um Arius und zieht spiralförmig in die Klinge. */
+    private class Mote(
+        val azimuth: Double, val radius: Double, val height: Double, val along: Double,
+        val speed: Float, val offset: Float, val swirl: Double, val size: Double, val gate: Float,
+    )
+
+    private val motes: List<Mote> = if (phase == 0) {
+        val r = Random(origin.hashCode().toLong() xor 0x7E1AL)
+        List(42) { i ->
+            Mote(
+                azimuth = i * 2.399963 + r.nextDouble() * 0.4,
+                radius = 7.5 + r.nextDouble() * 6.0,
+                height = -0.8 + r.nextDouble() * 6.5,
+                along = 0.2 + r.nextDouble() * 0.8,
+                speed = 0.028f + r.nextFloat() * 0.022f,
+                offset = r.nextFloat(),
+                swirl = (if (i % 2 == 0) 1.0 else -1.0) * (0.9 + r.nextDouble() * 0.8),
+                size = 0.05 + r.nextDouble() * 0.05,
+                gate = i / 42f,
+            )
+        }
+    } else emptyList()
+
     override val persistent: Boolean get() = phase == 2
 
     init {
@@ -527,6 +550,14 @@ class VerticalHorizonFx(
         }
     }
 
+    /**
+     * Aufladen (seit 1.15.2 neu, Crix: „muss nicht unendlich in die Höhe gehen, eher wie Reinhard van Astreas Schwertangriff“):
+     * Keine Himmelslinie mehr. Die Welt gibt ihr Licht an die Klinge ab: Funken aus Frost und Licht lösen sich ringsum in
+     * weitem Umkreis, ziehen spiralförmig und immer schneller in die erhobene Schneide; um Arius steigt eine stille Aura,
+     * am Boden ziehen sich breite Druckringe zu seinen Füßen zusammen. Die Klinge selbst wird Stufe um Stufe heller.
+     * Im Stille-Beat verschwinden die letzten Funken in der Schneide, alles zieht sich zusammen, ein einzelner Stern an der
+     * Spitze – dann der Schlag ([renderDownwardSlash]).
+     */
     private fun renderVerticalCharge(d: VfxDraw, t: Float, fx: Float) {
         if (owner?.isRemoved == true) return
         val progress = (t / life.coerceAtLeast(1)).coerceIn(0f, 1f)
@@ -540,127 +571,92 @@ class VerticalHorizonFx(
         val ownerPos = owner?.getLerpedPos(d.tickDelta) ?: origin
         val base = anchor?.base ?: ownerPos.add(0.0, 2.35, 0.0)
         val tip = anchor?.tip ?: ownerPos.add(0.0, 4.05, 0.0)
+        val bladeAxis = tip.subtract(base)
         val bladeMid = base.lerp(tip, 0.55)
-        // Alle Elemente liegen strikt auf der exakten Schnittebene x = origin.x.
+        val feet = Vec3d(ownerPos.x, ownerPos.y + 0.06, ownerPos.z)
+        val flatA = Vec3d(1.0, 0.0, 0.0)
+        val flatB = Vec3d(0.0, 0.0, 1.0)
+        val gather = (1f - inSilence).coerceIn(0f, 1f)
+
+        // 1) Funken: aus weitem Umkreis spiralförmig in die Schneide, beschleunigend (Mana sammelt sich). Je weiter das
+        //    Aufladen, desto mehr Funken sind unterwegs; im Stille-Beat kommen keine neuen mehr, die letzten erreichen die Klinge.
+        val active = 0.25f + 0.75f * build
+        for (m in motes) {
+            if (m.gate > active) continue
+            val cycle = t * m.speed + m.offset
+            val ph = cycle % 1f
+            // Im Stille-Beat nur noch Funken, die schon unterwegs waren (kein neuer Start).
+            val startedAt = t - ph / m.speed
+            if (startedAt > silenceStart) continue
+            fun at(s: Double): Vec3d {
+                val e = s * s * s
+                val ang = m.azimuth + m.swirl * (1.0 - e) * 1.6
+                val rad = m.radius * (1.0 - e)
+                val start = ownerPos.add(cos(ang) * rad, m.height * (1.0 - e), sin(ang) * rad)
+                val goal = base.add(bladeAxis.multiply(m.along))
+                return start.multiply(1.0 - e).add(goal.multiply(e)).let { p -> Vec3d(p.x, p.y + 0.9 * sin(s * PI) * (1.0 - e), p.z) }
+            }
+            val s = ph.toDouble()
+            val head = at(s)
+            val tail = at((s - 0.10 - 0.12 * s).coerceAtLeast(0.0))
+            val fadeIn = (ph / 0.18f).coerceIn(0f, 1f)
+            val a = aScale * fadeIn * (0.45f + 0.55f * progress)
+            if (a <= 0.02f) continue
+            val streak = listOf(tail, tail.lerp(head, 0.5), head)
+            d.ribbon(AriusLayers.VFX_GLOW, streak, { q -> m.size * (0.4 + 1.6 * q) }, { q -> withAlpha(if (q > 0.6f) FROST_WHITE else ICE_BLUE, a * q) }, uScale = 0f, uOffset = 0.5f)
+            d.billboard(AriusLayers.VFX_ADD_FLARE, head, m.size * (3.2 + 2.0 * s), withAlpha(PURE_WHITE, a * 0.85f))
+        }
+
+        // 2) Stille Aura: ein durchscheinender Lichtmantel um Arius, der langsam aufsteigt und nach oben ausläuft.
+        val auraA = aScale * build * gather
+        if (auraA > 0.02f) {
+            d.wall(AriusLayers.VFX_GLOW, feet, flatA, flatB, UP, 1.45, 0.95, 4.6,
+                withAlpha(ICE_BLUE, auraA * 0.42f), withAlpha(FROST_WHITE, 0f), segments = 32, uTile = 3f, uOffset = -t * 0.035f)
+            d.wall(AriusLayers.VFX_ADD, feet, flatA, flatB, UP, 1.05, 0.6, 3.6,
+                withAlpha(FROST_WHITE, auraA * 0.30f), withAlpha(PURE_WHITE, 0f), segments = 32, uTile = 2f, uOffset = -t * 0.05f)
+        }
+
+        // 3) Druckringe am Boden: breite, weiche Eisringe ziehen sich aus dem Umkreis zu seinen Füßen zusammen; dazu ein
+        //    fester, dicker Ring unter ihm, der mit dem Aufladen heller wird (lesbar auf Schnee und im Sturm).
+        for (k in 0 until 3) {
+            val ph = ((t * 0.032f + k / 3f) % 1f)
+            val r = 1.8 + 10.0 * (1.0 - ph) * (1.0 - ph)
+            val ringA = aScale * gather * (0.25f + 0.75f * build) * sin(ph * PI).toFloat().coerceAtLeast(0f)
+            if (ringA <= 0.02f) continue
+            val w = 0.32 + 0.35 * (1.0 - ph)
+            d.ring(AriusLayers.INK, feet, flatA, flatB, r - w * 1.1, r + w * 1.1, withAlpha(NAVY_DARK, 0f), withAlpha(NAVY_DARK, ringA * 0.35f), segments = 56)
+            d.ring(AriusLayers.VFX_GLOW, feet, flatA, flatB, r - w, r + w, withAlpha(ICE_BLUE, ringA * 0.75f), withAlpha(FROST_WHITE, 0f), segments = 56)
+        }
+        val baseRingA = aScale * (0.3f + 0.7f * build)
+        val tightRing = 2.2 - 0.6 * inSilence
+        d.ring(AriusLayers.INK, feet, flatA, flatB, tightRing - 0.55, tightRing + 0.55, withAlpha(NAVY_DARK, baseRingA * 0.45f), withAlpha(NAVY_DARK, 0f), segments = 48)
+        d.ring(AriusLayers.VFX_GLOW, feet, flatA, flatB, tightRing - 0.45, tightRing + 0.45, withAlpha(FROST_WHITE, baseRingA * 0.9f), withAlpha(ICE_BLUE, 0f), segments = 48)
+
+        // 4) Die Klinge: Kern und Hof werden Stufe um Stufe heller; ein kurzer Glanz über der Spitze (nie höher als die
+        //    halbe Körpergröße), im Stille-Beat messerscharf zusammengezogen.
+        val tighten = 1.0 - 0.45 * inSilence
+        val bladeSide = camBillSide(d, bladeAxis)
+        val edgeA = aScale * (0.72f + 0.28f * progress)
+        d.band(AriusLayers.INK, base, tip, bladeSide, 0.15 + 0.08 * build, withAlpha(NAVY_DARK, edgeA * 0.88f), withAlpha(NAVY_MID, edgeA * 0.88f))
+        d.band(AriusLayers.VFX_GLOW, base, tip, bladeSide, (0.14 + 0.22 * build) * tighten, withAlpha(ICE_BLUE, edgeA * 0.94f), withAlpha(FROST_WHITE, edgeA))
+        d.band(AriusLayers.VFX_ADD, base, tip, bladeSide, (0.06 + 0.07 * build) * tighten, withAlpha(PURE_WHITE, edgeA), withAlpha(PURE_WHITE, edgeA))
+        val dir = if (bladeAxis.lengthSquared() < 1e-6) UP else bladeAxis.normalize()
+        val gleam = (0.6 + 2.2 * build) * tighten
+        drawTaperedLine(d, base.lerp(tip, 0.2), tip.add(dir.multiply(gleam)), bladeSide, 0.10 * tighten + 0.04, AriusLayers.VFX_ADD, withAlpha(PURE_WHITE, edgeA), segments = 12)
+        d.billboard(AriusLayers.VFX_GLOW, bladeMid, (1.2 + 2.4 * build) * tighten, withAlpha(ICE_LIGHT, edgeA * 0.55f))
+        // Ein einzelner Stern an der Spitze: wächst mit dem Aufladen, blüht im Stille-Beat kurz auf und zieht sich zusammen.
+        val bloom = sin(inSilence * PI).toFloat()
+        d.billboard(AriusLayers.VFX_ADD_FLARE, tip, (0.9 + 1.8 * build) * (1.0 + 0.9 * bloom) * (1.0 - 0.35 * inSilence * inSilence), withAlpha(PURE_WHITE, edgeA))
+
+        // 5) Leise Boden-Leitlinie in der Schnittebene (x = CUT_X) nach Süden: zeigt, wohin der Schlag geht.
         val planeX = origin.x
-        val lineBase = Vec3d(planeX, origin.y - 0.5, origin.z)
-        val skyTop = Vec3d(planeX, origin.y + 170.0, origin.z + 6.0)
-        val skyMid = Vec3d(planeX, origin.y + 38.0, origin.z + 1.5)
-        val vSide = camBillSide(d, UP)
-
-        // 1) Einziehende Frostfäden von links (-x) und rechts (+x) direkt in die EINE senkrechte Linie (im Stille-Beat verhallend).
-        val ribFade = (1f - inSilence * 0.92f).coerceIn(0f, 1f)
-        if (ribFade > 0.03f) {
-            val pullX = (9.0 * (1.0 - 0.62 * build)).coerceAtLeast(2.0)
-            for (i in 0 until 8) {
-                val sideSign = if (i % 2 == 0) 1.0 else -1.0
-                val tier = i / 2
-                val ph = ((t * 0.055f + tier * 0.25f + (if (sideSign > 0) 0f else 0.12f)) % 1f)
-                val tailP = (ph - 0.36f).coerceAtLeast(0f)
-                val yLevel = origin.y + 2.2 + tier * 3.8
-                val zOff = (tier - 1) * 1.4
-                val startPt = Vec3d(planeX + sideSign * pullX * (0.8 + tier * 0.12), yLevel + 1.8 * (1.0 - build), origin.z + zOff)
-                val ctrlPt = Vec3d(planeX + sideSign * pullX * 0.35, yLevel + 0.5, origin.z + zOff * 0.4)
-                val targetPt = Vec3d(planeX, yLevel, origin.z + 0.3)
-                fun bez(s: Double): Vec3d {
-                    val inv = 1.0 - s
-                    return startPt.multiply(inv * inv).add(ctrlPt.multiply(2.0 * inv * s)).add(targetPt.multiply(s * s))
-                }
-                val pts = List(7) { k -> bez(tailP + (ph - tailP) * (k / 6.0)) }
-                val ribA = aScale * ribFade * (0.35f + 0.65f * progress) * sin(ph * PI).toFloat().coerceIn(0f, 1f)
-                if (ribA > 0.02f) {
-                    d.ribbon(AriusLayers.INK, pts, { q -> 0.075 + 0.09 * q }, { q -> withAlpha(NAVY_DARK, ribA * 0.65f * q) }, uScale = 0f, uOffset = 0.5f)
-                    d.ribbon(AriusLayers.VFX_GLOW, pts, { q -> 0.045 + 0.075 * q }, { q -> withAlpha(if (q > 0.65f) FROST_WHITE else ICE_BLUE, ribA * (0.45f + 0.55f * q)) }, uScale = 0f, uOffset = 0.5f)
-                }
-            }
-        }
-
-        // 2) DIE EINE dünne, messerscharfe SENKRECHTE Frostlinie vom Himmel durch Arius' erhobene Klinge bis auf den Boden.
-        //    Wichtig: NICHT mit sin(u*PI) über 170 Blöcke ausblenden (sonst wäre u ≈ 0.02 auf Augenhöhe fast unsichtbar!).
-        //    Stattdessen volle Schärfe vom Boden (origin.y + 0.05) über Klinge & Halle bis hoch in den Himmel, erst ganz oben weich auslaufend.
-        fun drawSkyBeam(
-            from: Vec3d,
-            to: Vec3d,
-            side: Vec3d,
-            halfWidth: Double,
-            layer: net.minecraft.client.render.RenderLayer,
-            color: Int,
-            segments: Int = 28,
-        ) {
-            val baseA = (color ushr 24) / 255f
-            if (baseA <= 0.01f) return
-            val vc = d.buffer(layer)
-            fun profile(u: Double): Double = when {
-                u < 0.008 -> (u / 0.008).coerceIn(0.25, 1.0)
-                u > 0.78 -> ((1.0 - u) / 0.22).coerceIn(0.0, 1.0)
-                else -> 1.0
-            }
-            with(d) {
-                for (i in 0 until segments) {
-                    val u0 = i / segments.toDouble()
-                    val u1 = (i + 1) / segments.toDouble()
-                    val w0 = profile(u0)
-                    val w1 = profile(u1)
-                    val p0 = from.lerp(to, u0)
-                    val p1 = from.lerp(to, u1)
-                    val h0 = halfWidth * (0.20 + 0.80 * w0)
-                    val h1 = halfWidth * (0.20 + 0.80 * w1)
-                    val c0 = withAlpha(color, baseA * w0.toFloat())
-                    val c1 = withAlpha(color, baseA * w1.toFloat())
-                    vc.put(p0.add(side.multiply(-h0)), 0f, 0f, c0)
-                    vc.put(p0.add(side.multiply(h0)), 0f, 1f, c0)
-                    vc.put(p1.add(side.multiply(h1)), 1f, 1f, c1)
-                    vc.put(p1.add(side.multiply(-h1)), 1f, 0f, c1)
-                }
-            }
-        }
-
-        val tighten = 1.0 - 0.40 * inSilence
-        val lineA = aScale * (0.68f + 0.32f * progress)
-        val coreW = (0.11 + 0.06 * build) * tighten
-        val haloW = (0.34 + 0.14 * build) * tighten
-        val inkW = (0.23 + 0.09 * build) * tighten
-        // Leicht vor Arius' Klingenebene auf x = CUT_X vom Hallenboden gerade durch die Klinge hoch in den Himmel.
-        val floorLineBase = Vec3d(planeX, origin.y + 0.05, origin.z + 0.15)
-        val skyLineTop = Vec3d(planeX, origin.y + 170.0, origin.z + 0.15)
-        // Tief-Marineblau-Kontrastkante macht die helle Frostlinie auch vor weißem Quarz/Eis und Schnee glasklar lesbar.
-        drawSkyBeam(floorLineBase, skyLineTop, vSide, inkW, AriusLayers.INK, withAlpha(NAVY_DARK, lineA * 0.90f), segments = 28)
-        drawSkyBeam(floorLineBase, skyLineTop, vSide, haloW, AriusLayers.VFX_GLOW, withAlpha(ICE_BLUE, lineA * 0.92f), segments = 28)
-        drawSkyBeam(floorLineBase, skyLineTop, vSide, coreW * 1.55, AriusLayers.VFX_GLOW, withAlpha(FROST_WHITE, lineA), segments = 28)
-        drawSkyBeam(floorLineBase, skyLineTop, vSide, coreW, AriusLayers.VFX_ADD, withAlpha(PURE_WHITE, lineA), segments = 28)
-
-        // Feine Boden-Leitlinie exakt in der Schnittebene (x = CUT_X) nach Süden Richtung Berg (volle Sichtbarkeit im Gang).
+        val lineA = aScale * (0.45f + 0.55f * progress)
         val pathLen = (reach * (0.45 + 0.55 * progress)).coerceAtLeast(22.0)
         val pathFrom = Vec3d(planeX, origin.y + 0.12, origin.z)
         val pathTo = Vec3d(planeX, origin.y + 0.12, origin.z + pathLen)
-        val pathSide = camBillSide(d, forward)
-        drawSkyBeam(pathFrom, pathTo, pathSide, 0.22 * tighten, AriusLayers.INK, withAlpha(NAVY_DARK, lineA * 0.85f), segments = 20)
-        drawSkyBeam(pathFrom, pathTo, pathSide, 0.32 * tighten, AriusLayers.VFX_GLOW, withAlpha(ICE_BLUE, lineA * 0.88f), segments = 20)
-        drawSkyBeam(pathFrom, pathTo, pathSide, 0.11 * tighten, AriusLayers.VFX_ADD, withAlpha(PURE_WHITE, lineA), segments = 20)
-
-        // Senkrechte Himmelslinie über dem fernen Berg (exakt auf x = CUT_X), die das Ziel bereits markiert.
-        val mtnFoot = Vec3d(planeX, origin.y + 18.0, origin.z + 235.0)
-        val mtnSky = Vec3d(planeX, origin.y + 270.0, origin.z + 315.0)
-        val mtnA = lineA * (0.45f + 0.55f * build)
-        drawSkyBeam(mtnFoot, mtnSky, vSide, 0.95 * tighten, AriusLayers.INK, withAlpha(NAVY_DARK, mtnA * 0.72f), segments = 16)
-        drawSkyBeam(mtnFoot, mtnSky, vSide, 1.85 * tighten, AriusLayers.VFX_GLOW, withAlpha(ICE_BLUE, mtnA * 0.85f), segments = 16)
-        drawSkyBeam(mtnFoot, mtnSky, vSide, 0.60 * tighten, AriusLayers.VFX_ADD, withAlpha(PURE_WHITE, mtnA), segments = 16)
-
-        // 3) Klingen-Kern und hochgezogener vertikaler Lichtstern an der gerade nach oben gerichteten Klinge.
-        val bladeSide = camBillSide(d, tip.subtract(base))
-        val edgeA = aScale * (0.72f + 0.28f * progress)
-        d.band(AriusLayers.INK, base, tip, bladeSide, 0.15 + 0.08 * build, withAlpha(NAVY_DARK, edgeA * 0.88f), withAlpha(NAVY_MID, edgeA * 0.88f))
-        d.band(AriusLayers.VFX_GLOW, base, tip, bladeSide, 0.12 + 0.10 * build, withAlpha(ICE_BLUE, edgeA * 0.94f), withAlpha(FROST_WHITE, edgeA))
-        d.band(AriusLayers.VFX_ADD, base, tip, bladeSide, 0.06 + 0.05 * build, withAlpha(PURE_WHITE, edgeA), withAlpha(PURE_WHITE, edgeA))
-
-        val gleamH = 2.4 + 7.5 * build * tighten
-        drawTaperedLine(d, bladeMid.add(0.0, -gleamH * 0.45, 0.0), bladeMid.add(0.0, gleamH, 0.0), vSide, 0.12 * tighten, AriusLayers.VFX_ADD, withAlpha(PURE_WHITE, edgeA), segments = 12)
-        d.billboard(AriusLayers.VFX_ADD_FLARE, tip, (1.1 + 2.6 * build) * (1.0 + 0.50 * inSilence), withAlpha(PURE_WHITE, edgeA))
-        d.billboard(AriusLayers.VFX_GLOW, bladeMid, (1.6 + 2.8 * build) * tighten, withAlpha(ICE_LIGHT, edgeA * 0.58f))
-        // Hoher Himmels-Scheitelpunkt der Linie
-        if (build > 0.25f) {
-            d.billboard(AriusLayers.VFX_GLOW, skyMid, 3.5 * build * tighten, withAlpha(ICE_LIGHT, aScale * 0.35f * build))
-        }
+        drawTaperedLine(d, pathFrom, pathTo, flatA, 0.42 * tighten, AriusLayers.INK, withAlpha(NAVY_DARK, lineA * 0.6f), segments = 20)
+        drawTaperedLine(d, pathFrom, pathTo, flatA, 0.55 * tighten, AriusLayers.VFX_GLOW, withAlpha(ICE_BLUE, lineA * 0.8f), segments = 20)
+        drawTaperedLine(d, pathFrom, pathTo, flatA, 0.16 * tighten, AriusLayers.VFX_ADD, withAlpha(PURE_WHITE, lineA * 0.9f), segments = 20)
     }
 
     private fun renderDownwardSlash(d: VfxDraw, t: Float, fx: Float) {

@@ -44,6 +44,9 @@ object MotionClient {
     /** Abspielzeitpunkt (Server-Ticks). */
     private var play = Double.NaN
 
+    /** Abspielzeitpunkt des vorigen Client-Ticks (Vanilla zeichnet zwischen beiden mit tickDelta). */
+    private var playPrev = Double.NaN
+
     private var newest = Int.MIN_VALUE
 
     private const val DELAY = 2.2
@@ -61,7 +64,19 @@ object MotionClient {
         tracks.clear()
         offset = Double.NaN
         play = Double.NaN
+        playPrev = Double.NaN
         newest = Int.MIN_VALUE
+    }
+
+    /**
+     * Abspielzeitpunkt (Server-Ticks) zwischen zwei Client-Ticks: dieselbe Zeit, die die Darsteller gerade zeigen. Andere
+     * Ströme mit Server-Tick-Stempel (Trage-Rahmen, [RideClient]) laufen auf dieser Achse und bleiben so flüssig und
+     * deckungsgleich. NaN, solange noch keine Lage eingetroffen ist.
+     */
+    fun time(tickDelta: Float): Double {
+        if (play.isNaN()) return Double.NaN
+        val from = if (playPrev.isNaN()) play else playPrev
+        return from + (play - from) * tickDelta.coerceIn(0f, 1f)
     }
 
     private fun receive(p: MotionS2C) {
@@ -84,6 +99,7 @@ object MotionClient {
     private fun advance() {
         clientTick++
         if (offset.isNaN()) return
+        val before = play
         // Langsam nach unten driften (frühestes Eintreffen kann sich verschlechtern, z. B. bei sinkenden TPS).
         offset -= 0.03
         val target = clientTick + offset - DELAY
@@ -98,6 +114,8 @@ object MotionClient {
             offset = (newest - clientTick).toDouble()
             play = newest - DELAY
         }
+        // Neu aufgesetzte Achse: nicht über den Sprung gleiten.
+        playPrev = if (before.isNaN() || kotlin.math.abs(play - before) > 3.0) play else before
         if (clientTick % 100 == 0) tracks.entries.removeIf { clientTick - it.value.lastSeen > 200 }
     }
 

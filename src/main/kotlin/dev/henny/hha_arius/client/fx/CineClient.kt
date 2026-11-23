@@ -2,7 +2,10 @@ package dev.henny.hha_arius.client.fx
 
 import dev.henny.hha.client.cine.CinePlayer
 import dev.henny.hha_arius.arena.ArenaDimension
+import dev.henny.hha_arius.arena.ArenaLayout
+import dev.henny.hha_arius.arena.FarPlan
 import dev.henny.hha_arius.boss.ChaseCamS2C
+import dev.henny.hha_arius.boss.TrackCamS2C
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking
@@ -51,10 +54,58 @@ object CineClient {
             chaseSide = p.side.toDouble()
             chasePos = null
         }
+        ClientPlayNetworking.registerGlobalReceiver(TrackCamS2C.ID) { p, _ ->
+            // Neuer Strom (Lücke) oder Rücksprung: von vorn.
+            val last = track.lastOrNull()
+            if (last != null && (p.tick <= last.tick || p.tick - last.tick > 4)) track.clear()
+            track.addLast(p)
+            while (track.size > TRACK_KEEP) track.removeFirst()
+            trackSeen = clientTick
+        }
         ClientTickEvents.END_CLIENT_TICK.register { _ ->
             if (chaseLeft > 0) chaseLeft--
+            clientTick++
+            if (track.isNotEmpty() && clientTick - trackSeen > TRACK_STALE) track.clear()
         }
-        ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> chaseLeft = 0 }
+        ClientPlayConnectionEvents.DISCONNECT.register { _, _ ->
+            chaseLeft = 0
+            track.clear()
+        }
+    }
+
+    /** Abtastpunkte der mitfahrenden Szenenkamera ([TrackCamS2C]), nach Server-Tick geordnet. */
+    private val track = ArrayDeque<TrackCamS2C>()
+    private var trackSeen = 0
+    private var clientTick = 0
+    private const val TRACK_KEEP = 24
+    private const val TRACK_STALE = 12
+
+    /**
+     * Lage der mitfahrenden Kamera zur Abspielzeit der Darsteller ([MotionClient.time]): gleichmäßig zwischen den
+     * Abtastpunkten, ohne das Anhalten von HHAs Ein-Tick-Einstellungen. Null, wenn kein Strom läuft oder er ausgespielt ist
+     * (dann übernimmt wieder HHAs Kamera mit der folgenden Einstellung).
+     */
+    private fun tracked(tickDelta: Float): Pose? {
+        if (track.isEmpty()) return null
+        val time = MotionClient.time(tickDelta)
+        if (time.isNaN()) return null
+        val first = track.first()
+        val last = track.last()
+        if (time > last.tick + 0.999) return null
+        val (a, b, k) = if (time <= first.tick || track.size == 1) Triple(first, first, 0.0) else {
+            var i = 0
+            while (i < track.size - 2 && track[i + 1].tick <= time) i++
+            val a = track[i]
+            val b = track[i + 1]
+            Triple(a, b, ((time - a.tick) / (b.tick - a.tick).coerceAtLeast(1)).coerceIn(0.0, 1.0))
+        }
+        val cam = Vec3d(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k, a.z + (b.z - a.z) * k)
+        val look = Vec3d(a.lx + (b.lx - a.lx) * k, a.ly + (b.ly - a.ly) * k, a.lz + (b.lz - a.lz) * k).subtract(cam)
+        val h = sqrt(look.x * look.x + look.z * look.z)
+        if (h < 1e-6 && kotlin.math.abs(look.y) < 1e-6) return null
+        val yaw = (Math.toDegrees(atan2(look.z, look.x)) - 90.0).toFloat()
+        val pitch = (-Math.toDegrees(atan2(look.y, h))).toFloat()
+        return Pose(cam, yaw, pitch)
     }
 
     /**
@@ -75,6 +126,7 @@ object CineClient {
         if (chaseLeft > 0 && CinePlayer.active) chase(world, pos, tickDelta, dtTicks)?.let { return it }
         if (!CinePlayer.active) return RideClient.overTheSpike(pos)?.let { Pose(it, yaw, pitch) }
         if (world.registryKey != ArenaDimension.WORLD) return null
+        tracked(tickDelta)?.let { t -> return unstuck(world, t.pos, t.yaw, t.pitch) ?: t }
         return unstuck(world, pos, yaw, pitch)
     }
 
@@ -113,7 +165,7 @@ object CineClient {
         val fwd = Vec3d(-kotlin.math.sin(y) * kotlin.math.cos(p), -kotlin.math.sin(p), kotlin.math.cos(y) * kotlin.math.cos(p))
         // Erst nach oben herausheben (außen am Hang/Fels), dann entlang der Blickrichtung vorrücken.
         var up = 0.5
-        while (up <= 18.0) {
+        while (up <= 32.0) {
             val q = pos.add(0.0, up, 0.0)
             if (!blocked(world, q)) return Pose(q, yaw, pitch)
             up += 0.5
@@ -135,9 +187,28 @@ object CineClient {
             solid(world, p.add(0.0, 0.0, m)) || solid(world, p.add(0.0, 0.0, -m))
     }
 
+    /**
+     * Fest für die Szenenkamera: volle Blöcke, auch durchscheinende (das Eishorn und die Eisgrate waren bisher „Luft“,
+     * die Kamera fuhr hindurch). Wo der Abschnitt nicht geladen ist, zeichnet [HighlandViewClient] den Berg nur als Netz
+     * ohne Blöcke; dort zählt wie auf dem Server ([dev.henny.hha_arius.boss.CineSafety.solid]) die Höhenkarte der
+     * Fernlandschaft (Crix: „die Kamera geht teilweise immer noch durch den Berg“).
+     */
     private fun solid(world: World, p: Vec3d): Boolean {
+        if (MathHelper.floor(p.y) < world.bottomY) return false
         val pos = BlockPos.ofFloored(p)
+        if (!world.chunkManager.isChunkLoaded(pos.x shr 4, pos.z shr 4)) return farSolid(pos)
         val st = world.getBlockState(pos)
-        return !st.isAir && st.isOpaqueFullCube && MathHelper.floor(p.y) >= world.bottomY
+        if (st.isAir) return false
+        return st.isOpaqueFullCube || (st.isFullCube(world, pos) && !st.getCollisionShape(world, pos).isEmpty)
+    }
+
+    private fun farSolid(pos: BlockPos): Boolean {
+        val slot = Math.floorDiv(pos.x + ArenaLayout.SLOT_SPACING / 2, ArenaLayout.SLOT_SPACING)
+        val origin = ArenaLayout.origin(slot)
+        val rx = pos.x - origin.x
+        val rz = pos.z - origin.z
+        if (rx !in FarPlan.X_MIN..FarPlan.X_MAX || rz !in FarPlan.Z_MIN..FarPlan.Z_MAX) return false
+        val top = runCatching { FarPlan.top(rx, rz) }.getOrDefault(-1)
+        return top >= 0 && pos.y <= origin.y + top
     }
 }
