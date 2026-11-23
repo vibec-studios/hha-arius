@@ -55,6 +55,7 @@ class VerifyBoss : FabricClientGameTest {
                     "classic" -> classic()
                     "mace" -> mace()
                     "macecatch" -> maceCatch()
+                    "macefloat" -> maceFloat()
                     "parrycue" -> parryCue()
                     "forge" -> forge()
                     "templehorizon" -> templeHorizon()
@@ -977,6 +978,112 @@ class VerifyBoss : FabricClientGameTest {
         }
         log("ability: 10 raw magic = %.2f, 10 raw armour ability = %.2f (window factor 0.7)".format(spell, ability))
         server { srv -> player(srv).setStackInHand(Hand.MAIN_HAND, ItemStack(dev.henny.hha_arius.gear.GearItems.SOLVANE)) }
+    }
+
+    /**
+     * Prüft den Windstoß-Streitkolben-Schwebefehler über mehrere Attackentypen hinweg:
+     * Schlägt Arius mitten in verschiedenen Angriffen mit einem Wind-Burst-III-Mace (Sturzschlag),
+     * misst seine maximale Höhe über `floorY` während und nach jedem Angriff und prüft, dass er nie in der Luft
+     * hängen bleibt (und nach beabsichtigtem `skyLeap` sauber auf Bodenhöhe landet).
+     */
+    private fun VerifyKit.maceFloat() {
+        temple()
+        val attacks: List<Pair<String, (EirholmFight, ServerPlayerEntity) -> Script>> = listOf(
+            "combo" to { f, _ -> f.moves.combo(white = false, serious = false) },
+            "lunge" to { f, p -> f.moves.lunge(p, white = false) },
+            "heavenCleave" to { f, _ -> f.moves.heavenCleave(white = false, serious = false) },
+            "guard" to { f, _ -> f.moves.guard(white = false, serious = false) },
+            "frostLotus" to { f, _ -> f.moves.frostLotus(white = false) },
+            "stabGround" to { f, _ -> f.moves.stabGround() },
+            "nullCut" to { f, p -> f.moves.nullCut(p) },
+            "skyLeap" to { f, _ -> f.moves.skyLeap(white = false) },
+        )
+        val summary = ArrayList<String>()
+        try {
+            for ((name, factory) in attacks) {
+                var finished = false
+                server { srv ->
+                    val f = checkNotNull(fight())
+                    val a = checkNotNull(f.arius)
+                    val p = player(srv)
+                    val c = f.arenaCenter
+                    f.calls.reset()
+                    f.guardUntil = 0
+                    f.ariusOpenUntil = 0
+                    f.ariusVulnerable = true
+                    f.ariusHp = f.ariusMax
+                    f.place(a, Vec3d(c.x, f.floorY, c.z))
+                    a.play(AriusPose.IDLE)
+                    p.teleport(f.world, c.x + 2.4, f.floorY, c.z, emptySet(), 90f, 0f, false)
+                    p.onLanding()
+                    val inner = factory(f, p)
+                    f.startDirector(script {
+                        yieldAll(inner)
+                        finished = true
+                        while (true) yield(Unit)
+                    })
+                }
+                // Kurz anlaufen lassen, damit Arius mitten in der Attacke steckt.
+                tick(6)
+                var maxHeight = 0.0
+                var playerBounced = false
+                var hitCount = 0
+                // Zweimal während derselben Attacke mit Wind Burst III Mace treffen (simuliert Bounce-Ketten).
+                for (t in 0 until 75) {
+                    if (t == 0 || t == 14) {
+                        val hitBounce = server { srv ->
+                            val f = checkNotNull(fight())
+                            val a = checkNotNull(f.arius)
+                            val p = player(srv)
+                            val windBurst = f.world.registryManager
+                                .getOrThrow(net.minecraft.registry.RegistryKeys.ENCHANTMENT)
+                                .getOrThrow(net.minecraft.enchantment.Enchantments.WIND_BURST)
+                            val mace = ItemStack(Items.MACE).apply { addEnchantment(windBurst, 3) }
+                            f.guardUntil = 0
+                            f.ariusHp = f.ariusMax
+                            p.setStackInHand(Hand.MAIN_HAND, mace)
+                            p.teleport(f.world, a.x + 1.4, a.y + 1.6, a.z, emptySet(), 90f, 25f, false)
+                            p.fallDistance = 6.0
+                            p.isOnGround = false
+                            p.velocity = Vec3d.ZERO
+                            fullCharge(p)
+                            p.attack(a)
+                            p.velocity.y
+                        }
+                        hitCount++
+                        if (hitBounce > 0.3) playerBounced = true
+                    }
+                    tick(1)
+                    val h = server {
+                        val f = checkNotNull(fight())
+                        val a = checkNotNull(f.arius)
+                        a.y - f.floorY
+                    }
+                    if (h > maxHeight) maxHeight = h
+                    if (finished && t >= 22) break
+                }
+                // Attacke vollständig auslaufen lassen und Endhöhe messen.
+                waitUntil(120, 1) { finished }
+                tick(6)
+                val endHeight = server {
+                    val f = checkNotNull(fight())
+                    val a = checkNotNull(f.arius)
+                    a.y - f.floorY
+                }
+                val line = "$name: hits=$hitCount maxH=%.3f endH=%.3f playerWindBounce=$playerBounced".format(maxHeight, endHeight)
+                log("macefloat $line")
+                summary += line
+                if (name != "skyLeap") {
+                    check(maxHeight <= 0.10) { "Arius floated during grounded attack '$name': maxH=$maxHeight endH=$endHeight" }
+                } else {
+                    check(maxHeight >= 5.0) { "skyLeap should still jump intentionally: maxH=$maxHeight" }
+                }
+                check(abs(endHeight) <= 0.05) { "Arius did not end cleanly on ground after '$name': endH=$endHeight" }
+            }
+            log("macefloat PASS (${summary.size} attacks): ${summary.joinToString(" | ")}")
+        } finally {
+            server { srv -> player(srv).setStackInHand(Hand.MAIN_HAND, ItemStack(dev.henny.hha_arius.gear.GearItems.SOLVANE)) }
+        }
     }
 
     // --- Weißes Loch --------------------------------------------------------------------------------------------------

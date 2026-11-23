@@ -763,11 +763,15 @@ class AriusMoves(private val f: EirholmFight) {
                     val spot = f.clampToArena(Vec3d(t.x, f.floorY, t.z), 1.0)
                     val ring = f.calls.ring(spot, 3.8f, windup, pace = Telegraph.Pace.HEAVY)
                     a.play(AriusPose.STAB_GROUND, ring.ticks)
-                    val from = a.entityPos
-                    for (i in 1..ring.ticks) {
-                        val kk = i / ring.ticks.toDouble()
-                        f.place(a, from.lerp(spot, kk * kk).add(0.0, sin(kk * Math.PI) * 2.2, 0.0))
-                        yield(Unit)
+                    val from = Vec3d(a.x, f.floorY, a.z)
+                    try {
+                        for (i in 1..ring.ticks) {
+                            val kk = i / ring.ticks.toDouble()
+                            f.place(a, from.lerp(spot, kk * kk).add(0.0, sin(kk * Math.PI) * 2.2, 0.0))
+                            yield(Unit)
+                        }
+                    } finally {
+                        f.place(a, Vec3d(a.x, f.floorY, a.z))
                     }
                     f.place(a, spot)
                     f.sound("arius.stab_ground", spot, 2.6f, 0.9f)
@@ -1075,28 +1079,32 @@ class AriusMoves(private val f: EirholmFight) {
         val a = f.arius ?: return@script
         val t = f.target() ?: return@script
         a.sheathed = false
-        val from = a.entityPos
+        val from = Vec3d(a.x, f.floorY, a.z)
         val spot = Vec3d(t.x, f.floorY, t.z)
         val ring = f.calls.ring(spot, 3.8f, 26, pace = Telegraph.Pace.HEAVY)
         a.play(AriusPose.LAUNCH, 8)
         f.sound("arius.wind_step", from, 2.4f, 0.7f)
         f.fx(FxKind.DASH_STREAK, from, from.add(0.0, 10.0, 0.0), life = 10)
         val apex = from.lerp(spot, 0.5).add(0.0, 10.0, 0.0)
-        for (i in 1..13) {
-            val k = i / 13.0
-            f.place(a, from.lerp(apex, 1.0 - (1.0 - k) * (1.0 - k)))
-            f.face(a, spot)
-            yield(Unit)
+        try {
+            for (i in 1..13) {
+                val k = i / 13.0
+                f.place(a, from.lerp(apex, 1.0 - (1.0 - k) * (1.0 - k)))
+                f.face(a, spot)
+                yield(Unit)
+            }
+            a.play(AriusPose.STAB_GROUND, ring.remaining.coerceAtLeast(1))
+            val top = a.entityPos
+            val left = ring.remaining.coerceAtLeast(4)
+            for (i in 1..left) {
+                val k = i / left.toDouble()
+                f.place(a, top.lerp(spot, k * k))
+                yield(Unit)
+            }
+            f.place(a, spot)
+        } finally {
+            if (a.y > f.floorY + 0.05) f.place(a, Vec3d(a.x, f.floorY, a.z))
         }
-        a.play(AriusPose.STAB_GROUND, ring.remaining.coerceAtLeast(1))
-        val top = a.entityPos
-        val left = ring.remaining.coerceAtLeast(4)
-        for (i in 1..left) {
-            val k = i / left.toDouble()
-            f.place(a, top.lerp(spot, k * k))
-            yield(Unit)
-        }
-        f.place(a, spot)
         f.sound("arius.stab_ground", spot, 3f, 0.8f)
         f.calls.roomShake(spot, 4f, 30f)
         Vfx.shockwave(f.world, style, spot, 5f, 14, 1.6f)
@@ -1717,23 +1725,27 @@ class AriusMoves(private val f: EirholmFight) {
             Hold.extend(player, 30)
             a.play(AriusPose.AIR_KICK, 8)
             f.sound("arius.wind_step", from, 2f, 1.2f)
-            for (i in 1..8) {
-                if (!punishOn(player)) return@script
-                val k = i / 8.0
-                f.place(a, from.lerp(air, 1.0 - (1.0 - k) * (1.0 - k)))
-                f.face(a, player.entityPos)
-                yield(Unit)
-            }
-            if (!impact(player, 3.5f, Damage.Kind.IMPACT, "arius.kick", 0.75f, healthy, heavy = true)) return@script
-            val down = Vec3d(player.x, ground.y, player.z)
-            drive(player, down, 3)
-            Vfx.shockwave(f.world, style, down, 3.2f, 10, 1.4f)
-            f.world.spawnParticles(net.minecraft.particle.BlockStateParticleEffect(net.minecraft.particle.ParticleTypes.BLOCK, net.minecraft.block.Blocks.SNOW_BLOCK.defaultState), down.x, down.y + 0.1, down.z, 30, 0.8, 0.1, 0.8, 0.15)
-            val landAt = Vec3d(down.x, down.y, down.z).subtract(dir.multiply(1.6))
-            val airFrom = a.entityPos
-            for (i in 1..4) {
-                f.place(a, airFrom.lerp(landAt, i / 4.0))
-                yield(Unit)
+            try {
+                for (i in 1..8) {
+                    if (!punishOn(player)) return@script
+                    val k = i / 8.0
+                    f.place(a, from.lerp(air, 1.0 - (1.0 - k) * (1.0 - k)))
+                    f.face(a, player.entityPos)
+                    yield(Unit)
+                }
+                if (!impact(player, 3.5f, Damage.Kind.IMPACT, "arius.kick", 0.75f, healthy, heavy = true)) return@script
+                val down = Vec3d(player.x, ground.y, player.z)
+                drive(player, down, 3)
+                Vfx.shockwave(f.world, style, down, 3.2f, 10, 1.4f)
+                f.world.spawnParticles(net.minecraft.particle.BlockStateParticleEffect(net.minecraft.particle.ParticleTypes.BLOCK, net.minecraft.block.Blocks.SNOW_BLOCK.defaultState), down.x, down.y + 0.1, down.z, 30, 0.8, 0.1, 0.8, 0.15)
+                val landAt = Vec3d(down.x, down.y, down.z).subtract(dir.multiply(1.6))
+                val airFrom = a.entityPos
+                for (i in 1..4) {
+                    f.place(a, airFrom.lerp(landAt, i / 4.0))
+                    yield(Unit)
+                }
+            } finally {
+                if (a.y > ground.y + 0.05) f.place(a, Vec3d(a.x, ground.y, a.z))
             }
             // 7) Abschluss: Klinge neben ihm in den Boden, die Druckwelle schleudert ihn weg.
             if (!beat(player, AriusPose.STAB_GROUND, 10, 4.5f, Damage.Kind.IMPACT, Vec3d.ZERO, 0.0, "arius.stab_ground", 0.85f, healthy, heavy = true, finisher = true)) return@script

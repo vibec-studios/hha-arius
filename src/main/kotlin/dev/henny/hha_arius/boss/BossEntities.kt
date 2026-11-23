@@ -10,7 +10,9 @@ import net.minecraft.entity.data.TrackedData
 import net.minecraft.entity.data.TrackedDataHandlerRegistry
 import net.minecraft.entity.mob.MobEntity
 import net.minecraft.server.world.ServerWorld
+import net.minecraft.util.math.Vec3d
 import net.minecraft.world.World
+import net.minecraft.world.explosion.Explosion
 import kotlin.math.hypot
 
 /**
@@ -87,7 +89,26 @@ abstract class EirholmPuppet(type: EntityType<out EirholmPuppet>, world: World) 
         }
     }
 
+    override fun isImmuneToExplosion(explosion: Explosion): Boolean = true
+
+    override fun addVelocity(deltaX: Double, deltaY: Double, deltaZ: Double) {}
+
+    override fun addVelocity(velocity: Vec3d) {}
+
+    override fun addVelocityInternal(velocity: Vec3d) {}
+
+    override fun setVelocity(velocity: Vec3d) {
+        super.setVelocity(Vec3d.ZERO)
+    }
+
+    override fun setVelocity(x: Double, y: Double, z: Double) {
+        super.setVelocity(0.0, 0.0, 0.0)
+    }
+
     override fun tick() {
+        // Externe Impulse (z. B. Windstoß-Streitkolben / Explosionen) vor super.tick() tilgen, damit PuppetEntity
+        // mit noGravity=true niemals durch LivingEntity.travel() in die Luft gehoben wird.
+        super.setVelocity(Vec3d.ZERO)
         super.tick()
         if (!entityWorld.isClient) {
             MotionSync.track(this)
