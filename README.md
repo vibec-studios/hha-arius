@@ -91,6 +91,13 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.15.6
+
+- **Solvane's reveal (clean spire orientation, cleft-free cameras & dynamic flight):**
+  - **Spire posture & head raise:** aligned `HEAD_REST` smoothly out of the upper coil so Solvane's bright silver-white back and ice-blue dorsal crest face outward from tick 0 (eliminating the belly-outward flip and twist seam), and anchored segments `6..40` on the spire during the wide reveal so only her head and neck rise over the peak.
+  - **Cleft-free & obelisk-free cameras:** moved the blizzard shot off the `x = 1.5` mountain cleft, moved summit `vantage` behind the southeast flank so player armor no longer appears on the summit snow, and added a hard-cut guard in `TrackCamS2C` for razor-sharp cuts between tracking shots.
+  - **Dynamic descent flight:** replaced the slow straight slope-slide (`288` ticks) with a crisp `216`-tick sweeping S-curve plunge off the spire — arching smoothly off the peak with live tracking, banking wide around and above the western ice needle against the open arctic sky, and sweeping low through the obelisk-free southwest gap into her 3/4 wing-flare landing.
+
 ### New in 1.15.5
 
 - **Solvane's reveal (exact 1.11.0 posture & framing):** restored `v1.11.0`'s wide 1.5-turn spire coil (`EntrancePath.coil` + `clearRadius`), raised/resting head anchors (`HEAD_RAISED`/`HEAD_REST`), graceful S-curve neck and upward-angled crest (`NivarisModel.coilPoly`), un-clamped wings and legs (removed `spireGrip` and reveal `wingTuck`), and `v1.11.0`'s wide massif reveal and close roar shots — while keeping the early blizzard onset before the cut and mountain-safe uncoil cameras.

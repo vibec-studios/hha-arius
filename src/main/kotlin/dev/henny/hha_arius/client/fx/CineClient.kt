@@ -99,8 +99,10 @@ object CineClient {
             val b = track[i + 1]
             Triple(a, b, ((time - a.tick) / (b.tick - a.tick).coerceAtLeast(1)).coerceIn(0.0, 1.0))
         }
-        val cam = Vec3d(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k, a.z + (b.z - a.z) * k)
-        val look = Vec3d(a.lx + (b.lx - a.lx) * k, a.ly + (b.ly - a.ly) * k, a.lz + (b.lz - a.lz) * k).subtract(cam)
+        val cut = Vec3d(b.x - a.x, b.y - a.y, b.z - a.z).lengthSquared() > 12.0 * 12.0
+        val frac = if (cut) 0.0 else k
+        val cam = Vec3d(a.x + (b.x - a.x) * frac, a.y + (b.y - a.y) * frac, a.z + (b.z - a.z) * frac)
+        val look = Vec3d(a.lx + (b.lx - a.lx) * frac, a.ly + (b.ly - a.ly) * frac, a.lz + (b.lz - a.lz) * frac).subtract(cam)
         val h = sqrt(look.x * look.x + look.z * look.z)
         if (h < 1e-6 && kotlin.math.abs(look.y) < 1e-6) return null
         val yaw = (Math.toDegrees(atan2(look.z, look.x)) - 90.0).toFloat()

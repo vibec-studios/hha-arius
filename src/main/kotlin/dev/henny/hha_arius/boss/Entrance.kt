@@ -68,24 +68,22 @@ object EntrancePath {
         return Vec3d(x, y + (ArenaLayout.SPIRE_TOP - 185.0) * k, z + (ArenaLayout.SPIRE.z - DESIGN_SPIRE_Z) * k)
     }
 
-    /** Kopfgelenk in der Windung, aufgerichtet über dem Gipfel (exakte 1.11.0-Lage). */
-    val HEAD_RAISED: Vec3d = near(0.5, 192.0, 146.5)
+    /** Kopfgelenk in der Windung, aufgerichtet über dem Gipfel (fließt knickfrei aus der oberen Windung). */
+    val HEAD_RAISED: Vec3d = Vec3d(AXIS.x - 1.5, 226.5, AXIS.z - 9.0)
 
-    /** Kopfgelenk in der Windung, ruhend auf der obersten Windung (exakte 1.11.0-Lage). */
-    val HEAD_REST: Vec3d = near(3.5, 171.0, 144.0)
+    /** Kopfgelenk in der Windung, ruhend entlang der oberen Nordwest-Schulter (kein Haarnadelknick). */
+    val HEAD_REST: Vec3d = Vec3d(AXIS.x - 11.0, 211.0, AXIS.z - 11.5)
 
     private val WAYPOINTS = listOf(
         HEAD_RAISED,
-        Vec3d(-6.0, 226.0, 222.0),     // sicher über der Gipfelkrone (y <= 206)
-        Vec3d(-22.0, 206.0, 196.0),    // weit über Nordwestflanke des Massivs (auch mit offenem Schnitt)
-        Vec3d(-34.0, 162.0, 164.0),    // über dem Hang, westlich der Kluft
-        Vec3d(-38.0, 114.0, 126.0),    // über der Ritt-Route und ihren Bögen/Nadeln
-        Vec3d(-44.0, 62.0, 92.0),      // im freien Hochland-Korridor (r < 112)
-        Vec3d(-50.0, 24.0, 62.0),      // außerhalb des Massivfußes (d = 195 > 170) auf flachem Schnee
-        Vec3d(-44.0, 10.5, 36.0),      // im obeliskfreien Südkorridor (|Winkel| = 51° < 55°)
-        Vec3d(-24.0, 6.2, 21.0),       // weiter Bogen auf die Nordachse (Schwanz bleibt komplett auf z <= 64)
-        Vec3d(-8.0, 5.0, 13.5),        // Eindrehen nach Norden
-        Vec3d(0.5, 4.6, 8.5),          // gerade nach Norden ausgerichtet
+        Vec3d(-12.0, 232.0, 222.0),    // hebt knickfrei nach vorn-oben über die Spitze ab
+        Vec3d(-42.0, 204.0, 194.0),    // steiler Sturz hinaus in den offenen Westhimmel (weit abseits der Spalte)
+        Vec3d(-84.0, 148.0, 156.0),    // weiter, schneller Sturzflug hoch über das offene Westtal
+        Vec3d(-96.0, 102.0, 112.0),    // weite Außenkurve weit westlich & über der Eisnadel (-65, 85, 92)
+        Vec3d(-76.0, 56.0, 72.0),      // kräftiges Eindrehen zurück nach Osten im offenen Tal nördlich der Nadel
+        Vec3d(-32.0, 24.0, 46.0),      // dynamischer Tiefflug durch die breite obeliskfreie Südwest-Lücke
+        Vec3d(-10.0, 10.0, 22.0),      // flacher Bogen über das Plateau Richtung Spieler
+        Vec3d(-2.0, 6.0, 12.0),        // Eindrehen auf die Nordachse
         Vec3d(0.5, 4.4, 5.5),          // nahtlos vor der Landung bei (0.5, 0, 2.0)
     )
 
@@ -140,12 +138,12 @@ object EntrancePath {
         return if (v.lengthSquared() < 1e-6) Vec3d(-1.0, 0.0, 0.0) else v.normalize()
     }
 
-    /** Dauer des Lösens in Ticks. */
-    const val TICKS = 288
+    /** Dauer des Lösens in Ticks (zügiger, dynamischer Sturzflug mit S-Kurve). */
+    const val TICKS = 216
 
     /** Schnitte der drei Kamerafahrten im Lösen (anteilig zu [TICKS]). */
-    const val CUT_1 = TICKS * 85 / 220
-    const val CUT_2 = TICKS * 165 / 220
+    const val CUT_1 = 76
+    const val CUT_2 = 152
 
     /** Tick [t] eines früheren 220-Tick-Ablaufs auf die heutige Dauer umgerechnet. */
     fun scaled(t: Int): Int = t * TICKS / 220
@@ -438,18 +436,18 @@ internal object Entrance {
         // 1b) Er lässt Solvane los: der Lichtstrom zieht zur Nadel; der Schneesturm baut sich schon im Abflug voll auf.
         val arrival = f.abs(EntrancePath.HEAD_REST)
         yieldAll(release(f, scene, arrival, stormAhead = true))
-        // Zuschauer sofort auf die Gipfelschulter (westlich des Schnitts), damit Nadel und Drache von Tick 0 an voll geladen sind.
-        val summitTop = f.abs(Vec3d(ArenaLayout.SPIRE.x - 20.0, dev.henny.hha_arius.arena.FarPlan.SHOULDER_Y + 1.0, ArenaLayout.SPIRE.z - 14.0))
+        // Zuschauer hinter die Südost-Flanke des Gipfels (außerhalb aller Kamerablicke, aber Nadel & Drache voll geladen).
+        val summitTop = f.abs(Vec3d(ArenaLayout.SPIRE.x + 28.0, dev.henny.hha_arius.arena.FarPlan.SHOULDER_Y - 14.0, ArenaLayout.SPIRE.z + 42.0))
         vantage.move(summitTop)
 
         val axis = f.abs(Vec3d(ArenaLayout.SPIRE.x + 0.5, 0.0, ArenaLayout.SPIRE.z + 0.5))
         val head = f.abs(EntrancePath.HEAD_RAISED)
 
-        // 2) Sturm (1.11.0-Einstellung, aber mit bereits stehendem Schneesturm aus release(stormAhead = true)):
-        //    Blick vom Südrand des Plateaus nach oben in das Weiß Richtung Gipfel; Solvane entsteht Glied für Glied.
-        val stormFrom = rel(f, 1.5, 22.0, 18.0)
-        val stormTo = rel(f, 1.0, 30.0, 34.0)
-        scene.line(stormFrom, stormTo, spire(f, 0.0, 150.0, 0.0), spire(f, 0.0, 185.0, 0.0), STORM_TICKS, 70.0, 60.0)
+        // 2) Sturm (mit bereits stehendem Schneesturm aus release(stormAhead = true)):
+        //    Blick vom offenen Südwest-Himmel über dem Plateau Richtung Gipfel (klar abseits der Bergspalte x = 1.5).
+        val stormFrom = rel(f, -18.0, 26.0, 14.0)
+        val stormTo = rel(f, -22.0, 38.0, 34.0)
+        scene.line(stormFrom, stormTo, spire(f, 0.0, 155.0, 0.0), spire(f, 0.0, 190.0, 0.0), STORM_TICKS, 70.0, 60.0)
         sound(f, "seal.blizzard", stormTo, 2.5f, 0.7f)
         wait(RELEASE_ARRIVAL - RELEASE_TICKS)
         sound(f, "nivaris.inhale", arrival, 2f, 0.45f)
@@ -505,7 +503,7 @@ internal object Entrance {
         MusicCue.sting(f, "reveal")
         wait(60 - windup)
 
-        // 7) Sie löst sich vom Fels und gleitet über den freien Westkorridor zum Plateau (220 Ticks, drei freie Kamerafahrten).
+        // 7) Sie löst sich vom Fels und stürzt in einer weiten, dynamischen S-Kurve durch den freien Westhimmel zum Plateau.
         f.atmos(AtmosMode.REVEAL, 20)
         d.mode = NivarisMode.UNCOIL
         d.wingTuck = 0f
@@ -523,14 +521,15 @@ internal object Entrance {
         var followRoute = false
         val cut1 = EntrancePath.CUT_1
         val cut2 = EntrancePath.CUT_2
+        val diveCam0 = axis.add(-52.0, 234.0, -52.0)
+        val diveCam1 = axis.add(-78.0, 192.0, -86.0)
+        val swoopCam0 = rel(f, -64.0, 72.0, 56.0)
+        val swoopCam1 = rel(f, -44.0, 34.0, 36.0)
+        val rimCam0 = rel(f, -22.0, 13.5, 2.0)
         for (t in 0..EntrancePath.TICKS) {
             when (t) {
-                0 -> scene.rawLine(axis.add(-45.0, 225.0, -44.0), axis.add(-55.0, 219.0, -63.0),
-                    look(0, 18.0), look(56, 18.0), 56, 63.0, 67.0)
-                56 -> scene.rawLine(axis.add(-55.0, 219.0, -63.0), axis.add(-67.0, 173.0, -78.0),
-                    look(56, 18.0), look(cut1, 20.0), cut1 - 56, 67.0, 73.0)
                 cut1 -> {
-                    val midValley = f.abs(Vec3d(-42.0, 78.0, 108.0))
+                    val midValley = f.abs(Vec3d(-72.0, 10.0, 110.0))
                     vantage.move(midValley)
                     proxy = midValley
                     followRoute = true
@@ -540,22 +539,39 @@ internal object Entrance {
                     proxy = f.abs(EntrancePath.PROXY)
                 }
             }
-            if (t >= cut1) {
-                fun camera(tick: Int): Vec3d {
-                    val headPoint = look(tick, 0.0)
-                    if (t < cut2) return headPoint.add(-20.0, 17.0, -18.0)
-                    val u = (tick - cut2).toDouble() / (EntrancePath.TICKS - cut2)
-                    return headPoint.add(-18.0, 10.5, -13.0).lerp(landCamMid, u * u)
+            fun camera(tick: Int): Vec3d = when {
+                tick < cut1 -> {
+                    val u = tick.toDouble() / cut1
+                    val s = u * u * (3.0 - 2.0 * u)
+                    diveCam0.lerp(diveCam1, s)
                 }
-                val next = minOf(t + 1, EntrancePath.TICKS)
-                scene.track(camera(t), camera(next), look(t, 8.0), look(next, 8.0), if (t < cut2) 65.0 else 60.0)
+                tick < cut2 -> {
+                    val u = (tick - cut1).toDouble() / (cut2 - cut1)
+                    val s = u * u * (3.0 - 2.0 * u)
+                    swoopCam0.lerp(swoopCam1, s)
+                }
+                else -> {
+                    val u = (tick - cut2).toDouble() / (EntrancePath.TICKS - cut2)
+                    val s = u * u * (3.0 - 2.0 * u)
+                    rimCam0.lerp(landCamMid, s)
+                }
             }
+            val next = if (t == cut1 - 1 || t == cut2 - 1) t else minOf(t + 1, EntrancePath.TICKS)
+            val back = if (t < cut1) 14.0 else 10.0
+            val focus0 = if (t == EntrancePath.TICKS) landFocusMid else look(t, back)
+            val focus1 = if (next == EntrancePath.TICKS) landFocusMid else look(next, back)
+            val fov = when {
+                t < cut1 -> 62.0 + 6.0 * (t.toDouble() / cut1)
+                t < cut2 -> 64.0
+                else -> 60.0
+            }
+            scene.track(camera(t), camera(next), focus0, focus1, fov)
             when (t) {
                 EntrancePath.scaled(4) -> sound(f, "nivaris.wing", head, 6f, 0.5f)
-                EntrancePath.scaled(40) -> sound(f, "nivaris.wing", axis.add(-48.0, 208.0, -40.0), 3f, 0.6f)
-                EntrancePath.scaled(100) -> sound(f, "nivaris.wing", rel(f, -50.0, 110.0, 125.0), 3f, 0.65f)
-                EntrancePath.scaled(150) -> sound(f, "seal.blizzard", rel(f, -35.0, 50.0, 80.0), 2f, 1.2f)
-                EntrancePath.scaled(180) -> sound(f, "nivaris.wing", rel(f, -18.0, 8.0, -14.0), 3f, 0.7f)
+                EntrancePath.scaled(40) -> sound(f, "nivaris.wing", axis.add(-52.0, 200.0, -54.0), 3f, 0.6f)
+                EntrancePath.scaled(100) -> sound(f, "nivaris.wing", rel(f, -72.0, 80.0, 112.0), 3.5f, 0.62f)
+                EntrancePath.scaled(150) -> sound(f, "seal.blizzard", rel(f, -40.0, 32.0, 62.0), 2.5f, 1.15f)
+                EntrancePath.scaled(180) -> sound(f, "nivaris.wing", rel(f, -14.0, 10.0, 6.0), 3.5f, 0.7f)
             }
             val u = EntrancePath.distance(t.toDouble())
             d.uncoil = (u / EntrancePath.LENGTH).toFloat()
