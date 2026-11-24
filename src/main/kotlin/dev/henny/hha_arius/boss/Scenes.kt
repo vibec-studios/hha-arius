@@ -807,7 +807,7 @@ class Scenes(private val f: EirholmFight) {
         val lane = (ram.x - f.origin.x).coerceIn(-6.5, 6.5)
         val impact = Vec3d(f.origin.x + lane, start.y, ram.z + 9.15)
         val drop = aerie.add(62.0, 23.0, -16.0)
-        val pickup = f.abs(Vec3d(-30.0, 20.0, -59.0))
+        val pickup = f.abs(Vec3d(-22.5, 16.5, -63.0))
         val pass = seat.add(7.2, -0.5, 5.2)
         val rail = DragonRail.carryRail(f, start, impact, pickup, drop, pass, aerie)
         val length = DragonRail.length(rail)
@@ -916,6 +916,10 @@ class Scenes(private val f: EirholmFight) {
         val hangLook = CarryGrip.at(spine(hangEnd), 0, 0f).feet
         scene.line(catchCam, hangLook.add(11.0, 5.0, 4.0), catchLook, hangLook, hangTicks, 53.0, 59.0, lookAt = lead, lookOffset = 0.85)
         for (t in 1..hangTicks) {
+            if (t == 4) {
+                a.play(AriusPose.IDLE)
+                f.face(a, pickup)
+            }
             val q = catchQ + t * 0.91
             val points = spine(q)
             val positions = riders.indices.map { i -> CarryGrip.at(points, i, 0f).feet }
@@ -941,7 +945,12 @@ class Scenes(private val f: EirholmFight) {
         val cruise = 1.12
         val rollStart = dropQ - 18.0
         var ariusMounted = false
+        var tuckSeated = false
         var boardFrom: Vec3d? = null
+        val boardSpan = 20.0
+        val boardEndQ = maxOf(hangEnd + boardSpan, pickupQ)
+        val boardStartQ = boardEndQ - boardSpan
+        val boardLand = RideHooks.perchFeet(spine(boardEndQ), 0f)
         val approachEnd = maxOf(q + 45.0, dropQ - 94.0)
         fun travelCamera(from: Double, to: Double, offset: Vec3d, fov: Double) {
             val look0 = at(from).subtract(direction(from).multiply(8.0)).add(0.0, 2.5, 0.0)
@@ -951,7 +960,14 @@ class Scenes(private val f: EirholmFight) {
         }
         val riderShotStart = distance(f.abs(Vec3d(-103.0, 40.0, -77.0)))
         val riderShotEnd = riderShotStart + 64.0
-        travelCamera(q, riderShotStart, Vec3d(0.0, 12.0, 28.0), 65.0)
+        val pickupShotEnd = minOf(riderShotStart - 6.0, boardEndQ + 14.0)
+        var postPickupCam = false
+        // Dedicated framing over the open temple rotunda: keeps Arius in-frame from takeoff through apex to landing on Solvane's skull.
+        scene.line(
+            f.abs(Vec3d(-1.5, 14.5, -42.0)), f.abs(Vec3d(-13.0, 26.5, -44.0)),
+            perch.add(-3.0, 7.5, -1.0), boardLand.add(0.0, 1.4, 0.0),
+            kotlin.math.ceil((pickupShotEnd - q) / cruise).toInt().coerceAtLeast(1), 66.0, 56.0,
+        )
         for (p in riders) ownFor(p, 80)
         var nextHold = 65
         var travelTicks = 0
@@ -963,19 +979,39 @@ class Scenes(private val f: EirholmFight) {
                 nextHold += 65
             }
             frame(q, grip = 1f, positions = passengerPositions(q))
-            if (!ariusMounted && q >= pickupQ - 10.0) {
+            if (!ariusMounted && q >= boardStartQ) {
                 if (boardFrom == null) {
-                    a.play(AriusPose.LAUNCH, 4)
+                    a.play(AriusPose.LUNGE, 18)
                     boardFrom = perch
+                    cue("arius.wind_step", perch, 2.8f, 1.05f)
+                    shown { f.fxAll(FxKind.CLEAR_WAVE, perch.add(0.0, 0.3, 0.0), a = 4.5f, life = 14) }
+                    shown { f.fxAll(FxKind.DASH_STREAK, perch.add(0.0, 1.0, 0.0), boardLand.add(0.0, 2.0, 0.0), life = 14) }
                 }
-                val u = ((q - pickupQ + 10.0) / 10.0).coerceIn(0.0, 1.0)
+                val u = ((q - boardStartQ) / boardSpan).coerceIn(0.0, 1.0)
                 val target = RideHooks.perchFeet(spine(q), 0f)
-                f.place(a, boardFrom!!.lerp(target, u).add(0.0, sin(u * PI) * 0.9, 0.0))
-                f.face(a, target)
+                val arc = 4.0 * u * (1.0 - u) * 7.8
+                val pos = boardFrom!!.lerp(target, u).add(0.0, arc, 0.0)
+                f.place(a, pos)
+                val turn = ((u - 0.45) / 0.55).coerceIn(0.0, 1.0)
+                val aim = target.subtract(pos).let {
+                    val flat = Vec3d(it.x, 0.0, it.z)
+                    if (flat.lengthSquared() < 1e-4) direction(q) else flat.normalize()
+                }.lerp(direction(q), turn * turn * (3.0 - 2.0 * turn))
+                f.face(a, pos.add(aim))
+                if (!tuckSeated && u >= 0.80) {
+                    a.play(AriusPose.SEATED)
+                    tuckSeated = true
+                }
                 if (u == 1.0) {
                     RideSeats.perch(f, a, d)
+                    cue("frost_step", target, 2.0f, 1.1f)
+                    shown { f.fxAll(FxKind.CLEAR_WAVE, target.add(0.0, 0.2, 0.0), a = 2.4f, life = 10) }
                     ariusMounted = true
                 }
+            }
+            if (!postPickupCam && q >= pickupShotEnd && q < riderShotStart) {
+                postPickupCam = true
+                travelCamera(q, riderShotStart, Vec3d(0.0, 12.0, 28.0), 65.0)
             }
             if (q in riderShotStart..<riderShotEnd) {
                 val from = CarryGrip.at(spine(q), 0, 0f).feet

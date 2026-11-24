@@ -91,6 +91,11 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.15.5
+
+- **Solvane's reveal (exact 1.11.0 posture & framing):** restored `v1.11.0`'s wide 1.5-turn spire coil (`EntrancePath.coil` + `clearRadius`), raised/resting head anchors (`HEAD_RAISED`/`HEAD_REST`), graceful S-curve neck and upward-angled crest (`NivarisModel.coilPoly`), un-clamped wings and legs (removed `spireGrip` and reveal `wingTuck`), and `v1.11.0`'s wide massif reveal and close roar shots — while keeping the early blizzard onset before the cut and mountain-safe uncoil cameras.
+- **Head-ram pickup (Arius boarding):** replaced Arius's 9-tick cross-colonnade warp with a dedicated, unobstructed pickup shot over the open temple rotunda: Arius stands ready on the altar dais, launches with a frost wind-step burst and high parabolic arc cleanly over the northwest cornice, tucks into his seated pose on descent, and lands smoothly between Solvane's horns facing along her flight path.
+
 ### New in 1.15.4
 
 - **Solvane's reveal (1.11.0 style):** restored the 1.11.0 reveal framing (`outside` flank glide, crystal crest from diagonally above, wide cloud-break pullback, close roar) with Solvane's natural white dragon silhouette (removed the artificial navy-blue shade tint), early blizzard onset before the cut, and mountain-safe cameras.

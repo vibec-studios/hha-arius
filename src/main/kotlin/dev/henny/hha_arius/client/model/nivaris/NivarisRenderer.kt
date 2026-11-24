@@ -76,12 +76,7 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
         state.resonance = entity.resonance
         state.mode = entity.mode
         state.wingTuck = entity.wingTuckAt(tickDelta)
-        val release = (entity.uncoilAt(tickDelta) * EntrancePath.LENGTH / 20.0).toFloat().coerceIn(0f, 1f)
-        state.spireGrip = when (state.mode) {
-            NivarisMode.COIL -> 1f
-            NivarisMode.UNCOIL -> 1f - release * release * (3f - 2f * release)
-            else -> 0f
-        }
+        state.spireGrip = 0f
         state.shade = entity.shadeAt(tickDelta)
         // Flug-Überblendung: etwa 10 Ticks von Boden zu Luft und zurück.
         val now = entity.age + tickDelta

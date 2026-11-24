@@ -717,7 +717,7 @@ class NivarisBody(private val model: NivarisModel) {
                 }
                 NivarisModeC.COIL, NivarisModeC.UNCOIL -> {
                     lastE = null
-                    val target = if (mode == NivarisModeC.UNCOIL) 1f else MathHelper.clamp((p[NivarisModel.UP] - 1.3f) / 2.5f, 0f, 1f)
+                    val target = if (mode == NivarisModeC.UNCOIL) 1f else MathHelper.clamp((p[NivarisModel.UP] - 1.3f) / 3.8f, 0f, 1f)
                     raise = if (raise < 0f) target else approach(raise, target, dt / 45f)
                     val r = smooth(raise)
                     val poly = Poly()
@@ -730,21 +730,13 @@ class NivarisBody(private val model: NivarisModel) {
                             d -= 0.5
                         }
                     }
-                    val neckLength = coilPoly(poly, o, r.toDouble(), now)
-                    val release = smooth((u / 20.0).toFloat().coerceIn(0f, 1f))
-                    val neckSpacing = MathHelper.lerp(release.toDouble(), neckLength / NECK, NivarisShape.SEGMENT)
-                    // Keep the shoulders on the coil while the head lifts. The added neck length
-                    // pays back into the flight rail as the claws open.
-                    sample(poly, pts, ups, 0, NivarisShape.SEGMENT, neckSpacing = neckSpacing)
+                    coilPoly(poly, o, r.toDouble(), now)
+                    sample(poly, pts, ups, 0, 0.0)
                     headFwd = if (mode == NivarisModeC.UNCOIL && u > 0.5) {
-                        EntrancePathC.tangent(u).add(0.0, -0.06, 0.0).normalize()
+                        EntrancePathC.tangent(u).add(0.0, -0.12, 0.0).normalize()
                     } else {
-                        // Kopf folgt knickfrei der Halsrichtung und blickt über die Arena im Norden.
-                        val neckDir = pts[0].subtract(pts[1]).normalizeOr(Vec(0.0, 0.0, -1.0))
-                        // Aufgerichtet (Brüllen über dem Gipfel) zählt fast nur der Blick über die Arena: Der steil aufsteigende Hals
-                        // kippte den Kopf sonst weit in den Nacken.
-                        val arenaLook = yawPitch(Math.PI.toFloat() + p[NivarisModel.YAW], (p[NivarisModel.PITCH] * 0.55f + 0.18f * (1f - r)).coerceIn(-0.45f, 0.28f))
-                        neckDir.lerp(arenaLook, 0.65 + 0.3 * r).normalizeOr(arenaLook)
+                        // Exakte 1.11.0-Ausrichtung: Blick nach Norden auf das Plateau, Neigung aus der Pose.
+                        yawPitch(Math.PI.toFloat() + p[NivarisModel.YAW], p[NivarisModel.PITCH] + 0.15f * (1f - r))
                     }
                     smYaw = s.bodyYaw
                     for (i in 0 until POINTS) air[i] = if (mode == NivarisModeC.UNCOIL && i * NivarisShape.SEGMENT < u) {
@@ -756,8 +748,8 @@ class NivarisBody(private val model: NivarisModel) {
         }
         hadCarryFrame = carry != null
 
-        // Schräglage in Kurven (Flug) und Rückenseite am Hals nach hinten; an der Nadel bleibt die radiale Außenrichtung sauber erhalten.
-        val onSpire = mode == NivarisModeC.COIL || mode == NivarisModeC.RETURN_COIL
+        // Schräglage in Kurven (Flug) und Rückenseite am Hals nach hinten; nur RETURN_COIL klammert flach an der Nadel.
+        val onSpire = mode == NivarisModeC.RETURN_COIL
         for (i in 0 until POINTS) {
             var up = ups[i]
             if (!onSpire) {
@@ -845,25 +837,30 @@ class NivarisBody(private val model: NivarisModel) {
             }
         }
         updateFrames()
-        for (pass in 0..2) {
-            val need = contacts(terrain, s, pts)
-            val peak = need.max()
-            if (pass == 0) {
-                for (i in lift.indices) need[i] = maxOf(need[i], lift[i] - LIFT_DOWN * dt)
+        if (mode != NivarisModeC.COIL && mode != NivarisModeC.RETURN_COIL) {
+            for (pass in 0..2) {
+                val need = contacts(terrain, s, pts)
+                val peak = need.max()
+                if (pass == 0) {
+                    for (i in lift.indices) need[i] = maxOf(need[i], lift[i] - LIFT_DOWN * dt)
+                }
+                if (need.max() < 0.001) {
+                    if (pass == 0) lift.fill(0.0)
+                    break
+                }
+                for (i in 1 until POINTS) need[i] = max(need[i], need[i - 1] - LIFT_SLOPE)
+                for (i in POINTS - 2 downTo 0) need[i] = max(need[i], need[i + 1] - LIFT_SLOPE)
+                for (i in pts.indices) {
+                    // A common final residual preserves the measured orientations.
+                    val dy = if (pass == 2) peak else need[i]
+                    pts[i] = pts[i].add(0.0, dy, 0.0)
+                    if (pass == 0) lift[i] = dy else lift[i] += dy
+                }
+                if (pass < 2) updateFrames()
             }
-            if (need.max() < 0.001) {
-                if (pass == 0) lift.fill(0.0)
-                break
-            }
-            for (i in 1 until POINTS) need[i] = max(need[i], need[i - 1] - LIFT_SLOPE)
-            for (i in POINTS - 2 downTo 0) need[i] = max(need[i], need[i + 1] - LIFT_SLOPE)
-            for (i in pts.indices) {
-                // A common final residual preserves the measured orientations.
-                val dy = if (pass == 2) peak else need[i]
-                pts[i] = pts[i].add(0.0, dy, 0.0)
-                if (pass == 0) lift[i] = dy else lift[i] += dy
-            }
-            if (pass < 2) updateFrames()
+        } else {
+            lift.fill(0.0)
+            s.legFolds.fill(0f)
         }
         if (carry != null) dev.henny.hha_arius.client.fx.RideClient.recordCarrySurface(carry.first, pts)
         last = pts
@@ -1384,35 +1381,23 @@ class NivarisBody(private val model: NivarisModel) {
         while (trail.size > keep) trail.removeLast()
     }
 
-    /** Hals vom Kopfgelenk (ruhend → aufgerichtet nach [raise]) knickfrei zur Schulter der Nadel-Helix, dann die Helix hinab. */
-    private fun coilPoly(poly: Poly, o: Vec, raise: Double, now: Float): Double {
-        val spine = EntrancePathC.coilSpine()
-        val h = o.add(EntrancePathC.HEAD_REST.lerp(EntrancePathC.HEAD_RAISED, raise)).add(0.0, kotlin.math.sin(now * 0.05) * 0.18 * (1.0 - raise), 0.0)
-        val c1 = o.add(spine[0])
-        val c2 = o.add(spine[minOf(6, spine.lastIndex)])
-        // Rückwärts-Tangente an der Schulter (vom Hals die Helix hinab), so schließt der Hals ohne Haarnadel an.
-        val tBack = c2.subtract(c1).normalizeOr(Vec(0.0, -0.35, 0.94))
+    /** Hals vom Kopfgelenk (ruhend → aufgerichtet nach [raise]) zur Spitze der Helix, dann die Helix hinab (exakt 1.11.0). */
+    private fun coilPoly(poly: Poly, o: Vec, raise: Double, now: Float) {
+        val axis = o.add(ArenaLayout.SPIRE.x + 0.5, 0.0, ArenaLayout.SPIRE.z + 0.5)
+        val h = o.add(EntrancePathC.HEAD_REST.lerp(EntrancePathC.HEAD_RAISED, raise)).add(0.0, kotlin.math.sin(now * 0.05) * 0.25, 0.0)
+        val c1 = o.add(EntrancePathC.coil(1.0))
+        val t1 = c1.subtract(o.add(EntrancePathC.coil(0.995))).normalize()
         val d = h.distanceTo(c1).coerceAtLeast(2.0)
-        val headBack = Vec(0.0, -0.22, 1.0).normalize().lerp(EntrancePathC.tangent(0.0).negate(), raise).normalize()
-        val shoulderOut = EntrancePathC.coilOutward(spine[0])
-        val headUp = Vec(-0.25, 0.85, 0.46).normalize().lerp(Vec(0.0, 0.92, 0.39).normalize(), raise).normalize()
-        val steps = 24
-        var neckLength = 0.0
-        var previous = h
-        for (k in 0..steps) {
-            val t = k / steps.toDouble()
-            val m = 1.0 - t
-            val p1 = h.add(headBack.multiply(0.36 * d))
-            val p2 = c1.subtract(tBack.multiply(0.36 * d))
-            val q = h.multiply(m * m * m).add(p1.multiply(3 * m * m * t)).add(p2.multiply(3 * m * t * t)).add(c1.multiply(t * t * t))
-            poly.add(q, headUp.lerp(shoulderOut, t * t * (3.0 - 2.0 * t)).normalizeOr(UP_V))
-            neckLength += previous.distanceTo(q)
-            previous = q
+        val neckUp = Vec(0.0, 1.0, 0.6).normalize()
+        bezier(poly, h, h.add(0.0, -0.45 * d, 0.12 * d), c1.add(t1.multiply(0.4 * d)), c1, neckUp, 14)
+        var sCoil = 1.0
+        while (sCoil >= 0.0) {
+            val q = o.add(EntrancePathC.coil(sCoil))
+            val radial = Vec(q.x - axis.x, 0.0, q.z - axis.z).normalizeOr(UP_V)
+            val pos = q.add(radial.multiply(0.15 * kotlin.math.sin(now * 0.05 + sCoil * 9.0)))
+            poly.add(pos, radial.multiply(0.9).add(0.0, 0.45, 0.0).normalize())
+            sCoil -= 0.002
         }
-        for (pt in spine) {
-            poly.add(o.add(pt), EntrancePathC.coilOutward(pt))
-        }
-        return neckLength
     }
 
     private fun polyLength(poly: Poly): Double {

@@ -61,11 +61,6 @@ fun entrance(f: EirholmFight): Script = script {
 object EntrancePath {
     private const val DESIGN_SPIRE_Z = 150.0
     private val AXIS = Vec3d(ArenaLayout.SPIRE.x + 0.5, 0.0, ArenaLayout.SPIRE.z + 0.5)
-    private const val COIL_TOP = 211.0
-    private const val COIL_DESCENT_PER_TURN = 11.0
-    private const val COIL_STEPS_PER_TURN = 240
-    /** Startwinkel an der Westflanke der Nadel: die Vorwärts-Tangente zeigt direkt nach Norden (−z) und leicht aufwärts. */
-    private const val COIL_START = -PI / 2.0
 
     fun near(x: Double, y: Double, z: Double): Vec3d {
         val k = ((z - 20.0) / 72.0).coerceIn(0.0, 1.0)
@@ -73,15 +68,15 @@ object EntrancePath {
         return Vec3d(x, y + (ArenaLayout.SPIRE_TOP - 185.0) * k, z + (ArenaLayout.SPIRE.z - DESIGN_SPIRE_Z) * k)
     }
 
-    /** Kopfgelenk in der Windung, aufgerichtet über dem Gipfel, Blick nach Norden zur Arena. */
-    val HEAD_RAISED: Vec3d = Vec3d(AXIS.x - 0.2, 221.8, AXIS.z - 7.8)
+    /** Kopfgelenk in der Windung, aufgerichtet über dem Gipfel (exakte 1.11.0-Lage). */
+    val HEAD_RAISED: Vec3d = near(0.5, 192.0, 146.5)
 
-    /** Kopfgelenk in der Windung, ruhend vor der Schulter auf der Westflanke (fließt knickfrei aus dem Hals). */
-    val HEAD_REST: Vec3d = Vec3d(AXIS.x - 1.6, 214.2, AXIS.z - 6.8)
+    /** Kopfgelenk in der Windung, ruhend auf der obersten Windung (exakte 1.11.0-Lage). */
+    val HEAD_REST: Vec3d = near(3.5, 171.0, 144.0)
 
     private val WAYPOINTS = listOf(
         HEAD_RAISED,
-        Vec3d(-6.0, 223.0, 222.0),     // sicher über der Gipfelkrone (y <= 206)
+        Vec3d(-6.0, 226.0, 222.0),     // sicher über der Gipfelkrone (y <= 206)
         Vec3d(-22.0, 206.0, 196.0),    // weit über Nordwestflanke des Massivs (auch mit offenem Schnitt)
         Vec3d(-34.0, 162.0, 164.0),    // über dem Hang, westlich der Kluft
         Vec3d(-38.0, 114.0, 126.0),    // über der Ritt-Route und ihren Bögen/Nadeln
@@ -94,68 +89,50 @@ object EntrancePath {
         Vec3d(0.5, 4.4, 5.5),          // nahtlos vor der Landung bei (0.5, 0, 2.0)
     )
 
-    private fun spireSurface(angle: Double, y: Double): Double {
-        var best = 0.0
-        for (da in doubleArrayOf(-0.07, 0.0, 0.07)) {
-            val a = angle + da
-            val dx = sin(a)
-            val dz = cos(a)
-            var r = 20.0
-            while (r > best) {
-                val qx = AXIS.x + dx * r
-                val qz = AXIS.z + dz * r
-                val top = runCatching { dev.henny.hha_arius.arena.FarPlan.spireTop(kotlin.math.floor(qx).toInt(), kotlin.math.floor(qz).toInt()) }.getOrDefault(Int.MIN_VALUE)
-                if (top + 1 >= y - 0.8) { best = r; break }
-                r -= 0.125
-            }
-        }
-        return best
-    }
-
     /**
-     * Enge, am echten Eishorn anliegende Helix (Index 0 = Schulter oben bei s = 1, letzter Punkt = Schwanz unten bei s = 0).
-     * Tastet wie [ReturnCoil] direkt [dev.henny.hha_arius.arena.FarPlan.spireTop] ab, damit der Bauch bündig am Eis liegt
-     * und die Klauen die Nadel greifen — ob der Berg gespalten ist oder nicht.
+     * Radius, den die Windung je Höhe mindestens braucht (exakte 1.11.0-Formel): einmal aus [dev.henny.hha_arius.arena.FarPlan.top]
+     * abgetastet und über die Höhe geglättet, damit die 1½ weiten Windungen immer klar außen an der Nadel liegen.
      */
-    private val coilPoints: List<Vec3d> by lazy {
-        val minY = dev.henny.hha_arius.arena.FarPlan.SHOULDER_Y + 3.8
-        val lastStep = ((COIL_TOP - minY) / COIL_DESCENT_PER_TURN * COIL_STEPS_PER_TURN).toInt().coerceAtLeast(COIL_STEPS_PER_TURN)
-        val angles = DoubleArray(lastStep + 1) { COIL_START + 2.0 * PI * it / COIL_STEPS_PER_TURN }
-        val stepY = COIL_DESCENT_PER_TURN / COIL_STEPS_PER_TURN
-        val radii = DoubleArray(angles.size) { i -> spireSurface(angles[i], COIL_TOP - stepY * i) }
-        fun onSpire(i: Int, distance: Double): Vec3d {
-            val span = (i - 8).coerceAtLeast(0)..(i + 8).coerceAtMost(angles.lastIndex)
-            val rim = max(span.maxOf { radii[it] }, radii[i])
-            val segment = (distance / NivarisShape.SEGMENT).toInt().coerceAtMost(NivarisShape.SEGMENTS - 1)
-            // The lower coils cross stepped ice columns as they unwrap. Leave room for
-            // the chords between samples there while keeping the shoulders close enough to grip.
-            val lowerCoil = ((stepY * i - 10.0) / 10.0).coerceIn(0.0, 1.0)
-            val clearance = 1.2 * NivarisShape.taper(segment) + 0.90 + 0.75 * lowerCoil
-            return Vec3d(AXIS.x + sin(angles[i]) * (rim + clearance), COIL_TOP - stepY * i, AXIS.z + cos(angles[i]) * (rim + clearance))
+    private val clearRadius: DoubleArray by lazy {
+        val ax = AXIS.x
+        val az = AXIS.z
+        val raw = DoubleArray(COIL_Y_SPAN) { k ->
+            val y = COIL_Y0 + k
+            var best = 0.0
+            for (a in 0 until 16) {
+                val ang = a / 16.0 * 2.0 * PI
+                var r = 64.0
+                while (r > 2.0) {
+                    val top = runCatching { dev.henny.hha_arius.arena.FarPlan.top(kotlin.math.floor(ax + sin(ang) * r).toInt(), kotlin.math.floor(az + cos(ang) * r).toInt()) }.getOrDefault(-1)
+                    if (top >= y - 2) break
+                    r -= 1.0
+                }
+                if (r > 2.0) best = max(best, r)
+            }
+            if (best > 0.0) best + 3.2 else 0.0
         }
-        val out = ArrayList<Vec3d>(angles.size)
-        var arc = 7.5
-        out.add(onSpire(0, arc))
-        val required = NivarisShape.SEGMENTS * NivarisShape.SEGMENT + 10.0
-        for (i in 1..angles.lastIndex) {
-            val pt = onSpire(i, arc)
-            arc += out.last().distanceTo(pt)
-            out.add(pt)
-            if (arc >= required) break
+        DoubleArray(COIL_Y_SPAN) { k ->
+            var m = 0.0
+            for (j in maxOf(0, k - 3)..minOf(COIL_Y_SPAN - 1, k + 3)) m = max(m, raw[j])
+            m
         }
-        out
     }
 
-    /** Punkt der Windung bei [s] ∈ [0, 1] (0 = Schwanz unten, 1 = Schulter oben), relativ zum Ursprung. */
+    private const val COIL_Y0 = 170
+    private const val COIL_Y_SPAN = 50
+
+    /** Punkt der Windung bei [s] ∈ [0, 1] (0 = Schwanz unten, 1 = Schulter oben), wie in 1.11.0 über [ArenaLayout.coil]. */
     fun coil(s: Double): Vec3d {
-        val pts = coilPoints
-        val k = ((1.0 - s.coerceIn(0.0, 1.0)) * (pts.size - 1))
-        val i = k.toInt().coerceIn(0, pts.size - 2)
-        return pts[i].lerp(pts[i + 1], k - i)
+        val b = ArenaLayout.coil(s)
+        val ax = AXIS.x
+        val az = AXIS.z
+        val r0 = sqrt((b.x - ax) * (b.x - ax) + (b.z - az) * (b.z - az)).coerceAtLeast(1e-3)
+        val yk = (b.y - COIL_Y0).coerceIn(0.0, COIL_Y_SPAN - 1.001)
+        val i = yk.toInt()
+        val need = clearRadius[i] + (clearRadius[i + 1] - clearRadius[i]) * (yk - i)
+        val r = max(r0, need)
+        return Vec3d(ax + (b.x - ax) / r0 * r, b.y, az + (b.z - az) / r0 * r)
     }
-
-    /** Alle Stützpunkte der Windung von Schulter bis Schwanz (für [dev.henny.hha_arius.client.model.nivaris.NivarisBody]). */
-    fun coilSpine(): List<Vec3d> = coilPoints
 
     /** Waagerechte Außenrichtung weg von der Nadelachse (Rücken nach außen, Bauch zur Nadel). */
     fun coilOutward(p: Vec3d): Vec3d {
@@ -482,7 +459,6 @@ internal object Entrance {
         // nur, wenn ihr Abschnitt in Sichtweite der Kamera liegt.
         var proxy = if (!Cine.muted) arrival else f.abs(EntrancePath.PROXY)
         val d = coil(f, proxy) ?: return@script
-        d.wingTuck = 1f
         d.eyeGlow = 8
         d.fadeIn(FORM_TICKS)
         wait(STORM_TICKS - (RELEASE_ARRIVAL - RELEASE_TICKS))
@@ -506,21 +482,20 @@ internal object Entrance {
         fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.62), 8f, 60)
         wait(60)
 
-        // 5) 1.11.0-Totale: Die Wolken reißen auf, weite Einstellung über Gipfel, Nadel und Windungen; der Kopf hebt sich.
-        //    Abstand (~85..100 Blöcke) bleibt auch bei 8 Chunks Sichtweite sicher im geladenen Bereich.
+        // 5) Exakte 1.11.0-Totale: Die Wolken reißen auf, weite Einstellung über Massiv, Nadel und Windungen; der Kopf hebt sich.
         f.atmos(AtmosMode.REVEAL, 36)
-        val revealFrom = head.add(-38.0, -40.0, -72.0)
-        val revealTo = head.add(-48.0, -30.0, -82.0)
-        scene.line(revealFrom, revealTo, head.add(0.0, -26.0, 0.0), head.add(0.0, -18.0, 0.0), 110, 62.0, 66.0)
-        sound(f, "glacier.crack", arrival, 3f, 0.5f)
+        val revealFrom = spire(f, -70.0, 120.0, -150.0)
+        val revealTo = spire(f, -84.0, 136.0, -162.0)
+        scene.line(revealFrom, revealTo, spire(f, 0.0, 128.0, 0.0), spire(f, 0.0, 150.0, 0.0), 110, 58.0, 54.0)
+        sound(f, "glacier.crack", near(f, -10.0, 40.0, 80.0), 3f, 0.5f)
         wait(30)
         d.play(NivarisPose.IDLE)
         d.eyeGlow = 40
         sound(f, "nivaris.inhale", revealTo, 2f, 0.55f)
         wait(80)
 
-        // 6) Nah am Kopf über dem Gipfel (gleiche Nordwest-Achse wie Einstellung 5): Brüllen, Augen glühen, Name (60 Ticks).
-        scene.line(head.add(-15.0, -5.5, -15.5), head.add(-11.0, -2.5, -11.5), head.add(0.0, -1.5, -2.0), head.add(0.0, 0.5, -1.5), 60, 62.0, 54.0)
+        // 6) Exakte 1.11.0-Nahaufnahme am Kopf über dem Gipfel: Brüllen, Augen glühen, Name (60 Ticks).
+        scene.line(near(f, -15.0, 181.0, 127.0), near(f, -11.0, 184.5, 131.0), head.add(0.0, -1.5, -2.0), head.add(0.0, 0.5, -1.5), 60, 62.0, 54.0)
         d.play(NivarisPose.ROAR)
         val windup = AriusTimings.NIVARIS_WINDUP[NivarisPose.ROAR]
         wait(windup)
