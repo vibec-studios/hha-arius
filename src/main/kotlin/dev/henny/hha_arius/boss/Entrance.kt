@@ -71,8 +71,8 @@ object EntrancePath {
     /** Kopfgelenk in der Windung, aufgerichtet über dem Gipfel (stolzer S-Bogen statt gestrecktem Senkrechthals). */
     val HEAD_RAISED: Vec3d = Vec3d(AXIS.x - 1.5, 221.5, AXIS.z - 10.5)
 
-    /** Kopfgelenk in der Windung, ruhend entlang der oberen Nordost-Schulter (gleiche Rückenseite wie aufgerichtet). */
-    val HEAD_REST: Vec3d = Vec3d(AXIS.x + 6.5, 212.5, AXIS.z - 10.5)
+    /** Kopfgelenk in der Windung, ruhend eng an der oberen Nordost-Schulter (Vorderläufe & Brust dicht am Eis). */
+    val HEAD_REST: Vec3d = Vec3d(AXIS.x + 3.5, 211.0, AXIS.z - 6.0)
 
     private val WAYPOINTS = listOf(
         HEAD_RAISED,
@@ -80,11 +80,11 @@ object EntrancePath {
         Vec3d(-42.0, 204.0, 194.0),    // steiler Sturz hinaus in den offenen Westhimmel (weit abseits der Spalte)
         Vec3d(-84.0, 148.0, 156.0),    // weiter, schneller Sturzflug hoch über das offene Westtal
         Vec3d(-96.0, 102.0, 112.0),    // weite Außenkurve weit westlich & über der Eisnadel (-65, 85, 92)
-        Vec3d(-76.0, 56.0, 72.0),      // kräftiges Eindrehen zurück nach Osten im offenen Tal nördlich der Nadel
-        Vec3d(-32.0, 24.0, 46.0),      // dynamischer Tiefflug durch die breite obeliskfreie Südwest-Lücke
-        Vec3d(-10.0, 10.0, 22.0),      // flacher Bogen über das Plateau Richtung Spieler
-        Vec3d(-2.0, 6.0, 12.0),        // Eindrehen auf die Nordachse
-        Vec3d(0.5, 4.4, 5.5),          // nahtlos vor der Landung bei (0.5, 0, 2.0)
+        Vec3d(-76.0, 58.0, 72.0),      // kräftiges Eindrehen zurück nach Osten im offenen Tal nördlich der Nadel
+        Vec3d(-48.0, 32.0, 38.0),      // hoher Einflug weit über den flacheren West-Südwest-Rand (kein Mauer-Wippen!)
+        Vec3d(-24.0, 22.0, 24.0),      // frei über dem inneren Plateau, Schwanz bleibt >12 Blöcke über jeder Mauer
+        Vec3d(-6.0, 11.0, 14.0),       // geschmeidiger Sinkflug mitten über dem freien Schneefeld
+        Vec3d(0.5, 4.8, 5.5),          // nahtlos vor der Landung bei (0.5, 0, 2.0)
     )
 
     private const val COIL_SAMPLES = 360
@@ -452,20 +452,23 @@ internal object Entrance {
 
         val axis = f.abs(Vec3d(ArenaLayout.SPIRE.x + 0.5, 0.0, ArenaLayout.SPIRE.z + 0.5))
         val head = f.abs(EntrancePath.HEAD_RAISED)
+        fun outside(s: Double, out: Double, up: Double): Vec3d {
+            val c = coilAt(f, s)
+            val radial = EntrancePath.coilOutward(EntrancePath.coil(s))
+            return c.add(radial.multiply(out)).add(0.0, up, 0.0)
+        }
 
-        // 2) Sturm-Silhouette an der Nadel (70 Ticks): BLIZZARD steht bereits aus release(stormAhead = true).
-        //    Im idealen Nebelbereich (11..17 Blöcke vor Kopf & oberer Windung, über der Gipfelkrone), sodass Solvanes
-        //    dunkle Drachen-Silhouette klar im wirbelnden Schneesturm entsteht und ihre Augen kurz aufglimmen.
-        val stormFrom = f.abs(Vec3d(EntrancePath.AXIS.x + 17.0, 212.0, EntrancePath.AXIS.z - 22.0))
-        val stormTo = f.abs(Vec3d(EntrancePath.AXIS.x + 13.5, 214.0, EntrancePath.AXIS.z - 17.5))
-        val stormLookFrom = f.abs(Vec3d(EntrancePath.AXIS.x + 3.0, 206.0, EntrancePath.AXIS.z - 5.0))
-        val stormLookTo = arrival.add(-1.5, -2.0, 1.5)
-        scene.line(stormFrom, stormTo, stormLookFrom, stormLookTo, STORM_TICKS, 66.0, 58.0)
+        // 2) Sturm-Silhouette an der unteren/mittleren Windung (70 Ticks, noch OHNE Kopf!):
+        //    Im 12..13-Block-Nebelbereich des Blizzards zeichnet sich erst nur die dunkle gewundene Drachenform
+        //    mit Rückenkamm an der Eisnadel ab — Aufbau von Spannung wie früher.
+        val stormFrom = outside(0.56, 12.5, 1.5)
+        val stormTo = outside(0.72, 12.5, 3.5)
+        scene.rawLine(stormFrom, stormTo, coilAt(f, 0.58), coilAt(f, 0.74), STORM_TICKS, 64.0, 58.0)
         f.atmos(AtmosMode.BLIZZARD, 10)
         sound(f, "seal.blizzard", stormTo, 2.5f, 0.7f)
         wait(RELEASE_ARRIVAL - RELEASE_TICKS)
         sound(f, "nivaris.inhale", arrival, 2f, 0.45f)
-        fxAll(f, FxKind.BLIZZARD, arrival, 14f, 60)
+        fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.65), 14f, 60)
         // Die Entity steht in dieser Einstellung an der Nadel, nicht beim Plateau-Stellvertreter: Der Client zeichnet sie
         // nur, wenn ihr Abschnitt in Sichtweite der Kamera liegt.
         var proxy = if (!Cine.muted) arrival else f.abs(EntrancePath.PROXY)
@@ -473,37 +476,41 @@ internal object Entrance {
         d.shade = 1f
         d.eyeGlow = 0
         d.fadeIn(36)
-        val stormLeft = STORM_TICKS - (RELEASE_ARRIVAL - RELEASE_TICKS)
-        val glintAt = (stormLeft - 20).coerceAtLeast(1)
-        wait(glintAt)
-        d.eyeGlow = 35
-        wait(stormLeft - glintAt)
+        wait(STORM_TICKS - (RELEASE_ARRIVAL - RELEASE_TICKS))
 
-        // 3) Der Sturm lichtet sich: Farbe kehrt sofort zurück; freie Fahrt an der Windung entlang (sicher innerhalb der Krone).
-        fun outside(s: Double, out: Double, up: Double): Vec3d {
-            val c = coilAt(f, s)
-            val radial = EntrancePath.coilOutward(EntrancePath.coil(s))
-            return c.add(radial.multiply(out)).add(0.0, up, 0.0)
-        }
+        // 3) Der Sturm lichtet sich: ihre perlweißen Schuppen & Kristallkämme leuchten auf, eine einzige Fahrt hinauf zur Schulter (52 Ticks).
         f.atmos(AtmosMode.SNOW, 22)
         d.shade = 0f
-        scene.line(outside(0.62, 15.0, 3.0), outside(0.74, 15.0, 5.0), coilAt(f, 0.64), coilAt(f, 0.76), 56, 56.0, 50.0)
-        sound(f, "seal.blizzard", coilAt(f, 0.68), 3f, 0.55f)
-        fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.68), 9f, 56)
-        d.eyeGlow = 18
-        wait(56)
-
-        // 4) Kristallkamm & Schultern von schräg oben: zeigt Windung und Klauen bündig am blauen Eis der Nadel (52 Ticks).
-        scene.line(outside(0.82, 13.0, 4.5), outside(0.92, 12.5, 6.0), coilAt(f, 0.84), coilAt(f, 0.94), 52, 54.0, 48.0)
-        sound(f, "nivaris.wing", coilAt(f, 0.87), 2f, 0.45f)
-        fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.87), 8f, 52)
+        scene.rawLine(outside(0.74, 14.5, 4.0), outside(0.92, 13.5, 6.5), coilAt(f, 0.76), coilAt(f, 0.94), 52, 56.0, 50.0)
+        sound(f, "seal.blizzard", coilAt(f, 0.82), 3f, 0.55f)
+        fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.82), 9f, 52)
+        d.eyeGlow = 20
         wait(52)
 
-        // 5) Weite Totale über Massiv, Nadel und Windungen (hoch und sicher frei über allen Hängen); der Kopf hebt sich.
+        // 4) Nahaufnahme der Klauen am massiven blauen Eis der Nadel (44 Ticks, an HIND_GLIED s ≈ 0,68 — ohne Flügelmembran im Bild).
+        val clawAnchor = coilAt(f, 0.68)
+        val clawOut = EntrancePath.coilOutward(EntrancePath.coil(0.68))
+        val clawTan = coilAt(f, 0.71).subtract(coilAt(f, 0.65)).let {
+            val flat = Vec3d(it.x, 0.0, it.z)
+            if (flat.lengthSquared() < 1e-6) Vec3d(0.0, 0.0, -1.0) else flat.normalize()
+        }
+        val clawGrip = clawAnchor.subtract(clawOut.multiply(1.3)).add(0.0, -0.7, 0.0)
+        scene.rawLine(
+            clawAnchor.add(clawOut.multiply(6.2)).add(clawTan.multiply(4.2)).add(0.0, -2.6, 0.0),
+            clawAnchor.add(clawOut.multiply(5.4)).add(clawTan.multiply(3.0)).add(0.0, -2.0, 0.0),
+            clawGrip.add(0.0, -0.2, 0.0), clawGrip, 44, 54.0, 50.0,
+        )
+        sound(f, "glacier.crack", clawGrip, 1.8f, 1.35f)
+        wait(44)
+
+        // 5) Weite Totale über Massiv, Nadel und Windungen: Blickpunkt & Strahl liegen vollständig über der Gipfelschulter
+        //    und Krone (nie im Berg oder Bergspalt, bei keiner Sichtweite). Erst hier hebt sich ihr Kopf erstmals ins Bild.
         f.atmos(AtmosMode.REVEAL, 34)
-        val revealFrom = spire(f, -68.0, 172.0, -148.0)
-        val revealTo = spire(f, -80.0, 178.0, -158.0)
-        scene.line(revealFrom, revealTo, spire(f, 0.0, 136.0, 0.0), spire(f, 0.0, 158.0, 0.0), 104, 58.0, 54.0)
+        val revealFrom = spire(f, -58.0, 182.0, -120.0)
+        val revealTo = spire(f, -68.0, 188.0, -130.0)
+        val revealLookFrom = axis.add(-4.0, 200.0, -4.0)
+        val revealLookTo = axis.add(-2.0, 212.0, -4.0)
+        scene.rawLine(revealFrom, revealTo, revealLookFrom, revealLookTo, 104, 58.0, 54.0)
         sound(f, "glacier.crack", near(f, -10.0, 40.0, 80.0), 3f, 0.5f)
         wait(28)
         d.play(NivarisPose.IDLE)
@@ -512,7 +519,7 @@ internal object Entrance {
         wait(76)
 
         // 6) Nah am Kopf über dem Gipfel (hoch über der Krone): Brüllen, Augen glühen, Name (60 Ticks).
-        scene.line(head.add(-13.0, -2.5, -14.0), head.add(-10.0, -0.5, -11.0), head.add(0.0, -1.2, -1.0), head.add(0.0, 0.4, -1.0), 60, 58.0, 50.0)
+        scene.rawLine(head.add(-13.0, -2.5, -14.0), head.add(-10.0, -0.5, -11.0), head.add(0.0, -1.2, -1.0), head.add(0.0, 0.4, -1.0), 60, 58.0, 50.0)
         d.play(NivarisPose.ROAR)
         val windup = AriusTimings.NIVARIS_WINDUP[NivarisPose.ROAR]
         wait(windup)

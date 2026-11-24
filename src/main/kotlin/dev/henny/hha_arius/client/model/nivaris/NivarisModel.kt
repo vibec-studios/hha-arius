@@ -134,9 +134,9 @@ internal object NivarisLegs {
         val swipe = if (fore && right && !cling) state.p[NivarisModel.SWIPE] else 0f
         val rot = Quaternionf().rotationZYX(-0.6f * swipe, 0.3f * swipe, upper(base - 0.9f * swipe, fold))
         if (state.mode == NivarisModeC.COIL) {
-            // Reach gently inward onto the blue-ice spire so paws visibly grip the ice instead of dangling in air.
+            // Reach firmly inward onto the blue-ice spire so paws visibly clamp onto the ice instead of dangling in air.
             val side = if (right) 1f else -1f
-            rot.slerp(Quaternionf().rotationZYX(side * (if (fore) 0.34f else 0.28f), side * 0.12f, 0.22f), 0.85f)
+            rot.slerp(Quaternionf().rotationZYX(side * (if (fore) 0.44f else 0.42f), side * 0.14f, 0.18f), 0.9f)
         }
         return rot
     }

@@ -91,6 +91,13 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.15.8
+
+- **Solvane's reveal (classic spire buildup, Bergspalt-free wide shot & wall-free arena approach):**
+  - **Classic spire shot order:** Shot 2 now begins in the blizzard on Solvane's coiled body silhouette (without spoiling her head early), Shot 3 sweeps once up her gleaming crystal crest as the storm clears, Shot 4 cuts to a dramatic low-angle close-up pressed flush against the massive blue-ice spire, and Shot 5 reveals her head rising and wings spreading above the summit for the first time.
+  - **Wide-shot mountain cleft fix:** moved Shot 5's look target and camera path completely into open air above the summit shoulder and crown pillars (`y = 200..222` instead of `y ≈ 162` inside the mountain core), preventing both server `CineSafety` and HHA's client raycast from pulling the camera into the mountain cleft at high render distances.
+  - **Smooth wall-free arena entry:** routed Solvane's descent arc over the lower west-southwest plateau rim with 12–16 blocks of clearance above the wall (`(-48, 32, 38)` → `(-24, 22, 24)`), eliminating the up-and-down body bob when crossing into the arena.
+
 ### New in 1.15.7
 
 - **Solvane's reveal (blizzard silhouette, tight ice coil, sculpted neck & spread wings):**
