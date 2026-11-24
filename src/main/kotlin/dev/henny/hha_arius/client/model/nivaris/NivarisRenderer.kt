@@ -93,7 +93,7 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
         blend[1] = now
         state.fly = blend[0]
         model.pose(state)
-        bodies.getOrPut(entity) { NivarisBody() }.update(entity, state, tickDelta)
+        bodies.getOrPut(entity) { NivarisBody(model) }.update(entity, state, tickDelta)
         dev.henny.hha_arius.client.fx.DragonHits.update(entity.id, state)
         // Schleier: je Teil Maßstab und Leuchten; die Lage geht an DragonVeil (Lichtschein, Funken, Splitter).
         val veil = entity.veilAt(tickDelta)
@@ -228,28 +228,16 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
                     limb(q, matrices, if (sgn > 0) m.wingR else m.wingL, -6f * sgn, -6f, 4f, r, girth, stretch, layer, light, overlay, color, foldAmount = memFold)
                 }
             }
-            NivarisShape.FORE_GLIED -> {
-                val fore = if (returnCling) 1.48f else p[NivarisModel.FORE]
-                val swipe = if (returnCling) 0f else p[NivarisModel.SWIPE]
-                val right = Quaternionf().rotationZYX(-0.6f * swipe, 0.3f * swipe, NivarisLegs.upper(fore - 0.9f * swipe, s.foreFold))
-                val left = Quaternionf().rotationZYX(0f, 0f, NivarisLegs.upper(fore, s.foreFold))
-                if (spireGrip > 0f) {
-                    right.slerp(Quaternionf().rotationZYX(0.48f, 0.12f, 0.28f), spireGrip)
-                    left.slerp(Quaternionf().rotationZYX(-0.48f, -0.12f, 0.28f), spireGrip)
+            NivarisShape.FORE_GLIED, NivarisShape.HIND_GLIED -> {
+                val fore = i == NivarisShape.FORE_GLIED
+                for (side in 0..1) {
+                    val right = side == 1
+                    val index = (if (fore) 0 else 2) + side
+                    val x = (if (right) -1 else 1) * (if (fore) 7f else 6f)
+                    val part = if (fore) (if (right) m.foreR else m.foreL) else (if (right) m.hindR else m.hindL)
+                    val rotation = NivarisLegs.rotation(s, fore, right, s.legFolds[index])
+                    limb(q, matrices, part, x, 3f, 8f, rotation, girth, stretch, layer, light, overlay, color)
                 }
-                limb(q, matrices, m.foreR, -7f, 3f, 8f, right, girth, stretch, layer, light, overlay, color)
-                limb(q, matrices, m.foreL, 7f, 3f, 8f, left, girth, stretch, layer, light, overlay, color)
-            }
-            NivarisShape.HIND_GLIED -> {
-                val hind = if (returnCling) 1.48f else p[NivarisModel.HIND]
-                val right = Quaternionf().rotationZYX(0f, 0f, NivarisLegs.upper(hind, s.hindFold))
-                val left = Quaternionf().rotationZYX(0f, 0f, NivarisLegs.upper(hind, s.hindFold))
-                if (spireGrip > 0f) {
-                    right.slerp(Quaternionf().rotationZYX(0.36f, 0.10f, 0.28f), spireGrip)
-                    left.slerp(Quaternionf().rotationZYX(-0.36f, -0.10f, 0.28f), spireGrip)
-                }
-                limb(q, matrices, m.hindR, -6f, 3f, 8f, right, girth, stretch, layer, light, overlay, color)
-                limb(q, matrices, m.hindL, 6f, 3f, 8f, left, girth, stretch, layer, light, overlay, color)
             }
         }
     }

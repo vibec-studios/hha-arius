@@ -28,7 +28,7 @@ import kotlin.math.sqrt
  * 1. Arius steht noch und hebt den Blick, eine Zeile. Dann hebt er Solvane in den Himmel und lässt los
  *    ([Entrance.release], Paket V5): Die Klinge löst sich in einen Strom aus weißem Licht und Eiskristallen auf, der zur
  *    Nadel zieht – Solvane *ist* der Drache. Er setzt sich ohne Schwert auf [ArenaLayout.WATCH_SEAT].
- * 2. Erst mit der Ankunft des Stroms verdichtet sich der Schneesturm, die Windungen erscheinen an der Nadel. Im Sturm: einzelne Windungen gleiten vorbei, dann der Kristallkamm von oben. Nie das Ganze.
+ * 2. Schon während des Abflugs verdichtet sich der Schneesturm, die Windungen erscheinen an der Nadel. Im Sturm: einzelne Windungen gleiten vorbei, dann der Kristallkamm von oben. Nie das Ganze.
  * 3. Die Wolken reißen auf: weite Einstellung vom Rand der Schlucht, Nadel und Körper, der Kopf hebt sich über den
  *    Gipfel. Nah am Kopf: Brüllen, die Augen glühen, Name als Titelkarte.
  * 4. Sie löst sich vom Fels ([NivarisMode.UNCOIL]): Kopf voran, der Körper gleitet Glied für Glied von der Helix in die
@@ -360,10 +360,9 @@ internal object Entrance {
         wait(14)
         // Er senkt den Arm und setzt sich.
         a.play(AriusPose.SEATED)
-        wait(10)
-        // Schneesturm-Whiteout früh aufbauen, damit er VOR Solvanes erstem Erscheinen voll steht.
-        if (stormAhead) f.atmos(AtmosMode.BLIZZARD, 22)
-        wait(RELEASE_TICKS - RELEASE_AT - 24)
+        // Der Strom hat die Hand verlassen. Der Nebel steht zehn Ticks vor dem Schnitt.
+        if (stormAhead) f.atmos(AtmosMode.BLIZZARD, 26)
+        wait(RELEASE_TICKS - RELEASE_AT - 14)
     }
 
     /**
@@ -466,22 +465,12 @@ internal object Entrance {
         val summitTop = f.abs(Vec3d(ArenaLayout.SPIRE.x - 20.0, dev.henny.hha_arius.arena.FarPlan.SHOULDER_Y + 1.0, ArenaLayout.SPIRE.z - 14.0))
         vantage.move(summitTop)
 
-        // Inszenierung wie in 1.13.0 (Crix: „die war mal richtig geil, nur der Nebel kam zu spät“): Sturm, die Kamera
-        // steigt an den Windungen die Nadel hinauf, die Wolken reißen auf, Brüllen nah am Kopf. Neu seit 1.15.2: Der
-        // Schneesturm steht schon voll, bevor die Kamera an die Nadel schneidet ([release] mit stormAhead), und der Körper
-        // entsteht erst im Weiß, als dunkle Silhouette; ihre Farbe kommt erst, wenn die Wolken aufreißen.
         val axis = f.abs(Vec3d(ArenaLayout.SPIRE.x + 0.5, 0.0, ArenaLayout.SPIRE.z + 0.5))
         val head = f.abs(EntrancePath.HEAD_RAISED)
-        fun outside(s: Double, out: Double, up: Double): Vec3d {
-            val c = EntrancePath.coil(s)
-            return f.abs(c.add(EntrancePath.coilOutward(c).multiply(out)).add(0.0, up, 0.0))
-        }
 
-        // 2) Sturm (70 Ticks): nah genug an der Nadel, dass man die Windungen durch das Weiß ahnt; langsame Fahrt heran.
-        //    Der Strom kommt an (10 Ticks), im Ankunftsblitz legt sie sich um die Nadel und entsteht Glied für Glied.
-        val storm = head.add(-14.0, -2.0, -13.0)
-        scene.rawLine(storm.add(-6.0, -1.0, -4.0), storm, arrival.add(0.0, -2.0, 0.0), head.add(0.0, -3.0, 0.0), STORM_TICKS, 70.0, 64.0)
-        f.atmos(AtmosMode.BLIZZARD, 10)
+        // Vom Rand der Schlucht in die weiße Flanke blicken. Der Kopf bleibt bis zur Totalen verborgen.
+        val storm = spire(f, -22.0, 146.0, -35.0)
+        scene.line(storm.add(-4.0, -3.0, -9.0), storm, coilAt(f, 0.24), coilAt(f, 0.54), STORM_TICKS, 70.0, 60.0)
         sound(f, "seal.blizzard", storm, 2.5f, 0.7f)
         wait(RELEASE_ARRIVAL - RELEASE_TICKS)
         sound(f, "nivaris.inhale", arrival, 2f, 0.45f)
@@ -495,32 +484,36 @@ internal object Entrance {
         d.fadeIn(FORM_TICKS)
         wait(STORM_TICKS - (RELEASE_ARRIVAL - RELEASE_TICKS))
 
-        // 3) Der Sturm lichtet sich so weit, dass man die Windung erkennt: Von unten nach oben entlang des Leibs, die
-        //    Kamera steigt mit ihm die Nadel hinauf (56 Ticks), deutlich außerhalb der Windung.
-        f.atmos(AtmosMode.SNOW, 22)
-        scene.line(outside(0.60, 24.0, 8.0), outside(0.68, 24.0, 10.0), coilAt(f, 0.62), coilAt(f, 0.72), 56, 56.0, 52.0)
-        sound(f, "seal.blizzard", coilAt(f, 0.66), 3f, 0.55f)
-        fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.66), 9f, 56)
+        // Zwei kurze Bögen um die sichtbare Außenflanke. Die Blickachse endet vor dem Fels.
+        fun detail(s: Double, radius: Double, height: Double, start: Double, end: Double, focusY: Double, fov: Double) {
+            val center = coilAt(f, s)
+            val outward = EntrancePath.coilOutward(EntrancePath.coil(s))
+            val angle = Math.toDegrees(atan2(outward.z, outward.x))
+            scene.orbit(center, radius, height, angle + start, angle + end, 60,
+                fov, fov - 6.0, lookOffset = focusY, radiusTo = radius - 1.0, heightTo = height - 1.0)
+        }
+        detail(0.76, 8.5, 1.8, 24.0, -18.0, 0.6, 52.0)
+        sound(f, "seal.blizzard", coilAt(f, 0.76), 3f, 0.55f)
+        fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.76), 9f, 60)
         d.eyeGlow = 14
-        wait(56)
+        wait(60)
 
-        // 4) Weiter oben am Kristallkamm: kontinuierlicher Aufstieg bis unter den Gipfel (52 Ticks).
-        scene.line(outside(0.76, 23.0, 9.0), outside(0.84, 22.0, 11.0), coilAt(f, 0.78), coilAt(f, 0.88), 52, 54.0, 48.0)
-        sound(f, "nivaris.wing", coilAt(f, 0.82), 2f, 0.45f)
-        fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.82), 8f, 52)
-        wait(52)
+        detail(0.62, 5.5, 5.2, -12.0, 28.0, 0.0, 48.0)
+        sound(f, "nivaris.wing", coilAt(f, 0.62), 2f, 0.45f)
+        fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.62), 8f, 60)
+        wait(60)
 
-        // 5) Die Wolken reißen auf: weite Einstellung von Nordwesten (104 Ticks) auf Nadel, Windungen und Kopf. Erst jetzt
-        //    kommt ihre Farbe (die Silhouette blendet weich aus).
+        // Erst in der zurückweichenden Totalen öffnet sich der Sturm. Die Höhe folgt dem heutigen Gipfel.
         f.atmos(AtmosMode.REVEAL, 32)
         d.shade = 0f
-        scene.line(spire(f, -68.0, 172.0, -148.0), spire(f, -80.0, 178.0, -158.0), spire(f, 0.0, 140.0, 0.0), spire(f, 0.0, 158.0, 0.0), 104, 58.0, 54.0)
+        scene.line(head.add(-34.0, -45.0, -70.0), head.add(-44.0, -34.0, -80.0),
+            head.add(0.0, -28.0, 0.0), head.add(0.0, -21.0, 0.0), 110, 64.0, 70.0)
         sound(f, "glacier.crack", arrival, 3f, 0.5f)
-        wait(28)
+        wait(30)
         d.play(NivarisPose.IDLE)
         d.eyeGlow = 40
         sound(f, "nivaris.inhale", head, 2f, 0.55f)
-        wait(76)
+        wait(80)
 
         // 6) Nah am Kopf über dem Gipfel (gleiche Nordwest-Achse wie Einstellung 5): Brüllen, Augen glühen, Name (60 Ticks).
         scene.line(head.add(-15.0, -5.5, -15.5), head.add(-11.0, -2.5, -11.5), head.add(0.0, -1.5, -2.0), head.add(0.0, 0.5, -1.5), 60, 62.0, 54.0)
@@ -548,7 +541,7 @@ internal object Entrance {
             val u = EntrancePath.distance(t.toDouble())
             return f.abs(EntrancePath.at(u).multiply(0.7).add(EntrancePath.at(u - back).multiply(0.3)))
         }
-        var plateauView = false
+        var followRoute = false
         val cut1 = EntrancePath.CUT_1
         val cut2 = EntrancePath.CUT_2
         for (t in 0..EntrancePath.TICKS) {
@@ -557,18 +550,23 @@ internal object Entrance {
                     look(0, 18.0), look(56, 18.0), 56, 63.0, 67.0)
                 56 -> scene.rawLine(axis.add(-55.0, 219.0, -63.0), axis.add(-67.0, 173.0, -78.0),
                     look(56, 18.0), look(cut1, 20.0), cut1 - 56, 67.0, 73.0)
+                cut1 -> {
+                    val midValley = f.abs(Vec3d(-42.0, 78.0, 108.0))
+                    vantage.move(midValley)
+                    proxy = midValley
+                    followRoute = true
+                }
                 cut2 -> {
                     vantage.restore()
-                    plateauView = true
                     proxy = f.abs(EntrancePath.PROXY)
                 }
             }
             if (t >= cut1) {
                 fun camera(tick: Int): Vec3d {
                     val headPoint = look(tick, 0.0)
-                    if (t < cut2) return headPoint.add(-32.0, 8.0, 9.0)
+                    if (t < cut2) return headPoint.add(-20.0, 17.0, -18.0)
                     val u = (tick - cut2).toDouble() / (EntrancePath.TICKS - cut2)
-                    return headPoint.add(-24.0, 7.0, -8.0).lerp(landCamMid, u * u)
+                    return headPoint.add(-18.0, 10.5, -13.0).lerp(landCamMid, u * u)
                 }
                 val next = minOf(t + 1, EntrancePath.TICKS)
                 scene.track(camera(t), camera(next), look(t, 8.0), look(next, 8.0), if (t < cut2) 65.0 else 60.0)
@@ -582,8 +580,9 @@ internal object Entrance {
             }
             val u = EntrancePath.distance(t.toDouble())
             d.uncoil = (u / EntrancePath.LENGTH).toFloat()
-            // Solange die Zuschauer am Gipfel stehen, bleibt die Entity am Gipfel-Proxy (nie außerhalb der Tracking-Reichweite!).
-            follow(f, d, u, proxy, allowEntityMove = plateauView)
+            // Während des Sturzflugs wandert die Entity mit dem aktuellen Blickpunkt (Gipfel -> Tal -> Plateau), damit sie
+            // in jeder Einstellung in Sicht- und Trackingweite der Kamera bleibt.
+            follow(f, d, u, proxy, allowEntityMove = followRoute, freeRange = t in cut1 until cut2)
             yield(Unit)
         }
 
@@ -656,10 +655,13 @@ internal object Entrance {
         }
     }
 
-    /** Entity während des Lösens: folgt dem Weg erst, wenn die Zuschauer wieder am Plateau sind (nie aus Trackingweite). */
-    private fun follow(f: EirholmFight, d: NivarisEntity, u: Double, proxy: Vec3d, allowEntityMove: Boolean = true) {
+    /** Entity während des Lösens: folgt dem Weg in Kamera-/Zuschauer-Reichweite (nie außerhalb der Trackingweite). */
+    private fun follow(
+        f: EirholmFight, d: NivarisEntity, u: Double, proxy: Vec3d,
+        allowEntityMove: Boolean = true, freeRange: Boolean = false,
+    ) {
         val e = EntrancePath.entityAt(u)
-        f.place(d, if (allowEntityMove && u > EntrancePath.GLIDE.fwd && EntrancePath.followable(e)) f.abs(e) else proxy)
+        f.place(d, if (allowEntityMove && u > EntrancePath.GLIDE.fwd && (freeRange || EntrancePath.followable(e))) f.abs(e) else proxy)
         val t = EntrancePath.tangent(u)
         val yaw = (Math.toDegrees(atan2(t.z, t.x)) - 90.0).toFloat()
         d.yaw = yaw

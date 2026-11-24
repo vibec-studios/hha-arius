@@ -91,6 +91,12 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.15.3
+
+- **Solvane's reveal:** restored the 1.7.0 reveal pacing and framing (flank and crystal-crest teaser close-ups in dense snow, then the wide cloud break and close roar), with the blizzard ramping in before the cut and mid-dive camera/entity tracking kept continuously visible down to the landing.
+- **Vertical White Horizon & mountain split:** reworked the vertical charge (fixed radial UV artifacts, dais-grounded ring, clean converging ribbons, vertical tension arcs, and continuous overhead raise through the silence beat) and synchronized the physical mountain carve 1:1 with the travelling light slash.
+- **Solvane ground & paw clearance:** body and leg contact now runs after flight/landing/rest pose blending, checking rotated head, neck, chest plate, belly, tail-fan, and per-paw claw bounds against real snow layers, stairs, and slabs so her body and feet stay cleanly above the snow in cutscenes and after attacks.
+
 ### New in 1.15.2
 
 - **Solvane's reveal:** the storm, the climb along her coils and the parting clouds from 1.13 are back. The blizzard now stands before she takes shape, and she forms as a dark silhouette in the snow.

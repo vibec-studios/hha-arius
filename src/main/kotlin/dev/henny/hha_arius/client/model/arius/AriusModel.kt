@@ -501,7 +501,11 @@ class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
             // Laden: in 10 Ticks in die Haltung, dann über 30 Ticks immer tiefer gespannt (Server lädt CUT_WIND = 40).
             AriusPose.CUT_CHARGE -> tr.to(0f, 10f, Keys.CUT_CHARGE, ::smooth, WIND).to(10f, 40f, cutLoad, ::sine)
             // Senkrechtes Aufladen (Weißer Horizont): Klinge zweihändig gerade über dem Kopf in der Schnittebene.
-            AriusPose.HORIZON_RAISE -> tr.to(0f, 12f, horizonRaise, ::smooth, WIND).to(12f, 52f, horizonLoad, ::sine)
+            // Spannt sich stetig über die gesamte Ladezeit bis zum Stille-Beat (w = Ticks bis zum Niederschlag).
+            AriusPose.HORIZON_RAISE -> {
+                val holdEnd = if (w > 18f) w - 6f else 52f
+                tr.to(0f, 12f, horizonRaise, ::smooth, WIND).to(12f, holdEnd, horizonLoad, ::sine)
+            }
             // Senkrechter Niederschlag (Weißer Horizont): zieht exakt aus der erhobenen Ebene gerade nach unten durch.
             AriusPose.CUT_RELEASE -> tr.to(0f, max(1f, w * 0.25f), horizonLoad, ::easeOut, WIND)
                 .to(max(1f, w * 0.25f), w, Keys.SPLIT_HIT, ::easeIn, STRIKE)
@@ -988,13 +992,24 @@ class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
         val t = state.poseTime
         val w0 = windupOf(pose, state.windup)
         val holding = when (pose) {
-            AriusPose.CUT_CHARGE, AriusPose.HORIZON_RAISE, AriusPose.IAI_STANCE, AriusPose.CORE_RAISE -> t > 10f
+            AriusPose.CUT_CHARGE, AriusPose.IAI_STANCE, AriusPose.CORE_RAISE -> t > 10f
+            AriusPose.HORIZON_RAISE -> {
+                val stillAt = if (w0 > 18f) w0 - 6f else Float.POSITIVE_INFINITY
+                t > 12f && t < stillAt
+            }
             AriusPose.STRIP_SLASH, AriusPose.SPLIT_FIELD, AriusPose.STAB_GROUND, AriusPose.NULL_CUT, AriusPose.LUNGE,
             AriusPose.COMBO_3, AriusPose.BREAKTHROUGH, AriusPose.SPIN_CUT -> t > 6f && t < w0 - 3f
             else -> false
         }
         if (holding) {
-            val build = if (pose == AriusPose.CUT_CHARGE || pose == AriusPose.HORIZON_RAISE || pose == AriusPose.IAI_STANCE) MathHelper.clamp((t - 10f) / 30f, 0f, 1f) else 0f
+            val build = when (pose) {
+                AriusPose.HORIZON_RAISE -> {
+                    val span = if (w0 > 18f) (w0 - 18f).coerceAtLeast(20f) else 30f
+                    MathHelper.clamp((t - 12f) / span, 0f, 1f)
+                }
+                AriusPose.CUT_CHARGE, AriusPose.IAI_STANCE -> MathHelper.clamp((t - 10f) / 30f, 0f, 1f)
+                else -> 0f
+            }
             val shake = sin(age * 2.3f) * (0.01f + 0.016f * build)
             armR.roll += shake
             armL.roll -= shake

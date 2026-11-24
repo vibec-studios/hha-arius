@@ -231,13 +231,14 @@ class Scenes(private val f: EirholmFight) {
                 f.place(a, start.lerp(stand, k).add(0.0, sin(k * PI) * 2.0, 0.0))
                 yield(Unit)
             }
+            val chargeTicks = AriusTimings.CUT_LINE_AT + AriusTimings.CUT_LINE_TICKS
             a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
-            a.play(AriusPose.HORIZON_RAISE)
+            a.play(AriusPose.HORIZON_RAISE, chargeTicks - 6)
             cue("cut.reverse_wind", stand, 2.8f, 0.85f)
-            // Das Aufladen beginnt mit dem Heben der Klinge und läuft ohne Neustart bis zum Schlag (vorher zwei Effekte
-            // nacheinander: das Licht fiel nach der Kamerafahrt zurück auf null und baute sich neu auf).
+            // Das Aufladen beginnt mit dem Heben der Klinge und läuft ohne Neustart bis zum Schlag (+2 Ticks Taktpuffer;
+            // der Niederschlag löst das Aufladen auf dem Client exakt ab).
             shown {
-                f.fxAll(FxKind.HORIZON, Vec3d(stand.x, f.floorY, stand.z), Vec3d(0.0, 0.0, 1.0), a = 56f, b = 3f, life = AriusTimings.CUT_LINE_AT + AriusTimings.CUT_LINE_TICKS, e1 = a)
+                f.fxAll(FxKind.HORIZON, Vec3d(stand.x, f.floorY, stand.z), Vec3d(0.0, 0.0, 1.0), a = 56f, b = 3f, life = chargeTicks + 2, e1 = a)
                 chargeShown = true
             }
             // Detail: Arius hebt Solvane gerade senkrecht über den Kopf in der Schnittebene (ganze Klinge im Bild).
@@ -258,9 +259,11 @@ class Scenes(private val f: EirholmFight) {
         val group = f.calls.boss(pace = Telegraph.Pace.ROOM)
         val line = group.line(f.abs(ArenaLayout.CUT_FROM), f.abs(ArenaLayout.CUT_TO), ArenaLayout.CUT_WIDTH.toFloat(), AriusTimings.CUT_LINE_TICKS)
         a.yaw = 0f; a.headYaw = 0f; a.bodyYaw = 0f
-        a.play(AriusPose.HORIZON_RAISE)
-        // Aufladen (b = 3f) nur, falls es nicht schon mit dem Heben der Klinge begonnen hat (Szene übersprungen).
-        if (!chargeShown) f.fxAll(FxKind.HORIZON, Vec3d(stand.x, f.floorY, stand.z), cutDir, a = 56f, b = 3f, life = line.ticks, e1 = a)
+        // Pose & Aufladen (b = 3f) nur starten, falls die Vorkamera übersprungen wurde — sonst läuft beides ohne Ruck durch.
+        if (!chargeShown) {
+            a.play(AriusPose.HORIZON_RAISE, (line.ticks - 6).coerceAtLeast(12))
+            f.fxAll(FxKind.HORIZON, Vec3d(stand.x, f.floorY, stand.z), cutDir, a = 56f, b = 3f, life = line.ticks + 2, e1 = a)
+        }
         // Spannung baut sich in der Mitte weiter auf, dann ein klarer Beat Beinahe-Stille direkt vor dem Niederschlag.
         val midCharge = (line.ticks / 2).coerceAtLeast(1)
         val silenceWait = (line.ticks - 12 - midCharge).coerceAtLeast(1)
@@ -273,7 +276,7 @@ class Scenes(private val f: EirholmFight) {
         a.play(AriusPose.CUT_RELEASE, 6)
         wait(6)
         // Gewaltiger senkrechter Abwärtsschnitt exakt in der Schnittebene x = CUT_X (b = 4f): EIN tiefer Einschlag.
-        f.fxAll(FxKind.HORIZON, Vec3d(stand.x, f.floorY, stand.z), cutDir, a = 60f, b = 4f, life = 36)
+        f.fxAll(FxKind.HORIZON, Vec3d(stand.x, f.floorY, stand.z), cutDir, a = 78f, b = 4f, life = 24)
         cue("cut.strike", stand, 4.2f, 0.58f)
         cue("hold.impact", stand, 2.8f, 0.50f)
         for (p in line.hits(f.players())) {
@@ -367,11 +370,13 @@ class Scenes(private val f: EirholmFight) {
         vantage.move(lookout)
         f.atmos(dev.henny.hha_arius.net.AtmosMode.CLEAR, 8)
         val seamTo = f.abs(Vec3d(x, 0.0, foot + 6.0))
-        // 1) Über dem Tempel folgt die Kamera dem senkrechten Schnitt auf dem Weg in den Berg (keine Kastenwände, kein Graudunst).
+        // 1) Über dem Tempel folgt die Kamera dem senkrechten Schnitt bis exakt an den Bergfuß (26 Ticks, nahtlos in Shot 2).
+        val gateZ = -32.0
+        val plateauSpan = (foot - gateZ).coerceAtLeast(96.0)
         shown {
             for (p in f.audience()) dev.henny.hha.logic.boss.Cine.title(listOf(p), "hha_arius.feat.white_horizon", "hha_arius.feat.white_horizon.sub", 44)
             f.fxAll(FxKind.FLASH, stand, a = 0.24f, life = 6)
-            f.fxAll(FxKind.HORIZON, f.abs(Vec3d(x, 0.0, -32.0)), Vec3d(0.0, 0.0, 1.0), a = (foot + 48.0).toFloat(), b = 4f, life = 34)
+            f.fxAll(FxKind.HORIZON, f.abs(Vec3d(x, 0.0, gateZ)), Vec3d(0.0, 0.0, 1.0), a = plateauSpan.toFloat(), b = 4f, life = 28)
             f.farSound("white_line.release", seamTo, 3.0f, 0.65f)
         }
         post.line(
@@ -379,7 +384,7 @@ class Scenes(private val f: EirholmFight) {
             f.abs(Vec3d(x, 12.0, -4.0)), f.abs(Vec3d(x, 82.0, foot + 56.0)), 26, 68.0, 62.0,
         )
         wait(26)
-        // 2) Weite Totale von Fuß bis Horn: Die senkrechte Lichtklinge schneidet vom Himmel herab und spaltet Berg & Gipfelarena.
+        // 2) Weite Totale von Fuß bis Horn: Die senkrechte Lichtklinge schneidet 1:1 synchron zu den Z-Scheiben durch den Berg.
         // Alle Blickpunkte liegen strikt VOR/ÜBER der Berghaut (freie Sichtlinie), damit HHA-CinePlayer die Kamera nie einzieht.
         val mid = f.abs(Vec3d(x, 90.0, spireZ - 40.0))
         shown {
@@ -391,8 +396,8 @@ class Scenes(private val f: EirholmFight) {
             f.abs(Vec3d(x - 62.0, 128.0, foot - 156.0)), f.abs(Vec3d(x - 48.0, 148.0, foot - 142.0)),
             f.abs(Vec3d(x, 86.0, spireZ - 110.0)), f.abs(Vec3d(x, 178.0, spireZ - 34.0)), 56, 64.0, 60.0,
         )
-        // Zuerst alle Blöcke der gesamten Schnitt-Ebene (inkl. Gipfelarena, Mauer, Krone & Horn) sichern und spalten!
-        // Gestaffeltes Fels- & Eisknirschen über die 24 Scheiben, danach langes tiefes Grollen beim Absetzen.
+        // Zuerst alle Blöcke der gesamten Schnitt-Ebene (inkl. Gipfelarena, Mauer, Krone & Horn) sichern und linear in Z spalten!
+        // Gestaffeltes Fels- & Eisknirschen exakt an den Landmarken (Nordflanke, Schulter, Horn, Südflanke, Durchbruch).
         yieldAll(splitFull(animate = true, slices = 24, playSounds = false) { slice ->
             shown {
                 when (slice) {
@@ -404,15 +409,15 @@ class Scenes(private val f: EirholmFight) {
                         f.farSound("ridge.break", mid, 3.2f, 0.58f)
                         f.farVanilla(net.minecraft.sound.SoundEvents.BLOCK_BASALT_BREAK, mid, 3.2f, 0.48f)
                     }
-                    13 -> {
-                        f.farSound("glacier.crack", mid, 3.6f, 0.56f)
-                        f.farVanilla(net.minecraft.sound.SoundEvents.BLOCK_GLASS_BREAK, mid, 2.4f, 0.46f)
+                    12 -> {
+                        f.farSound("glacier.crack", mid, 3.8f, 0.56f)
+                        f.farVanilla(net.minecraft.sound.SoundEvents.BLOCK_GLASS_BREAK, mid, 2.6f, 0.46f)
                     }
-                    18 -> {
+                    17 -> {
                         f.farSound("ridge.break", mid, 3.0f, 0.66f)
                         f.farVanilla(net.minecraft.sound.SoundEvents.BLOCK_DEEPSLATE_BREAK, mid, 2.8f, 0.44f)
                     }
-                    23 -> {
+                    22 -> {
                         f.farSound("glacier.collapse", mid, 4.4f, 0.46f)
                     }
                 }
@@ -492,17 +497,24 @@ class Scenes(private val f: EirholmFight) {
             }
             f.calls.roomShake(footStart, 8f, 90f)
         }
-        val byZ = collected.sortedBy { it.first.z }
-        val step = maxOf(1, (byZ.size + slices - 1) / slices)
-        var idx = 0
-        var slice = 0
-        while (idx < byZ.size) {
-            val end = minOf(byZ.size, idx + step)
-            for (k in idx until end) f.edits.clear(byZ[k].first)
-            onSlice?.invoke(slice)
-            idx = end
-            slice++
-            if (slices > 1) yield(Unit)
+        val zSpan = (z1 - z0 + 1).coerceAtLeast(1)
+        if (slices <= 1) {
+            for ((bp, _) in collected) f.edits.clear(bp)
+            onSlice?.invoke(0)
+        } else {
+            // Lineare Z-Scheiben statt gleicher Blockzahl: so bleibt die physische Kluft 1:1 synchron zur Lichtklinge
+            // (vorher eilte der dünne Nordfuß der Klinge um ~70 Blöcke voraus).
+            val buckets = Array(slices) { ArrayList<BlockPos>() }
+            for ((bp, _) in collected) {
+                val relZ = bp.z - f.origin.z
+                val b = (((relZ - z0) * slices) / zSpan).coerceIn(0, slices - 1)
+                buckets[b].add(bp)
+            }
+            for (slice in 0 until slices) {
+                for (bp in buckets[slice]) f.edits.clear(bp)
+                onSlice?.invoke(slice)
+                yield(Unit)
+            }
         }
     }
 
