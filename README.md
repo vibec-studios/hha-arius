@@ -91,6 +91,13 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.15.4
+
+- **Solvane's reveal (1.11.0 style):** restored the 1.11.0 reveal framing (`outside` flank glide, crystal crest from diagonally above, wide cloud-break pullback, close roar) with Solvane's natural white dragon silhouette (removed the artificial navy-blue shade tint), early blizzard onset before the cut, and mountain-safe cameras.
+- **Mountain split & summit aftermath:** fixed the summit aftermath camera that previously flew into the central ice spire/crown pillars, replaced the floating mountain ridge bar with true mountain-profile geometry, and added soft rising frost mist inside the freshly cleaved chasm.
+- **Head-ram pickup & Arius' head perch:** eliminated the 2.2-tick motion rewind jitter and catch-tick foot drift during the ice-spike catch, and aligned Arius' seated perch squarely behind Solvane's horn roots across carry, pickup, and ride scenes.
+- **Temple throne:** built a carved frost-and-deepslate throne with gold crown and quartz armrests directly under Arius' seat in the temple apse, with clean step-forward clearance when he stands up.
+
 ### New in 1.15.3
 
 - **Solvane's reveal:** restored the 1.7.0 reveal pacing and framing (flank and crystal-crest teaser close-ups in dense snow, then the wide cloud break and close roar), with the blizzard ramping in before the cut and mid-dive camera/entity tracking kept continuously visible down to the landing.

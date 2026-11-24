@@ -865,6 +865,7 @@ class NivarisBody(private val model: NivarisModel) {
             }
             if (pass < 2) updateFrames()
         }
+        if (carry != null) dev.henny.hha_arius.client.fx.RideClient.recordCarrySurface(carry.first, pts)
         last = pts
         for (i in 0 until POINTS) {
             s.px[i] = (pts[i].x - s.x).toFloat()

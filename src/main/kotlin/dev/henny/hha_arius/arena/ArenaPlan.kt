@@ -31,7 +31,7 @@ import kotlin.math.sqrt
 internal object ArenaPlan {
 
     /** Fassung des Kernplans; bei Erhöhung wird das Bauvolumen in bestehenden Welten sauber neu gebaut. */
-    const val VERSION = 2
+    const val VERSION = 3
 
     const val AIR: Byte = 0
     const val PACKED: Byte = 1
@@ -393,17 +393,33 @@ internal object ArenaPlan {
                     else -> put(1, DTILES)
                 }
             }
-            // Geschnitzter Hochlehnen-Thron (SEAT = (0.5, 2.0, -64.5) bleibt frei!)
-            if (x in -1..1 && z == -66) {
-                for (y in 2..5) put(y, if (x == 0 && y == 4) BLUE else QPILLAR)
-                put(6, if (x == 0) GOLD else CQUARTZ)
-                if (x == 0) put(7, QSLAB)
+            // Sitzpolster auf dem Podest, mit freier Stufe auf y=2 vor der Sitzkante.
+            if (z == -65 && abs(x) <= 1) {
+                if (x != 0) put(1, PDEEP)
+                put(2, if (x == 0) DTILE_SLAB else CQUARTZ)
             }
-            if ((x == -1 || x == 1) && z == -65) put(2, PDEEP)
-            if ((x == -2 || x == 2) && z == -66) {
-                put(2, CDEEP)
-                put(3, DBRICK_WALL)
-                put(4, SOUL_LAMP)
+            if (z == -66) {
+                when (abs(x)) {
+                    0 -> {
+                        put(2, DTILES)
+                        put(3, BLUE)
+                        put(4, BLUE)
+                        put(5, CQUARTZ)
+                        put(6, GOLD)
+                        put(7, QSLAB)
+                    }
+                    1 -> {
+                        put(2, CDEEP)
+                        for (y in 3..4) put(y, QPILLAR)
+                        put(5, CQUARTZ)
+                        put(6, QSLAB)
+                    }
+                    2 -> {
+                        put(2, CDEEP)
+                        put(3, DBRICK_WALL)
+                        put(4, SOUL_LAMP)
+                    }
+                }
             }
             // Flankierende Feuerschalen/Laternenpfeiler am Rand der untersten Stufe (weit abseits aller Anker)
             if ((x == -6 || x == 6) && z == -62) {

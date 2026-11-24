@@ -62,6 +62,14 @@ object RideClient {
     private var carryEnd = Int.MAX_VALUE
     private var carrySeen = 0
 
+    // Displacements applied by the model after rail sampling (entry blend and terrain clearance).
+    // Store displacements only, so a moving rider never inherits a previous frame's world position.
+    private var carryDisplacement: List<Vec3d>? = null
+
+    fun recordCarrySurface(rail: List<Vec3d>, surface: Array<Vec3d>) {
+        carryDisplacement = rail.mapIndexed { i, p -> surface[i].subtract(p) }
+    }
+
     class CarryPose(val feet: Vec3d, val grip: Float, val anchor: CarryGrip.Anchor?, val lettingGo: Boolean)
 
     /** The two frames around the playback time and the blend between them. */
@@ -69,6 +77,7 @@ object RideClient {
 
     private fun carryClear() {
         carryFrames.clear()
+        carryDisplacement = null
         carryEnd = Int.MAX_VALUE
     }
 
@@ -118,9 +127,14 @@ object RideClient {
         val previous = s.a.riders.firstOrNull { it.id == id } ?: rider
         val grip = MathHelper.lerp(s.u, previous.grip, rider.grip)
         val anchor = if (grip > 0f) carrySpine(s.b.dragon, tickDelta)?.let { (points, roll) ->
-            CarryGrip.at(points, rider.seat, roll)
+            val delta = carryDisplacement
+            val surface = if (delta == null) points else points.mapIndexed { i, p -> p.add(delta[i]) }
+            CarryGrip.at(surface, rider.seat, roll)
         } else null
-        return CarryPose(previous.feet.lerp(rider.feet, s.u.toDouble()), grip, anchor, rider.grip < previous.grip)
+        val airborne = previous.feet.lerp(rider.feet, s.u.toDouble())
+        val releasing = rider.grip < previous.grip
+        val feet = if (anchor == null || releasing) airborne else airborne.lerp(anchor.feet, grip.toDouble())
+        return CarryPose(feet, grip, anchor, releasing)
     }
 
     /** Model origin at the requested partial tick, also available when the figure is off-camera. */
@@ -348,11 +362,6 @@ object RideClient {
             wind.last = base
             wind.age = s.age
         }
-        val q = 0.72
-        val c = cos(-34.0 * PI / 180.0)
-        val sn = sin(-34.0 * PI / 180.0)
-        val uy = -6.5 + (-15.0 * q) * c
-        val uz = 9.0 + (-15.0 * q) * sn
         for (i in 0 until SEATS) {
             val g = RideHooks.glied(i).coerceAtMost(NivarisShape.SEGMENTS - 1)
             val at = g * 9
@@ -361,7 +370,7 @@ object RideClient {
             val backZ = Vec3d(f[at + 6].toDouble(), f[at + 7].toDouble(), f[at + 8].toDouble())
             val gs = NivarisShape.SCALE * s.girth[g] / 16.0
             val zs = NivarisShape.SCALE * s.stretch[g] * 1.03 / 16.0
-            val grip = pts[g].add(belly.multiply(uy * gs)).add(backZ.multiply(uz * zs))
+            val grip = pts[g].add(belly.multiply(-CarryGrip.CREST_UP * gs)).add(backZ.multiply(CarryGrip.CREST_BACK * zs))
             val head = backZ.negate().normalize()
             var up = belly.negate()
             up = up.subtract(head.multiply(up.dotProduct(head)))
@@ -378,8 +387,7 @@ object RideClient {
         }
         anchors[d.id] = out
         // Arius: fest auf dem Schädeldach direkt zwischen den Hörnern, Blick nach vorn entlang headFwd (nie nach hinten rutschend).
-        val levelUp = headUp.lerp(Vec3d(0.0, 1.0, 0.0), 0.45).let { if (it.lengthSquared() < 1e-6) Vec3d(0.0, 1.0, 0.0) else it.normalize() }
-        val top = pts[0].add(levelUp.multiply(PERCH_UP)).add(headFwd.multiply(PERCH_FWD)).subtract(0.0, PERCH_SEAT, 0.0)
+        val top = RideHooks.perchFeet(pts[0], headUp, headFwd)
         val flatYaw = Math.toDegrees(atan2(headFwd.z, headFwd.x)).toFloat() - 90f
         perches[d.id] = Perch(top.subtract(base), flatYaw)
     }
@@ -397,7 +405,15 @@ object RideClient {
     private fun riderPos(d: NivarisEntity, passenger: Entity): Vec3d? {
         val i = seatOf(d, passenger)
         if (i == RideSeats.HEAD) {
-            val p = perches[d.id] ?: return null
+            // Passenger ticks can run several times between two renders. Sample their
+            // own end-of-tick head frame instead of chasing the previous rendered head.
+            val rail = carrySpine(d.id, 1f)
+            val p = if (rail != null) {
+                val forward = rail.first[0].subtract(rail.first[1])
+                val target = RideHooks.perchFeet(rail.first, rail.second)
+                    .add(carryDisplacement?.firstOrNull() ?: Vec3d.ZERO)
+                Perch(target.subtract(d.entityPos), Math.toDegrees(atan2(-forward.x, forward.z)).toFloat())
+            } else perches[d.id] ?: return null
             val target = d.entityPos.add(p.at)
             passenger.yaw = p.yaw
             passenger.lastYaw = p.yaw
@@ -470,9 +486,16 @@ object RideClient {
         val back = a.back.multiply(cos(BODY_TILT)).add(a.head.multiply(sin(BODY_TILT))).normalize()
         val feet = a.grip.subtract(figHead.multiply(REACH)).subtract(back.multiply(BELOW))
         val right = figHead.crossProduct(back).normalize()
-        val off = feet.subtract(a.entity)
-        val mp = mountProgress(e.id)
-        matrices.translate((off.x * mp).toFloat(), (off.y * mp).toFloat(), (off.z * mp).toFloat())
+        val dragon = e.vehicle as? NivarisEntity ?: return false
+        val partial = (state.age - e.age).coerceIn(0f, 1f)
+        val mp = mountProgress(e.id, partial)
+        val target = dragon.getLerpedPos(partial).add(feet)
+        val mount = mountAnims[e.id]
+        val position = if (mp < 1f && mount != null) {
+            mount.from.lerp(target, mp.toDouble()).add(0.0, sin(mp * PI) * mount.arc, 0.0)
+        } else target
+        val off = position.subtract(state.x, state.y, state.z)
+        matrices.translate(off.x, off.y, off.z)
         // Spalten: lokal x → rechts, y → Kopf, z → Rücken (lokal −z ist die Brust/Front der Figur).
         m3.set(
             right.x.toFloat(), right.y.toFloat(), right.z.toFloat(),
@@ -672,11 +695,6 @@ object RideClient {
     /** Fahrtwind: Reisetempo (Blöcke je Tick) und Drehrate (rad je Tick), bei der die Wirkung voll ist. */
     private const val CRUISE_SPEED = 0.70f
     private const val TURN_FULL = 0.022f
-
-    /** Arius auf dem Kopf: fest auf dem Schädeldach leicht vor dem Kopfgelenk (zwischen den Hörnern). */
-    private const val PERCH_UP = 1.66
-    private const val PERCH_FWD = 0.62
-    private const val PERCH_SEAT = 0.55
 
     /** Kopfmitte über den Füßen entlang der Körperachse. */
     private const val HEAD = 1.64

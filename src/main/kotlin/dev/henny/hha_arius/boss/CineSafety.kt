@@ -92,6 +92,17 @@ object CineSafety {
         val rx = bx - origin.x
         val rz = bz - origin.z
         if (rx in FarPlan.X_MIN..FarPlan.X_MAX && rz in FarPlan.Z_MIN..FarPlan.Z_MAX) {
+            val ry = by - origin.y
+            val spireX = dev.henny.hha_arius.arena.ArenaLayout.SPIRE.x
+            val spireZ = dev.henny.hha_arius.arena.ArenaLayout.SPIRE.z
+            val shoulderY = FarPlan.SHOULDER_Y.toInt()
+            // Gipfelkrone (schräg wachsende Eispfeiler), Ringmauer und Tor der Klinge auch bei ungeladenen Chunks schützen.
+            if (kotlin.math.abs(rx - spireX) <= FarPlan.SHOULDER_R + 15 &&
+                kotlin.math.abs(rz - spireZ) <= FarPlan.SHOULDER_R + 15 &&
+                ry in (shoulderY + 1)..(shoulderY + 36)
+            ) {
+                if (FarPlan.crown(rx, ry, rz) >= 0 || FarPlan.summitWall(rx, ry, rz) >= 0) return true
+            }
             val top = runCatching { FarPlan.top(rx, rz) }.getOrDefault(-1)
             // Berg-Kluft nach dem Schnitt: auch wenn dort Luft ausgehoben wurde, darf keine Szenenkamera in den Riss geraten.
             val footZ = dev.henny.hha_arius.arena.ArenaLayout.SPIRE.z - FarPlan.MASSIF_R - 6

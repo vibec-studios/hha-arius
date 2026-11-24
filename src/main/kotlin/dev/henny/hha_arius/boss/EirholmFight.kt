@@ -367,6 +367,19 @@ class EirholmFight(
         spawnArius(abs(ArenaLayout.SEAT), 0f)
         arius?.play(AriusPose.SEATED)
         arius?.sheathed = false
+        task(script {
+            val seat = abs(ArenaLayout.SEAT)
+            while (phase == Phase.INTRO && arius?.pose == AriusPose.SEATED) yield(Unit)
+            val actor = arius ?: return@script
+            if (phase != Phase.INTRO || actor.pose != AriusPose.RISE || actor.entityPos.squaredDistanceTo(seat) > 0.01) return@script
+            // Beim Strecken der Knie das Gewicht von der Sitzkante auf das Podest verlagern.
+            for (tick in 1..18) {
+                if (actor.pose != AriusPose.RISE || phase != Phase.INTRO) return@script
+                val k = tick / 18.0
+                place(actor, seat.add(0.0, 0.0, 0.55 * k * k * (3 - 2 * k)))
+                yield(Unit)
+            }
+        })
         val target = testTarget
         if (target != null) {
             startDirector(AriusTestRunner.scriptFor(this, target))

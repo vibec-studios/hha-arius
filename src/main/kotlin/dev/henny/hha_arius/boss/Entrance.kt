@@ -423,8 +423,8 @@ internal object Entrance {
             d.flying = false
             d.eyeGlow = 8
             d.throatGlow = 0
-            // Entsteht schon als Sturm-Silhouette (siehe [full]); erst wenn der Sturm aufreißt, kommt ihre Farbe.
-            d.shade = 1f
+            // Natürliche 1.11.0-Silhouette im Schneesturm (kein künstlicher Blaustich).
+            d.shade = 0f
             d.hideNow()
             d.play(NivarisPose.LIE_DOWN)
         }
@@ -468,51 +468,55 @@ internal object Entrance {
         val axis = f.abs(Vec3d(ArenaLayout.SPIRE.x + 0.5, 0.0, ArenaLayout.SPIRE.z + 0.5))
         val head = f.abs(EntrancePath.HEAD_RAISED)
 
-        // Vom Rand der Schlucht in die weiße Flanke blicken. Der Kopf bleibt bis zur Totalen verborgen.
-        val storm = spire(f, -22.0, 146.0, -35.0)
-        scene.line(storm.add(-4.0, -3.0, -9.0), storm, coilAt(f, 0.24), coilAt(f, 0.54), STORM_TICKS, 70.0, 60.0)
-        sound(f, "seal.blizzard", storm, 2.5f, 0.7f)
+        // 2) Sturm (1.11.0-Einstellung, aber mit bereits stehendem Schneesturm aus release(stormAhead = true)):
+        //    Blick vom Südrand des Plateaus nach oben in das Weiß Richtung Gipfel; Solvane entsteht Glied für Glied.
+        val stormFrom = rel(f, 1.5, 22.0, 18.0)
+        val stormTo = rel(f, 1.0, 30.0, 34.0)
+        scene.line(stormFrom, stormTo, spire(f, 0.0, 150.0, 0.0), spire(f, 0.0, 185.0, 0.0), STORM_TICKS, 70.0, 60.0)
+        sound(f, "seal.blizzard", stormTo, 2.5f, 0.7f)
         wait(RELEASE_ARRIVAL - RELEASE_TICKS)
         sound(f, "nivaris.inhale", arrival, 2f, 0.45f)
+        fx(f, FxKind.BLIZZARD, stormTo, 10f, 60)
         fxAll(f, FxKind.BLIZZARD, arrival, 14f, 60)
         // Die Entity steht in dieser Einstellung an der Nadel, nicht beim Plateau-Stellvertreter: Der Client zeichnet sie
         // nur, wenn ihr Abschnitt in Sichtweite der Kamera liegt.
         var proxy = if (!Cine.muted) arrival else f.abs(EntrancePath.PROXY)
         val d = coil(f, proxy) ?: return@script
         d.wingTuck = 1f
-        d.eyeGlow = 0
+        d.eyeGlow = 8
         d.fadeIn(FORM_TICKS)
         wait(STORM_TICKS - (RELEASE_ARRIVAL - RELEASE_TICKS))
 
-        // Zwei kurze Bögen um die sichtbare Außenflanke. Die Blickachse endet vor dem Fels.
-        fun detail(s: Double, radius: Double, height: Double, start: Double, end: Double, focusY: Double, fov: Double) {
-            val center = coilAt(f, s)
-            val outward = EntrancePath.coilOutward(EntrancePath.coil(s))
-            val angle = Math.toDegrees(atan2(outward.z, outward.x))
-            scene.orbit(center, radius, height, angle + start, angle + end, 60,
-                fov, fov - 6.0, lookOffset = focusY, radiusTo = radius - 1.0, heightTo = height - 1.0)
+        // 3) 1.11.0-Außenfahrt entlang der Windung: deutlich außerhalb des Körpers, natürliche weiße Silhouette im Schnee.
+        fun outside(s: Double, out: Double, up: Double): Vec3d {
+            val c = coilAt(f, s)
+            val radial = EntrancePath.coilOutward(EntrancePath.coil(s))
+            return c.add(radial.multiply(out)).add(0.0, up, 0.0)
         }
-        detail(0.76, 8.5, 1.8, 24.0, -18.0, 0.6, 52.0)
-        sound(f, "seal.blizzard", coilAt(f, 0.76), 3f, 0.55f)
-        fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.76), 9f, 60)
+        f.atmos(AtmosMode.SNOW, 22)
+        scene.line(outside(0.80, 21.0, 3.0), outside(0.74, 18.0, 5.0), coilAt(f, 0.80), coilAt(f, 0.72), 60, 56.0, 50.0)
+        sound(f, "seal.blizzard", coilAt(f, 0.80), 3f, 0.55f)
+        fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.80), 9f, 60)
         d.eyeGlow = 14
         wait(60)
 
-        detail(0.62, 5.5, 5.2, -12.0, 28.0, 0.0, 48.0)
+        // 4) 1.11.0-Kristallkamm von schräg oben: eine tiefere Windung zieht unter der Kamera durch (60 Ticks).
+        scene.line(outside(0.62, 13.0, 15.0), outside(0.56, 11.0, 13.0), coilAt(f, 0.63), coilAt(f, 0.54), 60, 54.0, 48.0)
         sound(f, "nivaris.wing", coilAt(f, 0.62), 2f, 0.45f)
         fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.62), 8f, 60)
         wait(60)
 
-        // Erst in der zurückweichenden Totalen öffnet sich der Sturm. Die Höhe folgt dem heutigen Gipfel.
-        f.atmos(AtmosMode.REVEAL, 32)
-        d.shade = 0f
-        scene.line(head.add(-34.0, -45.0, -70.0), head.add(-44.0, -34.0, -80.0),
-            head.add(0.0, -28.0, 0.0), head.add(0.0, -21.0, 0.0), 110, 64.0, 70.0)
+        // 5) 1.11.0-Totale: Die Wolken reißen auf, weite Einstellung über Gipfel, Nadel und Windungen; der Kopf hebt sich.
+        //    Abstand (~85..100 Blöcke) bleibt auch bei 8 Chunks Sichtweite sicher im geladenen Bereich.
+        f.atmos(AtmosMode.REVEAL, 36)
+        val revealFrom = head.add(-38.0, -40.0, -72.0)
+        val revealTo = head.add(-48.0, -30.0, -82.0)
+        scene.line(revealFrom, revealTo, head.add(0.0, -26.0, 0.0), head.add(0.0, -18.0, 0.0), 110, 62.0, 66.0)
         sound(f, "glacier.crack", arrival, 3f, 0.5f)
         wait(30)
         d.play(NivarisPose.IDLE)
         d.eyeGlow = 40
-        sound(f, "nivaris.inhale", head, 2f, 0.55f)
+        sound(f, "nivaris.inhale", revealTo, 2f, 0.55f)
         wait(80)
 
         // 6) Nah am Kopf über dem Gipfel (gleiche Nordwest-Achse wie Einstellung 5): Brüllen, Augen glühen, Name (60 Ticks).

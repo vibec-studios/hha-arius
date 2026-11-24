@@ -1,7 +1,11 @@
 package dev.henny.hha_arius.client.fx
 
 import dev.henny.hha.client.vfx.VfxDraw
+import dev.henny.hha.client.vfx.VfxLayers
+import dev.henny.hha.client.vfx.lerpColor
 import dev.henny.hha.client.vfx.withAlpha
+import dev.henny.hha_arius.arena.ArenaLayout
+import dev.henny.hha_arius.arena.FarPlan
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.util.math.MatrixStack
@@ -489,6 +493,74 @@ class VerticalHorizonFx(
                 birthFrac = (pair * 0.105f + (if (side > 0) 0f else 0.045f)).coerceIn(0f, 0.78f),
                 travelTicks = 17f + (pair % 3) * 3.5f,
                 width = 0.045 + (pair % 3) * 0.015,
+            )
+        }
+    } else emptyList()
+
+    /** Weiche Frost- und Schneeschwaden, die nach dem Durchgang der Klinge aus der frischen Bergspalte aufsteigen. */
+    private class CleavePlume(
+        val u: Double,
+        val side: Double,
+        val sideOff: Double,
+        val sink: Double,
+        val rise: Double,
+        val driftOut: Double,
+        val baseSize: Double,
+        val growSize: Double,
+        val spin: Double,
+        val lifeTicks: Float,
+        val tint: Float,
+        val useVeil: Boolean,
+    )
+
+    private val cleavePlumes: List<CleavePlume> = if (phase == 2) {
+        val r = Random(origin.hashCode().toLong() xor 0xC1EA7EL)
+        List(48) { i ->
+            // Etwas dichter an Nordflanke, Gipfelrand und Horn (0.14..0.64), wo die Kamera blickt.
+            val u = if (i < 34) {
+                0.12 + (i + 0.15 + r.nextDouble() * 0.7) / 34.0 * 0.54
+            } else {
+                0.66 + (i - 34 + 0.15 + r.nextDouble() * 0.7) / 14.0 * 0.26
+            }
+            val nearSummit = u in 0.36..0.64
+            val side = if (i % 2 == 0) 1.0 else -1.0
+            CleavePlume(
+                u = u,
+                side = side,
+                sideOff = 0.8 + r.nextDouble() * (if (nearSummit) 3.4 else 2.6),
+                sink = if (nearSummit) 2.0 + r.nextDouble() * 4.5 else 3.5 + r.nextDouble() * 6.5,
+                rise = (if (nearSummit) 14.0 else 16.0) + r.nextDouble() * 14.0,
+                driftOut = (if (nearSummit) 5.5 else 7.5) + r.nextDouble() * 7.5,
+                baseSize = (if (nearSummit) 8.5 else 11.5) + r.nextDouble() * 5.0,
+                growSize = (if (nearSummit) 9.0 else 13.0) + r.nextDouble() * 8.0,
+                spin = (if (i % 2 == 0) 1.0 else -1.0) * (0.4 + r.nextDouble() * 0.9),
+                lifeTicks = if (nearSummit) 58f + r.nextFloat() * 26f else 44f + r.nextFloat() * 22f,
+                tint = r.nextFloat(),
+                useVeil = i % 3 != 0,
+            )
+        }
+    } else emptyList()
+
+    /** Feine Eisfunken, die unmittelbar nach dem Durchtrennen aus dem Riss aufsteigen und rasch vergehen. */
+    private class CleaveMote(
+        val u: Double,
+        val side: Double,
+        val sideOff: Double,
+        val rise: Double,
+        val driftOut: Double,
+        val size: Double,
+    )
+
+    private val cleaveMotes: List<CleaveMote> = if (phase == 2) {
+        val r = Random(origin.hashCode().toLong() xor 0xF4057L)
+        List(18) { i ->
+            CleaveMote(
+                u = 0.14 + (i + r.nextDouble() * 0.8) / 18.0 * 0.72,
+                side = if (i % 2 == 0) 1.0 else -1.0,
+                sideOff = 1.0 + r.nextDouble() * 4.0,
+                rise = 12.0 + r.nextDouble() * 16.0,
+                driftOut = 3.5 + r.nextDouble() * 5.5,
+                size = 2.2 + r.nextDouble() * 2.2,
             )
         }
     } else emptyList()
@@ -1024,48 +1096,53 @@ class VerticalHorizonFx(
 
     /**
      * Bergspaltung entlang x = CUT_X (`origin` = Bergfuß auf CUT_X, `reach` = Gesamtlänge bis hinter das Massiv):
-     * Eine kolossale, glatt zugespitzte senkrechte Frostklinge fährt 1:1 synchron zu den linearen Z-Scheiben von
-     * `splitFull` (`cleaveTicks = life - 38`, standardmäßig 24 Ticks) von vorn nach hinten durch den Berg.
-     * Einschlagspunkt und nachglühende Schnittnaht folgen dem echten Bergprofil (Fuß → Gipfelschulter → Horn → Südfuß).
+     * 1) Eine geschwungene, messerscharf zugespitzte senkrechte Frostsichel schneidet 1:1 synchron zu den linearen
+     *    Z-Scheiben von `splitFull` (`cleaveTicks`) durch Massiv, Gipfelarena und Horn und zieht am Südhang sauber
+     *    aus, statt als steifer Strich stehenzubleiben.
+     * 2) Im Inneren der frisch geöffneten Kluft glimmt eine organische, vertiefte Frostnaht nach (exakt entlang des
+     *    echten Bergprofils aus [FarPlan.massifH] & Horn, ohne steifen schwebenden Balken über der Flanke) und kühlt
+     *    je Abschnitt natürlich aus.
+     * 3) Weiche, halbtransparente Schneeschwaden und Frostnebel quellen unmittelbar hinter der Klinge aus dem Riss
+     *    auf und verwehen langsam (keine fliegenden Blöcke, kameranah weich ausgeblendet).
      */
     private fun renderMountainCleave(d: VfxDraw, t: Float, fx: Float) {
-        val cleaveTicks = (life - 38f).coerceAtLeast(1f)
+        val cleaveTicks = (if (life > 76) life - 76f else life - 38f).coerceAtLeast(1f)
         // +0,8 Tick Vorlauf, damit die vordere Schneide den physisch geöffneten Block-Scheiben exakt vorausläuft.
-        val sweep = ((t + 0.8f) / cleaveTicks).coerceIn(0f, 1f)
+        val rawSweep = (t + 0.8f) / cleaveTicks
+        val sweep = rawSweep.coerceIn(0f, 1f)
+        val exitOver = (rawSweep - 1f).coerceAtLeast(0f)
         val totalZ = reach.coerceAtLeast(180.0)
-        val headDist = totalZ * sweep
-        val vSide = camBillSide(d, UP)
 
-        // Echtes Bergprofil entlang sweep 0..1 (symmetrisch um den Gipfel bei sweep = 0,5).
-        fun ridgeHeight(u: Double): Double {
-            val dNorm = kotlin.math.abs(u - 0.5) * 2.0
-            val slope = (1.0 - dNorm).coerceIn(0.0, 1.0)
-            return origin.y + 8.0 + 206.0 * Math.pow(slope, 0.85)
+        // Echtes Bergprofil aus FarPlan.massifH + zentralem Eishorn (keine schwebende konvexe Kunstkurve).
+        fun profileY(u: Double): Double {
+            val dSpire = kotlin.math.abs((u - 0.5) * totalZ)
+            val massif = FarPlan.massifH(dSpire).coerceAtLeast(0.0)
+            val spire = if (dSpire < ArenaLayout.SPIRE_BASE_R) {
+                val r = dSpire / ArenaLayout.SPIRE_BASE_R
+                ArenaLayout.SPIRE.y + (ArenaLayout.SPIRE_TOP - ArenaLayout.SPIRE.y) * Math.pow(1.0 - r, 1.35)
+            } else -1.0
+            return origin.y + maxOf(massif, spire)
         }
 
-        // 1) Fortschreitende senkrechte Lichtklinge, die den Berg vom Himmel bis zum Fuß durchtrennt.
-        val bladeFade = (1f - ((t - cleaveTicks + 1.5f) / 14f).coerceIn(0f, 1f)).let { it * it } * fx
+        // 1) Fortschreitende, geschwungene senkrechte Frostsichel: zieht am Ende sanft weiter und löst sich sauber auf.
+        val bladeFade = (1f - ((t - (cleaveTicks - 1.5f)) / 7.5f).coerceIn(0f, 1f)).let { it * it } * fx
         if (bladeFade > 0.015f) {
-            val topY = origin.y + 295.0
-            val botY = origin.y - 4.0
-            val headBase = origin.add(forward.multiply(headDist))
-            val headTop = Vec3d(headBase.x, topY, headBase.z).add(forward.multiply(12.0))
-            val headBot = Vec3d(headBase.x, botY, headBase.z)
+            val bladeDist = totalZ * (sweep + exitOver * 0.45f)
+            val bladeRise = exitOver * 28.0
+            val headBase = origin.add(forward.multiply(bladeDist))
+            val topY = origin.y + 258.0 + bladeRise
+            val botY = origin.y - 2.0 + bladeRise * 0.5
+            val arcBack = 66.0
 
-            // Glatte, messerscharfe Hauptschneide vom Himmel bis zum Bergfuß (auch aus 280 Blöcken klar lesbar).
-            drawTaperedLine(d, headBot, headTop, vSide, 4.4, AriusLayers.INK, withAlpha(NAVY_DARK, bladeFade * 0.78f), segments = 28)
-            drawTaperedLine(d, headBot, headTop, vSide, 11.5, AriusLayers.VFX_GLOW, withAlpha(ICE_BLUE, bladeFade * 0.92f), segments = 28)
-            drawTaperedLine(d, headBot, headTop, vSide, 5.2, AriusLayers.VFX_GLOW, withAlpha(FROST_WHITE, bladeFade), segments = 28)
-            drawTaperedLine(d, headBot, headTop, vSide, 2.6, AriusLayers.VFX_ADD, withAlpha(PURE_WHITE, bladeFade), segments = 28)
-
-            // Geformter senkrechter Sichelbogen hinter der vorderen Schneide (glatte UVs ohne Perlenkette).
-            val arcBack = 74.0
             fun mtnPt(u: Double, back: Double): Vec3d {
                 val tp = tipTaper(u)
                 val y = botY + (topY - botY) * u
-                val bow = sin(u * PI) * 22.0
-                return Vec3d(headBase.x, y, headBase.z).add(forward.multiply(bow - back * arcBack * (0.08 + 0.92 * tp)))
+                val lean = (u - 0.35) * 16.0
+                val bow = sin(u * PI) * 24.0
+                return Vec3d(headBase.x, y, headBase.z).add(forward.multiply(lean + bow - back * arcBack * (0.06 + 0.94 * tp)))
             }
+
+            // Sichelblatt in der Schnittebene (glatte UVs ohne Perlenkette auf VFX_GLOW).
             fun mtnSheet(layer: net.minecraft.client.render.RenderLayer, f0: Double, f1: Double, c0: Int, c1: Int) {
                 val a0 = (c0 ushr 24) / 255f
                 val a1 = (c1 ushr 24) / 255f
@@ -1087,33 +1164,195 @@ class VerticalHorizonFx(
                     }
                 }
             }
-            mtnSheet(AriusLayers.INK, 0.0, 0.14, withAlpha(NAVY_DARK, bladeFade * 0.55f), withAlpha(NAVY_MID, 0f))
-            mtnSheet(AriusLayers.VFX_GLOW, 0.0, 0.44, withAlpha(ICE_LIGHT, bladeFade * 0.88f), withAlpha(ICE_BLUE, bladeFade * 0.42f))
-            mtnSheet(AriusLayers.VFX_GLOW, 0.40, 1.0, withAlpha(ICE_BLUE, bladeFade * 0.44f), withAlpha(ICE_BLUE, 0f))
-            mtnSheet(AriusLayers.VFX_ADD, 0.0, 0.24, withAlpha(PURE_WHITE, bladeFade * 0.96f), withAlpha(FROST_WHITE, 0f))
+            mtnSheet(AriusLayers.INK, 0.0, 0.10, withAlpha(NAVY_DARK, bladeFade * 0.48f), withAlpha(NAVY_MID, 0f))
+            mtnSheet(AriusLayers.VFX_GLOW, 0.0, 0.42, withAlpha(ICE_LIGHT, bladeFade * 0.84f), withAlpha(ICE_BLUE, bladeFade * 0.36f))
+            mtnSheet(AriusLayers.VFX_GLOW, 0.38, 1.0, withAlpha(ICE_BLUE, bladeFade * 0.38f), withAlpha(ICE_BLUE, 0f))
+            mtnSheet(AriusLayers.VFX_ADD, 0.0, 0.22, withAlpha(PURE_WHITE, bladeFade * 0.94f), withAlpha(FROST_WHITE, 0f))
 
-            // Heller Einschlagspunkt exakt dort, wo die Klinge auf den Bergrücken trifft.
-            val impactPt = Vec3d(headBase.x, ridgeHeight(sweep.toDouble()), headBase.z)
-            d.billboard(AriusLayers.VFX_ADD_FLARE, impactPt, 30.0 * bladeFade, withAlpha(PURE_WHITE, bladeFade))
-            d.billboard(AriusLayers.VFX_GLOW, impactPt, 48.0 * bladeFade, withAlpha(ICE_LIGHT, bladeFade * 0.65f))
+            // Vereinheitlichte, exakt auf der Sichelvorderkante liegende Lichtschneide (kein getrennter gerader Balken).
+            fun drawCurvedEdge(layer: net.minecraft.client.render.RenderLayer, halfWidth: Double, color: Int) {
+                val baseA = (color ushr 24) / 255f
+                if (baseA <= 0.01f || halfWidth <= 1e-4) return
+                val radialGlow = layer === AriusLayers.VFX_GLOW
+                val vc = d.buffer(layer)
+                val segs = 28
+                with(d) {
+                    for (i in 0 until segs) {
+                        val u0 = i / segs.toDouble()
+                        val u1 = (i + 1) / segs.toDouble()
+                        val p0 = mtnPt(u0, 0.0)
+                        val p1 = mtnPt(u1, 0.0)
+                        val tang = p1.subtract(p0).let { if (it.lengthSquared() < 1e-6) UP else it.normalize() }
+                        val side = camBillSide(d, tang)
+                        val w0 = sin(u0 * PI).coerceAtLeast(0.0)
+                        val w1 = sin(u1 * PI).coerceAtLeast(0.0)
+                        val h0 = halfWidth * (0.08 + 0.92 * w0)
+                        val h1 = halfWidth * (0.08 + 0.92 * w1)
+                        val c0 = withAlpha(color, baseA * w0.toFloat())
+                        val c1 = withAlpha(color, baseA * w1.toFloat())
+                        if (radialGlow) {
+                            vc.put(p0.add(side.multiply(-h0)), 0.5f, 0f, c0)
+                            vc.put(p0.add(side.multiply(h0)), 0.5f, 1f, c0)
+                            vc.put(p1.add(side.multiply(h1)), 0.5f, 1f, c1)
+                            vc.put(p1.add(side.multiply(-h1)), 0.5f, 0f, c1)
+                        } else {
+                            val e0 = withAlpha(color, 0f)
+                            val e1 = withAlpha(color, 0f)
+                            vc.put(p0.add(side.multiply(-h0)), 0f, 0f, e0)
+                            vc.put(p0, 0f, 0.5f, c0)
+                            vc.put(p1, 1f, 0.5f, c1)
+                            vc.put(p1.add(side.multiply(-h1)), 1f, 0f, e1)
+                            vc.put(p0, 0f, 0.5f, c0)
+                            vc.put(p0.add(side.multiply(h0)), 0f, 1f, e0)
+                            vc.put(p1.add(side.multiply(h1)), 1f, 1f, e1)
+                            vc.put(p1, 1f, 0.5f, c1)
+                        }
+                    }
+                }
+            }
+            drawCurvedEdge(AriusLayers.INK, 3.0, withAlpha(NAVY_DARK, bladeFade * 0.62f))
+            drawCurvedEdge(AriusLayers.VFX_GLOW, 9.6, withAlpha(ICE_BLUE, bladeFade * 0.86f))
+            drawCurvedEdge(AriusLayers.VFX_GLOW, 4.4, withAlpha(FROST_WHITE, bladeFade * 0.96f))
+            drawCurvedEdge(AriusLayers.VFX_ADD, 2.2, withAlpha(PURE_WHITE, bladeFade))
+
+            // Heller Einschlagspunkt direkt auf dem echten Berg- und Hornprofil (Höhepunkt beim Durchtrennen der Nadel).
+            if (rawSweep <= 1.04f) {
+                val surfaceY = profileY(sweep.toDouble())
+                val impactBase = origin.add(forward.multiply(totalZ * sweep))
+                val impactPt = Vec3d(impactBase.x, surfaceY + 2.0, impactBase.z)
+                val spireBoost = (1.0 - (kotlin.math.abs(sweep - 0.5) / 0.14).coerceIn(0.0, 1.0))
+                val fScale = (1.0 + 0.55 * spireBoost) * bladeFade
+                d.billboard(AriusLayers.VFX_ADD_FLARE, impactPt, 26.0 * fScale, withAlpha(PURE_WHITE, bladeFade))
+                d.billboard(AriusLayers.VFX_GLOW, impactPt, 46.0 * fScale, withAlpha(ICE_LIGHT, bladeFade * (0.58f + 0.24f * spireBoost.toFloat())))
+                val glintW = (20.0 + 18.0 * spireBoost) * bladeFade
+                drawTaperedLine(
+                    d, impactPt.subtract(d.camRight.multiply(glintW)), impactPt.add(d.camRight.multiply(glintW)),
+                    d.camUp, 1.05 + 0.55 * spireBoost, AriusLayers.VFX_ADD,
+                    withAlpha(PURE_WHITE, bladeFade * (0.72f + 0.28f * spireBoost.toFloat())), segments = 12,
+                )
+            }
         }
 
-        // 2) Sauberes Nachglühen exakt entlang der frisch gespaltenen Bergkontur (folgt dem Profil, nie quer in den Himmel).
-        val glowOut = (1f - ((t - cleaveTicks) / (life - cleaveTicks).coerceAtLeast(1f)).coerceIn(0f, 1f)).let { it * it } * fx
-        if (glowOut > 0.015f && sweep > 0.03f) {
-            val pts = ArrayList<Vec3d>(25)
-            val steps = 24
+        // 2) Organische, in die frisch geöffnete Kluft eingebettete Frostlicht-Naht: kein hartes dunkles Band und
+        //    kein schwebender V-Balken über dem Hang; jeder Abschnitt kühlt nach Durchgang der Klinge weich aus.
+        if (sweep > 0.04f && t < cleaveTicks + 34f) {
+            val steps = 32
+            val uMax = sweep.toDouble().coerceAtMost(0.96)
+            val seamPts = ArrayList<Vec3d>(steps + 1)
+            val seamFade = FloatArray(steps + 1)
+            var anyVisible = false
             for (i in 0..steps) {
-                val u = (i.toDouble() / steps) * sweep
+                val frac = i / steps.toDouble()
+                val u = 0.04 + (uMax - 0.04) * frac
+                val surfY = profileY(u)
+                val aboveBase = (surfY - origin.y).coerceAtLeast(0.0)
+                // Tief in den geöffneten Spalt versenkt, damit die Felslippen die Naht natürlich einrahmen.
+                val sink = if (aboveBase > 8.0) (3.5 + (aboveBase / 220.0) * 5.5) else -1.5
                 val p = origin.add(forward.multiply(totalZ * u))
-                pts.add(Vec3d(p.x, ridgeHeight(u), p.z))
+                seamPts.add(Vec3d(p.x, surfY - sink, p.z))
+                val localAge = (t - u.toFloat() * cleaveTicks).coerceAtLeast(0f)
+                val cool = (1f - (localAge / 32f).coerceIn(0f, 1f)).let { it * it }
+                val edgeTaper = sin(frac * PI).toFloat().coerceIn(0f, 1f).let { kotlin.math.sqrt(it.toDouble()).toFloat() }
+                val shimmer = 0.78f + 0.22f * sin(u * 36.0 - t * 0.42).toFloat()
+                val a = cool * edgeTaper * shimmer * fx
+                seamFade[i] = a
+                if (a > 0.015f) anyVisible = true
             }
-            d.ribbon(AriusLayers.INK, pts, { q -> (1.6 * glowOut + 0.25) * sin(q * PI).coerceAtLeast(0.15) },
-                { q -> withAlpha(NAVY_DARK, glowOut * 0.58f * sin(q * PI).toFloat().coerceAtLeast(0.1f)) }, uScale = 0f, uOffset = 0.5f)
-            d.ribbon(AriusLayers.VFX_GLOW, pts, { q -> (4.4 * glowOut + 0.6) * sin(q * PI).coerceAtLeast(0.15) },
-                { q -> withAlpha(ICE_BLUE, glowOut * 0.82f * sin(q * PI).toFloat().coerceAtLeast(0.1f)) }, uScale = 0f, uOffset = 0.5f)
-            d.ribbon(AriusLayers.VFX_ADD, pts, { q -> (1.25 * glowOut + 0.18) * sin(q * PI).coerceAtLeast(0.15) },
-                { q -> withAlpha(PURE_WHITE, glowOut * 0.95f * sin(q * PI).toFloat().coerceAtLeast(0.1f)) }, uScale = 0f, uOffset = 0.5f)
+            if (anyVisible) {
+                fun drawSeamStrip(layer: net.minecraft.client.render.RenderLayer, halfWBase: Double, color: Int, power: Float, alphaScale: Float) {
+                    val radialGlow = layer === AriusLayers.VFX_GLOW
+                    val vc = d.buffer(layer)
+                    with(d) {
+                        for (i in 0 until steps) {
+                            val f0 = seamFade[i]
+                            val f1 = seamFade[i + 1]
+                            if (f0 <= 0.01f && f1 <= 0.01f) continue
+                            val p0 = seamPts[i]
+                            val p1 = seamPts[i + 1]
+                            val tang = p1.subtract(p0).let { if (it.lengthSquared() < 1e-6) forward else it.normalize() }
+                            val side = camBillSide(d, tang)
+                            val a0 = (if (power > 1.5f) f0 * f0 else f0) * alphaScale
+                            val a1 = (if (power > 1.5f) f1 * f1 else f1) * alphaScale
+                            val h0 = halfWBase * (0.25 + 0.75 * f0)
+                            val h1 = halfWBase * (0.25 + 0.75 * f1)
+                            val c0 = withAlpha(color, a0)
+                            val c1 = withAlpha(color, a1)
+                            if (radialGlow) {
+                                vc.put(p0.add(side.multiply(-h0)), 0.5f, 0f, c0)
+                                vc.put(p0.add(side.multiply(h0)), 0.5f, 1f, c0)
+                                vc.put(p1.add(side.multiply(h1)), 0.5f, 1f, c1)
+                                vc.put(p1.add(side.multiply(-h1)), 0.5f, 0f, c1)
+                            } else {
+                                val e0 = withAlpha(color, 0f)
+                                val e1 = withAlpha(color, 0f)
+                                vc.put(p0.add(side.multiply(-h0)), 0f, 0f, e0)
+                                vc.put(p0, 0f, 0.5f, c0)
+                                vc.put(p1, 1f, 0.5f, c1)
+                                vc.put(p1.add(side.multiply(-h1)), 1f, 0f, e1)
+                                vc.put(p0, 0f, 0.5f, c0)
+                                vc.put(p0.add(side.multiply(h0)), 0f, 1f, e0)
+                                vc.put(p1.add(side.multiply(h1)), 1f, 1f, e1)
+                                vc.put(p1, 1f, 0.5f, c1)
+                            }
+                        }
+                    }
+                }
+                drawSeamStrip(AriusLayers.VFX_GLOW, 3.8, ICE_BLUE, 1f, 0.54f)
+                drawSeamStrip(AriusLayers.VFX_GLOW, 1.8, ICE_LIGHT, 1.6f, 0.58f)
+                drawSeamStrip(AriusLayers.VFX_ADD, 0.95, FROST_WHITE, 2f, 0.76f)
+            }
+        }
+
+        // 3) Weiche, aufquellende Schnee- und Frostnebel-Schwaden aus der frisch gespaltenen Schlucht (keine Blöcke).
+        val cam = d.cam
+        val tailFade = (1f - ((t - (life - 14f)) / 14f).coerceIn(0f, 1f)).coerceIn(0f, 1f)
+        if (tailFade > 0.01f) {
+            fun drawPlumes(useVeil: Boolean) {
+                val layer = if (useVeil) AriusLayers.VEIL else VfxLayers.CLOUD_ALPHA
+                for (pl in cleavePlumes) {
+                    if (pl.useVeil != useVeil) continue
+                    val age = t - (pl.u.toFloat() * cleaveTicks - 0.5f)
+                    if (age <= 0f || age >= pl.lifeTicks) continue
+                    val prog = (age / pl.lifeTicks).coerceIn(0f, 1f).toDouble()
+                    val easeOut = 1.0 - (1.0 - prog) * (1.0 - prog)
+                    val fadeIn = (age / 6f).coerceIn(0f, 1f)
+                    val fadeOut = (1f - ((age - pl.lifeTicks * 0.28f) / (pl.lifeTicks * 0.72f)).coerceIn(0f, 1f)).let { it * it }
+                    val basePt = origin.add(forward.multiply(totalZ * pl.u))
+                    val surfY = profileY(pl.u)
+                    val pos = Vec3d(
+                        basePt.x,
+                        surfY - pl.sink + pl.rise * easeOut,
+                        basePt.z,
+                    ).add(across.multiply(pl.side * (pl.sideOff + pl.driftOut * prog)))
+                        .add(forward.multiply(2.4 * prog))
+                    val dist = pos.distanceTo(cam)
+                    val nearFade = ((dist - 16.0) / 18.0).coerceIn(0.0, 1.0).toFloat()
+                    val alpha = (if (useVeil) 0.30f else 0.24f) * fadeIn * fadeOut * nearFade * tailFade * fx
+                    if (alpha <= 0.012f) continue
+                    val size = pl.baseSize + pl.growSize * easeOut
+                    val baseCol = lerpColor(0xFFCDE6F7.toInt(), FROST_WHITE, pl.tint)
+                    val col = lerpColor(0xFF9ACCEB.toInt(), baseCol, (0.35f + 0.65f * easeOut.toFloat()).coerceIn(0f, 1f))
+                    d.billboard(layer, pos, size, withAlpha(col, alpha), (pl.spin * age) % 360.0)
+                }
+            }
+            drawPlumes(useVeil = true)
+            drawPlumes(useVeil = false)
+
+            // Zarte glitzernde Eisstaub-Funken im frischen Aufwind der Kluft (nur kurz nach dem Schnitt).
+            for (m in cleaveMotes) {
+                val age = t - m.u.toFloat() * cleaveTicks
+                if (age <= 0f || age >= 26f) continue
+                val prog = (age / 26f).toDouble()
+                val fadeIn = (age / 3f).coerceIn(0f, 1f)
+                val fadeOut = (1f - prog.toFloat()).let { it * it }
+                val basePt = origin.add(forward.multiply(totalZ * m.u))
+                val pos = Vec3d(basePt.x, profileY(m.u) - 1.5 + m.rise * prog, basePt.z)
+                    .add(across.multiply(m.side * (m.sideOff + m.driftOut * prog)))
+                val nearFade = ((pos.distanceTo(cam) - 12.0) / 14.0).coerceIn(0.0, 1.0).toFloat()
+                val alpha = 0.58f * fadeIn * fadeOut * nearFade * tailFade * fx
+                if (alpha <= 0.015f) continue
+                d.billboard(AriusLayers.VFX_ADD_FLARE, pos, m.size * (0.6 + 0.4 * fadeOut), withAlpha(FROST_WHITE, alpha))
+            }
         }
     }
 

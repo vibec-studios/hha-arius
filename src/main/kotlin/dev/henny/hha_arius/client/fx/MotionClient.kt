@@ -109,10 +109,11 @@ object MotionClient {
             val err = target - play
             play += 1.0 + MathHelper.clamp(err * 0.12, -0.3, 0.3)
         }
-        // Weit vor den Daten (Server stand still): Achse an die Daten zurückholen.
-        if (newest != Int.MIN_VALUE && play > newest + 6) {
-            offset = (newest - clientTick).toDouble()
-            play = newest - DELAY
+        // At a stalled stream's last sample hold playback there. Rewinding by DELAY
+        // replayed the catch and rolled the entire spine backwards when packets resumed.
+        if (newest != Int.MIN_VALUE && play > newest) {
+            play = newest.toDouble()
+            offset = newest.toDouble() - clientTick
         }
         // Neu aufgesetzte Achse: nicht über den Sprung gleiten.
         playPrev = if (before.isNaN() || kotlin.math.abs(play - before) > 3.0) play else before

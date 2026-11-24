@@ -124,6 +124,10 @@ object CarryGrip {
     const val REACH = 2.55
     const val BELOW = 0.22
 
+    // 72% up the 15-pixel crest pitched -34 degrees about (0, -6.5, 9).
+    val CREST_UP = 6.5 + 10.8 * kotlin.math.cos(Math.toRadians(34.0))
+    val CREST_BACK = 9.0 + 10.8 * sin(Math.toRadians(34.0))
+
     class Anchor(val grip: Vec3d, val head: Vec3d, val back: Vec3d) {
         val figureUp: Vec3d = head.multiply(kotlin.math.cos(0.22)).subtract(back.multiply(sin(0.22))).normalize()
         val figureBack: Vec3d = back.multiply(kotlin.math.cos(0.22)).add(head.multiply(sin(0.22))).normalize()
@@ -138,8 +142,9 @@ object CarryGrip {
         val angle = roll.toDouble()
         val back = up.multiply(kotlin.math.cos(angle)).add(left.multiply(sin(angle)))
         val scale = NivarisShape.SCALE * NivarisShape.taper(i) / 16.0
-        val grip = spine[i].add(back.multiply(15.454 * scale))
-            .subtract(head.multiply((15.039 * 1.03 / 16.0) * spine[i].distanceTo(spine[i + 1])))
+        val stretch = (spine[i].distanceTo(spine[i + 1]) / NivarisShape.SEGMENT).coerceIn(0.5, 1.8)
+        val grip = spine[i].add(back.multiply(CREST_UP * scale))
+            .subtract(head.multiply(CREST_BACK * 1.03 * stretch * NivarisShape.SCALE / 16.0))
         return Anchor(grip, head, back)
     }
 }
@@ -1125,6 +1130,24 @@ class DragonRide(private val f: EirholmFight) {
  * ([riderPos]); der Server nimmt einen gestreckten Körper an ([serverOffset]).
  */
 object RideHooks {
+    // Skull roof y=-7, rear of the horn roots at z=-2.5. The seated hips
+    // bottom at y=-6+12+2, measured from the 24-pixel sole plane.
+    private const val PERCH_UP = 7.0 * NivarisShape.SCALE / 16.0
+    private const val PERCH_FWD = 1.25 * NivarisShape.SCALE / 16.0
+    private const val SEATED_HEIGHT = (24.0 - 8.0) * 0.555 / 16.0
+
+    fun perchFeet(head: Vec3d, up: Vec3d, forward: Vec3d): Vec3d =
+        head.add(up.multiply(PERCH_UP)).add(forward.multiply(PERCH_FWD)).subtract(0.0, SEATED_HEIGHT, 0.0)
+
+    /** Head seat on the airborne carry rail, including its longitudinal roll. */
+    fun perchFeet(spine: List<Vec3d>, roll: Float): Vec3d {
+        val forward = spine[0].subtract(spine[1]).normalize()
+        val up = Vec3d(0.0, 1.0, 0.0).subtract(forward.multiply(forward.y)).normalize()
+        val left = forward.negate().crossProduct(up)
+        val roofNormal = up.multiply(kotlin.math.cos(roll.toDouble())).add(left.multiply(sin(roll.toDouble())))
+        return perchFeet(spine[0], roofNormal, forward)
+    }
+
     /** Client-Haken: Position des Reiters (Füße der Entity) am echten Dorn, null = Server-Näherung. */
     @JvmField
     var riderPos: ((NivarisEntity, net.minecraft.entity.Entity) -> Vec3d?)? = null
@@ -1149,7 +1172,7 @@ object RideHooks {
         val seat = seatOf(d, passenger)
         if (seat == RideSeats.HEAD) {
             val h = NivarisShape.head(d.pose, d.flying)
-            return Vec3d(0.0, h.up + 0.5, h.fwd)
+            return perchFeet(Vec3d(0.0, h.up, h.fwd), Vec3d(0.0, 1.0, 0.0), Vec3d(0.0, 0.0, 1.0))
         }
         val offset = serverOffset(seat)
         val up = offset.y + EYE - NivarisShape.SPINE_UP

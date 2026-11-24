@@ -374,7 +374,7 @@ class Scenes(private val f: EirholmFight) {
         val gateZ = -32.0
         val plateauSpan = (foot - gateZ).coerceAtLeast(96.0)
         shown {
-            for (p in f.audience()) dev.henny.hha.logic.boss.Cine.title(listOf(p), "hha_arius.feat.white_horizon", "hha_arius.feat.white_horizon.sub", 44)
+            for (p in f.audience()) dev.henny.hha.logic.boss.Cine.title(listOf(p), "hha_arius.feat.white_horizon", "hha_arius.feat.white_horizon.sub", 36)
             f.fxAll(FxKind.FLASH, stand, a = 0.24f, life = 6)
             f.fxAll(FxKind.HORIZON, f.abs(Vec3d(x, 0.0, gateZ)), Vec3d(0.0, 0.0, 1.0), a = plateauSpan.toFloat(), b = 4f, life = 28)
             f.farSound("white_line.release", seamTo, 3.0f, 0.65f)
@@ -385,16 +385,16 @@ class Scenes(private val f: EirholmFight) {
         )
         wait(26)
         // 2) Weite Totale von Fuß bis Horn: Die senkrechte Lichtklinge schneidet 1:1 synchron zu den Z-Scheiben durch den Berg.
-        // Alle Blickpunkte liegen strikt VOR/ÜBER der Berghaut (freie Sichtlinie), damit HHA-CinePlayer die Kamera nie einzieht.
+        // Alle Kamera- und Blickpunkte liegen mit >20 Blöcken Sicherheitsabstand strikt vor/über dem Massiv.
         val mid = f.abs(Vec3d(x, 90.0, spireZ - 40.0))
         shown {
             f.farSound("cut.split", mid, 4.8f, 0.62f)
             // Tiefes Grollen unter dem Spalten: Fels und Eis geben nach.
             f.farVanilla(net.minecraft.sound.SoundEvents.AMBIENT_BASALT_DELTAS_ADDITIONS.value(), mid, 4.0f, 0.5f)
         }
-        post.rawLine(
-            f.abs(Vec3d(x - 62.0, 128.0, foot - 156.0)), f.abs(Vec3d(x - 48.0, 148.0, foot - 142.0)),
-            f.abs(Vec3d(x, 86.0, spireZ - 110.0)), f.abs(Vec3d(x, 178.0, spireZ - 34.0)), 56, 64.0, 60.0,
+        post.line(
+            f.abs(Vec3d(x - 60.0, 134.0, foot - 158.0)), f.abs(Vec3d(x - 44.0, 156.0, foot - 138.0)),
+            f.abs(Vec3d(x, 96.0, spireZ - 118.0)), f.abs(Vec3d(x, 162.0, spireZ - 58.0)), 56, 64.0, 58.0,
         )
         // Zuerst alle Blöcke der gesamten Schnitt-Ebene (inkl. Gipfelarena, Mauer, Krone & Horn) sichern und linear in Z spalten!
         // Gestaffeltes Fels- & Eisknirschen exakt an den Landmarken (Nordflanke, Schulter, Horn, Südflanke, Durchbruch).
@@ -436,11 +436,12 @@ class Scenes(private val f: EirholmFight) {
             }
             yield(Unit)
         }
-        // 3) Hoher Blick über die gespaltene Gipfelarena: Der Berg bleibt gespalten, bis Arius ihn in der Jagd mit Yang schließt.
+        // 3) Freier, hoher Überblick über die gespaltene Gipfelarena: Kamera und Blicklinie bleiben überall >12 Blöcke über
+        //    Eiskrone, Ringmauer und zentralem Eishorn (Blickpunkt strikt im freien Luftraum vor dem Horn, nie darin).
         val summitY = FarPlan.SHOULDER_Y
-        post.rawLine(
-            f.abs(Vec3d(x + 42.0, summitY + 34.0, spireZ - 66.0)), f.abs(Vec3d(x + 28.0, summitY + 42.0, spireZ - 54.0)),
-            f.abs(Vec3d(x, summitY + 4.0, spireZ - 10.0)), f.abs(Vec3d(x, summitY + 12.0, spireZ + 4.0)), 44, 58.0, 54.0,
+        post.line(
+            f.abs(Vec3d(x + 32.0, summitY + 56.0, spireZ - 88.0)), f.abs(Vec3d(x - 24.0, summitY + 60.0, spireZ - 86.0)),
+            f.abs(Vec3d(x, summitY + 19.0, spireZ - 18.0)), f.abs(Vec3d(x, summitY + 22.0, spireZ - 16.0)), 44, 58.0, 55.0,
         )
         shown { f.sceneText("cut_after") }
         // Fortschritt still vergeben (frame=task, show_toast=false -> kein Achievement-Fanfaren-Sound über der Szene).
@@ -490,7 +491,8 @@ class Scenes(private val f: EirholmFight) {
         if (animate) {
             val footStart = f.abs(Vec3d(ArenaLayout.CUT_X, 0.0, z0.toDouble()))
             val spanZ = (z1 - z0).toFloat().coerceAtLeast(180f)
-            f.fxAll(FxKind.HORIZON, footStart, Vec3d(0.0, 0.0, 1.0), a = spanZ, b = 5f, life = slices + 38)
+            // Laufzeit deckt sowohl die Bergspaltung (slices) als auch die nachziehenden Frostschleier bis in Shot 3 ab.
+            f.fxAll(FxKind.HORIZON, footStart, Vec3d(0.0, 0.0, 1.0), a = spanZ, b = 5f, life = slices + 76)
             if (playSounds) {
                 f.ambient("cut.split", f.abs(Vec3d(ArenaLayout.CUT_X, 90.0, ArenaLayout.SPIRE.z.toDouble())), 4.8f, 0.62f)
                 f.ambient("glacier.collapse", footStart, 4.4f, 0.46f)
@@ -910,20 +912,13 @@ class Scenes(private val f: EirholmFight) {
         cue("glacier.crack", catchLook, 2f, 1.35f)
         f.farSound("nivaris.wing", at(catchQ), 5f, 0.7f)
         val hangTicks = 15
-        val firstCatchVelocity = catches.indices.map { catches[it].subtract(ballistic(launch[it], catches[it], airTicks - 1, airTicks, 0.08)) }
         val hangEnd = catchQ + hangTicks * 0.91
         val hangLook = CarryGrip.at(spine(hangEnd), 0, 0f).feet
         scene.line(catchCam, hangLook.add(11.0, 5.0, 4.0), catchLook, hangLook, hangTicks, 53.0, 59.0, lookAt = lead, lookOffset = 0.85)
         for (t in 1..hangTicks) {
             val q = catchQ + t * 0.91
             val points = spine(q)
-            val u = t / hangTicks.toDouble()
-            val positions = riders.indices.map { i ->
-                val anchor = CarryGrip.at(points, i, 0f)
-                // The hands stay at the spike while the legs react to the arrested fall.
-                val drift = firstCatchVelocity[i].dotProduct(anchor.head).coerceIn(-1.0, 1.0)
-                anchor.feet.subtract(anchor.back.multiply(sin(PI * u) * drift * 0.3))
-            }
+            val positions = riders.indices.map { i -> CarryGrip.at(points, i, 0f).feet }
             frame(q, grip = 1f, positions = positions)
             yield(Unit)
         }
@@ -974,7 +969,7 @@ class Scenes(private val f: EirholmFight) {
                     boardFrom = perch
                 }
                 val u = ((q - pickupQ + 10.0) / 10.0).coerceIn(0.0, 1.0)
-                val target = spine(q)[0].add(0.0, 1.1, 0.0)
+                val target = RideHooks.perchFeet(spine(q), 0f)
                 f.place(a, boardFrom!!.lerp(target, u).add(0.0, sin(u * PI) * 0.9, 0.0))
                 f.face(a, target)
                 if (u == 1.0) {
@@ -1062,7 +1057,7 @@ class Scenes(private val f: EirholmFight) {
             frame(q, positions = targets)
             yield(Unit)
         }
-        val dismount = spine(q)[0].add(0.0, 1.1, 0.0)
+        val dismount = RideHooks.perchFeet(spine(q), 0f)
         RideSeats.unperch(f, a)
         a.play(AriusPose.LAUNCH, 4)
         for (t in 1..14) {
