@@ -91,6 +91,15 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.15.7
+
+- **Solvane's reveal (blizzard silhouette, tight ice coil, sculpted neck & spread wings):**
+  - **Blizzard silhouette shot:** restored the close-up storm silhouette at the upper spire inside the blizzard's visible range (11–17 blocks), using neutral dark charcoal-slate shading (never navy blue) with Solvane's golden eye gleaming through the snow before clearing to her pearl-white scales in Shot 3.
+  - **Flush spire coil & zero mountain clipping:** replaced the oversized global `clearRadius` padding with local `FarPlan.spireTop` contour sampling so Solvane's body and claws hug the blue-ice spire without floating off the ice, and expanded tracked-camera clearance checks (`camera_ticks_in_solid = 0`).
+  - **Neck & wings over the summit:** eliminated the 180° dorsal/belly twist flip by aligning the coil exit on the east flank, restored uniform segment spacing (`2.4` blocks) to remove neck stretching, and unfolded Solvane's wings into a majestic mantle as she rears up and roars above the spire.
+- **Grounded leg & wing posture:** replaced the flat 88° thigh fold (`FOLD_UPPER`) with a natural 45° crouch with bent knees and level paws visibly standing on top of the snow, and lifted folded grounded wingtips cleanly above the ground.
+- **Smooth post-pickup carry flight:** synchronized the entire head-ram pickup, ballistic arc, hang, Arius boarding, travel, and barrel-roll cameras onto the identical `MotionClient.time` timeline as Solvane's spine and riders, skipped ground contact displacement while carrying, and replaced periodic 65-tick `Hold.drop`/`freeze` cycles with one continuous server/client hold.
+
 ### New in 1.15.6
 
 - **Solvane's reveal (clean spire orientation, cleft-free cameras & dynamic flight):**

@@ -212,7 +212,9 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
                 val flapYaw = (if (flap > 0f) 6f * flap else -4f * flap) * deg
                 val flapRoll = (if (flap > 0f) 40f * flap else 34f * flap) * deg
                 val foldYaw = (84f - 4f * tight) * deg
-                val foldRoll = (-45f - 25f * tight) * deg
+                // Keep folded wingtips tucked cleanly along the upper flanks on the ground so they never stab into the snow.
+                val groundLift = (1f - s.fly) * (if (s.mode == NivarisMode.NORMAL) 1f else 0f)
+                val foldRoll = (MathHelper.lerp(groundLift, -45f - 25f * tight, -22f - 10f * tight)) * deg
                 for (sgn in intArrayOf(1, -1)) {
                     val fold = Quaternionf().rotationZYX(sgn * foldRoll, sgn * foldYaw, 180f * deg)
                     if (spireGrip > 0f) fold.slerp(Quaternionf().rotationZYX(0f, sgn * 88f * deg, 168f * deg), spireGrip)
@@ -287,9 +289,9 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
         const val SHEEN = 0x00E6F6FF
         const val SHEEN_RGB = 0xE6F6FF
 
-        /** Tiefes Marineblau der Sturm-Silhouette (multipliziert mit der hellen Körpertextur). */
-        const val SHADE_R = 0x22
-        const val SHADE_G = 0x33
-        const val SHADE_B = 0x52
+        /** Neutrales dunkles Schattengrau der Sturm-Silhouette (klar lesbar im weißen Schneesturm, kein Blaustich). */
+        const val SHADE_R = 0x1E
+        const val SHADE_G = 0x24
+        const val SHADE_B = 0x2C
     }
 }

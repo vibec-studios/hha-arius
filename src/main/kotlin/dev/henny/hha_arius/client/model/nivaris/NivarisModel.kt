@@ -111,8 +111,8 @@ class NivarisKey(val v: FloatArray)
  * Lengths in model units of the leg parts (NivarisModelData), angles of the joints as offsets to the model's own.
  */
 internal object NivarisLegs {
-    /** Upper leg in the full fold (rotation about the segment's x axis, + = back). */
-    const val FOLD_UPPER = 1.54f
+    /** Natural crouching upper-leg angle (rad, + = back): keeps thighs, knees and paws clearly visible on top of snow instead of crushed flat into the ribs. */
+    const val FOLD_UPPER = 0.78f
     private val FOLD_UPPER_DEG = Math.toDegrees(FOLD_UPPER.toDouble()).toFloat()
 
     /** Built-in pitch of the lower leg (degrees); the foot carries the opposite angle. */
@@ -120,21 +120,23 @@ internal object NivarisLegs {
 
     fun upper(authored: Float, fold: Float): Float = MathHelper.lerp(fold, authored, FOLD_UPPER)
 
-    /** Lower leg offset: straight in line with the upper leg at full fold. */
-    fun lower(fore: Boolean, authoredDeg: Float, fold: Float): Float = MathHelper.lerp(fold, authoredDeg, -knee(fore))
+    /** Lower leg offset: keeps a natural bent dragon knee when crouched instead of straightening flat. */
+    fun lower(fore: Boolean, authoredDeg: Float, fold: Float): Float =
+        MathHelper.lerp(fold, authoredDeg, if (fore) -16f else -22f)
 
-    /** Foot offset: sole level with the ground at full fold. */
-    fun foot(fore: Boolean, authoredDeg: Float, fold: Float): Float = MathHelper.lerp(fold, authoredDeg, knee(fore) - FOLD_UPPER_DEG)
+    /** Foot offset: sole level with the ground at full crouch. */
+    fun foot(fore: Boolean, authoredDeg: Float, fold: Float): Float =
+        MathHelper.lerp(fold, authoredDeg, (if (fore) 16f else 22f) - FOLD_UPPER_DEG)
 
     fun rotation(state: NivarisRenderState, fore: Boolean, right: Boolean, fold: Float): Quaternionf {
         val cling = state.mode == NivarisModeC.RETURN_COIL
         val base = if (cling) 1.48f else state.p[if (fore) NivarisModel.FORE else NivarisModel.HIND]
         val swipe = if (fore && right && !cling) state.p[NivarisModel.SWIPE] else 0f
         val rot = Quaternionf().rotationZYX(-0.6f * swipe, 0.3f * swipe, upper(base - 0.9f * swipe, fold))
-        if (state.spireGrip > 0f) {
+        if (state.mode == NivarisModeC.COIL) {
+            // Reach gently inward onto the blue-ice spire so paws visibly grip the ice instead of dangling in air.
             val side = if (right) 1f else -1f
-            rot.slerp(Quaternionf().rotationZYX(side * (if (fore) 0.48f else 0.36f),
-                side * (if (fore) 0.12f else 0.10f), 0.28f), state.spireGrip)
+            rot.slerp(Quaternionf().rotationZYX(side * (if (fore) 0.34f else 0.28f), side * 0.12f, 0.22f), 0.85f)
         }
         return rot
     }
@@ -349,6 +351,13 @@ class NivarisModel(root: ModelPart) : EntityModel<NivarisRenderState>(root) {
         System.arraycopy(v, 0, state.p, 0, COUNT)
         val p = state.p
 
+        // Auf der Eisnadel beim Aufrichten/Brüllen: Schwingen majestätisch öffnen statt schlaff senkrecht hängen lassen.
+        if (state.mode == NivarisModeC.COIL && pose != NivarisPose.LIE_DOWN) {
+            val spread = smooth((t / 28f).coerceIn(0f, 1f))
+            val wantWing = if (pose == NivarisPose.ROAR) 0.85f else 0.58f
+            p[WING] = maxOf(p[WING], wantWing * spread)
+            p[FLAP] = maxOf(p[FLAP], 0.35f * spread)
+        }
         // Flug: Schwingen gespannt, ein langsamer, schwerer Schlag (Abschlag schnell), Läufe angezogen.
         if (!ownsWings(pose) && fly > 0.001f) {
             val period = if (pose == NivarisPose.GLIDE) 70f else 34f
@@ -730,11 +739,9 @@ class NivarisBody(private val model: NivarisModel) {
                             d -= 0.5
                         }
                     }
-                    val neckLength = coilPoly(poly, o, r.toDouble(), now)
-                    val release = smooth((u / 24.0).toFloat().coerceIn(0f, 1f))
-                    val neckSpacing = MathHelper.lerp(release.toDouble(), neckLength / COIL_NECK, NivarisShape.SEGMENT)
-                    // Keep the coiled body anchored around the spire while the head and neck lift smoothly over the summit.
-                    sample(poly, pts, ups, 0, NivarisShape.SEGMENT, neckSpacing = neckSpacing, neckCount = COIL_NECK)
+                    coilPoly(poly, o, r.toDouble(), now)
+                    // Uniform segment spacing (as in 1.11.0): keeps sculpted dragon neck proportions instead of 1.75x stretched cylinders.
+                    sample(poly, pts, ups, 0, 0.0)
                     headFwd = if (mode == NivarisModeC.UNCOIL && u > 0.5) {
                         EntrancePathC.tangent(u).add(0.0, -0.08, 0.0).normalize()
                     } else {
@@ -841,7 +848,7 @@ class NivarisBody(private val model: NivarisModel) {
             }
         }
         updateFrames()
-        if (mode != NivarisModeC.COIL && mode != NivarisModeC.UNCOIL && mode != NivarisModeC.RETURN_COIL) {
+        if (carry == null && mode != NivarisModeC.COIL && mode != NivarisModeC.UNCOIL && mode != NivarisModeC.RETURN_COIL) {
             for (pass in 0..2) {
                 val need = contacts(terrain, s, pts)
                 val peak = need.max()
@@ -1385,24 +1392,24 @@ class NivarisBody(private val model: NivarisModel) {
         while (trail.size > keep) trail.removeLast()
     }
 
-    /** Hals vom Kopfgelenk (ruhend → aufgerichtet nach [raise]) knickfrei zur Spitze der 1.11.0-Helix, dann die Helix hinab. */
+    /** Hals vom Kopfgelenk (ruhend → aufgerichtet nach [raise]) drehungsfrei zur Ost-Schulter der Helix, dann die Helix hinab. */
     private fun coilPoly(poly: Poly, o: Vec, raise: Double, now: Float): Double {
         val axis = o.add(ArenaLayout.SPIRE.x + 0.5, 0.0, ArenaLayout.SPIRE.z + 0.5)
         val h = o.add(EntrancePathC.HEAD_REST.lerp(EntrancePathC.HEAD_RAISED, raise)).add(0.0, kotlin.math.sin(now * 0.05) * 0.20, 0.0)
         val c1 = o.add(EntrancePathC.coil(1.0))
         val t1 = c1.subtract(o.add(EntrancePathC.coil(0.995))).normalize()
         val d = h.distanceTo(c1).coerceAtLeast(2.0)
-        val c1Rad = Vec(c1.x - axis.x, 0.0, c1.z - axis.z).normalizeOr(UP_V)
+        val c1Rad = Vec(c1.x - axis.x, 0.0, c1.z - axis.z).normalizeOr(Vec(1.0, 0.0, 0.0))
         val c1Up = c1Rad.multiply(0.85).add(0.0, 0.52, 0.0).normalize()
-        val hRad = Vec(h.x - axis.x, 0.0, h.z - axis.z).normalizeOr(Vec(0.0, 0.0, -1.0))
-        val restHeadUp = hRad.multiply(0.85).add(0.0, 0.52, 0.0).normalize()
-        val raisedHeadUp = Vec(0.0, 0.72, 0.69).normalize()
+        // Both rest and raised head back-vectors lie in the same eastern-upper-south hemisphere as c1Up (zero 180° flip!).
+        val restHeadUp = c1Up.lerp(Vec(0.55, 0.72, 0.42).normalize(), 0.45).normalize()
+        val raisedHeadUp = Vec(0.26, 0.72, 0.64).normalize()
         val headUp = restHeadUp.lerp(raisedHeadUp, raise).normalizeOr(UP_V)
         val restBack = t1.negate()
-        val raisedBack = EntrancePathC.tangent(0.0).negate().lerp(Vec(0.0, -0.65, 0.76).normalize(), 0.45).normalize()
+        val raisedBack = Vec(0.18, -0.62, 0.76).normalize()
         val headBack = restBack.lerp(raisedBack, raise).normalizeOr(restBack)
-        val p1 = h.add(headBack.multiply(0.36 * d))
-        val p2 = c1.add(t1.multiply(0.38 * d))
+        val p1 = h.add(headBack.multiply(0.38 * d))
+        val p2 = c1.add(t1.multiply(0.40 * d))
         val steps = 20
         var neckLength = 0.0
         var prev = h
@@ -1419,7 +1426,7 @@ class NivarisBody(private val model: NivarisModel) {
         while (sCoil >= 0.0) {
             val q = o.add(EntrancePathC.coil(sCoil))
             val radial = Vec(q.x - axis.x, 0.0, q.z - axis.z).normalizeOr(UP_V)
-            val pos = q.add(radial.multiply(0.15 * kotlin.math.sin(now * 0.05 + sCoil * 9.0)))
+            val pos = q.add(radial.multiply(0.10 * kotlin.math.sin(now * 0.05 + sCoil * 9.0)))
             poly.add(pos, radial.multiply(0.85).add(0.0, 0.52, 0.0).normalize())
             sCoil -= 0.002
         }

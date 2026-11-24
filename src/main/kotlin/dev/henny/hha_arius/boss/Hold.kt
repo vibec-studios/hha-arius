@@ -102,7 +102,7 @@ object Hold {
      * [AriusTimings.HOLD_MAX]. Gilt nur, wenn gerade keine läuft.
      */
     fun allowLong(player: ServerPlayerEntity, ticks: Int) {
-        if (player.uuid !in held) nextLimit[player.uuid] = ticks.coerceIn(1, 200)
+        if (player.uuid !in held) nextLimit[player.uuid] = ticks.coerceIn(1, 600)
     }
 
     /** Verschiebt den Halteanker eines eingefrorenen Spielers (inszenierte Bewegung: hochgeschleudert, zurückgestoßen). */
@@ -180,7 +180,12 @@ object Hold {
                         player.velocityDirty = true
                         Fx.launchPlayer(player, Vec3d.ZERO)
                     }
-                    if (now >= state.end) release(player)
+                    if (now >= state.end) {
+                        release(player)
+                    } else if ((now - state.start) % 40L == 0L && now > state.start) {
+                        // Refresh client-side HoldS2C timer (capped at 80 ticks per packet) so long holds never unlock early.
+                        AriusNet.send(player, HoldS2C(true, ((state.end - now).toInt() + 5).coerceAtMost(80)))
+                    }
                 }
                 Mode.FLIGHT -> {
                     val landed = now - state.start >= 5 && player.isOnGround

@@ -901,20 +901,34 @@ class Scenes(private val f: EirholmFight) {
         val catchCam = catchLook.add(7.5, 4.8, 3.1)
         val apexLook = if (launch.isNotEmpty()) ballistic(launch[0], catches[0], 18, airTicks, 0.08) else catchLook
         val apexCam = apexLook.add(8.0, 2.0, 3.5)
-        scene.line(ram.add(hitSide), apexCam, impactFocus, apexLook, 18, 53.0, 55.0, lookAt = lead, lookOffset = 0.9)
+        val airCamStart = ram.add(hitSide)
+        fun airCamAt(step: Int): Vec3d = if (step <= 18) {
+            val u = (step / 18.0).coerceIn(0.0, 1.0).let { it * it * (3.0 - 2.0 * it) }
+            airCamStart.lerp(apexCam, u)
+        } else {
+            val u = ((step - 18) / (airTicks - 18).toDouble()).coerceIn(0.0, 1.0).let { it * it * (3.0 - 2.0 * it) }
+            apexCam.lerp(catchCam, u)
+        }
+        fun airLookAt(step: Int): Vec3d = if (launch.isNotEmpty()) {
+            ballistic(launch[0], catches[0], step.coerceIn(0, airTicks), airTicks, 0.08).add(0.0, 0.9, 0.0)
+        } else {
+            impactFocus.lerp(catchLook, (step.toDouble() / airTicks).coerceIn(0.0, 1.0))
+        }
         for (t in 1..airTicks) {
             if (t == 14) d.wingTuck = 0f
-            if (t == 19) scene.line(apexCam, catchCam, apexLook, catchLook, airTicks - 18, 55.0, 53.0, lookAt = lead, lookOffset = 0.9)
             val positions = launch.indices.map { ballistic(launch[it], catches[it], t, airTicks, 0.08) }
             frame(hitQ + t * 0.91, grip = ((t - airTicks + 5) / 5f).coerceIn(0f, 1f), positions = positions)
+            // Drive post-ram flight camera on the same MotionClient timeline as CarryFrameS2C (zero unbuffered lookAt wobble).
+            val fov = if (t <= 18) 53.0 + 2.0 * (t / 18.0) else 55.0 - 2.0 * ((t - 18) / (airTicks - 18).toDouble())
+            scene.track(airCamAt(t), airCamAt(minOf(t + 1, airTicks)), airLookAt(t), airLookAt(minOf(t + 1, airTicks)), fov)
             yield(Unit)
         }
         cue("glacier.crack", catchLook, 2f, 1.35f)
         f.farSound("nivaris.wing", at(catchQ), 5f, 0.7f)
         val hangTicks = 15
         val hangEnd = catchQ + hangTicks * 0.91
-        val hangLook = CarryGrip.at(spine(hangEnd), 0, 0f).feet
-        scene.line(catchCam, hangLook.add(11.0, 5.0, 4.0), catchLook, hangLook, hangTicks, 53.0, 59.0, lookAt = lead, lookOffset = 0.85)
+        val hangLookEnd = CarryGrip.at(spine(hangEnd), 0, 0f).feet
+        val hangCamEnd = hangLookEnd.add(11.0, 5.0, 4.0)
         for (t in 1..hangTicks) {
             if (t == 4) {
                 a.play(AriusPose.IDLE)
@@ -924,9 +938,14 @@ class Scenes(private val f: EirholmFight) {
             val points = spine(q)
             val positions = riders.indices.map { i -> CarryGrip.at(points, i, 0f).feet }
             frame(q, grip = 1f, positions = positions)
+            // Keep camera on the same MotionClient timeline as the spine/riders so there is zero relative wobble.
+            val u0 = ((t - 1).toDouble() / hangTicks).let { it * it * (3.0 - 2.0 * it) }
+            val u1 = (t.toDouble() / hangTicks).let { it * it * (3.0 - 2.0 * it) }
+            val look0 = positions.firstOrNull()?.add(0.0, 0.85, 0.0) ?: CarryGrip.at(points, 0, 0f).feet.add(0.0, 0.85, 0.0)
+            val look1 = CarryGrip.at(spine(minOf(hangEnd, q + 0.91)), 0, 0f).feet.add(0.0, 0.85, 0.0)
+            scene.track(catchCam.lerp(hangCamEnd, u0), catchCam.lerp(hangCamEnd, u1), look0, look1, 53.0 + 6.0 * u0)
             yield(Unit)
         }
-        for (p in riders) if (!Cine.muted) Hold.drop(p)
         ownsAnchor.clear()
 
         fun passengerPositions(q: Double, roll: Float = 0f) = spine(q).let { points ->
@@ -935,7 +954,7 @@ class Scenes(private val f: EirholmFight) {
         fun ownFor(p: ServerPlayerEntity, ticks: Int) {
             if (!Cine.muted && p.isAlive && p.entityWorld === f.world) {
                 Hold.drop(p)
-                Hold.allowLong(p, ticks + 10)
+                Hold.allowLong(p, ticks + 20)
                 Hold.freeze(p, ticks)
                 ownsAnchor.add(p.uuid)
             }
@@ -952,32 +971,27 @@ class Scenes(private val f: EirholmFight) {
         val boardStartQ = boardEndQ - boardSpan
         val boardLand = RideHooks.perchFeet(spine(boardEndQ), 0f)
         val approachEnd = maxOf(q + 45.0, dropQ - 94.0)
-        fun travelCamera(from: Double, to: Double, offset: Vec3d, fov: Double) {
-            val look0 = at(from).subtract(direction(from).multiply(8.0)).add(0.0, 2.5, 0.0)
-            val look1 = at(to).subtract(direction(to).multiply(8.0)).add(0.0, 2.5, 0.0)
-            scene.line(look0.add(offset), look1.add(offset), look0, look1,
-                kotlin.math.ceil((to - from) / cruise).toInt(), fov)
+        fun travelTrack(qNow: Double, qNext: Double, offset: Vec3d, fov: Double) {
+            val look0 = at(qNow).subtract(direction(qNow).multiply(8.0)).add(0.0, 2.5, 0.0)
+            val look1 = at(qNext).subtract(direction(qNext).multiply(8.0)).add(0.0, 2.5, 0.0)
+            scene.track(look0.add(offset), look1.add(offset), look0, look1, fov)
         }
         val riderShotStart = distance(f.abs(Vec3d(-103.0, 40.0, -77.0)))
         val riderShotEnd = riderShotStart + 64.0
         val pickupShotEnd = minOf(riderShotStart - 6.0, boardEndQ + 14.0)
-        var postPickupCam = false
-        // Dedicated framing over the open temple rotunda: keeps Arius in-frame from takeoff through apex to landing on Solvane's skull.
-        scene.line(
-            f.abs(Vec3d(-1.5, 14.5, -42.0)), f.abs(Vec3d(-13.0, 26.5, -44.0)),
-            perch.add(-3.0, 7.5, -1.0), boardLand.add(0.0, 1.4, 0.0),
-            kotlin.math.ceil((pickupShotEnd - q) / cruise).toInt().coerceAtLeast(1), 66.0, 56.0,
-        )
-        for (p in riders) ownFor(p, 80)
-        var nextHold = 65
+        val pickupCam0 = f.abs(Vec3d(-1.5, 14.5, -42.0))
+        val pickupCam1 = f.abs(Vec3d(-13.0, 26.5, -44.0))
+        val pickupLook0 = perch.add(-3.0, 7.5, -1.0)
+        val pickupLook1 = boardLand.add(0.0, 1.4, 0.0)
+        val totalTravelTicks = kotlin.math.ceil((rollStart - q) / cruise).toInt() + 40
+        // Single uninterrupted Hold for the entire carry flight (eliminates periodic drop/freeze hitches every 65 ticks).
+        for (p in riders) ownFor(p, totalTravelTicks)
         var travelTicks = 0
         var approachShot = false
         while (q < rollStart) {
+            val qPrev = q
             q = minOf(rollStart, q + cruise)
-            if (++travelTicks >= nextHold) {
-                for (p in riders) ownFor(p, 80)
-                nextHold += 65
-            }
+            travelTicks++
             frame(q, grip = 1f, positions = passengerPositions(q))
             if (!ariusMounted && q >= boardStartQ) {
                 if (boardFrom == null) {
@@ -1009,22 +1023,28 @@ class Scenes(private val f: EirholmFight) {
                     ariusMounted = true
                 }
             }
-            if (!postPickupCam && q >= pickupShotEnd && q < riderShotStart) {
-                postPickupCam = true
-                travelCamera(q, riderShotStart, Vec3d(0.0, 12.0, 28.0), 65.0)
-            }
-            if (q in riderShotStart..<riderShotEnd) {
-                val from = CarryGrip.at(spine(q), 0, 0f).feet
-                val to = CarryGrip.at(spine(q + cruise), 0, 0f).feet
-                val offset = Vec3d(3.2, 2.8, 9.0)
-                scene.track(from.add(offset), to.add(offset), from.add(0.0, 0.8, 0.0), to.add(0.0, 0.8, 0.0), 49.0)
-            } else if (q >= riderShotEnd && q - cruise < riderShotEnd) {
-                travelCamera(q, approachEnd, Vec3d(0.0, 12.0, 28.0), 65.0)
-            }
             if (!approachShot && q >= approachEnd) {
                 approachShot = true
                 f.atmos(dev.henny.hha_arius.net.AtmosMode.AERIE, 50)
-                travelCamera(q, rollStart, Vec3d(2.0, 12.0, 24.0), 62.0)
+            }
+            // Drive every camera segment of the carry flight on the exact same MotionClient timeline as the spine & riders.
+            val qNext = minOf(rollStart, q + cruise)
+            when {
+                q < pickupShotEnd -> {
+                    val span = (pickupShotEnd - hangEnd).coerceAtLeast(1.0)
+                    val s0 = ((qPrev - hangEnd) / span).coerceIn(0.0, 1.0).let { it * it * (3.0 - 2.0 * it) }
+                    val s1 = ((q - hangEnd) / span).coerceIn(0.0, 1.0).let { it * it * (3.0 - 2.0 * it) }
+                    scene.track(pickupCam0.lerp(pickupCam1, s0), pickupCam0.lerp(pickupCam1, s1),
+                        pickupLook0.lerp(pickupLook1, s0), pickupLook0.lerp(pickupLook1, s1), 66.0 - 10.0 * s0)
+                }
+                q in riderShotStart..<riderShotEnd -> {
+                    val from = CarryGrip.at(spine(q), 0, 0f).feet
+                    val to = CarryGrip.at(spine(qNext), 0, 0f).feet
+                    val offset = Vec3d(3.2, 2.8, 9.0)
+                    scene.track(from.add(offset), to.add(offset), from.add(0.0, 0.8, 0.0), to.add(0.0, 0.8, 0.0), 49.0)
+                }
+                q < approachEnd -> travelTrack(q, qNext, Vec3d(0.0, 12.0, 28.0), 65.0)
+                else -> travelTrack(q, qNext, Vec3d(2.0, 12.0, 24.0), 62.0)
             }
             if (travelTicks % 30 == 0) cue("nivaris.wing", at(q), 4f, 0.75f)
             yield(Unit)
