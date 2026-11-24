@@ -91,6 +91,12 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.15.10
+
+- **Vivid glacier-blue attack telegraphs:** Arius's `HEAVEN` temple ground markers (and all Arius/Solvane danger telegraphs in Eirholm) now render in crisp glacier ice-blue (`ClassicTelegraphs.ICE`) instead of pale snow-white, while preserving warm sacred gold for safe zones and gold-styled markers.
+- **Un-kinked Solvane wings (spire reveal & landing):** replaced the `180°` quaternion hemisphere-flip interpolation in `NivarisRenderer` with monotonic Euler wing folding/unfolding, added smooth per-entity `wingBlend` across pose transitions (`LAND` → `LIE_DOWN`), and pleated folded wing membranes cleanly along her flanks so they never kink downward into snow or flare sideways like flat curtains.
+- **Stable grounded landing legs (no single-leg hover or jitter):** decoupled per-leg fold solving from the 3-pass body-lift loop (`NivarisBody.solveLegFolds`), measured paw ground clearance against solid snow collision shapes so thin powder-snow corners no longer lift a paw into mid-air, coupled left/right pairs softly, smoothed `smLegFolds` temporally, and eased `LAND` foreleg placement smoothly toward touchdown.
+
 ### New in 1.15.9
 
 - **Clean frosted ground telegraphs (with HHA 0.9+):** Arius and Solvane's ground attack markers (rings, lines, cones, and golden safe zones) in Eirholm now always render with the clean translucent frost-glow style (`ClassicTelegraphs` + `TelegraphRingMixin`/`TelegraphLineMixin`/`TelegraphConeMixin`), even when running alongside HHA 0.9.0+, without affecting other HHA bosses.

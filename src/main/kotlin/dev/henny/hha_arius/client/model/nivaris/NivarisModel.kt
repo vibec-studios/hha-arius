@@ -58,6 +58,8 @@ class NivarisRenderState : LivingEntityRenderState() {
 
     /** Flügel angelegt 0..1 (Ritt durch enge Felsen). */
     var wingTuck = 0f
+    /** Geglättete Flügelöffnung 0..1 (verhindert Umschnappen bei Posenwechseln). */
+    var wingOpen = 0f
     var spireGrip = 0f
 
     /** Läufe am Boden angelegt 0..1 (vorn, hinten): so weit, dass die Füße auf dem Boden statt darin stehen ([NivarisLegs]). */
@@ -111,8 +113,8 @@ class NivarisKey(val v: FloatArray)
  * Lengths in model units of the leg parts (NivarisModelData), angles of the joints as offsets to the model's own.
  */
 internal object NivarisLegs {
-    /** Natural crouching upper-leg angle (rad, + = back): keeps thighs, knees and paws clearly visible on top of snow instead of crushed flat into the ribs. */
-    const val FOLD_UPPER = 0.78f
+    /** Natural crouching upper-leg angle (rad, + = back): keeps thighs, knees and flat paws clearly visible on top of snow without flattening under the ribs. */
+    const val FOLD_UPPER = 1.08f
     private val FOLD_UPPER_DEG = Math.toDegrees(FOLD_UPPER.toDouble()).toFloat()
 
     /** Built-in pitch of the lower leg (degrees); the foot carries the opposite angle. */
@@ -120,13 +122,13 @@ internal object NivarisLegs {
 
     fun upper(authored: Float, fold: Float): Float = MathHelper.lerp(fold, authored, FOLD_UPPER)
 
-    /** Lower leg offset: keeps a natural bent dragon knee when crouched instead of straightening flat. */
+    /** Lower leg offset: natural bent dragon knee at crouch without pushing the body up. */
     fun lower(fore: Boolean, authoredDeg: Float, fold: Float): Float =
-        MathHelper.lerp(fold, authoredDeg, if (fore) -16f else -22f)
+        MathHelper.lerp(fold, authoredDeg, if (fore) 8f else -24f)
 
-    /** Foot offset: sole level with the ground at full crouch. */
+    /** Foot offset: keeps the sole level with the ground across the full crouch range. */
     fun foot(fore: Boolean, authoredDeg: Float, fold: Float): Float =
-        MathHelper.lerp(fold, authoredDeg, (if (fore) 16f else 22f) - FOLD_UPPER_DEG)
+        MathHelper.lerp(fold, authoredDeg, (if (fore) -8f else 24f) - FOLD_UPPER_DEG)
 
     fun rotation(state: NivarisRenderState, fore: Boolean, right: Boolean, fold: Float): Quaternionf {
         val cling = state.mode == NivarisModeC.RETURN_COIL
@@ -415,13 +417,14 @@ class NivarisModel(root: ModelPart) : EntityModel<NivarisRenderState>(root) {
             NivarisPose.LAND -> {
                 val since = t - w
                 if (since < 0f) {
-                    // Brems-Flügelschlag vor dem Aufsetzen: weit gespreizt, starker Gegenschlag, Klauen nach vorn gereckt.
+                    // Brems-Flügelschlag vor dem Aufsetzen: weit gespreizt, starker Gegenschlag; kurz vor Bodenkontakt Läufe zum Aufsetzen zurückführen.
                     val k = MathHelper.clamp(t / max(w, 1f), 0f, 1f)
                     val brake = sin(k * Math.PI.toFloat() * 2.5f)
+                    val plant = smooth(((k - 0.65f) / 0.35f).coerceIn(0f, 1f))
                     p[WING] = 1f
-                    p[FLAP] = 0.25f + brake * 0.78f
-                    p[FORE] = MathHelper.lerp(k, -0.45f, -0.72f)
-                    p[HIND] = MathHelper.lerp(k, -0.25f, -0.45f)
+                    p[FLAP] = MathHelper.lerp(plant, 0.25f + brake * 0.78f, 0.12f)
+                    p[FORE] = MathHelper.lerp(plant, MathHelper.lerp(k, -0.45f, -0.68f), 0.15f)
+                    p[HIND] = MathHelper.lerp(plant, MathHelper.lerp(k, -0.25f, -0.42f), 0.20f)
                     p[REAR] += (1f - k) * 0.65f
                 } else {
                     // Aufprall: der Kopf schwingt nach unten nach und federt gedämpft zurück, der Körper staucht.
@@ -635,6 +638,9 @@ class NivarisBody(private val model: NivarisModel) {
 
     /** Aktueller Bodenhub je Punkt (siehe [normal]). */
     private val lift = DoubleArray(POINTS)
+
+    /** Geglättete Bein-Beugung je Lauf (verhindert Zittern an Schneestufen und beim Aufsetzen). */
+    private val smLegFolds = FloatArray(4)
 
     private var surfaceCache: java.lang.ref.WeakReference<DragonSurface>? = null
     private var hadCarryFrame = false
@@ -850,7 +856,7 @@ class NivarisBody(private val model: NivarisModel) {
         updateFrames()
         if (carry == null && mode != NivarisModeC.COIL && mode != NivarisModeC.UNCOIL && mode != NivarisModeC.RETURN_COIL) {
             for (pass in 0..2) {
-                val need = contacts(terrain, s, pts)
+                val need = contacts(terrain, s, pts, solveLegs = false)
                 val peak = need.max()
                 if (pass == 0) {
                     for (i in lift.indices) need[i] = maxOf(need[i], lift[i] - LIFT_DOWN * dt)
@@ -869,8 +875,19 @@ class NivarisBody(private val model: NivarisModel) {
                 }
                 if (pass < 2) updateFrames()
             }
+            // Solve leg folds ONCE against the final settled body (using solid snow collision shapes so thin snow-layer
+            // corners never lift a paw into mid-air), couple left/right pairs softly, and smooth temporally to stop jitter.
+            val targetFolds = solveLegFolds(terrain, s, pts)
+            val rate = 1f - kotlin.math.exp(-dt * 0.35f)
+            val maxStep = dt * 0.14f
+            for (k in smLegFolds.indices) {
+                val delta = MathHelper.clamp((targetFolds[k] - smLegFolds[k]) * rate, -maxStep, maxStep)
+                smLegFolds[k] = MathHelper.clamp(smLegFolds[k] + delta, 0f, 1f)
+            }
+            smLegFolds.copyInto(s.legFolds)
         } else {
             lift.fill(0.0)
+            smLegFolds.fill(0f)
             s.legFolds.fill(0f)
         }
         if (carry != null) dev.henny.hha_arius.client.fx.RideClient.recordCarrySurface(carry.first, pts)
@@ -1296,7 +1313,7 @@ class NivarisBody(private val model: NivarisModel) {
         return v
     }
 
-    private fun contacts(terrain: DragonSurface, s: NivarisRenderState, pts: Array<Vec>): DoubleArray {
+    private fun contacts(terrain: DragonSurface, s: NivarisRenderState, pts: Array<Vec>, solveLegs: Boolean = true): DoubleArray {
         val need = DoubleArray(POINTS)
         val matrices = MatrixStack()
         val axes = Matrix3f()
@@ -1307,7 +1324,8 @@ class NivarisBody(private val model: NivarisModel) {
                 frame[at + 6], frame[at + 7], frame[at + 8])
             matrices.multiply(rotation.setFromNormalized(axes))
         }
-        fun measure(i: Int, part: ModelPart): Double = terrain.lift(pts[i], matrices, part)
+        fun measure(i: Int, part: ModelPart, includeSnowOutline: Boolean = true): Double =
+            terrain.lift(pts[i], matrices, part, includeSnowOutline)
         for (i in pts.indices) {
             matrices.push()
             val j = i.coerceAtMost(s.girth.lastIndex)
@@ -1322,7 +1340,7 @@ class NivarisBody(private val model: NivarisModel) {
                 need[i] = measure(i, model.glied(i))
             }
             matrices.pop()
-            if (i == NivarisShape.FORE_GLIED || i == NivarisShape.HIND_GLIED) {
+            if (solveLegs && (i == NivarisShape.FORE_GLIED || i == NivarisShape.HIND_GLIED)) {
                 val fore = i == NivarisShape.FORE_GLIED
                 for (side in 0..1) {
                     val index = (if (fore) 0 else 2) + side
@@ -1334,7 +1352,7 @@ class NivarisBody(private val model: NivarisModel) {
                     fun at(fold: Float): Double {
                         matrices.push()
                         matrices.multiply(NivarisLegs.rotation(s, fore, side == 1, fold))
-                        val depth = measure(i, model.poseLeg(s, index, fold))
+                        val depth = measure(i, model.poseLeg(s, index, fold), includeSnowOutline = false)
                         matrices.pop()
                         return depth
                     }
@@ -1371,6 +1389,76 @@ class NivarisBody(private val model: NivarisModel) {
         need[0] = max(need[0], measure(0, model.head))
         matrices.pop()
         return need
+    }
+
+    /**
+     * Solves per-leg ground fold against the final settled body using solid snow collision shapes
+     * (so a thin powder-snow edge never yanks a paw up into mid-air) and softly couples left/right pairs.
+     */
+    private fun solveLegFolds(terrain: DragonSurface, s: NivarisRenderState, pts: Array<Vec>): FloatArray {
+        val out = FloatArray(4)
+        if (s.spireGrip > 0f || s.mode == NivarisModeC.RETURN_COIL) return out
+        val matrices = MatrixStack()
+        val axes = Matrix3f()
+        val rotation = Quaternionf()
+        val scale = NivarisShape.SCALE
+        for (i in intArrayOf(NivarisShape.FORE_GLIED, NivarisShape.HIND_GLIED)) {
+            val fore = i == NivarisShape.FORE_GLIED
+            val atFrame = i * 9
+            matrices.push()
+            axes.set(s.frame[atFrame], s.frame[atFrame + 1], s.frame[atFrame + 2],
+                s.frame[atFrame + 3], s.frame[atFrame + 4], s.frame[atFrame + 5],
+                s.frame[atFrame + 6], s.frame[atFrame + 7], s.frame[atFrame + 8])
+            matrices.multiply(rotation.setFromNormalized(axes))
+            for (side in 0..1) {
+                val index = (if (fore) 0 else 2) + side
+                val sign = if (side == 0) 1 else -1
+                matrices.push()
+                val across = scale * s.girth[i] / 16f
+                matrices.translate(sign * (if (fore) 7 else 6) * across, 3 * across, 8 * scale * s.stretch[i] * 1.03f / 16f)
+                matrices.scale(scale, scale, scale)
+                fun at(fold: Float): Double {
+                    matrices.push()
+                    matrices.multiply(NivarisLegs.rotation(s, fore, side == 1, fold))
+                    val depth = terrain.lift(pts[i], matrices, model.poseLeg(s, index, fold), includeSnowOutline = false)
+                    matrices.pop()
+                    return depth
+                }
+                var fold = 0f
+                var depth = at(fold)
+                if (depth > 0) {
+                    for (step in 1..8) {
+                        val trial = step / 8f
+                        val next = at(trial)
+                        if (next < depth) {
+                            fold = trial
+                            depth = next
+                        }
+                        if (next <= 0) {
+                            var lo = trial - 0.125f
+                            repeat(5) {
+                                val mid = (lo + fold) / 2
+                                if (at(mid) > 0) lo = mid else fold = mid
+                            }
+                            break
+                        }
+                    }
+                }
+                out[index] = fold
+                matrices.pop()
+            }
+            matrices.pop()
+        }
+        // Keep left/right paws on the same plane when standing symmetrically on the arena floor (no single-leg hover).
+        if (s.p[NivarisModel.SWIPE] < 0.05f) {
+            val fMin = minOf(out[0], out[1])
+            out[0] = minOf(out[0], fMin + 0.08f)
+            out[1] = minOf(out[1], fMin + 0.08f)
+        }
+        val hMin = minOf(out[2], out[3])
+        out[2] = minOf(out[2], hMin + 0.08f)
+        out[3] = minOf(out[3], hMin + 0.08f)
+        return out
     }
 
     private fun startFade(now: Float) {
@@ -1623,16 +1711,18 @@ private class DragonSurface(private val world: World, private val origin: BlockP
 
     fun matches(other: World, at: BlockPos) = world === other && origin == at
 
+    private val shapes = HashMap<BlockPos, List<net.minecraft.util.math.Box>>()
+    private val solidShapes = HashMap<BlockPos, List<net.minecraft.util.math.Box>>()
+    private val low = Vector3f()
+    private val high = Vector3f()
+
     fun beginFrame() {
         if (world.time == sampledTick) return
         sampledTick = world.time
         heights.clear()
         shapes.clear()
+        solidShapes.clear()
     }
-
-    private val shapes = HashMap<BlockPos, List<net.minecraft.util.math.Box>>()
-    private val low = Vector3f()
-    private val high = Vector3f()
 
     private fun height(x: Int, z: Int): Int {
         val key = BlockPos.asLong(x, 0, z)
@@ -1657,28 +1747,29 @@ private class DragonSurface(private val world: World, private val origin: BlockP
         return h
     }
 
-    private fun surfaces(x: Int, y: Int, z: Int): List<net.minecraft.util.math.Box> {
+    private fun surfaces(x: Int, y: Int, z: Int, includeSnowOutline: Boolean): List<net.minecraft.util.math.Box> {
         val pos = BlockPos(x, y, z)
-        return shapes.getOrPut(pos) {
+        val cache = if (includeSnowOutline) shapes else solidShapes
+        return cache.getOrPut(pos) {
             val state = world.getBlockState(pos)
-            val shape = if (state.isOf(Blocks.SNOW)) state.getOutlineShape(world, pos) else state.getCollisionShape(world, pos)
+            val shape = if (includeSnowOutline && state.isOf(Blocks.SNOW)) state.getOutlineShape(world, pos) else state.getCollisionShape(world, pos)
             shape.boundingBoxes
         }
     }
 
     fun floor(x: Double, z: Double, ceiling: Double, bottom: Double): Double? {
-        val h = support(MathHelper.floor(x), MathHelper.floor(z), x, x, z, z, ceiling, bottom)
+        val h = support(MathHelper.floor(x), MathHelper.floor(z), x, x, z, z, ceiling, bottom, true)
         return h.takeIf { it > bottom }
     }
 
     private fun support(x: Int, z: Int, x0: Double, x1: Double, z0: Double, z1: Double,
-                        ceiling: Double, bottom: Double): Double {
+                        ceiling: Double, bottom: Double, includeSnowOutline: Boolean): Double {
         val top = height(x, z)
         if (top <= bottom || top <= world.bottomY) return bottom
         if (!world.chunkManager.isChunkLoaded(x shr 4, z shr 4)) return if (top <= ceiling) top.toDouble() else bottom
         for (y in minOf(top - 1, MathHelper.floor(ceiling)) downTo maxOf(world.bottomY, MathHelper.floor(bottom) - 1)) {
             var highest = bottom
-            for (box in surfaces(x, y, z)) {
+            for (box in surfaces(x, y, z, includeSnowOutline)) {
                 val h = y + box.maxY
                 if (h > ceiling || h <= highest || x + box.maxX < x0 || x + box.minX > x1 ||
                     z + box.maxZ < z0 || z + box.minZ > z1) continue
@@ -1690,7 +1781,7 @@ private class DragonSurface(private val world: World, private val origin: BlockP
         return bottom
     }
 
-    fun lift(p: Vec, matrices: MatrixStack, part: ModelPart): Double {
+    fun lift(p: Vec, matrices: MatrixStack, part: ModelPart, includeSnowOutline: Boolean = true): Double {
         var lift = 0.0
         part.forEachCuboid(matrices) { entry, _, _, box ->
             entry.positionMatrix.transformAab(box.minX / 16f, box.minY / 16f, box.minZ / 16f,
@@ -1703,7 +1794,7 @@ private class DragonSurface(private val world: World, private val origin: BlockP
             val z0 = p.z + low.z
             val z1 = p.z + high.z
             for (x in MathHelper.floor(x0)..MathHelper.floor(x1)) for (z in MathHelper.floor(z0)..MathHelper.floor(z1)) {
-                val surface = support(x, z, x0, x1, z0, z1, ceiling, bottom + lift)
+                val surface = support(x, z, x0, x1, z0, z1, ceiling, bottom + lift, includeSnowOutline)
                 lift = max(lift, surface - bottom)
             }
         }

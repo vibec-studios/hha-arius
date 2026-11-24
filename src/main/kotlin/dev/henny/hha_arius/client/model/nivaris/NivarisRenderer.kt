@@ -52,6 +52,9 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
     /** Weiche Überblendung Boden ↔ Flug je Entity (Flag wechselt sofort, das Modell nicht). */
     private val flyBlend = WeakHashMap<NivarisEntity, FloatArray>()
 
+    /** Weiche Überblendung der Flügelöffnung je Entity (verhindert hartes Umschnappen beim Landen/Posenwechsel). */
+    private val wingBlend = WeakHashMap<NivarisEntity, FloatArray>()
+
     /** Körper (Spur, Überblendung) je Entity. */
     private val bodies = WeakHashMap<NivarisEntity, NivarisBody>()
 
@@ -88,6 +91,14 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
         blend[1] = now
         state.fly = blend[0]
         model.pose(state)
+        // Smooth wing spread across abrupt pose changes (e.g. LAND braking -> LIE_DOWN at touchdown) so wings never snap or kink.
+        val rawWing = MathHelper.clamp(state.p[NivarisModel.WING], 0f, 1f) * (1f - state.wingTuck)
+        val wb = wingBlend.getOrPut(entity) { floatArrayOf(rawWing, now) }
+        val wdt = MathHelper.clamp(now - wb[1], 0f, 5f)
+        val wStep = wdt * (if (rawWing < wb[0]) 1f / 12f else 1f / 7f)
+        wb[0] = if (wb[0] < rawWing) minOf(rawWing, wb[0] + wStep) else maxOf(rawWing, wb[0] - wStep)
+        wb[1] = now
+        state.wingOpen = wb[0]
         bodies.getOrPut(entity) { NivarisBody(model) }.update(entity, state, tickDelta)
         dev.henny.hha_arius.client.fx.DragonHits.update(entity.id, state)
         // Schleier: je Teil Maßstab und Leuchten; die Lage geht an DragonVeil (Lichtschein, Funken, Splitter).
@@ -201,27 +212,23 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
         val spireGrip = s.spireGrip
         when (i) {
             NivarisShape.WING_GLIED -> {
-                // Haltungen aus docs/NIVARIS_SERPENT.md (Grad, für wing_r; wing_l mit umgekehrtem yaw und roll):
-                // gespannt (0,0,0), Schlag oben (0,6,40) / unten (0,4,−34), angelegt (180,84,−45), eng (180,80,−70).
-                // Zwischen angelegt und gespannt per slerp, damit sich die Schwinge um den Knochen dreht.
-                // Seit 1.12.0: Im Ritt legt sie die Flügel an, um zwischen den festen Felsen hindurchzuschießen.
-                val w = MathHelper.clamp(p[NivarisModel.WING], 0f, 1f) * (1f - s.wingTuck)
+                // Smooth monotonic Euler fold/unfold (no 180° quaternion hemisphere flip or downward kink during landing/reveal).
+                val w = MathHelper.clamp(s.wingOpen, 0f, 1f)
                 val flap = MathHelper.clamp(p[NivarisModel.FLAP], -1.2f, 1.2f) * (1f - s.wingTuck)
                 val tight = maxOf(MathHelper.clamp(p[NivarisModel.TIGHT], 0f, 1f), s.wingTuck)
                 val deg = MathHelper.RADIANS_PER_DEGREE
                 val flapYaw = (if (flap > 0f) 6f * flap else -4f * flap) * deg
                 val flapRoll = (if (flap > 0f) 40f * flap else 34f * flap) * deg
-                val foldYaw = (84f - 4f * tight) * deg
-                // Keep folded wingtips tucked cleanly along the upper flanks on the ground so they never stab into the snow.
-                val groundLift = (1f - s.fly) * (if (s.mode == NivarisMode.NORMAL) 1f else 0f)
-                val foldRoll = (MathHelper.lerp(groundLift, -45f - 25f * tight, -22f - 10f * tight)) * deg
+                val foldYaw = (83f - 3f * tight) * deg
+                val foldRoll = (-22f - 10f * tight) * deg
+                val foldPitch = 180f * deg
+                val roll = MathHelper.lerp(w, foldRoll, flapRoll)
+                val yaw = MathHelper.lerp(w, foldYaw, flapYaw)
+                val pitch = MathHelper.lerp(w, foldPitch, 0f)
+                val memFold = if (returnCling) 1f else maxOf(spireGrip, 0.56f) * (1f - w)
                 for (sgn in intArrayOf(1, -1)) {
-                    val fold = Quaternionf().rotationZYX(sgn * foldRoll, sgn * foldYaw, 180f * deg)
-                    if (spireGrip > 0f) fold.slerp(Quaternionf().rotationZYX(0f, sgn * 88f * deg, 168f * deg), spireGrip)
-                    val spread = Quaternionf().rotationZYX(sgn * flapRoll, sgn * flapYaw, 0f)
                     val r = if (returnCling) Quaternionf().rotationZYX(0f, sgn * 90f * deg, 165f * deg)
-                        else fold.slerp(spread, w)
-                    val memFold = if (returnCling) 1f else spireGrip * (1f - w)
+                        else Quaternionf().rotationZYX(sgn * roll, sgn * yaw, pitch)
                     limb(q, matrices, if (sgn > 0) m.wingR else m.wingL, -6f * sgn, -6f, 4f, r, girth, stretch, layer, light, overlay, color, foldAmount = memFold)
                 }
             }

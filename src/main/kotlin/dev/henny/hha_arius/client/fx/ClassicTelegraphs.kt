@@ -24,8 +24,21 @@ object ClassicTelegraphs {
     private val UP = Vec3d(0.0, 1.0, 0.0)
     private val Z = Vec3d(0.0, 0.0, 1.0)
 
+    /** Vivid frost-ice blue for Arius/Solvane danger markers (readable on both dark temple stone and white snow). */
+    private val ICE = Palette(0xFFD8FEFF.toInt(), 0xFF18A6E8.toInt(), 0xFF084B84.toInt(), 0xFF8CE4FF.toInt())
+
+    /** Warm sacred gold for safe zones and explicit gold-style markers. */
+    private val GOLD = Palette(0xFFFFF8DC.toInt(), 0xFFFFC43D.toInt(), 0xFF8A5A08.toInt(), 0xFFFFE69A.toInt())
+
     @JvmStatic
     fun active(): Boolean = MinecraftClient.getInstance().world?.registryKey == ArenaDimension.WORLD
+
+    private fun resolve(pal: Palette, safe: Boolean): Palette {
+        val r = (pal.main ushr 16) and 0xFF
+        val b = pal.main and 0xFF
+        if (safe) return if (r > b + 35) pal else GOLD
+        return if (r > b + 35) pal else ICE
+    }
 
     private fun fill(t: Float, life: Int): Float = (t / life.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
     private fun flash(t: Float, life: Int): Float = (t - (life - 4).toFloat()).coerceIn(0f, 1f)
@@ -61,6 +74,7 @@ object ClassicTelegraphs {
         d: VfxDraw, t: Float, pal: Palette, safe: Boolean, life: Int,
         center: Vec3d, radius: Float, inner: Float, segments: Int,
     ) {
+        val p = resolve(pal, safe)
         val f = fill(t, life)
         val fl = flash(t, life)
         val c = center.add(0.0, 0.09, 0.0)
@@ -70,17 +84,17 @@ object ClassicTelegraphs {
         val cur = inR + (r - inR) * f
         if (cur > inR + 0.02) {
             val fa = fillAlpha(f, fl)
-            val b = body(pal, fl, fa)
-            val fr = front(pal, fl, 0.8f)
+            val b = body(p, fl, fa)
+            val fr = front(p, fl, 0.8f)
             d.ring(VfxLayers.FLOW_ADD, c, X, Z, inR, cur, b, b, segments, (r * 0.6).toFloat(), 0f)
             d.ring(VfxLayers.GLOW_ADD, c.add(0.0, 0.01, 0.0), X, Z, max(inR, cur - rw * 3.0), cur + rw * 1.5, fr, fr, segments, 0f, 0.5f)
         }
-        rimRing(d, pal, c, r, rw, fl, segments)
-        if (inR > 0.05) rimRing(d, pal, c, inR, rw, fl, segments)
+        rimRing(d, p, c, r, rw, fl, segments)
+        if (inR > 0.05) rimRing(d, p, c, inR, rw, fl, segments)
         val wallH = if (safe) 1.4 else 0.45
         d.wall(
             VfxLayers.RAYS_ADD, c, X, Z, UP, r, r, wallH,
-            rim(pal, fl, if (safe) 0.55f else 0.38f), rim(pal, fl, 0f),
+            rim(p, fl, if (safe) 0.55f else 0.38f), rim(p, fl, 0f),
             segments, (r * 0.5).toFloat(), t * 0.02f,
         )
     }
@@ -90,6 +104,7 @@ object ClassicTelegraphs {
         d: VfxDraw, t: Float, pal: Palette, life: Int,
         from: Vec3d, to: Vec3d, halfWidth: Float, delta: Vec3d, dir: Vec3d, side: Vec3d,
     ) {
+        val p = resolve(pal, false)
         val f = fill(t, life)
         val fl = flash(t, life)
         val hw = halfWidth.toDouble()
@@ -99,18 +114,18 @@ object ClassicTelegraphs {
         val cur = a.add(delta.multiply(f.toDouble()))
         if (f > 0.01f) {
             val fa = fillAlpha(f, fl)
-            val bodyCol = body(pal, fl, fa)
-            val frontCol = front(pal, fl, 0.8f)
+            val bodyCol = body(p, fl, fa)
+            val frontCol = front(p, fl, 0.8f)
             d.band(VfxLayers.FLOW_ADD, a, cur, side, hw, bodyCol, bodyCol, 0.35f, 0f)
             val lift = Vec3d(0.0, 0.01, 0.0)
             val s = side.multiply(hw)
             d.band(VfxLayers.GLOW_ADD, cur.subtract(s).add(lift), cur.add(s).add(lift), dir, rw * 3.0, frontCol, frontCol, 0f, 0f)
         }
         val off = side.multiply(hw)
-        rimLine(d, pal, a.add(off), b.add(off), rw, fl)
-        rimLine(d, pal, a.subtract(off), b.subtract(off), rw, fl)
-        rimLine(d, pal, a.subtract(off), a.add(off), rw, fl)
-        rimLine(d, pal, b.subtract(off), b.add(off), rw, fl)
+        rimLine(d, p, a.add(off), b.add(off), rw, fl)
+        rimLine(d, p, a.subtract(off), b.subtract(off), rw, fl)
+        rimLine(d, p, a.subtract(off), a.add(off), rw, fl)
+        rimLine(d, p, b.subtract(off), b.add(off), rw, fl)
     }
 
     @JvmStatic
@@ -118,6 +133,7 @@ object ClassicTelegraphs {
         d: VfxDraw, t: Float, pal: Palette, life: Int,
         apex: Vec3d, radius: Float, forward: Vec3d, side: Vec3d, half: Double, full: Boolean, segments: Int,
     ) {
+        val p = resolve(pal, false)
         val f = fill(t, life)
         val fl = flash(t, life)
         val c = apex.add(0.0, 0.09, 0.0)
@@ -127,19 +143,19 @@ object ClassicTelegraphs {
         val arcLen = (r * half).toFloat()
         if (cur > 0.02) {
             val fa = fillAlpha(f, fl)
-            val bodyCol = body(pal, fl, fa)
-            val frontCol = front(pal, fl, 0.8f)
+            val bodyCol = body(p, fl, fa)
+            val frontCol = front(p, fl, 0.8f)
             d.arc(VfxLayers.FLOW_ADD, c, forward, side, 0.0, cur, -half, half, bodyCol, bodyCol, segments, arcLen * 0.6f, 0f)
             d.arc(VfxLayers.GLOW_ADD, c.add(0.0, 0.01, 0.0), forward, side, max(0.0, cur - rw * 3.0), cur + rw * 1.5, -half, half, frontCol, frontCol, segments, 0f, 0.5f)
         }
-        val glow = rim(pal, fl, 0.5f)
-        val edge = rim(pal, fl, 1f)
+        val glow = rim(p, fl, 0.5f)
+        val edge = rim(p, fl, 1f)
         d.arc(VfxLayers.GLOW_ADD, c, forward, side, max(0.0, r - rw * 2.6), r + rw * 2.6, -half, half, glow, glow, segments, 0f, 0.5f)
         d.arc(VfxLayers.ENERGY, c.add(0.0, 0.005, 0.0), forward, side, max(0.0, r - rw), r + rw, -half, half, edge, edge, segments, arcLen * 0.9f, 0f)
         if (!full) {
             for (ang in doubleArrayOf(-half, half)) {
                 val ray = forward.multiply(cos(ang)).add(side.multiply(sin(ang)))
-                rimLine(d, pal, c, c.add(ray.multiply(r)), rw, fl)
+                rimLine(d, p, c, c.add(ray.multiply(r)), rw, fl)
             }
         }
     }
