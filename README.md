@@ -91,6 +91,12 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.15.9
+
+- **Clean frosted ground telegraphs (with HHA 0.9+):** Arius and Solvane's ground attack markers (rings, lines, cones, and golden safe zones) in Eirholm now always render with the clean translucent frost-glow style (`ClassicTelegraphs` + `TelegraphRingMixin`/`TelegraphLineMixin`/`TelegraphConeMixin`), even when running alongside HHA 0.9.0+, without affecting other HHA bosses.
+- **Smooth Aerie rim crossing:** replaced the pointwise `max()` peak clamping in `DragonRail.carryRail` with a genuinely rounded `C²` upper envelope and raised the eastern Aerie entry waypoints (`38 → 35`), eliminating the sharp V-kinks and up-and-down body bob over the Aerie rock wall and outer ice spire.
+- **No duplicate spire reveal shot:** merged the blizzard silhouette and the clearing crystal-crest climb into a single continuous 96-tick spire sweep (`0.66 → 0.80`, always >10 blocks clear of spire and dragon) that transitions seamlessly from dark storm silhouette to gleaming pearl-white scales mid-shot before cutting to the low-angle ice close-up and wide panorama.
+
 ### New in 1.15.8
 
 - **Solvane's reveal (classic spire buildup, Bergspalt-free wide shot & wall-free arena approach):**

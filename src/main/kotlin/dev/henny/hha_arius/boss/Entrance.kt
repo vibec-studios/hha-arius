@@ -458,17 +458,18 @@ internal object Entrance {
             return c.add(radial.multiply(out)).add(0.0, up, 0.0)
         }
 
-        // 2) Sturm-Silhouette an der unteren/mittleren Windung (70 Ticks, noch OHNE Kopf!):
-        //    Im 12..13-Block-Nebelbereich des Blizzards zeichnet sich erst nur die dunkle gewundene Drachenform
-        //    mit Rückenkamm an der Eisnadel ab — Aufbau von Spannung wie früher.
-        val stormFrom = outside(0.56, 12.5, 1.5)
-        val stormTo = outside(0.72, 12.5, 3.5)
-        scene.rawLine(stormFrom, stormTo, coilAt(f, 0.58), coilAt(f, 0.74), STORM_TICKS, 64.0, 58.0)
+        // 2) Eine durchgehende Fahrt an der Windung hinauf (96 Ticks, Δa ≈ 75° damit die Sehne immer >10 Blöcke frei
+        //    außerhalb von Nadel & Drache bleibt, kein doppelter Körper-Shot!):
+        //    Erst entsteht Solvane als dunkle Sturm-Silhouette im dichten Blizzard (ohne Kopf vorwegzunehmen),
+        //    mitten in derselben Fahrt reißt der Sturm auf und ihre perlweißen Schuppen & Kristallkämme leuchten hervor.
+        val stormFrom = outside(0.66, 15.0, 2.5)
+        val stormTo = outside(0.80, 15.0, 6.0)
+        scene.rawLine(stormFrom, stormTo, coilAt(f, 0.67), coilAt(f, 0.82), 96, 60.0, 52.0)
         f.atmos(AtmosMode.BLIZZARD, 10)
-        sound(f, "seal.blizzard", stormTo, 2.5f, 0.7f)
+        sound(f, "seal.blizzard", stormFrom, 2.5f, 0.7f)
         wait(RELEASE_ARRIVAL - RELEASE_TICKS)
         sound(f, "nivaris.inhale", arrival, 2f, 0.45f)
-        fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.65), 14f, 60)
+        fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.68), 14f, 52)
         // Die Entity steht in dieser Einstellung an der Nadel, nicht beim Plateau-Stellvertreter: Der Client zeichnet sie
         // nur, wenn ihr Abschnitt in Sichtweite der Kamera liegt.
         var proxy = if (!Cine.muted) arrival else f.abs(EntrancePath.PROXY)
@@ -476,18 +477,17 @@ internal object Entrance {
         d.shade = 1f
         d.eyeGlow = 0
         d.fadeIn(36)
-        wait(STORM_TICKS - (RELEASE_ARRIVAL - RELEASE_TICKS))
-
-        // 3) Der Sturm lichtet sich: ihre perlweißen Schuppen & Kristallkämme leuchten auf, eine einzige Fahrt hinauf zur Schulter (52 Ticks).
-        f.atmos(AtmosMode.SNOW, 22)
+        val silhouetteTicks = 46
+        wait(silhouetteTicks)
+        // Mitten in der laufenden Kamerafahrt lichtet sich der Blizzard nahtlos zur wahren Farbe.
+        f.atmos(AtmosMode.SNOW, 24)
         d.shade = 0f
-        scene.rawLine(outside(0.74, 14.5, 4.0), outside(0.92, 13.5, 6.5), coilAt(f, 0.76), coilAt(f, 0.94), 52, 56.0, 50.0)
-        sound(f, "seal.blizzard", coilAt(f, 0.82), 3f, 0.55f)
-        fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.82), 9f, 52)
         d.eyeGlow = 20
-        wait(52)
+        sound(f, "seal.blizzard", coilAt(f, 0.82), 2.5f, 0.55f)
+        fxAll(f, FxKind.BLIZZARD, coilAt(f, 0.82), 8f, 40)
+        wait(96 - (RELEASE_ARRIVAL - RELEASE_TICKS) - silhouetteTicks)
 
-        // 4) Nahaufnahme der Klauen am massiven blauen Eis der Nadel (44 Ticks, an HIND_GLIED s ≈ 0,68 — ohne Flügelmembran im Bild).
+        // 3) Nahaufnahme schräg von unten direkt an der Windung am massiven blauen Eis (44 Ticks, deutlicher Perspektivwechsel).
         val clawAnchor = coilAt(f, 0.68)
         val clawOut = EntrancePath.coilOutward(EntrancePath.coil(0.68))
         val clawTan = coilAt(f, 0.71).subtract(coilAt(f, 0.65)).let {

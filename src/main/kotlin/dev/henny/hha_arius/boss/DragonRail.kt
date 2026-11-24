@@ -255,8 +255,8 @@ object DragonRail {
             f.abs(Vec3d(-41.0, 28.0, -76.0)),
             f.abs(Vec3d(-95.0, 40.0, -77.0)),
             f.abs(Vec3d(-185.0, 40.0, -66.0)),
-            aerie.add(117.0, 30.0, -12.0),
-            aerie.add(93.0, 26.0, -13.0),
+            aerie.add(117.0, 38.0, -12.0),
+            aerie.add(93.0, 35.0, -13.0),
             drop,
             aerie.add(34.0, 22.0, -48.0),
             pass,
@@ -273,17 +273,42 @@ object DragonRail {
             takeoffHead = (57.0 / STEP).toInt(), landingTail = (201.0 / STEP).toInt(),
             structures = true, structureClearance = 5.0,
         )
-        // Carry the height correction across the joins at both ends of the terrain scan.
-        // A height jump there shows up twice: at the snout and as a kick to the rider.
-        val heights = DoubleArray(cleared.size) { cleared[it].y }
-        val grade = 0.49 * STEP
+        // Build a genuinely rounded C2 upper envelope above every wall/spike clearance point so the spine never forms
+        // sharp V-kinks or bobs up and down over the Aerie rim wall or outside ice spires.
+        val minY = DoubleArray(cleared.size) { cleared[it].y }
+        val heights = minY.copyOf()
+        val grade = 0.22 * STEP
         for (i in 1 until heights.size) heights[i] = max(heights[i], heights[i - 1] - grade)
         for (i in heights.lastIndex - 1 downTo 0) heights[i] = max(heights[i], heights[i + 1] - grade)
-        val smooth = cleared.mapIndexed { i, p ->
-            val span = (i - 12).coerceAtLeast(0)..(i + 12).coerceAtMost(cleared.lastIndex)
-            val y = max(heights[i], span.sumOf { heights[it] } / span.count())
-            Vec3d(p.x, y, p.z)
+        fun boxSmooth(src: DoubleArray, radius: Int): DoubleArray = DoubleArray(src.size) { i ->
+            val from = (i - radius).coerceAtLeast(0)
+            val to = (i + radius).coerceAtMost(src.lastIndex)
+            var sum = 0.0
+            for (k in from..to) sum += src[k]
+            sum / (to - from + 1)
         }
+        var env = heights
+        repeat(3) { env = boxSmooth(env, 18) }
+        // Cover any smoothed-down peak with a broad rounded lift instead of pointwise max() (which leaves sharp corners).
+        val deficit = DoubleArray(env.size) { i -> max(0.0, minY[i] - env[i]) }
+        val lift = boxSmooth(boxSmooth(deficit, 14), 14)
+        for (i in env.indices) env[i] += lift[i] * 1.45
+        repeat(2) { env = boxSmooth(env, 12) }
+        // Keep exact ground/takeoff height at both ends of the rail.
+        val pinHead = (40.0 / STEP).toInt().coerceAtMost(env.size / 4)
+        for (i in 0 until pinHead) {
+            val u = i.toDouble() / pinHead
+            val s = u * u * (3.0 - 2.0 * u)
+            env[i] = minY[i] + (env[i] - minY[i]) * s
+        }
+        val pinTail = (48.0 / STEP).toInt().coerceAtMost(env.size / 4)
+        for (j in 0 until pinTail) {
+            val i = env.lastIndex - j
+            val u = j.toDouble() / pinTail
+            val s = u * u * (3.0 - 2.0 * u)
+            env[i] = minY[i] + (env[i] - minY[i]) * s
+        }
+        val smooth = cleared.mapIndexed { i, p -> Vec3d(p.x, env[i], p.z) }
         return evenSpacing(smooth).toMutableList().apply {
             this[0] = start
             this[lastIndex] = aerie
