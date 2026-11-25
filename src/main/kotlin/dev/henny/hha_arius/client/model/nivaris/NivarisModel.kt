@@ -113,8 +113,8 @@ class NivarisKey(val v: FloatArray)
  * Lengths in model units of the leg parts (NivarisModelData), angles of the joints as offsets to the model's own.
  */
 internal object NivarisLegs {
-    /** Natural crouching upper-leg angle (rad, + = back): keeps thighs, knees and flat paws clearly visible on top of snow without flattening under the ribs. */
-    const val FOLD_UPPER = 1.08f
+    /** Tuck angle (rad, + = back) used only when the body actually lies low on the snow (LIE_DOWN/DOWNED) or for hind legs. Standing poses hold the chest high enough that forelegs stand straight (fold ≈ 0). */
+    const val FOLD_UPPER = 1.32f
     private val FOLD_UPPER_DEG = Math.toDegrees(FOLD_UPPER.toDouble()).toFloat()
 
     /** Built-in pitch of the lower leg (degrees); the foot carries the opposite angle. */
@@ -122,13 +122,13 @@ internal object NivarisLegs {
 
     fun upper(authored: Float, fold: Float): Float = MathHelper.lerp(fold, authored, FOLD_UPPER)
 
-    /** Lower leg offset: natural bent dragon knee at crouch without pushing the body up. */
+    /** Lower leg offset: keeps a bent knee when crouched/lying without pushing the body up. */
     fun lower(fore: Boolean, authoredDeg: Float, fold: Float): Float =
-        MathHelper.lerp(fold, authoredDeg, if (fore) 8f else -24f)
+        MathHelper.lerp(fold, authoredDeg, if (fore) 24f else -28f)
 
-    /** Foot offset: keeps the sole level with the ground across the full crouch range. */
+    /** Foot offset: keeps the sole level with the ground across the fold range. */
     fun foot(fore: Boolean, authoredDeg: Float, fold: Float): Float =
-        MathHelper.lerp(fold, authoredDeg, (if (fore) -8f else 24f) - FOLD_UPPER_DEG)
+        MathHelper.lerp(fold, authoredDeg, (if (fore) -24f else 28f) - FOLD_UPPER_DEG)
 
     fun rotation(state: NivarisRenderState, fore: Boolean, right: Boolean, fold: Float): Quaternionf {
         val cling = state.mode == NivarisModeC.RETURN_COIL
@@ -226,7 +226,7 @@ class NivarisModel(root: ModelPart) : EntityModel<NivarisRenderState>(root) {
         val fore = index < 2
         val joints = (if (fore) foreJoints else hindJoints)[index % 2]
         val authored = state.p[if (fore) FORE else HIND]
-        val k = if (state.mode == NivarisModeC.RETURN_COIL) 1f else (authored / 1.1f).coerceIn(0f, 1f)
+        val k = if (state.mode == NivarisModeC.RETURN_COIL) 1f else ((authored - 0.2f) / 0.9f).coerceIn(0f, 1f)
         val elbow = MathHelper.lerp(state.spireGrip, -20f * k, if (fore) 16f else -14f)
         val toe = MathHelper.lerp(state.spireGrip, 50f * k, if (fore) -14f else 12f)
         joints.getOrNull(0)?.set(pitch = NivarisLegs.lower(fore, elbow, fold) * MathHelper.RADIANS_PER_DEGREE)
@@ -456,7 +456,7 @@ class NivarisModel(root: ModelPart) : EntityModel<NivarisRenderState>(root) {
      * damit Server-Anker und Modell übereinstimmen; Zwischenhaltungen (Ausholen, Schlag) stehen hier.
      */
     object Keys {
-        private fun k(h: NivarisShape.Head, jaw: Float = 0.04f, wing: Float = 0f, flap: Float = 0f, fore: Float = 0.15f, swipe: Float = 0f,
+        private fun k(h: NivarisShape.Head, jaw: Float = 0.04f, wing: Float = 0f, flap: Float = 0f, fore: Float = 0.02f, swipe: Float = 0f,
                       sweep: Float = 0f, tight: Float = 0f, hind: Float = 0.2f, rear: Float = 0f, slack: Float = 0f): NivarisKey {
             val v = FloatArray(COUNT)
             v[FWD] = h.fwd.toFloat(); v[UP] = h.up.toFloat(); v[PITCH] = h.pitch.toFloat(); v[YAW] = 0f; v[JAW] = jaw
@@ -926,7 +926,13 @@ class NivarisBody(private val model: NivarisModel) {
         }
         val yawRad = smYaw * MathHelper.RADIANS_PER_DEGREE
         val f = Vec(-kotlin.math.sin(yawRad.toDouble()), 0.0, kotlin.math.cos(yawRad.toDouble()))
-        val spine = base.add(0.0, NivarisShape.SPINE_UP + p[NivarisModel.REAR] * 0.5, 0.0)
+        // On the ground in standing poses (IDLE, ROAR, combat — not LIE_DOWN/DOWNED/EXHAUSTED), hold the chest at true
+        // foreleg height (~2.82 blocks above snow) so both forelegs stand straight and flat-footed instead of folding back.
+        val stand = smooth(ground.coerceIn(0f, 1f)) *
+            (1f - MathHelper.clamp(p[NivarisModel.SLACK] / 0.25f, 0f, 1f)) *
+            smooth(MathHelper.clamp((p[NivarisModel.REAR] + 0.45f) / 0.45f, 0f, 1f))
+        val rearUp = if (p[NivarisModel.REAR] > 0f) p[NivarisModel.REAR] * MathHelper.lerp(stand, 0.5f, 0.14f) else p[NivarisModel.REAR] * 0.5f
+        val spine = base.add(0.0, NivarisShape.SPINE_UP + stand * 1.02 + rearUp, 0.0)
         // Follow the slope of the same trail that drives the shoulders.
         val previous = trail.firstOrNull { it.p.squaredDistanceTo(spine) >= 4.0 }?.p
         val wantSlope = if (e.flying && previous != null) {
@@ -1132,10 +1138,11 @@ class NivarisBody(private val model: NivarisModel) {
             val c = floors.copyOf()
             for (k in 1 until POINTS - 1) floors[k] = c[k] * 0.5 + (c[k - 1] + c[k + 1]) * 0.25
         }
+        val slopeLen = MathHelper.lerp(stand, 8.0f, 13.0f).toDouble()
         for (k in 0 until BODY) {
             val i = NECK + 1 + k
             val arc = (k + 1) * NivarisShape.SEGMENT
-            val rest = MathHelper.lerp(smooth(MathHelper.clamp((arc / 8.0).toFloat(), 0f, 1f)).toDouble(), spine.y, floors[i] + REST_UP)
+            val rest = MathHelper.lerp(smooth(MathHelper.clamp((arc / slopeLen).toFloat(), 0f, 1f)).toDouble(), spine.y, floors[i] + REST_UP)
             pts[i] = Vec(pts[i].x, MathHelper.lerp(w, pts[i].y, rest), pts[i].z)
         }
         for (i in 0 until POINTS) {
@@ -1426,7 +1433,8 @@ class NivarisBody(private val model: NivarisModel) {
                 }
                 var fold = 0f
                 var depth = at(fold)
-                if (depth > 0) {
+                val deadzone = if (fore) 0.12 else 0.02
+                if (depth > deadzone) {
                     for (step in 1..8) {
                         val trial = step / 8f
                         val next = at(trial)
@@ -1434,11 +1442,11 @@ class NivarisBody(private val model: NivarisModel) {
                             fold = trial
                             depth = next
                         }
-                        if (next <= 0) {
+                        if (next <= deadzone) {
                             var lo = trial - 0.125f
                             repeat(5) {
                                 val mid = (lo + fold) / 2
-                                if (at(mid) > 0) lo = mid else fold = mid
+                                if (at(mid) > deadzone) lo = mid else fold = mid
                             }
                             break
                         }

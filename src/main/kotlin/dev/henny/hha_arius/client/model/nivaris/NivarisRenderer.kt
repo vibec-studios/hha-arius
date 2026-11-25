@@ -222,7 +222,12 @@ class NivarisRenderer(context: EntityRendererFactory.Context) :
                 val foldYaw = (83f - 3f * tight) * deg
                 val foldRoll = (-22f - 10f * tight) * deg
                 val foldPitch = 180f * deg
-                val roll = MathHelper.lerp(w, foldRoll, flapRoll)
+                // When rearing on the ground (e.g. ROAR), WING_GLIED pitches up so backward yaw aims wingtips into snow;
+                // lift open wings cleanly upward proportional to the segment's rear-up slope.
+                val segBackY = s.frame[i * 9 + 7]
+                val rearWingLift = if (s.mode == NivarisMode.NORMAL && s.fly < 0.5f && segBackY < -0.15f)
+                    (-segBackY - 0.15f).coerceAtMost(0.75f) * 52f * deg * w else 0f
+                val roll = MathHelper.lerp(w, foldRoll, flapRoll) + rearWingLift
                 val yaw = MathHelper.lerp(w, foldYaw, flapYaw)
                 val pitch = MathHelper.lerp(w, foldPitch, 0f)
                 val memFold = if (returnCling) 1f else maxOf(spireGrip, 0.56f) * (1f - w)

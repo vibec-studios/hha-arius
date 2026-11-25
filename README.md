@@ -91,6 +91,11 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.15.11
+
+- **Straight standing Solvane forelegs (no backward leg fold in `IDLE` / `ROAR`):** grounded standing poses (`IDLE`, `ROAR`, and combat stances, while keeping `LIE_DOWN`/`DOWNED`/`EXHAUSTED` low) now hold Solvane's chest at her true standing foreleg height (`~2.82` blocks above snow with neutral `fore = 0.02f` and flat soles), so both forelegs stand straight, vertical, and flat-footed on top of the snow instead of folding backward or clipping underground.
+- **Roaring wings clear of snow:** compensated `WING_GLIED` pitch when rearing upward on the ground (`NivarisRenderer.rearWingLift`) so open wings during `ROAR` spread cleanly out and up above the snow instead of angling downward into the ice.
+
 ### New in 1.15.10
 
 - **Vivid glacier-blue attack telegraphs:** Arius's `HEAVEN` temple ground markers (and all Arius/Solvane danger telegraphs in Eirholm) now render in crisp glacier ice-blue (`ClassicTelegraphs.ICE`) instead of pale snow-white, while preserving warm sacred gold for safe zones and gold-styled markers.
