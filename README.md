@@ -91,6 +91,10 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.15.12
+
+- **Straight, symmetrical landing & standing alignment (like 1.11.0):** straightened the final ~18 blocks of `EntrancePath.WAYPOINTS` onto the `x = 0.5` centerline heading due north (`-0.4°` exit heading instead of the `36.5°` southwest diagonal) and leveled Solvane's front chest segment (`pts[3..4]` at `y = +2.75`, `0°` pitch) when standing, so both shoulders and both straight forelegs align symmetrically side-by-side facing the player during `ROAR` and `IDLE`.
+
 ### New in 1.15.11
 
 - **Straight standing Solvane forelegs (no backward leg fold in `IDLE` / `ROAR`):** grounded standing poses (`IDLE`, `ROAR`, and combat stances, while keeping `LIE_DOWN`/`DOWNED`/`EXHAUSTED` low) now hold Solvane's chest at her true standing foreleg height (`~2.82` blocks above snow with neutral `fore = 0.02f` and flat soles), so both forelegs stand straight, vertical, and flat-footed on top of the snow instead of folding backward or clipping underground.

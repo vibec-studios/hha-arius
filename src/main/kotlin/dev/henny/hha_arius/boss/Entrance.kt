@@ -81,10 +81,11 @@ object EntrancePath {
         Vec3d(-84.0, 148.0, 156.0),    // weiter, schneller Sturzflug hoch über das offene Westtal
         Vec3d(-96.0, 102.0, 112.0),    // weite Außenkurve weit westlich & über der Eisnadel (-65, 85, 92)
         Vec3d(-76.0, 58.0, 72.0),      // kräftiges Eindrehen zurück nach Osten im offenen Tal nördlich der Nadel
-        Vec3d(-48.0, 32.0, 38.0),      // hoher Einflug weit über den flacheren West-Südwest-Rand (kein Mauer-Wippen!)
-        Vec3d(-24.0, 22.0, 24.0),      // frei über dem inneren Plateau, Schwanz bleibt >12 Blöcke über jeder Mauer
-        Vec3d(-6.0, 11.0, 14.0),       // geschmeidiger Sinkflug mitten über dem freien Schneefeld
-        Vec3d(0.5, 4.8, 5.5),          // nahtlos vor der Landung bei (0.5, 0, 2.0)
+        Vec3d(-48.0, 32.0, 42.0),      // hoher Einflug weit über den flacheren West-Südwest-Rand (kein Mauer-Wippen!)
+        Vec3d(-20.0, 21.0, 32.0),      // frei über dem inneren Plateau, schwingt weich auf die Mittelachse ein
+        Vec3d(-3.0, 13.0, 24.0),       // richtet sich auf x = 0.5 gerade nach Norden aus
+        Vec3d(0.5, 7.6, 15.0),         // geradeaus auf der Mittelachse x = 0.5 (Brust & Läufe 0° gerade!)
+        Vec3d(0.5, 4.6, 5.5),          // die letzten ~18 Blöcke exakt gerade nach Norden in die Landung bei (0.5, 0, 2.0)
     )
 
     private const val COIL_SAMPLES = 360

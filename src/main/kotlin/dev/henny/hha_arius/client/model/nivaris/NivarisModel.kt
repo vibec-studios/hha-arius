@@ -932,7 +932,7 @@ class NivarisBody(private val model: NivarisModel) {
             (1f - MathHelper.clamp(p[NivarisModel.SLACK] / 0.25f, 0f, 1f)) *
             smooth(MathHelper.clamp((p[NivarisModel.REAR] + 0.45f) / 0.45f, 0f, 1f))
         val rearUp = if (p[NivarisModel.REAR] > 0f) p[NivarisModel.REAR] * MathHelper.lerp(stand, 0.5f, 0.14f) else p[NivarisModel.REAR] * 0.5f
-        val spine = base.add(0.0, NivarisShape.SPINE_UP + stand * 1.02 + rearUp, 0.0)
+        val spine = base.add(0.0, NivarisShape.SPINE_UP + stand * 0.95 + rearUp, 0.0)
         // Follow the slope of the same trail that drives the shoulders.
         val previous = trail.firstOrNull { it.p.squaredDistanceTo(spine) >= 4.0 }?.p
         val wantSlope = if (e.flying && previous != null) {
@@ -1138,11 +1138,12 @@ class NivarisBody(private val model: NivarisModel) {
             val c = floors.copyOf()
             for (k in 1 until POINTS - 1) floors[k] = c[k] * 0.5 + (c[k - 1] + c[k + 1]) * 0.25
         }
-        val slopeLen = MathHelper.lerp(stand, 8.0f, 13.0f).toDouble()
+        val slopeLen = MathHelper.lerp(stand, 8.0f, 14.0f).toDouble()
+        val flatLead = MathHelper.lerp(stand, 0.0f, 2.4f).toDouble()
         for (k in 0 until BODY) {
             val i = NECK + 1 + k
             val arc = (k + 1) * NivarisShape.SEGMENT
-            val rest = MathHelper.lerp(smooth(MathHelper.clamp((arc / slopeLen).toFloat(), 0f, 1f)).toDouble(), spine.y, floors[i] + REST_UP)
+            val rest = MathHelper.lerp(smooth(MathHelper.clamp(((arc - flatLead) / slopeLen).toFloat(), 0f, 1f)).toDouble(), spine.y, floors[i] + REST_UP)
             pts[i] = Vec(pts[i].x, MathHelper.lerp(w, pts[i].y, rest), pts[i].z)
         }
         for (i in 0 until POINTS) {
