@@ -55,6 +55,11 @@ class AriusMoves(private val f: EirholmFight) {
     var countering = false
         private set
 
+    /** Seit 1.15.13: Der Mace-Griff ([MaceCatch]) belegt Arius wie eine Konter-Sequenz; seine Angriffe warten so lange. */
+    fun hold(on: Boolean) {
+        countering = on
+    }
+
     private val style = Vfx.Style.HEAVEN
 
     /** Seit 1.10.0: Abschnitte des Gipfel-Finales (Klingenabsichten, Stille, Letzter Zusammenprall). */
@@ -72,6 +77,9 @@ class AriusMoves(private val f: EirholmFight) {
     fun resetStance(start: Stance = Stance.FLOW, ticks: Int = 260) {
         stance = start
         stanceUntil = f.now + ticks
+        // Seit 1.15.13: Ein Abschnitt beginnt in einer Szene, kein Angriff läuft. Wurde der Regisseur mitten in einem
+        // Angriff ersetzt, lief dessen finally nie, und Mace-Griff und Ausweichreaktionen blieben sonst für immer gesperrt.
+        acting = false
     }
 
     /** Darf die Klinge in die Scheide (nur Solvane selbst, nicht die Eisklinge der weißen Form)? */
@@ -214,6 +222,11 @@ class AriusMoves(private val f: EirholmFight) {
         a.play(AriusPose.IDLE)
         var n = 0
         while (n++ < maxTicks && f.canSequence(target) && (flatDist(a, target) > range || !a.canSee(target))) {
+            // Seit 1.15.13: Während Konter oder Mace-Griff geht er nicht weiter (beide halten ihn an seinem Platz).
+            if (countering) {
+                waitUntil(220) { !countering }
+                continue
+            }
             if (healTarget != null && !countering) {
                 yieldAll(healPunish())
                 a.play(AriusPose.IDLE)

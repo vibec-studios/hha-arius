@@ -54,5 +54,6 @@ object HuntClient {
         RopeBridges.reset()
         HuntScares.reset()
         KickAnim.reset()
+        MaceSwingClient.reset()
     }
 }

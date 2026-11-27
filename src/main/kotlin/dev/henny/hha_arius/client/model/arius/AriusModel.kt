@@ -230,6 +230,56 @@ class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
     private val maceSlam by lazy { handPose(Keys.IDLE, Keys.ARM_L, -0.42f, -0.05f, -0.19f, -0.16f, 0.37f) }
     private val forgeIce by lazy { handPose(Keys.IDLE_EMPTY, Keys.ARM_R, -1.36f, -0.38f, 0.25f, -0.53f, 0.04f) }
 
+    /**
+     * Mace-Griff (seit 1.15.13): Der linke Oberarm zeigt im Modellraum (+x links, +y unten, −z vorn) genau entlang
+     * [dir]. Rumpf und Brust drehen ([twist]), kippen seitlich ([lean]) und nach vorn ([bow]); das Becken sinkt um
+     * [sink] Einheiten (die Fuß-IK beugt die Knie). Der Arm wird mit der kürzesten Drehung aus seiner IDLE-Lage
+     * ausgerichtet, die Eltern-Drehungen sind eingerechnet; [elbow] beugt den Unterarm.
+     */
+    private fun maceArm(dir: FloatArray, twist: Float, lean: Float, bow: Float, sink: Float, elbow: Float): AriusKey {
+        val v = Keys.IDLE.v.copyOf()
+        v[Keys.TORSO * 6] += bow * 0.6f
+        v[Keys.CHEST * 6] += bow * 0.4f
+        v[Keys.TORSO * 6 + 1] += twist * 0.55f
+        v[Keys.CHEST * 6 + 1] += twist * 0.45f
+        v[Keys.TORSO * 6 + 2] += lean * 0.6f
+        v[Keys.CHEST * 6 + 2] += lean * 0.4f
+        v[Keys.HIPS * 6 + 4] += sink
+        // Der Kopf gleicht die Drehung des Oberkörpers zur Hälfte aus, der Blick bleibt beim Opfer.
+        v[Keys.HEAD * 6 + 1] -= twist * 0.5f
+        val parent = mul(mul(rot(v, Keys.HIPS), rot(v, Keys.TORSO)), rot(v, Keys.CHEST))
+        val want = norm(applyT(parent, norm(dir)))
+        val restArm = rot(v, Keys.ARM_L)
+        val now = norm(apply(restArm, norm(origin(Keys.FORE_L))))
+        val c = dot(now, want)
+        val axis = cross(now, want)
+        val q = if (c < -0.9999f) floatArrayOf(0f, 1f, 0f, 0f) else norm4(floatArrayOf(1f + c, axis[0], axis[1], axis[2]))
+        val arm = euler(mul(matOf(q), restArm))
+        val a = Keys.ARM_L * 6
+        v[a] = arm[0]
+        v[a + 1] = arm[1]
+        v[a + 2] = arm[2]
+        val fo = Keys.FORE_L * 6
+        v[fo] = -elbow
+        v[fo + 1] = 0f
+        v[fo + 2] = 0f
+        return AriusKey(v, intArrayOf(), Keys.IDLE.plant)
+    }
+
+    private fun norm4(q: FloatArray): FloatArray {
+        val n = sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3])
+        return FloatArray(4) { q[it] / n }
+    }
+
+    /** Gerade über dem Kopf gestemmt, leicht zurückgelehnt. */
+    private val maceRaise by lazy { maceArm(floatArrayOf(0.12f, -1f, 0.06f), 0f, 0.05f, -0.12f, 0.6f, 0.12f) }
+
+    /** Zur linken Seite geschmettert: tief eingesunken, Oberkörper kippt nach links. */
+    private val maceLeft by lazy { maceArm(floatArrayOf(1f, 0.5f, -0.2f), -0.35f, 0.3f, 0.28f, 2.4f, 0.05f) }
+
+    /** Quer über den Körper zur rechten Seite: Oberkörper dreht weit nach rechts ein. */
+    private val maceRight by lazy { maceArm(floatArrayOf(-1f, 0.5f, -0.3f), 0.75f, -0.28f, 0.3f, 2.4f, 0.05f) }
+
     private val gripLoad by lazy { coil(Keys.GRIP_AIM, Keys.GRIP_SNAP, 0.6f, 0.8f) }
     private val pommelLoad by lazy { coil(Keys.POMMEL_RAISE, Keys.POMMEL_HIT, 0.15f, 1.0f) }
     private val stabLoad by lazy { coil(Keys.STAB_RAISE, Keys.STAB_HIT, 0.1f, -0.8f) }
@@ -484,6 +534,9 @@ class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
                 .to(w + r * 0.4f, w + max(r, 4f), Keys.IDLE, ::smooth, SETTLE)
             AriusPose.MACE_CATCH -> tr.to(0f, w, maceCatch, ::easeOut, WIND)
             AriusPose.MACE_SLAM -> tr.to(0f, w, maceSlam, ::easeIn, STRIKE)
+            AriusPose.MACE_RAISE -> tr.to(0f, w, maceRaise, ::smooth, WIND)
+            AriusPose.MACE_LEFT -> tr.to(0f, w, maceLeft, ::easeIn, STRIKE)
+            AriusPose.MACE_RIGHT -> tr.to(0f, w, maceRight, ::easeIn, STRIKE)
             AriusPose.FORGE_ICE -> tr.to(0f, w, forgeIce, ::smooth, WIND)
             AriusPose.GRIP_CAST -> attack(tr, w, r, Keys.GRIP_AIM, Keys.GRIP_SNAP, null, gripLoad, strike = 2f, stop = 1.5f)
             AriusPose.POMMEL -> attack(tr, w, r, Keys.POMMEL_RAISE, Keys.POMMEL_HIT, null, pommelLoad, strike = 3f, stop = 1f)
@@ -584,6 +637,7 @@ class AriusModel(root: ModelPart) : EntityModel<AriusRenderState>(root) {
         AriusPose.SPLIT_FIELD -> 1f
         AriusPose.SPIN_CUT -> 0.5f
         AriusPose.RISE -> 0.2f
+        AriusPose.MACE_LEFT, AriusPose.MACE_RIGHT -> 0.8f
         else -> 0f
     }
 

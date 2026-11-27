@@ -38,6 +38,9 @@ object AriusTimings {
         it[AriusPose.WHISTLE] = 12
         it[AriusPose.MACE_CATCH] = 5
         it[AriusPose.MACE_SLAM] = 4
+        it[AriusPose.MACE_RAISE] = 7
+        it[AriusPose.MACE_LEFT] = 5
+        it[AriusPose.MACE_RIGHT] = 5
         it[AriusPose.FORGE_ICE] = 12
         it[AriusPose.SPIN_CUT] = 14
         it[AriusPose.KICK_PREP] = 16

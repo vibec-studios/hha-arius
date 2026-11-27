@@ -51,7 +51,7 @@ import kotlin.math.sqrt
  */
 object FightClient {
     fun init() {
-        ClientPlayNetworking.registerGlobalReceiver(CineCamS2C.ID) { p, _ -> PunishCam.set(p.on, p.focus, p.ticks) }
+        ClientPlayNetworking.registerGlobalReceiver(CineCamS2C.ID) { p, _ -> PunishCam.set(p.on, p.focus, p.ticks, p.style) }
         ClientPlayNetworking.registerGlobalReceiver(BeatS2C.ID) { p, ctx -> beat(p, ctx.client()) }
         ClientPlayNetworking.registerGlobalReceiver(SilenceS2C.ID) { p, _ -> SilenceLens.set(p.strength, p.fade) }
         ClientPlayNetworking.registerGlobalReceiver(ParryCueS2C.ID) { p, _ -> ParryHud.onCue(p) }
@@ -118,6 +118,9 @@ object PunishCam {
     private var on = false
     private var wasOn = false
     private var focus = -1
+
+    /** 0 = Konter-Bestrafung (Spieler und Arius von der Seite), 1 = Mace-Griff (frontal auf die Schwungebene, seit 1.15.13). */
+    private var style = 0
     private var until = 0L
     private var k = 0f
     private var prevK = 0f
@@ -168,13 +171,14 @@ object PunishCam {
     @JvmStatic
     fun hidesHands(): Boolean = on || k > 0f
 
-    fun set(on: Boolean, focus: Int, ticks: Int) {
+    fun set(on: Boolean, focus: Int, ticks: Int, style: Int = 0) {
         if (on) {
             if (!this.on && k <= 0.01f) {
                 age = 0
                 inStep = 1f / 15f
                 clearRig()
             }
+            this.style = style
             this.on = true
             if (focus >= 0) this.focus = focus
             until = ArtAnims.ticks + ticks.coerceIn(1, 200)
@@ -254,8 +258,11 @@ object PunishCam {
         }
 
         val first = mid == null
-        val pp = player.entityPos
-        val ep = world.getEntityById(focus)?.entityPos ?: pp.add(player.rotationVector.multiply(2.0))
+        // Mace-Griff: Die Achse ist die Schwungebene, die Mitte liegt über Arius; das herumgeschleuderte Opfer zieht die
+        // Kamera nicht mit.
+        val swing = if (style == 1) MaceSwingClient.cameraFrame(player.id) else null
+        val pp = swing?.let { (c, ax) -> c.subtract(ax.multiply(1.5)) } ?: player.entityPos
+        val ep = swing?.let { (c, ax) -> c.add(ax.multiply(1.5)) } ?: world.getEntityById(focus)?.entityPos ?: pp.add(player.rotationVector.multiply(2.0))
         val rawAxis = Vec3d(ep.x - pp.x, 0.0, ep.z - pp.z)
         val rawSep = rawAxis.length()
         val fixed = axis ?: (if (rawSep < 1e-3) Vec3d(0.0, 0.0, 1.0) else rawAxis.multiply(1.0 / rawSep)).also { f ->
@@ -272,12 +279,22 @@ object PunishCam {
                 val blockedPenalty = if (h.type == HitResult.Type.BLOCK) 60.0 else 0.0
                 return kotlin.math.abs(wrapDeg(yaw - player.yaw.toDouble())) + blockedPenalty
             }
-            side = if (score(1.0) <= score(-1.0)) 1.0 else -1.0
+            side = if (swing != null) {
+                // Mace-Griff: lieber von vorn auf Arius; nur wenn dort Mauer oder Säule die Sicht verkürzt, von hinten.
+                fun room(s: Double): Double {
+                    val d = candPos.multiply(s * cos(Math.toRadians(-12.0))).add(f.multiply(sin(Math.toRadians(-12.0))))
+                    val far = m0.add(0.0, 0.45, 0.0).add(d.multiply(7.5)).add(0.0, 0.85, 0.0)
+                    val h = world.raycast(RaycastContext(m0.add(0.0, 0.45, 0.0), far, RaycastContext.ShapeType.COLLIDER, RaycastContext.FluidHandling.NONE, player))
+                    return if (h.type == HitResult.Type.BLOCK) h.pos.distanceTo(m0) else 7.5
+                }
+                val front = room(1.0)
+                if (front >= 6.0 || front >= room(-1.0)) 1.0 else -1.0
+            } else if (score(1.0) <= score(-1.0)) 1.0 else -1.0
         }
         // Only sweep the orbit angle once fully blended in so blend-in is monotonic with zero direction reversal.
         if (k >= 0.999f) age++
         // Zwei Stufen: Tiefpass auf den Mittelpunkt, dann kritisch gedämpfte Feder. So bleiben Stöße des Opfers ein weicher Schub.
-        val actors = pp.lerp(ep, 0.5).add(0.0, 1.45, 0.0)
+        val actors = pp.lerp(ep, 0.5).add(0.0, if (swing != null) 2.3 else 1.45, 0.0)
         val wantMid = aim?.lerp(actors, AIM_FILTER) ?: actors
         aim = wantMid
         var m = mid ?: wantMid
@@ -288,9 +305,9 @@ object PunishCam {
         mid = m
         sep += (rawSep.coerceAtMost(7.0) - sep) * 0.1
         val across = Vec3d(-fixed.z, 0.0, fixed.x).multiply(side)
-        val ang = Math.toRadians(-25.0 + age * 0.4)
+        val ang = Math.toRadians(if (swing != null) -12.0 + age * 0.25 else -25.0 + age * 0.4)
         val dir = across.multiply(cos(ang)).add(fixed.multiply(sin(ang)))
-        val wantDist = 5.4 + sep * 0.25
+        val wantDist = 5.4 + sep * 0.25 + (if (swing != null) -0.4 else 0.0)
         val offset = dir.multiply(wantDist).add(0.0, 0.85, 0.0)
         val full = offset.length()
         val out = offset.multiply(1.0 / full)
@@ -320,7 +337,9 @@ object PunishCam {
             val rigYaw = Math.toDegrees(atan2(-look.x, look.z))
             val yawSpan = kotlin.math.abs(wrapDeg(rigYaw - player.yaw.toDouble()))
             val posSpan = next.distanceTo(player.eyePos)
-            inStep = blendStep(posSpan, yawSpan, maxPosPerTick = 0.48, maxYawPerTick = 6.2, minTicks = 14)
+            // Mace-Griff: schnell heraus, damit der Griff selbst schon im Bild ist.
+            inStep = if (swing != null) blendStep(posSpan, yawSpan, maxPosPerTick = 1.6, maxYawPerTick = 24.0, minTicks = 5)
+            else blendStep(posSpan, yawSpan, maxPosPerTick = 0.48, maxYawPerTick = 6.2, minTicks = 14)
         }
         k = (k + inStep).coerceAtMost(1f)
         prevRigPos = rigPos ?: next

@@ -91,6 +91,12 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.15.13
+
+- **Mace catch, reworked as a real scene:** after his warning, Arius catches the third falling mace smash by the shaft, holds you up in front of him for a beat, heaves you overhead and slams you into the floor four times, from side to side over his head, before letting go. You hang on to your own mace with both hands the whole time; on every slam you land flat on your back, and after the last one you get back up. Your own camera looks straight at the swing, and he has a short line for it.
+- **In every section where he fights on foot:** the catch now works in the temple, the vault and the finale. It no longer pauses the whole fight, so Solvane keeps flying in the vault while he is busy with you. He only catches when the swing has room: free space overhead and level floor on both sides.
+- **Fairness unchanged:** the same total damage as before (now split over four slams), and the catch still never takes you below half a heart.
+
 ### New in 1.15.12
 
 - **Straight, symmetrical landing & standing alignment (like 1.11.0):** straightened the final ~18 blocks of `EntrancePath.WAYPOINTS` onto the `x = 0.5` centerline heading due north (`-0.4°` exit heading instead of the `36.5°` southwest diagonal) and leveled Solvane's front chest segment (`pts[3..4]` at `y = +2.75`, `0°` pitch) when standing, so both shoulders and both straight forelegs align symmetrically side-by-side facing the player during `ROAR` and `IDLE`.

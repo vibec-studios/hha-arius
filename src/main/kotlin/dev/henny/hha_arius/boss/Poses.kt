@@ -122,7 +122,16 @@ object AriusPose {
     /** Tempel-Tritt: Gewichtsverlagerung auf das Standbein, Knie hochziehen, dann gerader Stoßtritt; Schwert tief hinten. */
     const val KICK_PREP = 38
 
-    const val COUNT = 39
+    /** Mace-Griff (seit 1.15.13): den gefangenen Spieler am Mace-Stiel gerade über den Kopf gestemmt. Gehalten. */
+    const val MACE_RAISE = 39
+
+    /** Mace-Griff: Überkopf-Schmettern zur linken Seite (linker Arm, Oberkörper kippt mit). Treffer bei windup. */
+    const val MACE_LEFT = 40
+
+    /** Mace-Griff: Überkopf-Schmettern quer über den Körper zur rechten Seite. Treffer bei windup. */
+    const val MACE_RIGHT = 41
+
+    const val COUNT = 42
 }
 
 /** Formen von Arius ([AriusEntity.form]). */

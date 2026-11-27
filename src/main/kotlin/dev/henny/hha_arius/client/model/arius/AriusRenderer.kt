@@ -6,6 +6,7 @@ import dev.henny.hha_arius.boss.AriusEntity
 import dev.henny.hha_arius.boss.AriusForm
 import dev.henny.hha_arius.boss.AriusTimings
 import dev.henny.hha_arius.client.fx.BladeAnchors
+import dev.henny.hha_arius.client.fx.MaceSwingClient
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.model.ModelPart
 import net.minecraft.client.render.OverlayTexture
@@ -127,7 +128,23 @@ class AriusRenderer(context: EntityRendererFactory.Context) :
         val mouth = world(matrices.peek().positionMatrix.transformPosition(Vector3f(0f, 0f, 0f)))
         matrices.pop()
         BladeAnchors.record(state.entityId, base, tip, mouth)
+        if (MaceSwingClient.watches(state.entityId)) {
+            val arm = armChain ?: chainTo(ARM_L)?.also { armChain = it } ?: return
+            val fist = fistChain ?: chainTo(FIST_L)?.also { fistChain = it } ?: return
+            matrices.push()
+            for (p in arm) p.applyTransform(matrices)
+            val shoulder = world(matrices.peek().positionMatrix.transformPosition(Vector3f(0f, 0f, 0f)))
+            matrices.pop()
+            matrices.push()
+            for (p in fist) p.applyTransform(matrices)
+            val grip = world(matrices.peek().positionMatrix.transformPosition(Vector3f(0f, 1.5f / 16f, 0f)))
+            matrices.pop()
+            MaceSwingClient.recordHand(state.entityId, shoulder, grip)
+        }
     }
+
+    private var armChain: List<ModelPart>? = null
+    private var fistChain: List<ModelPart>? = null
 
     override fun createRenderState() = AriusRenderState()
 
@@ -182,6 +199,8 @@ class AriusRenderer(context: EntityRendererFactory.Context) :
         const val SCALE = 0.555f
         const val WIDE = 1.12f
         const val FULL_BRIGHT = 0xF000F0
+        const val ARM_L = "hips/torso/chest/arm_l"
+        const val FIST_L = "hips/torso/chest/arm_l/fore_l/hand_l/fist_l"
 
         fun tex(name: String): Identifier = HhaArius.id("textures/entity/$name.png")
     }

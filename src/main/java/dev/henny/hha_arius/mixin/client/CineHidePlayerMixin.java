@@ -22,6 +22,6 @@ public abstract class CineHidePlayerMixin {
         cancellable = true
     )
     private void hhaArius$hideOwnBody(Entity entity, Frustum frustum, double x, double y, double z, CallbackInfoReturnable<Boolean> cir) {
-        if (RideClient.hideForCamera(entity)) cir.setReturnValue(false);
+        if (RideClient.hideForCamera(entity) || dev.henny.hha_arius.client.fx.MaceSwingClient.hideOwn(entity)) cir.setReturnValue(false);
     }
 }

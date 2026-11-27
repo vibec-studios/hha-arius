@@ -542,7 +542,7 @@ class EirholmFight(
         }
         updateDuelTarget(active)
         if (phase >= Phase.TEMPLE && phase < Phase.END) scaling.tick(active.size)
-        if (!maceCatch.step()) director?.step()
+        director?.step()
         if (ended) return
         // Aus einer Momentaufnahme ausführen: Tasks dürfen neue Tasks anlegen oder den Kampf beenden.
         if (tasks.isNotEmpty()) {

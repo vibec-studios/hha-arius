@@ -81,16 +81,6 @@ object KickAnim {
         ))
     }
 
-    fun catchMace(id: Int, duration: Int) {
-        if (id < 0) return
-        val high = Key(5f, -18f, -5f, 0f, 0.25f, -0.71f, 0.09f, 0.25f, -0.6f, -0.36f, 0.16f, 0.35f, -0.12f)
-        val low = Key(19f, -52f, 8f, -0.28f, -0.3f, -0.82f, 0.28f, -0.26f, -0.83f, -0.61f, 0.22f, 0.41f, -0.25f)
-        fun Key.at(t: Float) = Key(t, pitch, roll, drop, head, rArm, rArmZ, lArm, lArmZ, rLeg, rLegZ, lLeg, lLegZ)
-        tracks[id] = Track(duration.toFloat(), listOf(high.at(0f), high.at(15f), low, low.at(23f), high.at(29f),
-            low.at(33f), low.at(37f), high.at(43f), low.at(47f),
-            Key(duration.toFloat(), 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f)))
-    }
-
     fun reset() {
         tracks.clear()
     }

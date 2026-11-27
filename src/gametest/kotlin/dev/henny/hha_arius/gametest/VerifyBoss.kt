@@ -54,7 +54,9 @@ class VerifyBoss : FabricClientGameTest {
                     "exact" -> parryExact()
                     "classic" -> classic()
                     "mace" -> mace()
-                    "macecatch" -> maceCatch()
+                    "macecatch" -> maceCatch("temple")
+                    "macecatchvault" -> maceCatch("vault")
+                    "macecatchfinale" -> maceCatch("finale")
                     "macefloat" -> maceFloat()
                     "parrycue" -> parryCue()
                     "forge" -> forge()
@@ -104,8 +106,14 @@ class VerifyBoss : FabricClientGameTest {
         log("parry cue: ring and open window reached through Eirholm ground warning")
     }
 
-    private fun VerifyKit.maceCatch() {
-        temple()
+    private fun VerifyKit.maceCatch(stage: String) {
+        when (stage) {
+            "vault" -> vault()
+            "finale" -> finaleFight()
+            else -> temple()
+        }
+        // Replace the director only between attacks: an attack dropped mid-way never clears AriusMoves.acting.
+        waitUntil(400, 1) { server { fight()?.moves?.acting == false } }
         server {
             val f = checkNotNull(fight())
             f.startDirector(script { while (true) yield(Unit) })
@@ -114,6 +122,9 @@ class VerifyBoss : FabricClientGameTest {
             f.ariusOpenUntil = 0
             f.ariusVulnerable = true
             f.arius!!.play(AriusPose.IDLE)
+            // Reproducible: open floor at the arena centre. Next to a pillar the catch is refused on purpose.
+            val c = f.arenaCenter
+            f.place(f.arius!!, Vec3d(c.x, f.floorAt(f.arius!!), c.z))
         }
         faceArius(1.45)
         addBots(1)
@@ -143,23 +154,71 @@ class VerifyBoss : FabricClientGameTest {
                 val pos = f.arius!!.entityPos.add(f.facing(f.arius!!).multiply(7.0))
                 bot.teleport(f.world, pos.x, pos.y, pos.z, emptySet(), bot.yaw, bot.pitch, false)
             }
-            check(smash(bot = false))
-            tick(9)
-            shot("mace_held")
+            if (!smash(bot = false)) {
+                server { srv ->
+                    val f = checkNotNull(fight())
+                    val a = f.arius!!
+                    val p = player(srv)
+                    val mc = EirholmFight::class.java.getDeclaredField("maceCatch").apply { isAccessible = true }.get(f)
+                    val plan = mc.javaClass.getDeclaredMethod("plan", dev.henny.hha_arius.boss.AriusEntity::class.java, ServerPlayerEntity::class.java)
+                        .apply { isAccessible = true }.invoke(mc, a, p)
+                    // Mirror of MaceCatch.clear for the first axis: report which part is blocked.
+                    val c = Vec3d(a.x, f.floorAt(a), a.z)
+                    val d0 = Vec3d(p.x - a.x, 0.0, p.z - a.z).normalize()
+                    fun blocked(b: Box) = f.world.getBlockCollisions(null, b).iterator().hasNext()
+                    log("below arius blocked=${blocked(Box(a.x - 0.3, a.y - 0.3, a.z - 0.3, a.x + 0.3, a.y - 0.01, a.z + 0.3))}")
+                    for (deg in intArrayOf(0, 90)) {
+                        val r = Math.toRadians(deg.toDouble())
+                        val ax = Vec3d(d0.x * kotlin.math.cos(r) - d0.z * kotlin.math.sin(r), 0.0, d0.x * kotlin.math.sin(r) + d0.z * kotlin.math.cos(r))
+                        var th = -1.95
+                        val bad = ArrayList<String>()
+                        while (th <= 1.95) {
+                            val rad = ax.multiply(kotlin.math.sin(th)).add(0.0, kotlin.math.cos(th), 0.0)
+                            val cen = c.add(0.0, 1.55, 0.0).add(rad.multiply(2.3))
+                            val anc = Vec3d(cen.x, maxOf(c.y, cen.y - 0.9), cen.z)
+                            if (!f.world.isSpaceEmpty(p, p.boundingBox.offset(anc.subtract(p.entityPos)))) bad.add("anchor%.2f".format(th))
+                            for (rho in doubleArrayOf(1.2, 2.2, 3.2)) {
+                                val q = c.add(0.0, 1.55, 0.0).add(rad.multiply(rho))
+                                val y = maxOf(q.y, c.y + 0.45)
+                                if (blocked(Box(q.x - 0.3, y - 0.3, q.z - 0.3, q.x + 0.3, y + 0.3, q.z + 0.3))) bad.add("fig%.2f/%.1f".format(th, rho))
+                            }
+                            th += 0.12
+                        }
+                        for (side in intArrayOf(1, -1)) for (dist in doubleArrayOf(1.2, 2.0, 2.8, 3.6)) {
+                            val q = c.add(ax.multiply(side * dist))
+                            if (blocked(Box(q.x - 0.3, c.y + 0.05, q.z - 0.3, q.x + 0.3, c.y + 0.8, q.z + 0.3))) bad.add("body$side/$dist")
+                            if (!blocked(Box(q.x - 0.2, c.y - 0.3, q.z - 0.2, q.x + 0.2, c.y - 0.02, q.z + 0.2))) bad.add("nofloor$side/$dist")
+                        }
+                        log("axis $deg: ${bad.take(12)}")
+                    }
+                    log("mace catch refused: acting=${f.moves.acting} countering=${f.moves.countering} grab=${Hold.canGrab(p)} " +
+                        "arius=${a.entityPos} floor=${f.floorAt(a)} player=${p.entityPos} plan=${plan != null} " +
+                        "telegraph=${f.players().any { f.calls.hasBossTelegraph(it) }}")
+                }
+                error("third smash was not caught")
+            }
+            // Frames along the whole scene: catch, heave, each slam, lying, getting up.
+            val frames = mapOf(3 to "catch", 7 to "grip", 11 to "hold", 16 to "heave", 20 to "overhead", 23 to "down1",
+                31 to "up2", 34 to "over2", 72 to "lying", 82 to "getup", 88 to "kneel")
             var health = server { player(it).health }
             var strikes = 0
-            repeat(48) {
+            for (t in 1..100) {
                 tick(1)
+                frames[t]?.let { shot("mace_${stage}_${t}_$it") }
+                if (System.getProperty("arius.verify.part") == "every" && t % 2 == 0) shot("mace_${stage}_seq_%03d".format(t))
                 val current = server { player(it).health }
                 if (current < health) {
                     strikes++
-                    shot("mace_slam_$strikes")
+                    shot("mace_${stage}_${t}_slam$strikes")
                 }
                 health = current
+                if (t > 20 && server { !Hold.isHeld(player(it)) }) break
             }
-            check(strikes == 3 && health in 1f..<20f)
+            tick(4)
+            shot("mace_${stage}_after")
+            check(strikes == 4 && health in 1f..<20f) { "strikes $strikes health $health" }
             check(server { !Hold.isHeld(player(it)) })
-            log("mace catch: counters stayed per fighter, three impacts, released at health $health")
+            log("mace catch ($stage): counters stayed per fighter, four slams, released at health $health")
         } finally {
             godMode = true
             server {

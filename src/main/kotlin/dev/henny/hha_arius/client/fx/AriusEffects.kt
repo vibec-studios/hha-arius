@@ -122,7 +122,7 @@ abstract class AriusFx(val life: Int) {
                     else -> HorizonFx(pos, dir, p.a.toDouble(), p.b > 0f, e1, p.life, temple = p.b >= 2f)
                 }
                 FxKind.MACE_GRIP -> {
-                    KickAnim.catchMace(p.e1, p.life)
+                    MaceSwingClient.start(p.e1, p.e2, dir, pos.y, p.a.toInt(), p.life)
                     null
                 }
                 FxKind.KICK_FLING -> {

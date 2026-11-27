@@ -23,6 +23,11 @@ public abstract class RidePlayerRendererMixin {
         cancellable = true
     )
     private void hhaArius$rideTransform(PlayerEntityRenderState state, MatrixStack matrices, float bodyYaw, float baseHeight, CallbackInfo ci) {
+        // Seit 1.15.13: Mace-Griff – die Figur hängt an Arius' Faust und wird über seinen Kopf geschmettert.
+        if (dev.henny.hha_arius.client.fx.MaceSwingClient.transform(state, matrices)) {
+            ci.cancel();
+            return;
+        }
         if (RideClient.transform(state, matrices)) ci.cancel();
     }
 
