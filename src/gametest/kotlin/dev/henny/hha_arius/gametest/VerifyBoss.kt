@@ -61,6 +61,7 @@ class VerifyBoss : FabricClientGameTest {
                     "parrycue" -> parryCue()
                     "forge" -> forge()
                     "transformreal" -> transformReal()
+                    "dashwall" -> dashWall()
                     "templehorizon" -> templeHorizon()
                     "horizonviews" -> horizonViews()
                     "yanglater" -> yangLater()
@@ -226,6 +227,61 @@ class VerifyBoss : FabricClientGameTest {
                 player(it).setStackInHand(Hand.MAIN_HAND, ItemStack(dev.henny.hha_arius.gear.GearItems.SOLVANE))
                 releaseBots(it)
             }
+        }
+    }
+
+    /**
+     * Dashes aimed into a pillar: the player stands 4 blocks in front of a temple pillar, so Iai Draw's end point (target
+     * + 4) lies inside it. Arius must stop in front of the pillar with his whole body in free space.
+     */
+    private fun VerifyKit.dashWall() {
+        temple()
+        waitUntil(400, 1) { server { fight()?.moves?.acting == false } }
+        fun bodyFree(): Boolean = server {
+            val f = checkNotNull(fight())
+            val a = f.arius!!
+            f.world.isSpaceEmpty(Box(a.x - 0.43, a.y + 0.4, a.z - 0.43, a.x + 0.43, a.y + 2.2, a.z + 0.43))
+        }
+        fun setup(): Unit = server { srv ->
+            val f = checkNotNull(fight())
+            f.startDirector(script { while (true) yield(Unit) })
+            f.calls.reset()
+            val c = f.arenaCenter
+            val pillar = Vec3d.of(f.abs(dev.henny.hha_arius.arena.ArenaLayout.TEMPLE_PILLARS[0])).add(0.5, 0.0, 0.5)
+            val out = Vec3d(pillar.x - c.x, 0.0, pillar.z - c.z).normalize()
+            val start = Vec3d(c.x, f.floorY, c.z)
+            f.place(f.arius!!, start)
+            f.face(f.arius!!, pillar)
+            f.arius!!.play(AriusPose.IDLE)
+            val stand = Vec3d(pillar.x, f.floorY, pillar.z).subtract(out.multiply(4.0))
+            val yaw = (Math.toDegrees(atan2(start.z - stand.z, start.x - stand.x)) - 90.0).toFloat()
+            val p = player(srv)
+            p.teleport(f.world, stand.x, stand.y, stand.z, emptySet(), yaw, 8f, false)
+            p.velocity = Vec3d.ZERO
+        }
+        for ((name, move) in listOf("iai" to { f: EirholmFight -> f.moves.iaiDraw(false, 1) }, "stepchain" to { f: EirholmFight -> f.moves.stepChain(false) })) {
+            setup()
+            tick(10)
+            server { val f = checkNotNull(fight()); val m = move(f); f.startDirector(script { yieldAll(m); while (true) yield(Unit) }) }
+            check(waitUntil(120, 1) { server { fight()?.arius?.pose == AriusPose.IAI_DRAW || fight()?.arius?.pose == AriusPose.LUNGE } })
+            var stuck = 0
+            repeat(60) {
+                tick(1)
+                if (!bodyFree()) stuck++
+            }
+            val pos = server { fight()?.arius?.entityPos }
+            log("dashwall $name: ticks with Arius inside blocks = $stuck, end=$pos")
+            // Look back at Arius (he ends behind the player, in front of the pillar).
+            server { srv ->
+                val f = checkNotNull(fight())
+                val a = f.arius!!
+                val p = player(srv)
+                val yaw = (Math.toDegrees(atan2(a.z - p.z, a.x - p.x)) - 90.0).toFloat()
+                p.teleport(f.world, p.x, p.y, p.z, emptySet(), yaw, 10f, false)
+            }
+            tick(3)
+            shot("dashwall_$name")
+            check(stuck == 0) { "Arius ended inside blocks after $name ($stuck ticks)" }
         }
     }
 

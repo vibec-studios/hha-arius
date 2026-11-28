@@ -161,8 +161,9 @@ class AriusMoves(private val f: EirholmFight) {
             val from = a.entityPos
             val dir = flatDir(from, t.entityPos)
             val dist = sqrt(from.squaredDistanceTo(t.entityPos))
-            val end = f.clampToArena(from.add(dir.multiply(minOf(dist + 2.0, 28.0))), 1.0)
+            val end = f.dashEnd(from, f.clampToArena(from.add(dir.multiply(minOf(dist + 2.0, 28.0))), 1.0))
             val stop = f.clampToArena(from.add(dir.multiply(maxOf(0.0, minOf(dist - 1.4, 28.0)))), 1.0)
+                .let { if (it.squaredDistanceTo(from) > end.squaredDistanceTo(from)) end else it }
             val line = f.calls.line(from, end, 2.4f, 10, Telegraph.Pace.QUICK)
             a.play(AriusPose.LUNGE, line.ticks)
             f.sound("arius.wind_step", from, 2.4f, 1.5f)
@@ -754,7 +755,7 @@ class AriusMoves(private val f: EirholmFight) {
                 }
                 4 -> {
                     val from = a.entityPos
-                    val to = f.clampToArena(from.add(dir.multiply(7.5)), 1.0)
+                    val to = f.dashEnd(from, f.clampToArena(from.add(dir.multiply(7.5)), 1.0))
                     val line = f.calls.line(from, to, 2.2f, windup, pace)
                     a.play(AriusPose.LUNGE, line.ticks)
                     f.sound("arius.wind_step", from, 1.6f, 1.1f)
@@ -944,7 +945,7 @@ class AriusMoves(private val f: EirholmFight) {
             val from = a.entityPos
             val dir = flatDir(from, t.entityPos)
             val dist = sqrt(from.squaredDistanceTo(t.entityPos))
-            val to = f.clampToArena(from.add(dir.multiply(dist + 4.0)), 1.0)
+            val to = f.dashEnd(from, f.clampToArena(from.add(dir.multiply(dist + 4.0)), 1.0))
             val windup = if (rnd.nextFloat() < 0.4f) 22 + rnd.nextInt(6) else 12 + rnd.nextInt(4)
             val line = f.calls.line(from, to, 1.8f, windup, Telegraph.Pace.HEAVY)
             f.sound("iai.glint", from, 2.2f, if (windup > 24) 0.7f else 1.3f)
@@ -1052,7 +1053,7 @@ class AriusMoves(private val f: EirholmFight) {
             val toward = flatDir(from, t.entityPos)
             val side = Vec3d(-toward.z, 0.0, toward.x).multiply(if (k % 2 == 0) 1.0 else -1.0)
             val dist = sqrt(from.squaredDistanceTo(t.entityPos))
-            val to = f.clampToArena(from.add(toward.multiply(minOf(dist + 1.5, 9.0))).add(side.multiply(2.0)), 1.0)
+            val to = f.dashEnd(from, f.clampToArena(from.add(toward.multiply(minOf(dist + 1.5, 9.0))).add(side.multiply(2.0)), 1.0))
             val line = f.calls.line(from, to, 2f, if (k == 0) 16 else 9, if (k == 0) Telegraph.Pace.HEAVY else Telegraph.Pace.FOLLOW_UP)
             a.play(AriusPose.LUNGE, line.ticks)
             f.sound("arius.wind_step", from, 1.8f, 1.1f + k * 0.1f)
@@ -1757,11 +1758,11 @@ class AriusMoves(private val f: EirholmFight) {
             val ground = Vec3d(player.x, player.y, player.z)
             var dir = flatDir(a.entityPos, ground)
             // Er tritt dicht heran.
-            val close = ground.subtract(dir.multiply(1.5))
+            val close = ground.subtract(dir.multiply(1.5)).let { f.dashEnd(a.entityPos, it, f.floorAt(a)) }
             a.sheathed = false
             for (i in 1..4) {
                 if (!punishOn(player)) break
-                f.place(a, a.entityPos.lerp(Vec3d(close.x, f.floorAt(a), close.z), i / 4.0))
+                f.place(a, a.entityPos.lerp(close, i / 4.0))
                 f.face(a, player.entityPos)
                 yield(Unit)
             }
@@ -1917,8 +1918,8 @@ class AriusMoves(private val f: EirholmFight) {
     /** Arius rückt auf [dist] an das Opfer nach (Windschritt-Streifen). */
     private suspend fun SequenceScope<Unit>.follow(v: ServerPlayerEntity, dir: Vec3d, dist: Double) {
         val a = f.arius ?: return
-        val to = v.entityPos.subtract(dir.multiply(dist)).let { Vec3d(it.x, f.floorAt(v), it.z) }
         val from = a.entityPos
+        val to = v.entityPos.subtract(dir.multiply(dist)).let { f.dashEnd(from, it, f.floorAt(v)) }
         for (i in 1..2) {
             f.place(a, from.lerp(to, i / 2.0))
             f.face(a, v.entityPos)
@@ -1987,7 +1988,7 @@ class AriusMoves(private val f: EirholmFight) {
                     else -> {
                         // Weiße Form: Windschritt durch und Aufwärtsschnitt.
                         val from = a.entityPos
-                        val to = f.clampToArena(from.add(dir.multiply(6.0)), 1.0)
+                        val to = f.dashEnd(from, f.clampToArena(from.add(dir.multiply(6.0)), 1.0))
                         val line = f.calls.line(from, to, 2.2f, 10, Telegraph.Pace.FOLLOW_UP)
                         a.play(AriusPose.LAUNCH, line.ticks)
                         wait(line.ticks)

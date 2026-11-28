@@ -953,6 +953,31 @@ class EirholmFight(
         return false
     }
 
+    /**
+     * Seit 1.15.15: Bis wohin ein Windschritt von [from] Richtung [to] frei ist. Er endet vor Säulen, Wänden und Trümmern
+     * statt in ihnen: Arius' ganzer Körper muss an jeder Stelle der Bahn Platz haben (Prüfung in Viertelblock-Schritten).
+     */
+    fun dashEnd(from: Vec3d, to: Vec3d, y: Double = floorY): Vec3d {
+        val a = Vec3d(from.x, y, from.z)
+        val b = Vec3d(to.x, y, to.z)
+        val len = a.distanceTo(b)
+        if (len < 0.05) return b
+        val steps = kotlin.math.ceil(len / 0.25).toInt()
+        var last = a
+        for (i in 1..steps) {
+            val p = a.lerp(b, i / steps.toDouble())
+            if (!bodyFits(p)) break
+            last = p
+        }
+        return last
+    }
+
+    /** Passt Arius (0,85 × 2,2) an [p]? Die untersten 0,4 Blöcke zählen nicht (Schneeschichten, Stufen). */
+    private fun bodyFits(p: Vec3d): Boolean {
+        val r = 0.43
+        return world.isSpaceEmpty(Box(p.x - r, p.y + 0.4, p.z - r, p.x + r, p.y + 2.2, p.z + r))
+    }
+
     /** Zwei Blöcke Luft an dieser Stelle? */
     fun passable(pos: Vec3d): Boolean {
         val feet = BlockPos.ofFloored(pos.x, pos.y + 0.1, pos.z)

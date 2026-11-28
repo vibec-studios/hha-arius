@@ -266,7 +266,7 @@ class Duo(private val f: EirholmFight) {
         d.play(NivarisPose.GLIDE)
         // Er tritt im Windschritt an das Ziel heran.
         val toT = flatDir(a.entityPos, t.entityPos)
-        val stand = floor(f.clampToArena(t.entityPos.subtract(toT.multiply(3.4)), 1.5))
+        val stand = f.dashEnd(a.entityPos, f.clampToArena(t.entityPos.subtract(toT.multiply(3.4)), 1.5))
         val from = a.entityPos
         a.play(AriusPose.SIDESTEP)
         f.ambient("arius.wind_step", from, 2.2f, 1.1f)
@@ -420,8 +420,8 @@ class Duo(private val f: EirholmFight) {
             // Sie fliegt in die Richtung, in die sie ohnehin zeigt: keine Wende auf der Stelle.
             if (axisA.dotProduct(flatDir(d.entityPos, center)) < 0) axisA = axisA.multiply(-1.0)
             val axisB = Vec3d(-axisA.z, 0.0, axisA.x)
-            val aFrom = floor(f.clampToArena(center.subtract(axisB.multiply(13.0)), 1.0))
-            val aTo = floor(f.clampToArena(center.add(axisB.multiply(13.0)), 1.0))
+            val aFrom = f.dashEnd(center, f.clampToArena(center.subtract(axisB.multiply(13.0)), 1.0))
+            val aTo = f.dashEnd(aFrom, f.clampToArena(center.add(axisB.multiply(13.0)), 1.0))
             val dFrom = floor(f.clampToArena(center.subtract(axisA.multiply(18.0)), 1.5))
             val dTo = floor(f.clampToArena(center.add(axisA.multiply(18.0)), 1.5))
             val low = air(center, 5.0)
@@ -542,7 +542,7 @@ class Duo(private val f: EirholmFight) {
             val lead = intArrayOf(20, 15)[round]
             val toT = flatDir(a.entityPos, t.entityPos)
             val from = floor(a.entityPos)
-            val to = floor(f.clampToArena(t.entityPos.add(toT.multiply(5.0)), 1.0))
+            val to = f.dashEnd(from, f.clampToArena(t.entityPos.add(toT.multiply(5.0)), 1.0))
             val cut = f.calls.line(from, to, 1.9f, lead, Telegraph.Pace.HEAVY)
             a.sheathed = false
             a.play(AriusPose.IAI_STANCE)
@@ -605,7 +605,7 @@ class Duo(private val f: EirholmFight) {
         val dSpot = floor(f.clampToArena(center.subtract(axis.multiply(7.0)), 2.0))
         val lineMid = floor(f.clampToArena(center.add(axis.multiply(7.0)), 2.0))
         val across = Vec3d(-axis.z, 0.0, axis.x)
-        val aSpot = floor(f.clampToArena(lineMid.add(across.multiply(9.0)), 1.0))
+        val aSpot = f.dashEnd(lineMid, f.clampToArena(lineMid.add(across.multiply(9.0)), 1.0))
         val lineFrom = aSpot
         val lineTo = floor(f.clampToArena(lineMid.subtract(across.multiply(9.0)), 1.0))
         // Anflug über die Bahn; das letzte Stück schwebt sie auf den Boden.
@@ -745,7 +745,7 @@ class Duo(private val f: EirholmFight) {
             val v = (if (inPrison.isEmpty()) null else inPrison[rnd.nextInt(inPrison.size)]) ?: f.target() ?: break
             val from = floor(a.entityPos)
             val dir = flatDir(from, v.entityPos)
-            val to = floor(f.clampToArena(v.entityPos.add(dir.multiply(3.5)), 1.0))
+            val to = f.dashEnd(from, f.clampToArena(v.entityPos.add(dir.multiply(3.5)), 1.0))
             val line = f.calls.line(from, to, 1.8f, if (k == 0) 16 else 12, Telegraph.Pace.FOLLOW_UP)
             f.face(a, v.entityPos)
             a.play(AriusPose.IAI_STANCE)

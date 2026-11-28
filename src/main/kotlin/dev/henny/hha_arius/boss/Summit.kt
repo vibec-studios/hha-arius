@@ -168,7 +168,7 @@ class Summit(private val f: EirholmFight) {
         var n = 0
         while (echoes.size < count && n++ < 4) {
             val side = if (echoes.size % 2 == 0) 1.0 else -1.0
-            val at = f.clampToArena(a.entityPos.add(Vec3d(-f.facing(a).z, 0.0, f.facing(a).x).multiply(2.5 * side)), 1.5)
+            val at = f.dashEnd(a.entityPos, f.clampToArena(a.entityPos.add(Vec3d(-f.facing(a).z, 0.0, f.facing(a).x).multiply(2.5 * side)), 1.5))
             val echo = spawnEcho(a, at) ?: break
             echoes.add(echo)
             f.fx(FxKind.DASH_STREAK, a.entityPos, at, life = 10)
@@ -248,8 +248,8 @@ class Summit(private val f: EirholmFight) {
             val ref = a?.entityPos ?: f.arenaCenter
             val out = flatDir(ref, t.entityPos)
             val side = Vec3d(-out.z, 0.0, out.x).multiply(if (rnd.nextBoolean()) 1.0 else -1.0)
-            val stand = f.clampToArena(t.entityPos.add(side.multiply(4.0)).add(out.multiply(1.5)), 1.5).let { Vec3d(it.x, f.floorY, it.z) }
             val from = e.entityPos
+            val stand = f.dashEnd(from, f.clampToArena(t.entityPos.add(side.multiply(4.0)).add(out.multiply(1.5)), 1.5))
             e.play(AriusPose.SIDESTEP)
             for (i in 1..6) {
                 if (e.isRemoved) return@script
