@@ -1567,6 +1567,28 @@ class Scenes(private val f: EirholmFight) {
         markLead()
     }
 
+    /** Die Resonanzangriffe einzeln (für die Sandbox, `/arius attack`). */
+    enum class Resonance { CORRIDOR, CRYSTAL_STORM, SPLIT_FIELD, HARMONY, DRAGON_RIDE, CROSS_CUT, TWIN_FANG, GALE_CLEAVE, FROST_PRISON }
+
+    /** Genau ein Resonanzangriff mit derselben Ansage wie in [resonance], ohne dessen Reihenfolge. */
+    fun resonanceAttack(kind: Resonance): Script = script {
+        announceResonance()
+        yieldAll(
+            when (kind) {
+                Resonance.CORRIDOR -> corridor()
+                Resonance.CRYSTAL_STORM -> crystalStorm()
+                Resonance.SPLIT_FIELD -> splitField()
+                Resonance.HARMONY -> duo.harmony()
+                Resonance.DRAGON_RIDE -> duo.dragonRide()
+                Resonance.CROSS_CUT -> duo.crossCut()
+                Resonance.TWIN_FANG -> duo.twinFang()
+                Resonance.GALE_CLEAVE -> duo.galeCleave()
+                Resonance.FROST_PRISON -> duo.frostPrison()
+            },
+        )
+        markLead()
+    }
+
     private val duo = Duo(f)
 
     /**
@@ -2292,7 +2314,7 @@ class Scenes(private val f: EirholmFight) {
         yieldAll(glacier())
     }
 
-    private fun prepareVault() {
+    internal fun prepareVault() {
         val a = f.arius ?: return
         f.setPhase(P.VAULT)
         val vault = f.abs(Vec3d.of(ArenaLayout.VAULT)).add(0.5, 0.0, 0.5)
@@ -2338,7 +2360,7 @@ class Scenes(private val f: EirholmFight) {
 
     // --- Test command entry points (/arius test <target>) ---------------------------------------------------------------
 
-    private fun prepareSummit(withDragon: Boolean, blade: Int = AriusBlade.HELD, sheathed: Boolean = true) {
+    internal fun prepareSummit(withDragon: Boolean, blade: Int = AriusBlade.HELD, sheathed: Boolean = true) {
         val a = f.arius ?: return
         f.onSummit = true
         f.setPhase(P.FINALE)

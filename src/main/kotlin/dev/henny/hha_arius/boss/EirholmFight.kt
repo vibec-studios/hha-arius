@@ -66,6 +66,9 @@ class EirholmFight(
     /** Übung oder Einzeltest: kein Siegelverbrauch, keine Beute, keine Fortschritte, kein Ausscheiden bei k. o. */
     val isPractice: Boolean get() = training != 0 || testTarget != null
 
+    /** OP-Sandbox aus `/arius sandbox` (nur mit [testTarget]): ersetzt die Regie, siehe [BossSandbox]. */
+    var sandbox: BossSandbox? = null
+
     val origin: BlockPos = ArenaLayout.origin(slot)
 
     /** Eindeutige Kennung dieser Begegnung (für den gespeicherten Einsatz). */
@@ -384,7 +387,10 @@ class EirholmFight(
             }
         })
         val target = testTarget
-        if (target != null) {
+        val sandboxMode = sandbox
+        if (sandboxMode != null) {
+            startDirector(sandboxMode.director())
+        } else if (target != null) {
             startDirector(AriusTestRunner.scriptFor(this, target))
         } else {
             when (training) {

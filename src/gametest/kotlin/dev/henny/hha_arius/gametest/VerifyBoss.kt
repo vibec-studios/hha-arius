@@ -79,6 +79,7 @@ class VerifyBoss : FabricClientGameTest {
                     "ice" -> iceBlade()
                     "fx" -> fxGallery()
                     "pace" -> pace()
+                    "sandbox" -> sandbox()
                     else -> log("unknown case $c")
                 }
             } catch (e: IllegalStateException) {
@@ -90,6 +91,141 @@ class VerifyBoss : FabricClientGameTest {
             }
         }
         check(failures.isEmpty()) { "Failed verify cases: $failures" }
+    }
+
+    // --- Sandbox (/arius sandbox, /arius attack) ---------------------------------------------------------------------
+
+    /**
+     * Schaltet durch alle vier Schauplätze der Sandbox, prüft die Ruhe (keine Bewegung, kein Abschnittswechsel, Leben
+     * laufen nicht aus) und spielt je zwei Angriffe mit Bildern.
+     */
+    private fun VerifyKit.sandbox() {
+        sandboxOpen("temple")
+        sandboxIdle("temple")
+        sandboxAttack("temple", "heaven_cleave", 6)
+        sandboxAttack("temple", "frost_lane", 6)
+        sandboxOpen("aerie")
+        sandboxIdle("aerie")
+        sandboxAttack("aerie", "claw", 5)
+        sandboxAttack("aerie", "breath", 16)
+        sandboxOpen("vault")
+        sandboxIdle("vault")
+        sandboxAttack("vault", "frozen_star", 6)
+        sandboxAttack("vault", "twin_fang", 10)
+        sandboxOpen("summit")
+        sandboxIdle("summit")
+        sandboxAttack("summit", "last_horizon", 6)
+        sandboxAttack("summit", "storm_breaks", 6, cancelAfter = 200)
+        cmd("execute as @p at @s run arius sandbox stop")
+        tick(20)
+        check(server { fight() } == null) { "sandbox stop left a fight running" }
+        log("sandbox: stop ended the fight")
+    }
+
+    private fun VerifyKit.sandboxOpen(arena: String) {
+        cmd("execute as @p at @s run arius sandbox $arena")
+        val ok = waitUntil(12000, 10) { server { fight()?.sandbox?.let { it.ready && it.arena.id == arena } == true } }
+        check(ok) { "sandbox $arena not ready" }
+        settle(300)
+        tick(20)
+        val info = server {
+            val f = fight()!!
+            "phase=${f.phase} onSummit=${f.onSummit} arius=${f.arius?.form}/${f.arius?.bladeState} at %s, solvane=%s, attacks=${f.sandbox!!.attacks().size}".format(
+                f.arius?.entityPos?.let { "%.1f %.1f %.1f".format(it.x, it.y, it.z) }, f.nivaris?.entityPos?.let { "%.1f %.1f %.1f".format(it.x, it.y, it.z) },
+            )
+        }
+        log("sandbox $arena ready: $info")
+        lookAtSandbox(dragon = arena == "aerie")
+        shot("sandbox_${arena}_00_ready")
+    }
+
+    /** 120 Ticks Ruhe: niemand bewegt sich, kein Abschnittswechsel; auch bei 30 % Leben geht es nicht weiter. */
+    private fun VerifyKit.sandboxIdle(arena: String) {
+        data class Snap(val phase: Int, val a: Vec3d?, val d: Vec3d?)
+        val before = server { fight()?.let { Snap(it.phase, it.arius?.entityPos, it.nivaris?.entityPos) } }!!
+        server {
+            val f = fight()!!
+            f.ariusHp = f.ariusMax * 0.3f
+            f.dragonHp = f.dragonMax * 0.3f
+        }
+        tick(120)
+        val after = server { fight()?.let { Snap(it.phase, it.arius?.entityPos, it.nivaris?.entityPos) } }!!
+        val hp = server { fight()?.let { "%.2f / %.2f".format(it.ariusHp / it.ariusMax, it.dragonHp / it.dragonMax) } }
+        val moveA = if (before.a != null && after.a != null) sqrt(before.a.squaredDistanceTo(after.a)) else 0.0
+        val moveD = if (before.d != null && after.d != null) sqrt(before.d.squaredDistanceTo(after.d)) else 0.0
+        log("sandbox $arena idle: phase ${before.phase} -> ${after.phase}, Arius moved %.2f, Solvane moved %.2f, hp (Arius/Solvane) $hp".format(moveA, moveD))
+        check(before.phase == after.phase) { "sandbox $arena changed phase while idle" }
+        check(moveA < 0.3 && moveD < 0.3) { "sandbox $arena: bosses moved while idle" }
+        check(server { fight()!!.let { it.ariusHp >= it.ariusMax * 0.5f && it.dragonHp >= it.dragonMax * 0.5f } }) { "sandbox $arena: health not refilled" }
+    }
+
+    /** Stellt den Spieler vor den Boss des Angriffs, löst ihn aus, macht [shots] Bilder bis zum Ende und prüft die Ruhe danach. */
+    private fun VerifyKit.sandboxAttack(arena: String, id: String, shots: Int, cancelAfter: Int = -1) {
+        val dragon = server { fight()?.sandbox?.attacks()?.firstOrNull { it.id == id }?.group?.name?.startsWith("SOLVANE") == true }
+        server { srv ->
+            val f = fight()!!
+            val actor = (if (dragon) f.nivaris else f.arius)!!
+            val c = f.arenaCenter
+            val toward = Vec3d(c.x - actor.x, 0.0, c.z - actor.z).let { if (it.lengthSquared() < 1e-4) f.facing(actor) else it.normalize() }
+            // Vor Solvane mit Abstand (ihr ruhender Körper liegt in einer Spirale um sie), vor Arius auf Hiebweite.
+            val at = f.clampToArena(Vec3d(actor.x, f.floorY, actor.z).add(toward.multiply(if (dragon) 34.0 else 7.0)), 4.0)
+            val yaw = (Math.toDegrees(atan2(actor.z - at.z, actor.x - at.x)) - 90.0).toFloat()
+            player(srv).teleport(f.world, at.x, at.y, at.z, emptySet(), yaw, 0f, false)
+            player(srv).velocity = Vec3d.ZERO
+        }
+        tick(12)
+        val phase0 = phase()
+        cmd("execute as @p at @s run arius attack $id")
+        check(server { fight()?.sandbox?.running?.id } == id) { "sandbox $arena: attack $id did not start" }
+        val busy = server { fight()!!.sandbox!!.request("combo", 1) }
+        check(busy == dev.henny.hha_arius.boss.BossSandbox.Result.BUSY) { "sandbox $arena: second attack not refused ($busy)" }
+        var t = 0
+        var taken = 0
+        val every = if (dragon || shots >= 10) 30 else 14
+        var lastFlying: Boolean? = null
+        var lastInhale = false
+        while (t < 2400 && server { fight()?.sandbox?.running } != null) {
+            lookAtSandbox(dragon)
+            val (flying, inhale) = server { fight()?.let { (it.nivaris?.flying ?: false) to it.inhaling } } ?: (false to false)
+            if (flying != lastFlying) log("sandbox $arena: $id t=$t Solvane ${if (flying) "airborne" else "on the ground"}")
+            if (inhale && !lastInhale) log("sandbox $arena: $id t=$t inhale starts")
+            lastFlying = flying
+            lastInhale = inhale
+            if (t % every == 6 && taken < shots) shot("sandbox_${arena}_${id}_%02d".format(taken++))
+            if (cancelAfter in 0..t) {
+                cmd("execute as @p at @s run arius attack stop")
+                log("sandbox $arena: $id cancelled at t=$t")
+            }
+            tick(1)
+            t++
+        }
+        check(server { fight()?.sandbox?.running } == null) { "sandbox $arena: $id still running after $t ticks" }
+        tick(30)
+        lookAtSandbox(dragon)
+        shot("sandbox_${arena}_${id}_after")
+        val state = server {
+            val f = fight()!!
+            "phase ${f.phase}, Arius pose=${f.arius?.pose} blade=${f.arius?.bladeState} hp %.2f, Solvane flying=${f.nivaris?.flying} pose=${f.nivaris?.pose} hp %.2f".format(
+                f.ariusHp / f.ariusMax, if (f.dragonMax > 0f) f.dragonHp / f.dragonMax else 0f,
+            )
+        }
+        log("sandbox $arena: $id done after $t ticks ($taken shots), $state")
+        check(phase() == phase0) { "sandbox $arena: $id changed the phase" }
+    }
+
+    private fun VerifyKit.lookAtSandbox(dragon: Boolean) {
+        val spot = server {
+            val f = fight() ?: return@server null
+            val e = if (dragon && f.nivaris != null) f.nivaris else f.arius
+            e?.entityPos?.add(0.0, if (dragon) 2.5 else 1.2, 0.0)
+        } ?: return
+        client { c ->
+            val p = c.player ?: return@client
+            val dx = spot.x - p.x
+            val dz = spot.z - p.z
+            p.yaw = (Math.toDegrees(atan2(dz, dx)) - 90.0).toFloat()
+            p.pitch = (-Math.toDegrees(atan2(spot.y - p.eyeY, sqrt(dx * dx + dz * dz)))).toFloat().coerceIn(-45f, 35f)
+        }
     }
 
     private fun VerifyKit.parryCue() {

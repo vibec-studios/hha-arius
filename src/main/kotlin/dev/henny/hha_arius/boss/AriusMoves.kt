@@ -49,7 +49,7 @@ class AriusMoves(private val f: EirholmFight) {
 
     /** Läuft gerade eine Attacke (dann keine Seitschritte/Pfeilschnitt-Posen dazwischen)? */
     var acting = false
-        private set
+        internal set // die Sandbox ([BossSandbox]) setzt es um einen einzelnen Angriff wie ein Zug
 
     /** Zustand zurücksetzen, wenn ein laufendes Zug- oder Begleitskript vorzeitig abgebrochen wird. */
     fun clearActing() {

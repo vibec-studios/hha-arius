@@ -234,7 +234,7 @@ class NivarisMoves(private val f: EirholmFight) {
      * Richtung bleibt; der Körper legt sich als Bogen um das Feld. Nie enger als der Körper lang ist (sonst flöge sie
      * durch sich selbst).
      */
-    private suspend fun SequenceScope<Unit>.circle(ticks: Int, radius: Double, height: Double, speed: Double = 0.78, sign: Double = circleSign) {
+    internal suspend fun SequenceScope<Unit>.circle(ticks: Int, radius: Double, height: Double, speed: Double = 0.78, sign: Double = circleSign) {
         val d = f.nivaris ?: return
         d.flying = true
         val c = flyCenter()
@@ -265,7 +265,7 @@ class NivarisMoves(private val f: EirholmFight) {
 
     private fun airPoint(xz: Vec3d, height: Double = cruise): Vec3d = keepInFlight(xz).let { Vec3d(it.x, f.floorY + height, it.z) }
 
-    private suspend fun SequenceScope<Unit>.takeoff() {
+    internal suspend fun SequenceScope<Unit>.takeoff() {
         val d = f.nivaris ?: return
         if (d.flying) return
         d.play(NivarisPose.TAKEOFF)

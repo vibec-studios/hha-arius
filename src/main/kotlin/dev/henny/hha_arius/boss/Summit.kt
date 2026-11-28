@@ -64,6 +64,37 @@ class Summit(private val f: EirholmFight) {
         f.ariusHp = f.ariusMax * FLOOR
     }
 
+    // --- Sandbox (/arius attack, siehe BossSandbox) ---------------------------------------------------------------------
+
+    /** Eine Welle von „Alles auf einmal“ (Index in [WAVES]) einzeln, ohne Lebensmarke. Danach [sandboxReset]. */
+    fun sandboxWave(index: Int): Script = script {
+        stage = 1
+        yieldAll(playWave(index))
+    }
+
+    /** Die Klingenabsichten: zwei Nachbilder, die [ticks] lang angreifen. Danach [sandboxReset]. */
+    fun sandboxEchoes(ticks: Int): Script = script {
+        stage = 1
+        yieldAll(summonEchoes(2))
+        wait(ticks)
+    }
+
+    /** „Der Sturm bricht“ einzeln. Endet, wenn er im offenen Knien getroffen wird. Danach [sandboxReset]. */
+    fun sandboxLastStand(): Script = script {
+        stage = 2
+        yieldAll(lastStand())
+    }
+
+    /** Zurück ins Duell: keine Nachbilder, keine offene Antwort, keine Stufe. */
+    fun sandboxReset() {
+        stage = 0
+        wave = 0
+        answered = false
+        answerFrom = Long.MAX_VALUE
+        answerUntil = Long.MIN_VALUE
+        cleanup()
+    }
+
     // --- Ablauf --------------------------------------------------------------------------------------------------------
 
     /** Nächster besonderer Abschnitt (aus [AriusMoves.turnFinale]), sonst null. */

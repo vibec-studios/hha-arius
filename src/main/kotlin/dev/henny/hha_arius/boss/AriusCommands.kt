@@ -14,7 +14,8 @@ import net.minecraft.util.Formatting
  * Admin-Befehle (OP 2): `/hhaarius start` (echter Kampf ohne Siegel), `/hhaarius stage <1-4>` (Training eines
  * Abschnitts), `/hhaarius stop`, `/hhaarius info`, `/hhaarius skip` (aktuellen Abschnitt beenden),
  * `/hhaarius test [on|off]` (Testmodus der Ausrüstung: unendliche Resonanz, kaum Abklingzeit), sowie
- * `/arius test <target|list|stop>` zum gezielten Testen einzelner Phasen, Cutscenes, QTEs und Jagdabschnitte.
+ * `/arius test <target|list|stop>` zum gezielten Testen einzelner Phasen, Cutscenes, QTEs und Jagdabschnitte,
+ * `/arius sandbox <arena|stop>` und `/arius attack <id> [count]|list|stop` (Sandbox, siehe [BossSandbox]).
  */
 object AriusCommands {
 
@@ -32,7 +33,8 @@ object AriusCommands {
                                     .suggests { _, builder -> CommandSource.suggestMatching(AriusTestTarget.ids(), builder) }
                                     .executes { ctx -> startTarget(ctx.source, StringArgumentType.getString(ctx, "target")) },
                             ),
-                    ),
+                    )
+                    .also { SandboxCommands.register(it) },
             )
             dispatcher.register(
                 CommandManager.literal("hhaarius")

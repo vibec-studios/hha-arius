@@ -91,6 +91,11 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.15.15
+
+- **Dashes stop at obstacles:** Arius' straight dashes (Iai Draw, windstep chain, heal punish, counter dashes, the duo cuts and the summit echoes) now end in front of pillars, walls and rubble instead of inside them, and their warning lane ends at the same spot.
+- **Boss sandbox for testing (OP):** `/arius sandbox <temple|aerie|vault|summit>` puts you in that section's arena with its bosses standing idle; they never attack on their own, never die and never move on to the next section. `/arius attack <id> [count]` makes them perform exactly that attack (tab completion and `/arius attack list` show the attacks of the current arena), `/arius attack stop` cancels it and `/arius sandbox stop` ends the sandbox. Reactions to what you do (counter, sidestep, mace catch) still happen as in the fight.
+
 ### New in 1.15.14
 
 - **Bug fixes from a full fight audit:**
