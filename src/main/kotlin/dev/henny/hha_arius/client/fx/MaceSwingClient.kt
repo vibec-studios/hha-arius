@@ -56,6 +56,11 @@ object MaceSwingClient {
         swings[victim] = Swing(arius, a, floor, release.coerceIn(1, total), total)
     }
 
+    fun stop(victim: Int) {
+        val swing = swings.remove(victim) ?: return
+        if (swings.values.none { it.arius == swing.arius }) hands.remove(swing.arius)
+    }
+
     fun reset() {
         swings.clear()
         hands.clear()
@@ -98,8 +103,7 @@ object MaceSwingClient {
         val s = swings[state.id] ?: return null
         val t = time(state, s)
         if (t >= s.total || t < -20f) {
-            swings.remove(state.id)
-            if (swings.values.none { it.arius == s.arius }) hands.remove(s.arius)
+            stop(state.id)
             return null
         }
         return s to t.coerceAtLeast(0f)

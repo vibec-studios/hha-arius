@@ -91,6 +91,24 @@ Armour, gauntlets and Solvane share one resource, **frost resonance**. It rechar
 with the full set) and grows through skilled hits. `/hhaarius test` (OP) gives infinite resonance and short cooldowns to
 try every technique without enemies. Full design and numbers: `docs/AUSRUESTUNG.md` (German).
 
+### New in 1.15.14
+
+- **Bug fixes from a full fight audit:**
+  - Reconnecting no longer costs a solo fight: a player who was fighting when they lost connection comes back as an active fighter at the current section's safe spot, instead of being knocked out and losing after 20 seconds.
+  - In co-op, attacks that were still running when Arius fell in the temple (mace catch, counter punish, flying blade) now end cleanly before The Cut instead of pulling him back into the scene.
+  - Ice Javelin hits each player at most once per volley, even where its three lanes overlap.
+  - Knockback only happens when a hit actually deals damage, so a raised shield or a hold no longer launches you.
+  - Lunge: when a pillar stops him, the warning and the hit end at the pillar.
+  - Iai Draw hits on the tick it is drawn, matching its warning.
+  - After a victory, a defeat can no longer be triggered during the 20-second farewell, and the empty Arius health bar no longer hangs on screen during The Cut.
+  - The close-ups of Arius' transformation in the vault are close again (the camera had been pushed far away).
+  - A downed Solvane stops her current attack in the vault, and her leftover warnings are cleared.
+  - Solvane's claw and tail in the vault only hit the players who were shown the warning.
+  - The deadly core of the white hole is marked in ice blue; gold again only marks the safe shard circles.
+  - Solvane no longer leaves an invisible hitbox behind after she is gone that swallowed left clicks.
+- **The Storm Breaks:** the finale's last stand now drains the world to black and white (gold stays) and hushes the storm, and the colour returns when Arius kneels.
+- **Cutscene grading:** the cool film grade, flashes and horizon pulses now also show during cutscenes, and the vignette is a smooth gradient.
+
 ### New in 1.15.13
 
 - **Mace catch, reworked as a real scene:** after his warning, Arius catches the third falling mace smash by the shaft, holds you up in front of him for a beat, heaves you overhead and slams you into the floor four times, from side to side over his head, before letting go. You hang on to your own mace with both hands the whole time; on every slam you land flat on your back, and after the last one you get back up. Your own camera looks straight at the swing, and he has a short line for it.

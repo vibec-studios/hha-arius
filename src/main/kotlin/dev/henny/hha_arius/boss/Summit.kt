@@ -303,6 +303,7 @@ class Summit(private val f: EirholmFight) {
         a.sheathed = true
         a.play(AriusPose.IAI_STANCE)
         a.eyeGlow = 100
+        f.silence(0.85f, 20)
         for (p in f.audience()) {
             Cine.title(listOf(p), "hha_arius.feat.storm_breaks", "hha_arius.finale.advance", 60)
         }
@@ -374,6 +375,7 @@ class Summit(private val f: EirholmFight) {
         a.play(AriusPose.KNEEL)
         a.eyeGlow = 30
         f.atmos(dev.henny.hha_arius.net.AtmosMode.REVEAL, 30)
+        f.silence(0f, 30)
         stage = 3
         f.openArius(80)
         for (p in f.players()) p.sendMessage(Text.translatable("hha_arius.finale.finish").formatted(Formatting.AQUA), true)

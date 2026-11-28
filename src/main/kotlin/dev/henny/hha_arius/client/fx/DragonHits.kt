@@ -21,6 +21,23 @@ object DragonHits {
 
     private val bodies = HashMap<Int, Body>()
     private var frameCounter = 0L
+    private var level: net.minecraft.client.world.ClientWorld? = null
+
+    /** Veraltete Körperdaten beim Trennen oder Weltwechsel verwerfen. */
+    fun clear() {
+        bodies.clear()
+        frameCounter = 0L
+        level = null
+    }
+
+    /** Prüft auf Weltwechsel und leert den Zwischenspeicher, sobald die Client-Welt wechselt. */
+    fun syncWorld(world: net.minecraft.client.world.ClientWorld?) {
+        if (world !== level) {
+            bodies.clear()
+            frameCounter = 0L
+            level = world
+        }
+    }
 
     /** Seit 1.8.0 für die Aura: Weltpunkte des Körpers (Kopf … Schwanz) bzw. halbe Gliedbreiten, falls bekannt. */
     fun points(entityId: Int): Array<Vec3d>? = bodies[entityId]?.points
@@ -30,6 +47,7 @@ object DragonHits {
     /** Vom Renderer nach der Körperberechnung (Punkte relativ zur Render-Position). */
     fun update(entityId: Int, s: NivarisRenderState) {
         if (!s.bodyReady) return
+        syncWorld(MinecraftClient.getInstance().world)
         val n = NivarisShape.SEGMENTS + 1
         val body = bodies.getOrPut(entityId) { Body(Array(n) { Vec3d.ZERO }, DoubleArray(NivarisShape.SEGMENTS), 0) }
         for (i in 0 until n) body.points[i] = Vec3d(s.x + s.px[i], s.y + s.py[i], s.z + s.pz[i])
@@ -49,8 +67,10 @@ object DragonHits {
     @JvmStatic
     fun onAttack(): Boolean {
         val client = MinecraftClient.getInstance()
+        val world = client.world
+        syncWorld(world)
         val player = client.player ?: return false
-        if (client.currentScreen != null || player.isSpectator || bodies.isEmpty()) return false
+        if (world == null || client.currentScreen != null || player.isSpectator || bodies.isEmpty()) return false
         val target = client.crosshairTarget
         // Zielt der Spieler schon auf die Drachin selbst (Rumpf- oder Kopfbox), regelt das der normale Weg.
         if (target?.type == HitResult.Type.ENTITY) {
@@ -65,7 +85,15 @@ object DragonHits {
         var best = Double.MAX_VALUE
         var bestId = -1
         var bestSeg = -1
-        for ((id, body) in bodies) {
+        val it = bodies.entries.iterator()
+        while (it.hasNext()) {
+            val (id, body) = it.next()
+            // Verabschiedete oder entladene Drachin nicht als Geister-Trefferbox behalten.
+            val entity = world.getEntityById(id)
+            if (entity !is dev.henny.hha_arius.boss.NivarisEntity || entity.isRemoved) {
+                it.remove()
+                continue
+            }
             if (frameCounter - body.frame > 4) continue
             for (i in 0 until NivarisShape.SEGMENTS) {
                 val r = body.radii[i]

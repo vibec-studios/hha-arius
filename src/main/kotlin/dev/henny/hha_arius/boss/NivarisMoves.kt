@@ -31,6 +31,11 @@ class NivarisMoves(private val f: EirholmFight) {
     var acting = false
         private set
 
+    /** Zustand zurücksetzen, wenn ein laufendes Zug- oder Begleitskript vorzeitig abgebrochen wird. */
+    fun clearActing() {
+        acting = false
+    }
+
     /** Flughöhe über der Lauffläche. */
     private val cruise: Double get() = if (f.phase >= EirholmFight.Phase.VAULT) 6.0 else 7.0
 
@@ -1031,7 +1036,8 @@ class NivarisMoves(private val f: EirholmFight) {
         d.play(NivarisPose.CLAW, cone.ticks)
         wait(cone.ticks)
         f.sound("nivaris.claw", apex, 3f)
-        for (p in cone.hits(f.players())) f.hurt(p, 8f, Damage.Kind.IMPACT, d)
+        val targets = if (only == null) f.players() else f.players().filter { it in only }
+        for (p in cone.hits(targets)) f.hurt(p, 8f, Damage.Kind.IMPACT, d)
         Vfx.crescent(f.world, style, apex.add(0.0, 1.0, 0.0), dir, 6f, 4f, 8)
         wait(AriusTimings.NIVARIS_RECOVER[NivarisPose.CLAW])
     }
@@ -1042,7 +1048,8 @@ class NivarisMoves(private val f: EirholmFight) {
         d.play(NivarisPose.TAIL, ring.ticks)
         wait(ring.ticks)
         f.sound("nivaris.tail", d.entityPos, 3f)
-        for (p in ring.hits(f.players())) {
+        val targets = if (only == null) f.players() else f.players().filter { it in only }
+        for (p in ring.hits(targets)) {
             f.hurt(p, 6f, Damage.Kind.IMPACT, d)
             Fx.launchPlayer(p, flatDir(d.entityPos, p.entityPos).multiply(0.9).add(0.0, 0.35, 0.0))
         }

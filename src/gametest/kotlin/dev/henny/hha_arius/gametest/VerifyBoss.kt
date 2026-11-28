@@ -60,6 +60,7 @@ class VerifyBoss : FabricClientGameTest {
                     "macefloat" -> maceFloat()
                     "parrycue" -> parryCue()
                     "forge" -> forge()
+                    "transformreal" -> transformReal()
                     "templehorizon" -> templeHorizon()
                     "horizonviews" -> horizonViews()
                     "yanglater" -> yangLater()
@@ -226,6 +227,33 @@ class VerifyBoss : FabricClientGameTest {
                 releaseBots(it)
             }
         }
+    }
+
+    /** Like [forge], but in the phase the real fight uses (COLLAPSE), so the scene's camera clamping is the real one. */
+    private fun VerifyKit.transformReal() {
+        vault()
+        server {
+            val f = checkNotNull(fight())
+            f.setPhase(EirholmFight.Phase.COLLAPSE)
+            val scene = CineScene(f) {}
+            val method = Scenes::class.java.getDeclaredMethod("transformBody", CineScene::class.java).apply { isAccessible = true }
+            @Suppress("UNCHECKED_CAST")
+            val body = method.invoke(f.scenes, scene) as Script
+            f.calls.reset()
+            f.ariusVulnerable = false
+            f.arius!!.bladeState = AriusBlade.NONE
+            f.startDirector(scene.play(body))
+        }
+        tick(20)
+        shot("transform_shatter")
+        tick(25)
+        shot("transform_shatter_late")
+        check(waitUntil(135, 1) { server { fight()?.arius?.pose == AriusPose.FORGE_ICE } })
+        tick(18)
+        shot("transform_hand")
+        check(waitUntil(25, 1) { server { fight()?.arius?.bladeState == AriusBlade.ICE } })
+        tick(10)
+        shot("transform_ice_blade")
     }
 
     private fun VerifyKit.forge() {

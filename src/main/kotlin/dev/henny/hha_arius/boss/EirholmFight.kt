@@ -77,6 +77,7 @@ class EirholmFight(
 
     class Fighter(val id: UUID) {
         var ko = false
+        var activeOnLeave = false
         val dealt = ArrayDeque<Pair<Long, Float>>()
         val hitsOutside = ArrayDeque<Long>()
         val arrowHits = ArrayDeque<Long>()
@@ -171,6 +172,7 @@ class EirholmFight(
         private set
     var ended = false
         private set
+    private var won = false
     private var build: ArenaBuild? = null
 
     /** Fernlandschaft (Nadel, Schlucht, Gletscher): baut im Hintergrund weiter, bis sie steht. */
@@ -256,7 +258,8 @@ class EirholmFight(
 
     private var director: Runner? = null
     private val maceCatch = MaceCatch(this)
-    private val tasks = ArrayList<Runner>()
+    private class Task(val runner: Runner, val attackPhase: Int? = null, val onCancel: () -> Unit = {})
+    private val tasks = ArrayList<Task>()
 
     val moves = AriusMoves(this)
 
@@ -398,10 +401,27 @@ class EirholmFight(
     }
 
     fun task(script: Script) {
-        tasks.add(Runner(script))
+        tasks.add(Task(Runner(script)))
+    }
+
+    /** Beim Abbruch einer Sequenz läuft ihr finally nicht. */
+    fun attackTask(script: Script, onCancel: () -> Unit = {}) {
+        tasks.add(Task(Runner(script), phase, onCancel))
+    }
+
+    private fun cancelAttackTasks(nextPhase: Int = phase) {
+        val iterator = tasks.iterator()
+        while (iterator.hasNext()) {
+            val task = iterator.next()
+            if (task.attackPhase != null && (ended || ariusHp <= 0f || task.attackPhase != nextPhase)) {
+                iterator.remove()
+                task.onCancel()
+            }
+        }
     }
 
     fun setPhase(next: Int) {
+        cancelAttackTasks(next)
         // Grundstimmung je Abschnitt; Szenen können danach eigene Stimmungen setzen.
         val mood = when (next) {
             Phase.INTRO, Phase.TEMPLE, Phase.CUT -> dev.henny.hha_arius.net.AtmosMode.CLEAR
@@ -410,6 +430,7 @@ class EirholmFight(
             else -> -2
         }
         if (mood >= 0 && mood != currentAtmos) atmos(mood, 80)
+        if (currentSilence > 0f) silence(0f, 10)
         phase = next
         phaseAge = 0
         calls.reset()
@@ -532,7 +553,7 @@ class EirholmFight(
         ensureEntities()
         pruneFighters()
         val active = players()
-        if (active.isEmpty()) {
+        if (active.isEmpty() && !won) {
             if (++noPlayers > 400) {
                 defeat(silent = true)
                 return
@@ -542,13 +563,15 @@ class EirholmFight(
         }
         updateDuelTarget(active)
         if (phase >= Phase.TEMPLE && phase < Phase.END) scaling.tick(active.size)
+        cancelAttackTasks()
         director?.step()
         if (ended) return
+        cancelAttackTasks()
         // Aus einer Momentaufnahme ausführen: Tasks dürfen neue Tasks anlegen oder den Kampf beenden.
         if (tasks.isNotEmpty()) {
-            for (runner in tasks.toList()) {
+            for (task in tasks.toList()) {
                 if (ended) return
-                if (!runner.step()) tasks.remove(runner)
+                if (!task.runner.step()) tasks.remove(task)
             }
         }
         if (ended) return
@@ -592,7 +615,7 @@ class EirholmFight(
 
     fun landingSpot(player: ServerPlayerEntity): Vec3d {
         val list = when {
-            phase == Phase.FINALE && onSummit -> finaleSpots()
+            onSummit -> finaleSpots()
             phase >= Phase.VAULT -> ArenaLayout.VAULT_LANDING
             phase >= Phase.GLACIER -> ArenaLayout.AERIE_LANDING
             else -> listOf(ArenaLayout.ARRIVAL)
@@ -645,7 +668,7 @@ class EirholmFight(
 
     fun updateBars() {
         val viewers = audience()
-        val showArius = phase in Phase.TEMPLE..Phase.CUT || phase == Phase.VAULT || phase == Phase.FINALE
+        val showArius = phase == Phase.TEMPLE || phase == Phase.VAULT || phase == Phase.FINALE
         val showDragon = phase == Phase.GLACIER || (phase == Phase.VAULT && !dragonDowned)
         sync(ariusBar, viewers, showArius)
         sync(dragonBar, viewers, showDragon)
@@ -690,7 +713,7 @@ class EirholmFight(
             player.sendMessage(Text.translatable("hha_arius.msg.watching").formatted(Formatting.GRAY), true)
             return 0f
         }
-        if (!ariusVulnerable) return 0f
+        if (!ariusVulnerable || ariusHp <= 0f) return 0f
         if (phase == Phase.FINALE && moves.summit.stage == 2) {
             if (!projectile && source.source === player && PlayerHit.current != PlayerHit.Kind.ABILITY) moves.summit.answer(a, player)
             return 0f
@@ -992,10 +1015,20 @@ class EirholmFight(
     /** Laufende Wetter-/Lichtstimmung (für Wiedereinsteiger), siehe [dev.henny.hha_arius.net.AtmosMode]. */
     private var currentAtmos = dev.henny.hha_arius.net.AtmosMode.CLEAR
 
+    /** Laufende Stille im Finale (für Wiedereinsteiger und Aufräumen). */
+    private var currentSilence = 0f
+
     /** Wetter und Licht für alle Teilnehmer überblenden. */
     fun atmos(mode: Int, ticks: Int = 60) {
         currentAtmos = mode
         val payload = dev.henny.hha_arius.net.AtmosS2C(mode, ticks)
+        for (p in audience()) AriusNet.send(p, payload)
+    }
+
+    /** Schwarz-Weiß-Stille („Der Sturm bricht“) für alle Zuschauer überblenden. */
+    fun silence(strength: Float, fade: Int = 20) {
+        currentSilence = strength.coerceIn(0f, 1f)
+        val payload = dev.henny.hha_arius.net.SilenceS2C(currentSilence, fade)
         for (p in audience()) AriusNet.send(p, payload)
     }
 
@@ -1048,7 +1081,7 @@ class EirholmFight(
             player.teleport(world, watch.x, watch.y, watch.z, emptySet(), player.yaw, player.pitch, false)
             player.onLanding()
             player.sendMessage(Text.translatable("hha_arius.msg.ko").formatted(Formatting.GRAY), false)
-            if (players().isEmpty()) defeat(silent = false)
+            if (!won && players().isEmpty()) defeat(silent = false)
         } else {
             val spot = landingSpot(player)
             player.teleport(world, spot.x, spot.y, spot.z, emptySet(), player.yaw, player.pitch, false)
@@ -1076,28 +1109,40 @@ class EirholmFight(
         val f = fighters.getOrPut(player.uuid) { Fighter(player.uuid) }
         Hold.drop(player)
         if (phase == Phase.BUILD) return
-        f.ko = true
-        val watch = abs(if (phase >= Phase.VAULT) ArenaLayout.WATCH_VAULT else if (phase >= Phase.GLACIER) ArenaLayout.AERIE_WATCH else ArenaLayout.WATCH_UPPER)
-        player.teleport(world, watch.x, watch.y, watch.z, emptySet(), player.yaw, player.pitch, false)
-        player.sendMessage(Text.translatable("hha_arius.msg.latejoin").formatted(Formatting.AQUA), false)
+        val returning = f.activeOnLeave && !f.ko
+        f.activeOnLeave = false
+        if (returning) {
+            // Auf der Jagd sichert die Route den gespeicherten Standort.
+            if (!chasing) {
+                val spot = landingSpot(player)
+                player.teleport(world, spot.x, spot.y, spot.z, emptySet(), player.yaw, player.pitch, false)
+                player.onLanding()
+            }
+            player.sendMessage(Text.translatable("hha_arius.msg.rejoin").formatted(Formatting.AQUA), true)
+        } else {
+            f.ko = true
+            val watch = abs(if (phase >= Phase.VAULT) ArenaLayout.WATCH_VAULT else if (phase >= Phase.GLACIER) ArenaLayout.AERIE_WATCH else ArenaLayout.WATCH_UPPER)
+            player.teleport(world, watch.x, watch.y, watch.z, emptySet(), player.yaw, player.pitch, false)
+            player.sendMessage(Text.translatable("hha_arius.msg.latejoin").formatted(Formatting.AQUA), false)
+        }
         if (currentMusic.isNotEmpty()) AriusNet.send(player, MusicS2C(currentMusic, 20))
         AriusNet.send(player, dev.henny.hha_arius.net.AtmosS2C(currentAtmos, 1))
+        if (currentSilence > 0f) AriusNet.send(player, dev.henny.hha_arius.net.SilenceS2C(currentSilence, 1))
         MusicCue.rejoin(this, player)
     }
 
     fun onLeave(player: ServerPlayerEntity) {
+        fighters[player.uuid]?.let { it.activeOnLeave = !it.ko && player.isAlive && !player.isSpectator }
         Hold.drop(player)
         AriusNet.send(player, MusicS2C("", 20))
         AriusNet.send(player, dev.henny.hha_arius.net.AtmosS2C(-1, 1))
+        if (currentSilence > 0f) AriusNet.send(player, dev.henny.hha_arius.net.SilenceS2C(0f, 1))
         ariusBar.removePlayer(player)
         dragonBar.removePlayer(player)
-        if (players().isEmpty() && phase != Phase.BUILD && !ended) {
-            // Der letzte aktive Spieler ist weg: kurz warten (Rückkehr möglich), dann bricht tickInner ab.
-        }
     }
 
     fun defeat(silent: Boolean) {
-        if (ended) return
+        if (ended || won) return
         if (!silent) say("defeat", 90)
         val everyone = audience()
         finish(win = false)
@@ -1109,6 +1154,7 @@ class EirholmFight(
 
     /** Sieg: Beute, Fortschritte, Siegel verbrauchen, nach 20 s nach Hause. */
     fun victory() {
+        if (won) return
         if (ended || isPractice) {
             if (isPractice && !ended) {
                 hint("hha_arius.msg.training_done")
@@ -1121,6 +1167,7 @@ class EirholmFight(
             }
             return
         }
+        won = true
         // Das Siegel ist verbraucht. Jeder Teilnehmer bekommt jetzt einen gespeicherten Beuteanspruch; ausgezahlt wird
         // erst am Heimatort (oder beim nächsten Einloggen), damit nichts im Aufräumen der Arena verloren geht.
         val flawless = !anyKo
@@ -1156,10 +1203,12 @@ class EirholmFight(
     fun finish(win: Boolean) {
         if (ended) return
         ended = true
+        cancelAttackTasks()
         phase = Phase.END
         chasing = false
         val everyone = audience()
         music(null, 40)
+        if (currentSilence > 0f) silence(0f, 10)
         MusicCue.forget(this)
         dev.henny.hha.logic.boss.Cine.end(everyone)
         Qte.cancelFor(fighters.keys)

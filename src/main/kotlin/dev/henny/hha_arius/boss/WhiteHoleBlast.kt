@@ -222,7 +222,9 @@ class WhiteHoleBlast(private val f: EirholmFight) {
         }
         val marks = f.calls.boss(pace = Telegraph.Pace.ROOM, style = Vfx.Style.GOLD)
         for (s in splinters) marks.safe(s.pos, SPLINTER, REVERSE)
-        val kill = marks.ring(c, KILL.toFloat(), REVERSE)
+        // Gefahrenzone im Kern getrennt in normaler Frost-Optik, damit Gold nur sichere Splitter zeigt.
+        val hazard = f.calls.boss(pace = Telegraph.Pace.ROOM)
+        val kill = hazard.ring(c, KILL.toFloat(), REVERSE)
         fedHint(need, 0)
         var fed = 0
         var t = 0
@@ -281,7 +283,10 @@ class WhiteHoleBlast(private val f: EirholmFight) {
             t++
             yield(Unit)
         }
-        kill.let { marks.end() }
+        kill.let {
+            hazard.end()
+            marks.end()
+        }
         for (s in splinters) if (!s.fed) s.e?.let { f.shards.remove(it) }
 
         if (fed >= need) {

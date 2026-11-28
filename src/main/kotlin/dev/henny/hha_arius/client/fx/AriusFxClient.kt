@@ -34,6 +34,7 @@ object AriusFxClient {
         FightClient.init()
         QteClient.init()
         net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback.EVENT.register { ctx, _ ->
+            if (dev.henny.hha.client.cine.CinePlayer.active) return@register
             if (!MinecraftClient.getInstance().options.hudHidden) Atmos.renderHud(ctx)
             CineGrade.render(ctx)
         }
@@ -57,6 +58,7 @@ object AriusFxClient {
             effects.add(fx)
         }
         ClientTickEvents.END_CLIENT_TICK.register { client ->
+            DragonHits.syncWorld(client.world)
             val world = client.world ?: return@register
             if (!client.isPaused) {
                 effects.removeIf { !it.advance(world) || (it is WhiteHoleFx && it.finished) }
@@ -91,8 +93,10 @@ object AriusFxClient {
             for (fx in effects) if (fx is WhiteHoleFx) WhiteLens.render(fx, tickDelta)
         }
         HudRenderCallback.EVENT.register { context, _ ->
-            HorizonPulse.render(context)
-            ScreenFlash.render(context)
+            if (!dev.henny.hha.client.cine.CinePlayer.active) {
+                HorizonPulse.render(context)
+                ScreenFlash.render(context)
+            }
             Subtitles.render(context)
         }
         ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> reset() }
@@ -147,8 +151,19 @@ object AriusFxClient {
         effects.filterIsInstance<WhiteHoleFx>().minByOrNull { it.center.squaredDistanceTo(pos) }?.takeIf { it.center.squaredDistanceTo(pos) < 64.0 }?.invert()
     }
 
+    /** Aus [dev.henny.hha_arius.mixin.client.QteHudMixin]: in Szenen hier zeichnen, sonst übernehmen die HUD-Rückrufe. */
+    @JvmStatic
+    fun renderCineHud(ctx: net.minecraft.client.gui.DrawContext) {
+        if (!dev.henny.hha.client.cine.CinePlayer.active) return
+        if (!MinecraftClient.getInstance().options.hudHidden) Atmos.renderHud(ctx)
+        CineGrade.render(ctx)
+        HorizonPulse.render(ctx)
+        ScreenFlash.render(ctx)
+    }
+
     fun reset() {
         GroundWarnings.reset()
+        DragonHits.clear()
         effects.clear()
         DragonVeil.reset()
         SliceRender.clear()

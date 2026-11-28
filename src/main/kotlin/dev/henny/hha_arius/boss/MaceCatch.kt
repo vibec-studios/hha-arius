@@ -149,7 +149,10 @@ class MaceCatch(private val f: EirholmFight) {
         f.ambient("arius.parry", plan.start, 2.8f, 0.8f)
         f.sound("solvane.parry", plan.start, 1.6f, 0.7f)
         AriusNet.send(p, FxS2C(FxKind.TIME_SLOW.ordinal, p.x, p.y, p.z, 0.0, 0.0, 0.0, 0.55f, 0f, 8, -1, -1))
-        f.task(swing(a, p, plan))
+        f.attackTask(swing(a, p, plan)) {
+            release(a, p)
+            f.fxAll(FxKind.MACE_GRIP, a.entityPos, life = 0, e1 = p, e2 = a)
+        }
     }
 
     private fun swing(a: AriusEntity, p: ServerPlayerEntity, plan: Plan): Script = script {
@@ -227,13 +230,18 @@ class MaceCatch(private val f: EirholmFight) {
                 yield(Unit)
             }
         } finally {
-            if (Hold.isHeld(p)) Hold.release(p)
-            AriusNet.send(p, CineCamS2C(false, a.id, 0, 0))
-            if (a.pose == AriusPose.MACE_CATCH || a.pose == AriusPose.MACE_RAISE || a.pose == AriusPose.MACE_LEFT ||
-                a.pose == AriusPose.MACE_RIGHT) a.play(AriusPose.IDLE)
-            f.moves.hold(false)
-            running = false
+            release(a, p)
         }
+    }
+
+    private fun release(a: AriusEntity, p: ServerPlayerEntity) {
+        if (!running) return
+        if (Hold.isHeld(p)) Hold.release(p)
+        AriusNet.send(p, CineCamS2C(false, a.id, 0, 0))
+        if (a.pose == AriusPose.MACE_CATCH || a.pose == AriusPose.MACE_RAISE || a.pose == AriusPose.MACE_LEFT ||
+            a.pose == AriusPose.MACE_RIGHT) a.play(AriusPose.IDLE)
+        f.moves.hold(false)
+        running = false
     }
 
     private fun impact(a: AriusEntity, p: ServerPlayerEntity, plan: Plan, side: Int, k: Int) {

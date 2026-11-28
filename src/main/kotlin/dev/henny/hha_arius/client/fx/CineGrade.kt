@@ -88,16 +88,14 @@ object CineGrade {
             ctx.fill(0, y0, w, y1, cool)
             ctx.fill(0, y0, w, y1, warm)
         }
-        // Vignette
-        val steps = 16
-        val depth = (minOf(w, h) * 0.3f)
-        for (i in 0 until steps) {
-            val a = 0.32f * k * (1f - i / steps.toFloat()).let { it * it }
-            val o = (depth * i / steps).toInt()
-            val o2 = (depth * (i + 1) / steps).toInt()
+        // Vignette: weicher Verlauf je Bildpunkt, Ränder über die volle Länge (die Ecken dunkeln sanft nach, keine Treppen)
+        val depth = (minOf(w, h) * 0.3f).toInt().coerceAtLeast(1)
+        for (i in 0 until depth) {
+            val a = 0.2f * k * (1f - i / depth.toFloat()).let { it * it }
+            if (a < 0.004f) break
             val c = withAlpha(0xFF02040A.toInt(), a)
-            ctx.fill(0, o, w, o2, c); ctx.fill(0, h - o2, w, h - o, c)
-            ctx.fill(o, o2, o2, h - o2, c); ctx.fill(w - o2, o2, w - o, h - o2, c)
+            ctx.fill(0, i, w, i + 1, c); ctx.fill(0, h - i - 1, w, h - i, c)
+            ctx.fill(i, 0, i + 1, h, c); ctx.fill(w - i - 1, 0, w - i, h, c)
         }
         // Filmkorn
         val grains = (w * h / 900f * k).toInt().coerceAtMost(900)

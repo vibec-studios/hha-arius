@@ -1290,11 +1290,20 @@ class Scenes(private val f: EirholmFight) {
         val a = f.arius ?: return@script
         val d = f.nivaris ?: return@script
         val vault = f.abs(Vec3d.of(ArenaLayout.VAULT)).add(0.5, 0.0, 0.5)
+        // Phase ist hier noch COLLAPSE (Arenamitte = Horst); Kamera im Gewölbe um dessen Mitte klemmen.
+        val vaultR = ArenaLayout.VAULT_R + 8.0
+        fun clampToVault(pos: Vec3d, margin: Double = 2.0): Vec3d {
+            val dx = pos.x - vault.x
+            val dz = pos.z - vault.z
+            val dist = sqrt(dx * dx + dz * dz)
+            val r = vaultR - margin
+            return if (dist <= r || dist < 1e-6) pos else Vec3d(vault.x + dx / dist * r, pos.y, vault.z + dz / dist * r)
+        }
         val top = a.entityPos
         // 6a) Detail: er schlägt im Gewölbe auf, die Rüstung zerspringt. Tief, nah, langsam heran.
         val front = f.facing(a)
         val chest = vault.add(0.0, 1.1, 0.0)
-        scene?.line(f.clampToArena(chest.add(front.multiply(3.4)).add(-0.8, -0.4, 0.0), 2.0), f.clampToArena(chest.add(front.multiply(2.5)).add(-0.6, -0.3, 0.0), 2.0),
+        scene?.line(clampToVault(chest.add(front.multiply(3.4)).add(-0.8, -0.4, 0.0), 2.0), clampToVault(chest.add(front.multiply(2.5)).add(-0.6, -0.3, 0.0), 2.0),
             chest, chest.add(0.0, 0.3, 0.0), 40, 50.0, 40.0)
         a.play(AriusPose.TRANSFORM, AriusTimings.ARIUS_WINDUP[AriusPose.TRANSFORM])
         MusicCue.play(f, "transform", 16)
@@ -1315,8 +1324,8 @@ class Scenes(private val f: EirholmFight) {
         a.sheathed = false
         val side = Vec3d(-front.z, 0.0, front.x)
         val handShot = a.entityPos.add(0.0, 1.38, 0.0)
-        val cameraFrom = f.clampToArena(handShot.add(front.multiply(4.3)).add(side.multiply(1.95)), 2.0)
-        val cameraTo = f.clampToArena(handShot.add(front.multiply(3.8)).add(side.multiply(1.55)), 2.0)
+        val cameraFrom = clampToVault(handShot.add(front.multiply(4.3)).add(side.multiply(1.95)), 2.0)
+        val cameraTo = clampToVault(handShot.add(front.multiply(3.8)).add(side.multiply(1.55)), 2.0)
         scene?.line(cameraFrom, cameraTo, handShot, handShot.add(0.0, 0.3, 0.0), 54, 53.0, 53.0)
         a.play(AriusPose.FORGE_ICE, 12)
         shown { f.sceneText("forge_ice", 54) }
@@ -1388,6 +1397,7 @@ class Scenes(private val f: EirholmFight) {
                 switchLead()
                 continue
             }
+            val dragonLed = !f.dragonDowned && !f.ariusLeads
             val turn = when {
                 f.dragonDowned -> f.moves.turnWhiteSolo()
                 f.ariusLeads -> f.moves.turnWhite()
@@ -1396,8 +1406,23 @@ class Scenes(private val f: EirholmFight) {
             val leader = Runner(turn)
             var support: Runner? = null
             var supportAt = f.now + if (f.ariusLeads) 34 else 12
-            while (f.ariusHp > 0f && leader.step()) {
-                if (!f.dragonDowned && f.dragonHp <= 0f) downDragon()
+            var interrupted = false
+            while (f.ariusHp > 0f) {
+                if (!f.dragonDowned && f.dragonHp <= 0f) {
+                    downDragon()
+                    if (dragonLed) {
+                        interrupted = true
+                        break
+                    }
+                }
+                if (!leader.step()) break
+                if (!f.dragonDowned && f.dragonHp <= 0f) {
+                    downDragon()
+                    if (dragonLed) {
+                        interrupted = true
+                        break
+                    }
+                }
                 if (!f.dragonDowned) {
                     if ((support == null || support.done) && f.now >= supportAt) {
                         support = Runner(if (f.ariusLeads) f.dragon.support() else f.moves.support())
@@ -1407,6 +1432,15 @@ class Scenes(private val f: EirholmFight) {
                 }
                 checkTaktBreak()
                 yield(Unit)
+            }
+            // Abgebrochene Züge/Begleitskripte laufen ihr finally nicht durch: Ansagen und Zustände sauber zurücksetzen.
+            val supportDropped = support != null && !support.done
+            if (interrupted || f.ariusHp <= 0f || supportDropped) {
+                f.calls.reset()
+                f.moves.clearActing()
+                f.dragon.clearActing()
+                f.inhaling = false
+                f.nivaris?.throatGlow = 0
             }
             if (!f.dragonDowned) switchLead()
         }
@@ -1491,6 +1525,9 @@ class Scenes(private val f: EirholmFight) {
         val d = f.nivaris ?: return
         f.dragonDowned = true
         f.dragonVulnerable = false
+        f.inhaling = false
+        d.throatGlow = 0
+        f.dragon.clearActing()
         d.flying = false
         d.resonance = false
         d.lead = false

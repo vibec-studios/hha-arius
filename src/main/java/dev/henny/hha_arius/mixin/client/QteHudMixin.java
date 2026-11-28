@@ -19,6 +19,7 @@ public abstract class QteHudMixin {
 
     @Inject(method = "render", at = @At("HEAD"))
     private void hha_arius$qte(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        dev.henny.hha_arius.client.fx.AriusFxClient.renderCineHud(context);
         dev.henny.hha_arius.client.fx.Subtitles.renderAlways(context);
         QteClient.render(context, tickCounter.getTickProgress(true));
     }

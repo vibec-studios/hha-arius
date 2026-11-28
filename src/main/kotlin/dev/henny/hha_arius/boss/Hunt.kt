@@ -1761,7 +1761,10 @@ class Hunt(private val f: EirholmFight) {
         try {
             while (true) {
                 val players = f.players()
-                if (players.isEmpty()) return@script
+                if (players.isEmpty()) {
+                    yield(Unit)
+                    continue
+                }
                 val arrived = players.firstOrNull { it.entityPos.distanceTo(gate) <= 4.5 || (it.isOnGround && route.project(it.entityPos).let { (s, dd) -> s >= route.length - 1.5 && dd < 5.0 }) }
                 if (arrived != null) {
                     arrivedFirst = arrived
